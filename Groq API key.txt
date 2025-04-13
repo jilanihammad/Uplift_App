@@ -1,0 +1,15 @@
+Groq API: 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
+
+
+End Points below:
+
+LLM: https://api.groq.com/openai/v1/models
+model ID: meta-llama/llama-4-scout-17b-16e-instruct
+
+Voice (TTS) model API end point: https://api.groq.com/openai/v1/audio/speech
+model ID: playai-tts
+
+Transcriptions to Convert audio to text: https://api.groq.com/openai/v1/audio/transcriptions
+Model ID: whisper-large-v3-turbo
+
+
