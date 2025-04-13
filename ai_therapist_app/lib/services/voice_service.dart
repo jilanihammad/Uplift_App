@@ -137,15 +137,17 @@ class VoiceService {
         print('Recording stopped (${_isWeb ? 'web mode' : 'native mode'})');
       }
       
-      // In a real implementation, we would:
-      // 1. Save the audio file
-      // 2. Send it to the backend for transcription using Groq API
-      // 3. Return the transcription
+      // In a real implementation, we would have the audio file to send
+      // For now, use a simulated transcription when in debug mode
+      if (kDebugMode) {
+        return "This is a simulated transcription for testing purposes.";
+      }
       
       try {
         // Make API call to the backend for speech-to-text using Groq API
         final response = await _apiClient.post('/voice/transcribe', body: {
-          'audioUrl': 'dummy_audio_url', // In a real implementation, this would be the actual audio file
+          'audio_url': 'temp_audio_recording.mp3',
+          'model': 'whisper-large-v3-turbo'
         });
         
         if (response != null && response.containsKey('transcription')) {
@@ -193,7 +195,7 @@ class VoiceService {
         // Make API call to the backend for text-to-speech using Groq API
         final response = await _apiClient.post('/voice/synthesize', body: {
           'text': text,
-          'voice': isAiSpeaking ? 'Aaliyah-PlayAI' : 'Mason-PlayAI', // Updated to use valid Groq TTS voices
+          'voice': isAiSpeaking ? 'Jennifer-PlayAI' : 'Mason-PlayAI', // Updated to use valid Groq TTS voices
         });
         
         if (response != null && response.containsKey('audio_url')) {
@@ -213,21 +215,6 @@ class VoiceService {
       } catch (e) {
         if (kDebugMode) {
           print('Error in speech synthesis API call: $e');
-          // For debugging only, try a direct HTTP call to see the error
-          try {
-            final directResponse = await http.post(
-              Uri.parse('$_backendUrl/voice/synthesize'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'text': text,
-                'voice': isAiSpeaking ? 'claude' : 'user',
-              }),
-            );
-            print('Direct HTTP call status: ${directResponse.statusCode}');
-            print('Direct HTTP call body: ${directResponse.body}');
-          } catch (httpError) {
-            print('Direct HTTP call error: $httpError');
-          }
         }
         
         // Return a URL that indicates an error occurred

@@ -1,6 +1,13 @@
 // lib/config/api.dart
+import 'package:flutter/foundation.dart';
+
 class ApiConfig {
-  static const String baseUrl = 'http://localhost:8000/api/v1';
+  // Use a getter for baseUrl that checks the environment
+  static String get baseUrl {
+    return kDebugMode
+        ? 'http://10.0.2.2:8000/api/v1'
+        : 'https://api-fuukqlcsha-uc.a.run.app/api/v1';
+  }
   
   // Authentication endpoints
   static const String login = '/auth/login';

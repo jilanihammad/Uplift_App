@@ -139,8 +139,8 @@ class ConfigService {
         _llmApiEndpoint = envLlmEndpoint;
       } else if (_llmApiEndpoint.isEmpty) {
         _llmApiEndpoint = kDebugMode
-            ? 'http://10.0.2.2:8000/api/v1'
-            : 'https://your-production-api.com/api/v1';
+            ? 'http://10.0.2.2:8000'
+            : 'https://api-fuukqlcsha-uc.a.run.app';
       }
       
       if (envVoiceEndpoint != null && envVoiceEndpoint.isNotEmpty) {
@@ -153,7 +153,7 @@ class ConfigService {
       if (envLlmModelEndpoint != null && envLlmModelEndpoint.isNotEmpty) {
         _llmModelEndpoint = envLlmModelEndpoint;
       } else {
-        _llmModelEndpoint = '$_groqApiBaseUrl/models';
+        _llmModelEndpoint = 'https://api.groq.com/openai/v1/models';
       }
       
       if (envTtsModelEndpoint != null && envTtsModelEndpoint.isNotEmpty) {
