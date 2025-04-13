@@ -145,7 +145,7 @@ class SessionRepository {
       if (summary != null) body['summary'] = summary;
       
       final response = await apiClient.patch(
-        '/api/v1/sessions/$sessionId',
+        '/sessions/$sessionId',
         body: body,
       );
       
@@ -205,7 +205,7 @@ class SessionRepository {
   Future<void> deleteSession(String sessionId) async {
     try {
       // Try to delete on server
-      await apiClient.delete('/api/v1/sessions/$sessionId');
+      await apiClient.delete('/sessions/$sessionId');
     } catch (e) {
       // Ignore API errors
     } finally {
@@ -242,7 +242,7 @@ class SessionRepository {
       
       // Try to save to server
       final response = await apiClient.patch(
-        '/api/v1/sessions/$id',
+        '/sessions/$id',
         body: sessionData,
       );
       
@@ -252,7 +252,7 @@ class SessionRepository {
       try {
         for (final message in messages) {
           await apiClient.post(
-            '/api/v1/sessions/$id/messages',
+            '/sessions/$id/messages',
             body: message,
           );
         }

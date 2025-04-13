@@ -303,7 +303,11 @@ class TherapyService {
       
       // Make the actual API call
       try {
-        final response = await apiClient.post('/api/v1/therapy/message', body: payload);
+        final response = await apiClient.post('/ai/response', body: payload);
+        
+        if (kDebugMode) {
+          print('Received response from end_session API: $response');
+        }
         
         if (response != null && response.containsKey('response')) {
           // Extract any insights detected in the response
@@ -454,7 +458,7 @@ class TherapyService {
       
       // Make the actual API call
       try {
-        final response = await apiClient.post('/api/v1/therapy/end_session', body: payload);
+        final response = await apiClient.post('/therapy/end_session', body: payload);
         
         if (kDebugMode) {
           print('Received response from end_session API: $response');
@@ -492,13 +496,13 @@ class TherapyService {
           // For debugging in Chrome, try a direct HTTP call to see the response
           try {
             final backendUrl = kDebugMode 
-                ? 'http://localhost:8000' 
+                ? 'http://10.0.2.2:8000' 
                 : 'https://api-fuukqlcsha-uc.a.run.app';
             
-            print('Attempting direct HTTP call to: $backendUrl/api/v1/therapy/end_session');
+            print('Attempting direct HTTP call to: $backendUrl/therapy/end_session');
             
             final response = await http.post(
-              Uri.parse('$backendUrl/api/v1/therapy/end_session'),
+              Uri.parse('$backendUrl/therapy/end_session'),
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode(payload),
             );

@@ -1,4 +1,4 @@
-# app/services/voice_service.py (Updated for Sesame AI)
+# app/services/voice_service.py (Updated for GROQ API)
 
 import logging
 from typing import Optional
@@ -14,14 +14,15 @@ logger = logging.getLogger(__name__)
 
 class VoiceService:
     def __init__(self):
-        self.api_key = settings.SESAME_API_KEY
-        self.base_url = settings.SESAME_API_URL
-        self.voice_id = "therapist-calm"  # Default voice ID
+        self.api_key = settings.GROQ_API_KEY
+        self.base_url = f"{settings.GROQ_API_BASE_URL}/audio/speech"
+        self.tts_model = settings.GROQ_TTS_MODEL_ID
+        self.voice = "Jennifer-PlayAI"  # Default voice - one of the PlayAI voices
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def generate_speech(self, text: str) -> Optional[str]:
         """
-        Generate speech from text using Sesame AI API.
+        Generate speech from text using GROQ API.
         
         Args:
             text: Text to convert to speech
@@ -37,7 +38,7 @@ class VoiceService:
             text = text[:5000]
         
         try:
-            # Generate the audio using Sesame AI API
+            # Generate the audio using GROQ API
             headers = {
                 "Accept": "audio/mpeg",
                 "Content-Type": "application/json",
@@ -45,20 +46,17 @@ class VoiceService:
             }
             
             data = {
-                "text": text,
-                "voice_id": self.voice_id,
-                "settings": {
-                    "stability": 0.5,
-                    "clarity": 0.75,
-                    "style": "therapeutic"
-                }
+                "model": self.tts_model,
+                "input": text,
+                "voice": self.voice,
+                "speed": 1.0
             }
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(self.base_url, json=data, headers=headers)
                 
                 if response.status_code != 200:
-                    logger.error(f"Error from Sesame AI API: {response.text}")
+                    logger.error(f"Error from GROQ API: {response.status_code} - {response.text}")
                     return None
                 
                 # Create a temporary file to store the audio
@@ -79,8 +77,8 @@ class VoiceService:
         Set the voice ID to use for speech generation.
         
         Args:
-            voice_id: Voice ID
+            voice_id: Voice ID for GROQ API
         """
-        self.voice_id = voice_id
+        self.voice = voice_id
 
 voice_service = VoiceService()
