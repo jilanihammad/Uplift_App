@@ -1,30 +1,97 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Environment files
+*.so
+.Python
 .env
-.env.*
-!.env.example
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.log
+
+# Dependency directories
+node_modules/
+jspm_packages/
 
 # Distribution / packaging
 dist/
 build/
 *.egg-info/
+.installed.cfg
+*.egg
 
-# Virtual environments
-venv/
-env/
-ENV/
-.venv/
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Application specific
+*.sqlite
+*.db
+models/
+*.pt
+*.bin
+*.onnx
+*.tar.gz
+*.h5
+*.joblib
+*.pickle
+*.pkl
+*.model
+*.torch
+
+# Large files
+*.csv
+*.json
+*.xlsx
+*.xls
+*.zip
+*.gz
+*.tar
+*.7z
+*.rar
+
+# Docker
+.dockerignore
+
+# Environment files
+.env.*
+!.env.example
 
 # Audio files
 static/audio/
-
-# Local database files
-*.db
-*.sqlite
 
 # Logs
 logs/
@@ -40,21 +107,7 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
 # Local development 
-.env.local
 .env.development
 .env.test
 .env.production

@@ -5,11 +5,9 @@
 *.swp
 .DS_Store
 .atom/
-.build/
 .buildlog/
 .history
 .svn/
-.swiftpm/
 migrate_working_dir/
 
 # IntelliJ related
@@ -18,15 +16,8 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# Environment files
-.env
-.env.*
-*.env
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# The .vscode folder contains launch configuration and tasks
+.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -38,9 +29,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-
-# Web related
-lib/generated_plugin_registrant.dart
+**/build/
 
 # Symbolication related
 app.*.symbols
@@ -48,15 +37,37 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android Studio places build artifacts here
 /android/app/debug
 /android/app/profile
 /android/app/release
 
-# API keys and secrets
-*api_key*
-*secret*
-*secrets*
+# Firebase config files that might contain sensitive info
+**/android/app/google-services.json
+**/ios/Runner/GoogleService-Info.plist
+**/web/firebase-config.js
 
-# Local development files
-local_settings.py
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local development keystore files
+**/*.keystore
+**/*.jks
+
+# Generated files
+lib/generated_plugin_registrant.dart
+lib/generated/
+
+# Web related
+/web/
+
+# Large media assets that shouldn't be in version control
+/assets/videos/
+**/*.mp4
+**/*.mov
+
+# Temporary files
+**/tmp/
+**/temp/
