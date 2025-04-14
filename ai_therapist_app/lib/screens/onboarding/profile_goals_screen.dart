@@ -23,10 +23,10 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
     'Reduce anxiety',
     'Improve mood',
     'Manage stress better',
-    'Build confidence',
-    'Improve relationships',
+    //'Build confidence',
+    //'Improve relationships',
     'Process trauma',
-    'Develop coping skills',
+    //'Develop coping skills',
     'Improve sleep',
     'Find purpose/meaning',
     'Work-life balance',
@@ -122,7 +122,7 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            _onboardingService.goToStep(OnboardingStep.profileReason);
+            _onboardingService.goToStep(OnboardingStep.profileName);
           },
         ),
       ),
@@ -143,10 +143,36 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
                 'Select the goals you hope to achieve through therapy. Choose all that apply.',
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 8),
+              // Show selected count
+              if (_selectedGoals.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    'Selected: ${_selectedGoals.length} ${_selectedGoals.length == 1 ? 'goal' : 'goals'}',
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
               
               // Goal selection
               ..._buildGoalOptions(),
+              
+              // Helper note for multiple selection
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
+                child: Text(
+                  'Tap multiple options to select more than one goal',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
               
               // Custom goal entry
               const SizedBox(height: 16),
@@ -210,7 +236,8 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
         child: InkWell(
           onTap: () => _toggleGoal(goal),
           borderRadius: BorderRadius.circular(12),
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(
               horizontal: 16.0,
               vertical: 12.0,
@@ -221,7 +248,7 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
                 color: isSelected
                     ? Theme.of(context).primaryColor
                     : Colors.grey.shade300,
-                width: 2,
+                width: isSelected ? 2.5 : 1.5,
               ),
               color: isSelected
                   ? Theme.of(context).primaryColor.withOpacity(0.1)
@@ -229,13 +256,17 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
             ),
             child: Row(
               children: [
-                Icon(
-                  isSelected
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
-                  color: isSelected
-                      ? Theme.of(context).primaryColor
-                      : Colors.grey,
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    isSelected
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    color: isSelected
+                        ? Theme.of(context).primaryColor
+                        : Colors.grey,
+                    key: ValueKey<bool>(isSelected),
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(

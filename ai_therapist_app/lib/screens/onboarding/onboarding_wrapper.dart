@@ -5,7 +5,6 @@ import '../../services/onboarding_service.dart';
 import '../../services/auth_service.dart';
 import 'welcome_screen.dart';
 import 'profile_name_screen.dart';
-import 'profile_reason_screen.dart';
 import 'profile_goals_screen.dart';
 import 'profile_experience_screen.dart';
 import 'preferred_style_screen.dart';
@@ -63,58 +62,44 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
         
         return Scaffold(
           body: SafeArea(
-            child: _getScreenForStep(step),
+            child: _getScreen(),
           ),
         );
       },
     );
   }
   
-  Widget _getScreenForStep(OnboardingStep step) {
-    print('OnboardingWrapper: Getting screen for step: $step');
-    
-    switch (step) {
+  void _goToNextStep() {
+    _onboardingService.goToNextStep();
+  }
+  
+  void _goToPreviousStep() {
+    // Implement previous step navigation
+    final currentIndex = _onboardingService.currentStep.index;
+    if (currentIndex > 0) {
+      final previousStep = OnboardingStep.values[currentIndex - 1];
+      _onboardingService.goToStep(previousStep);
+    }
+  }
+  
+  Widget _getScreen() {
+    switch (_onboardingService.currentStep) {
       case OnboardingStep.welcome:
-        print('OnboardingWrapper: Returning WelcomeScreen');
-        return WelcomeScreen();
+        return const WelcomeScreen();
       case OnboardingStep.profileName:
-        print('OnboardingWrapper: Returning ProfileNameScreen');
-        return ProfileNameScreen();
-      case OnboardingStep.profileReason:
-        print('OnboardingWrapper: Returning ProfileReasonScreen');
-        return ProfileReasonScreen();
+        return const ProfileNameScreen();
       case OnboardingStep.profileGoals:
-        print('OnboardingWrapper: Returning ProfileGoalsScreen');
-        return ProfileGoalsScreen();
+        return const ProfileGoalsScreen();
       case OnboardingStep.profileExperience:
-        print('OnboardingWrapper: Returning ProfileExperienceScreen');
-        return ProfileExperienceScreen();
-      case OnboardingStep.preferredStyle:
-        print('OnboardingWrapper: Returning PreferredStyleScreen');
-        return PreferredStyleScreen();
+        return const ProfileExperienceScreen();
       case OnboardingStep.moodSetup:
-        // Skip the mood setup screen for now as it's not implemented
-        print('OnboardingWrapper: Skipping MoodSetupScreen, going to CopingStrategiesScreen');
-        _onboardingService.goToStep(OnboardingStep.copingStrategies);
-        return Container(); // Temp placeholder while transitioning
-      case OnboardingStep.copingStrategies:
-        print('OnboardingWrapper: Returning CopingStrategiesScreen');
-        return CopingStrategiesScreen();
-      case OnboardingStep.cbtIntro:
-        print('OnboardingWrapper: Returning CbtIntroScreen');
-        return CbtIntroScreen();
+        print('Skipping mood setup for now...');
+        _onboardingService.goToNextStep();
+        return Container(); // This screen is effectively skipped
       case OnboardingStep.complete:
-        // This should navigate away, but have a fallback
-        print('OnboardingWrapper: Detected complete step, navigating to home');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          context.go('/home');
-        });
-        return Container(
-          color: Colors.white,
-          child: const Center(
-            child: CircularProgressIndicator(),
-          ),
-        );
+        return Container(); // This should not be visible
+      default:
+        return Container(); // Fallback
     }
   }
 } 

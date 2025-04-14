@@ -38,6 +38,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _isProcessing = false;
   bool _showMoodSelector = false;
   bool _showDurationSelector = false;
+  bool _isInitializing = true; // Add this flag to track initialization
   String _currentSessionId = '';
   Mood? _initialMood;
   TherapistStyle? _therapistStyle;
@@ -75,11 +76,17 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     // Load therapist style
     _loadTherapistStyle();
     
-    // Initialize session
-    _initSession();
-    
     // Initialize voice service
     _initializeVoiceService();
+    
+    // Initialize session after the build is complete
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initSession().then((_) {
+        setState(() {
+          _isInitializing = false;
+        });
+      });
+    });
   }
   
   @override
@@ -118,11 +125,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
           ],
         ),
-        body: _showDurationSelector
-            ? _buildDurationSelectorView()
-            : _showMoodSelector 
-              ? _buildMoodSelectorView()
-              : _buildChatView(),
+        body: _isInitializing
+            ? const Center(child: CircularProgressIndicator())
+            : _showDurationSelector
+                ? _buildDurationSelectorView()
+                : _showMoodSelector 
+                  ? _buildMoodSelectorView()
+                  : _buildChatView(),
       ),
     );
   }
@@ -411,10 +420,17 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     final userPreferences = preferencesService.preferences;
     
     // Set therapist style
-    _therapistStyle = TherapistStyle.getById(userPreferences?.therapistStyleId ?? 'cbt');
+    _therapistStyle = TherapistStyle.getById(userPreferences?.therapistStyleId ?? 'humanistic');
+    
+    // Initialize therapy service if needed
+    await _therapyService.init();
     
     // Apply therapist style to therapy service
     _therapyService.setTherapistStyle(_therapistStyle!.systemPrompt);
+    
+    if (kDebugMode) {
+      print('Loaded therapist style: ${_therapistStyle!.name}');
+    }
   }
   
   Future<void> _initSession() async {
@@ -439,7 +455,28 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     } else {
       // Start new session
       _currentSessionId = const Uuid().v4();
-      _showDurationSelector = true;
+      
+      // Create the session in the repository to ensure it exists
+      try {
+        final sessionRepository = serviceLocator<SessionRepository>();
+        final sessionTitle = 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+        
+        await sessionRepository.createSession(sessionTitle, id: _currentSessionId);
+        
+        if (kDebugMode) {
+          print('Created new session with ID: $_currentSessionId');
+        }
+      } catch (e) {
+        // Log the error but continue the session
+        if (kDebugMode) {
+          print('Error creating session in repository: $e');
+        }
+      }
+      
+      // For new sessions, we show the duration selector first, then mood selector
+      setState(() {
+        _showDurationSelector = true;
+      });
     }
   }
   
@@ -452,26 +489,31 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
   
   void _handleMoodSelection(Mood selectedMood) {
+    // First update state for UI
     setState(() {
       _initialMood = selectedMood;
       _showMoodSelector = false;
-      
-      // Add initial AI message based on mood
-      String welcomeMessage;
-      if (selectedMood == Mood.happy) {
-        welcomeMessage = "I'm glad to hear you're feeling positive today! What would you like to talk about?";
-      } else if (selectedMood == Mood.sad) {
-        welcomeMessage = "I'm sorry to hear you're feeling down. Would you like to talk about what's troubling you?";
-      } else if (selectedMood == Mood.anxious) {
-        welcomeMessage = "I notice you're feeling anxious. Let's explore what's causing these feelings and find ways to help you feel more at ease.";
-      } else if (selectedMood == Mood.angry) {
-        welcomeMessage = "I can see you're feeling frustrated or angry. It's good to acknowledge these emotions. Would you like to talk about what triggered these feelings?";
-      } else if (selectedMood == Mood.stressed) {
-        welcomeMessage = "It sounds like you're under stress. Let's talk about what's happening and explore some coping strategies that might help.";
-      } else {
-        welcomeMessage = "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
-      }
-      
+      _isProcessing = true; // Show loading indicator
+    });
+    
+    // Add initial AI message based on mood
+    String welcomeMessage;
+    if (selectedMood == Mood.happy) {
+      welcomeMessage = "I'm glad to hear you're feeling positive today! What would you like to talk about?";
+    } else if (selectedMood == Mood.sad) {
+      welcomeMessage = "I'm sorry to hear you're feeling down. Would you like to talk about what's troubling you?";
+    } else if (selectedMood == Mood.anxious) {
+      welcomeMessage = "I notice you're feeling anxious. Let's explore what's causing these feelings and find ways to help you feel more at ease.";
+    } else if (selectedMood == Mood.angry) {
+      welcomeMessage = "I can see you're feeling frustrated or angry. It's good to acknowledge these emotions. Would you like to talk about what triggered these feelings?";
+    } else if (selectedMood == Mood.stressed) {
+      welcomeMessage = "It sounds like you're under stress. Let's talk about what's happening and explore some coping strategies that might help.";
+    } else {
+      welcomeMessage = "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
+    }
+    
+    // Wait briefly to ensure UI is updated
+    Future.microtask(() {
       _addAIMessage(welcomeMessage);
     });
   }
@@ -698,30 +740,61 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
     
     try {
+      if (kDebugMode) {
+        print('Ending session with ID: $_currentSessionId');
+      }
+      
       // Log current mood
       if (_initialMood != null) {
         await _progressService.logMood(_initialMood!);
+        if (kDebugMode) {
+          print('Mood logged: $_initialMood, Notes: null');
+        }
       }
       
       // Prepare messages for the session summary
       final messageList = _messages.map((m) => m.toJson()).toList();
+      
+      if (kDebugMode) {
+        print('Ending therapy session with ${messageList.length} messages');
+      }
       
       // Get session summary from therapy service
       final sessionData = await _therapyService.endSession(messageList);
       
       final summary = sessionData['summary'] as String;
       final actionItems = sessionData['actionItems'] as List<dynamic>;
+      final insights = sessionData['insights'] as List<dynamic>? ?? [];
+      
+      if (kDebugMode) {
+        print('Session summary generated successfully');
+      }
       
       // Save the session to the repository
       try {
         final sessionRepository = serviceLocator<SessionRepository>();
+        
+        // Ensure the session exists in the repository before updating it
+        try {
+          await sessionRepository.getSession(_currentSessionId);
+        } catch (e) {
+          if (kDebugMode) {
+            print('Session not found in repository, creating it now');
+          }
+          // Create the session if it doesn't exist
+          final sessionTitle = 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+          await sessionRepository.createSession(sessionTitle, id: _currentSessionId);
+        }
+        
+        // Now save the session with its summary and messages
         await sessionRepository.saveSession(
           id: _currentSessionId,
-          messages: _messages,
+          messages: _messages.map((m) => m.toJson()).toList(),
           summary: summary,
           actionItems: actionItems.cast<String>(),
           initialMood: _initialMood,
         );
+        
         if (kDebugMode) {
           print('Session saved to repository successfully');
         }
@@ -744,6 +817,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         'sessionId': _currentSessionId,
         'summary': summary,
         'actionItems': actionItems.cast<String>(),
+        'insights': insights.cast<String>(),
         'messages': _messages,
         'initialMood': _initialMood,
       });

@@ -6,13 +6,9 @@ import 'package:ai_therapist_app/di/service_locator.dart';
 enum OnboardingStep {
   welcome,
   profileName,
-  profileReason,
   profileGoals,
   profileExperience,
-  preferredStyle,
   moodSetup,
-  copingStrategies,
-  cbtIntro,
   complete
 }
 
@@ -36,8 +32,8 @@ class OnboardingService {
   bool _hasCompleted = false;
   bool get hasCompleted => _hasCompleted;
   
-  // Last implemented step in the onboarding flow
-  static const OnboardingStep _lastImplementedStep = OnboardingStep.cbtIntro;
+  // This is the last step in the onboarding process before completion
+  static const _lastImplementedStep = OnboardingStep.moodSetup;
   
   // Initialize the service
   Future<void> init() async {
