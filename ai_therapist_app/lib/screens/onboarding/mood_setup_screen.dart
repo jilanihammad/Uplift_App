@@ -56,7 +56,7 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            _onboardingService.goToStep(OnboardingStep.preferredStyle);
+            _onboardingService.goToStep(OnboardingStep.profileExperience);
           },
         ),
       ),

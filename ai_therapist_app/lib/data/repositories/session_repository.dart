@@ -13,13 +13,14 @@ class SessionRepository {
   });
   
   // Create a new session
-  Future<Session> createSession(String title) async {
+  Future<Session> createSession(String title, {String? id}) async {
     // Try to create session on the server
     try {
       final response = await apiClient.post(
         '/api/v1/sessions',
         body: {
           'title': title,
+          'id': id, // Include the ID if provided
         },
       );
       
@@ -27,7 +28,7 @@ class SessionRepository {
       
       // Save to local database
       await appDatabase.insert('sessions', {
-        'id': session.id,
+        'id': id ?? session.id, // Use the provided ID or the one from the response
         'title': session.title,
         'summary': session.summary,
         'created_at': session.createdAt.toIso8601String(),
@@ -38,7 +39,7 @@ class SessionRepository {
       return session;
     } catch (e) {
       // Create local session if API call fails
-      final String localId = 'local_${DateTime.now().millisecondsSinceEpoch}';
+      final String localId = id ?? 'local_${DateTime.now().millisecondsSinceEpoch}';
       final now = DateTime.now().toIso8601String();
       
       await appDatabase.insert('sessions', {
@@ -227,6 +228,7 @@ class SessionRepository {
     dynamic initialMood,
   }) async {
     final now = DateTime.now();
+    // Use a default title if initialMood is null
     final String title = initialMood != null 
         ? 'Session when feeling ${initialMood.toString().split('.').last}' 
         : 'Therapy Session';
@@ -241,113 +243,125 @@ class SessionRepository {
       };
       
       // Try to save to server
-      final response = await apiClient.patch(
-        '/sessions/$id',
-        body: sessionData,
-      );
-      
-      final session = Session.fromJson(response);
-      
-      // Save message content
       try {
-        for (final message in messages) {
-          await apiClient.post(
-            '/sessions/$id/messages',
-            body: message,
+        final response = await apiClient.patch(
+          '/sessions/$id',
+          body: sessionData,
+        );
+        
+        final session = Session.fromJson(response);
+        
+        // Save message content
+        try {
+          for (final message in messages) {
+            await apiClient.post(
+              '/sessions/$id/messages',
+              body: message,
+            );
+          }
+        } catch (e) {
+          print('Error saving messages to server: $e');
+          // Continue anyway, we save to local DB below
+        }
+        
+        // Update local database
+        await appDatabase.update(
+          'sessions',
+          {
+            'title': title,
+            'summary': summary,
+            'last_modified': now.toIso8601String(),
+            'is_synced': 1,
+          },
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        
+        // Save messages to local DB
+        _saveMessagesToLocalDB(id, messages, now);
+        
+        return session;
+      } catch (e) {
+        print('Error saving session to server: $e');
+        // Create session locally if it doesn't exist yet
+        final checkSession = await appDatabase.query(
+          'sessions',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        
+        if (checkSession.isEmpty) {
+          // Session doesn't exist in local DB, create it
+          await appDatabase.insert('sessions', {
+            'id': id,
+            'title': title,
+            'summary': summary,
+            'created_at': now.toIso8601String(),
+            'last_modified': now.toIso8601String(),
+            'is_synced': 0,
+          });
+        } else {
+          // Update local database
+          await appDatabase.update(
+            'sessions',
+            {
+              'title': title,
+              'summary': summary,
+              'last_modified': now.toIso8601String(),
+              'is_synced': 0,
+            },
+            where: 'id = ?',
+            whereArgs: [id],
           );
         }
-      } catch (e) {
-        print('Error saving messages to server: $e');
-        // Continue anyway, we save to local DB below
-      }
-      
-      // Update local database
-      await appDatabase.update(
-        'sessions',
-        {
-          'title': title,
-          'summary': summary,
-          'last_modified': now.toIso8601String(),
-          'is_synced': 1,
-        },
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-      
-      // Save messages to local DB
-      for (final message in messages) {
-        try {
-          if (message is Map<String, dynamic>) {
-            await appDatabase.insert('messages', {
-              'id': message['id'] ?? 'msg_${now.millisecondsSinceEpoch}_${messages.indexOf(message)}',
-              'session_id': id,
-              'content': message['content'] ?? '',
-              'is_user': message['isUser'] == true ? 1 : 0,
-              'timestamp': message['timestamp'] ?? now.toIso8601String(),
-              'audio_url': message['audioUrl'],
-            });
-          }
-        } catch (e) {
-          print('Error saving message to local DB: $e');
+        
+        // Save messages to local DB
+        _saveMessagesToLocalDB(id, messages, now);
+        
+        // Get the updated session
+        final results = await appDatabase.query(
+          'sessions',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        
+        if (results.isEmpty) {
+          throw Exception('Session not found after creation');
         }
+        
+        final data = results.first;
+        return Session(
+          id: data['id'] as String,
+          title: data['title'] as String,
+          summary: data['summary'] as String,
+          createdAt: DateTime.parse(data['created_at'] as String),
+          lastModified: now,
+          isSynced: false,
+        );
       }
-      
-      return session;
     } catch (e) {
-      // Save locally if API call fails
-      print('Error saving session to server: $e');
-      
-      // Update local database
-      await appDatabase.update(
-        'sessions',
-        {
-          'title': title,
-          'summary': summary,
-          'last_modified': now.toIso8601String(),
-          'is_synced': 0,
-        },
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-      
-      // Save messages to local DB
-      for (final message in messages) {
-        try {
-          if (message is Map<String, dynamic>) {
-            await appDatabase.insert('messages', {
-              'id': message['id'] ?? 'msg_${now.millisecondsSinceEpoch}_${messages.indexOf(message)}',
-              'session_id': id,
-              'content': message['content'] ?? '',
-              'is_user': message['isUser'] == true ? 1 : 0,
-              'timestamp': message['timestamp'] ?? now.toIso8601String(),
-              'audio_url': message['audioUrl'],
-            });
-          }
-        } catch (e) {
-          print('Error saving message to local DB: $e');
+      print('Error in saveSession: $e');
+      throw Exception('Failed to save session: $e');
+    }
+  }
+  
+  // Helper method to save messages to local DB
+  Future<void> _saveMessagesToLocalDB(String sessionId, List<dynamic> messages, DateTime timestamp) async {
+    for (final message in messages) {
+      try {
+        if (message is Map<String, dynamic>) {
+          await appDatabase.insert('messages', {
+            'id': message['id'] ?? 'msg_${timestamp.millisecondsSinceEpoch}_${messages.indexOf(message)}',
+            'session_id': sessionId,
+            'content': message['content'] ?? '',
+            'is_user': message['isUser'] == true ? 1 : 0,
+            'timestamp': message['timestamp'] ?? timestamp.toIso8601String(),
+            'audio_url': message['audioUrl'],
+          });
         }
+      } catch (e) {
+        print('Error saving message to local DB: $e');
       }
-      
-      // Get the updated session
-      final results = await appDatabase.query(
-        'sessions',
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-      
-      if (results.isEmpty) {
-        throw Exception('Session not found');
-      }
-      
-      final data = results.first;
-      return Session(
-        id: data['id'] as String,
-        title: data['title'] as String,
-        summary: data['summary'] as String,
-        createdAt: DateTime.parse(data['created_at'] as String),
-        lastModified: now,
-        isSynced: false,
-      );
     }
   }
 }

@@ -72,7 +72,7 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       await _userProfileService.updateProfile(
         therapyExperience: _selectedExperience,
       );
-      await _onboardingService.goToNextStep();
+      await _onboardingService.goToStep(OnboardingStep.moodSetup);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving profile: $e')),
