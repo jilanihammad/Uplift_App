@@ -17,15 +17,12 @@ from app.api.api_v1.api import api_router
 from app.core.config import settings
 from app.core.rate_limiter import RateLimitMiddleware
 from app.core.security_middleware import SecurityMiddleware
+from app.core.logger import setup_logging
 import openai
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+setup_logging()
 logger = logging.getLogger(__name__)
-logger = logging.getLogger("uvicorn.error")
 
 # Configure OpenAI client to use Groq API
 openai.api_key = settings.GROQ_API_KEY

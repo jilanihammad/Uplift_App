@@ -1,0 +1,21 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Set production environment
+ENV APP_ENV=production
+ENV PORT=8080
+
+# Copy application code
+COPY . .
+
+# Create non-root user for security
+RUN adduser --disabled-password --gecos "" appuser
+USER appuser
+
+# Run with gunicorn
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app 
