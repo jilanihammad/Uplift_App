@@ -1,142 +1,85 @@
 # AI Therapist Backend
 
-A FastAPI backend for the AI Therapist application that works seamlessly in both local development and Firebase environments.
-
-## Environment Setup
-
-This project uses an environment-based configuration system that allows for seamless transitions between:
-- Local development
-- Firebase deployment
-
-### Prerequisites
-
-- Python 3.10+ installed
-- Firebase CLI installed (`npm install -g firebase-tools`)
-- Firebase account and project created
-- Google Cloud account connected to your Firebase project
+This is the backend API for the AI Therapist application, built with FastAPI and designed to be deployed to Google Cloud Run.
 
 ## Local Development
 
-### Setup
-
-1. **Create environment files**:
-   - `.env.local` for local development
-   - `.env.production` for Firebase production
-
-2. **Install dependencies**:
-   ```bash
+1. Install dependencies:
+   ```
    pip install -r requirements.txt
    ```
 
-3. **Set up your environment**:
-   ```bash
-   # Run the setup script
-   python scripts/dev.py setup
+2. Set up environment variables:
+   - Create a `.env` file based on `.env.example`
+   - Set the required API keys and configuration
+
+3. Run the development server:
+   ```
+   python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
-4. **Edit `.env.local`** and add your API keys:
+## Deployment to Google Cloud
+
+### Prerequisites
+
+1. Install the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
+
+2. Authenticate with Google Cloud:
    ```
-   APP_ENV=local
-   GROQ_API_KEY=your_actual_groq_api_key
-   OPENAI_API_KEY=your_actual_openai_api_key
-   # ... other configuration
-   ```
-
-### Running Locally
-
-Use the development script:
-
-```bash
-python scripts/dev.py local
-```
-
-The server will start at `http://localhost:8000` with auto-reload enabled.
-
-## Firebase Deployment
-
-### First-Time Setup
-
-1. **Login to Firebase**:
-   ```bash
-   firebase login
+   gcloud auth login
    ```
 
-2. **Initialize Firebase** (if not already done):
-   ```bash
-   firebase init
+3. Create necessary secrets in Google Cloud Secret Manager:
    ```
-   - Select "Functions" and "Hosting"
-   - Choose your project
-   - Select Python as the language
-
-3. **Set environment variables in Firebase**:
-   ```bash
-   # Set production environment variables
-   firebase functions:config:set groq.api_key="your_groq_api_key" openai.api_key="your_openai_api_key"
-   ```
-
-### Deploying to Firebase
-
-Deploy using the development script:
-
-```bash
-python scripts/dev.py deploy
-```
-
-This will:
-1. Set the environment to production
-2. Deploy the functions to Firebase
-
-### Deployment to Different Environments
-
-To deploy to staging or development environments:
-
-```bash
-python scripts/dev.py deploy --env staging
-```
-
-## Project Structure
-
-- `app/` - Main application code
-  - `core/` - Core components
-    - `environment.py` - Environment configuration
-    - `config.py` - Application settings
-  - `main.py` - FastAPI application
-- `scripts/` - Utility scripts
-  - `dev.py` - Development helper script
-- `main.py` - Firebase Functions entry point
-- `.env.local` - Local environment variables
-- `.env.production` - Production environment variables template
-
-## Environment Variables
-
-Create these files with the appropriate variables:
-
-- `.env.local` - For local development
-- `.env.development` - For Firebase development environment
-- `.env.staging` - For Firebase staging environment
-- `.env.production` - For Firebase production environment
-
-## Testing
-
-Run tests with:
-
-```bash
-pytest
-```
-
-## Troubleshooting
-
-### API Key Issues
-
-If experiencing authentication errors with Groq or OpenAI:
-
-1. Verify the API keys in your environment files
-2. For Firebase, check that the environment variables are properly set:
-   ```bash
-   firebase functions:config:get
-   ```
+   gcloud secrets create POSTGRES_PASSWORD --replication-policy="automatic"
+   echo -n "your-password" | gcloud secrets versions add POSTGRES_PASSWORD --data-file=-
    
-### CORS Issues
+   # Repeat for all other secrets:
+   # SECRET_KEY, GROQ_API_KEY, OPENAI_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, ENCRYPTION_KEY
+   ```
 
-If experiencing CORS issues, update the `BACKEND_CORS_ORIGINS` setting in your environment file to include the frontend domain.
+4. Set up a Cloud SQL PostgreSQL instance:
+   ```
+   gcloud sql instances create jilaniuplift \
+     --database-version=POSTGRES_13 \
+     --tier=db-f1-micro \
+     --region=us-central1 \
+     --root-password=[YOUR_ROOT_PASSWORD]
+   
+   gcloud sql databases create ai_therapist --instance=jilaniuplift
+   ```
+
+### Deployment
+
+1. Update the configuration variables in `deploy_to_cloud_run.sh`:
+   - `PROJECT_ID`: Your Google Cloud project ID
+   - `SERVICE_NAME`: Name for your Cloud Run service
+   - `REGION`: Google Cloud region
+   - `DB_INSTANCE_NAME`: Name of your Cloud SQL instance
+   - `GCS_BUCKET_NAME`: Name for the Cloud Storage bucket to store audio files
+
+2. Run the deployment script:
+   ```
+   bash deploy_to_cloud_run.sh
+   ```
+
+3. After successful deployment, update the frontend configuration:
+   - Update the backend URL in `ai_therapist_app/lib/config/api.dart` to point to your new Cloud Run endpoint
+
+## API Documentation
+
+Once deployed, visit: `https://[YOUR-SERVICE-URL]/docs` to see the API documentation.
+
+## Session Endpoints
+
+- `POST /sessions`: Create a new therapy session
+- `GET /sessions/{session_id}`: Get details for a specific session
+- `PATCH /sessions/{session_id}`: Update session details
+- `DELETE /sessions/{session_id}`: Delete a session
+
+## Model Endpoints
+
+- `POST /ai/response`: Generate AI therapist response
+- `POST /therapy/end_session`: End a session and generate summary
+- `POST /voice/synthesize`: Generate speech from text
+- `POST /voice/transcribe`: Transcribe audio to text

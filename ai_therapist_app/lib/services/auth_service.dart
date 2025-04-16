@@ -46,16 +46,35 @@ class AuthService {
   // Make sure onboarding status is in sync with signup status
   Future<void> syncWithOnboardingService() async {
     await _ensureInitialized();
-    final onboardingService = serviceLocator<OnboardingService>();
     
-    final hasCompleted = _prefs.getBool(HAS_COMPLETED_SIGNUP_KEY) ?? false;
-    
-    print("AuthService: Syncing with OnboardingService - hasCompletedSignup = $hasCompleted");
-    
-    if (hasCompleted) {
-      print("AuthService: User has completed signup, ensuring onboarding is marked complete");
-      // If user has completed signup, make sure onboarding is also marked as complete
-      await onboardingService.completeOnboarding();
+    try {
+      if (!serviceLocator.isRegistered<OnboardingService>()) {
+        if (kDebugMode) {
+          print("AuthService: OnboardingService not registered yet in syncWithOnboardingService");
+        }
+        return; // Skip if OnboardingService is not registered yet
+      }
+      
+      final onboardingService = serviceLocator<OnboardingService>();
+      
+      final hasCompleted = _prefs.getBool(HAS_COMPLETED_SIGNUP_KEY) ?? false;
+      
+      if (kDebugMode) {
+        print("AuthService: Syncing with OnboardingService - hasCompletedSignup = $hasCompleted");
+      }
+      
+      if (hasCompleted) {
+        if (kDebugMode) {
+          print("AuthService: User has completed signup, ensuring onboarding is marked complete");
+        }
+        // If user has completed signup, make sure onboarding is also marked as complete
+        await onboardingService.completeOnboarding();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print("AuthService: Error syncing with OnboardingService: $e");
+      }
+      // Continue without syncing
     }
   }
   

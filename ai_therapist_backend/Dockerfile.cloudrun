@@ -2,20 +2,28 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set production environment
 ENV APP_ENV=production
-ENV PORT=8080
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt gunicorn uvicorn
 
 # Copy application code
 COPY . .
 
-# Create non-root user for security
-RUN adduser --disabled-password --gecos "" appuser
-USER appuser
+# Create directory for audio files
+RUN mkdir -p static/audio && chmod 777 static/audio
 
-# Run with gunicorn
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app 
+# Port is provided by Cloud Run at runtime via the PORT env var
+ENV PORT 8080
+
+# Use a simple entrypoint script that handles Cloud Run PORT variable
+CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 app.main:app 

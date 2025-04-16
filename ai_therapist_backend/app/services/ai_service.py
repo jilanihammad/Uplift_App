@@ -1,5 +1,5 @@
 # app/services/ai_service.py
-# app/services/ai_service.py (Updated for DeepSeek)
+# app/services/ai_service.py (Updated for Groq API)
 
 import logging
 import requests
@@ -19,20 +19,18 @@ logger = logging.getLogger(__name__)
 
 # Initialize the OpenAI client with Groq's API endpoint and API key
 client = openai.OpenAI(
-    base_url="https://api.groq.com/openai/v1",
+    base_url=settings.GROQ_API_BASE_URL,
     api_key=settings.GROQ_API_KEY
 )
 
 class AIService:
     def __init__(self):
-        self.api_key = settings.DEEPSEEK_API_KEY
-        self.api_url = settings.DEEPSEEK_API_URL
-
-        # Initialize LangChain components with updated classes
+        # Initialize LangChain components with Groq API
         self.llm = ChatOpenAI(
             temperature=0.7, 
-            model_name="meta-llama/llama-4-scout-17b-16e-instruct",
-            openai_api_key=settings.OPENAI_API_KEY
+            model_name=settings.GROQ_LLM_MODEL_ID,
+            openai_api_key=settings.GROQ_API_KEY,
+            openai_api_base=settings.GROQ_API_BASE_URL
         )
         self.memory = ConversationBufferMemory(return_messages=True)
         self.conversation_chain = self.memory
@@ -44,7 +42,7 @@ class AIService:
         user_info: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Generate an AI response to the user's message using LangChain.
+        Generate an AI response to the user's message using Groq API directly.
         
         Args:
             message: The user's message
@@ -55,14 +53,37 @@ class AIService:
             The AI response text
         """
         try:
-            # Directly use memory to manage conversation
-            self.memory.chat_memory.add_user_message(message)
-            response = self.llm.generate([message])
-            self.memory.chat_memory.add_ai_message(response.generations[0].text)
-            return response.generations[0].text
+            # Convert context to message format
+            messages = []
+            
+            # Add system prompt
+            system_prompt = self._build_system_prompt(user_info)
+            messages.append({"role": "system", "content": system_prompt})
+            
+            # Add conversation history
+            for msg in context:
+                role = "user" if msg.get("isUser", False) else "assistant"
+                messages.append({"role": role, "content": msg.get("content", "")})
+            
+            # Add current message
+            messages.append({"role": "user", "content": message})
+            
+            # Make API call with httpx
+            response = client.chat.completions.create(
+                model=settings.GROQ_LLM_MODEL_ID,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1000
+            )
+            
+            # Extract response text
+            response_text = response.choices[0].message.content
+            return response_text
+            
         except Exception as e:
             logger.error(f"Error generating AI response: {str(e)}")
-            raise
+            # Fall back to a template-based response rather than crashing
+            return "I'm listening and I'm here to support you. What strategies have you tried so far?"
     
     def _build_system_prompt(self, user_info: Optional[Dict[str, Any]] = None) -> str:
         """

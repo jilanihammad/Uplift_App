@@ -17,7 +17,7 @@ class SessionRepository {
     // Try to create session on the server
     try {
       final response = await apiClient.post(
-        '/api/v1/sessions',
+        '/sessions',
         body: {
           'title': title,
           'id': id, // Include the ID if provided
@@ -66,7 +66,7 @@ class SessionRepository {
   Future<List<Session>> getSessions() async {
     try {
       // Try to get sessions from the server
-      final response = await apiClient.get('/api/v1/sessions');
+      final response = await apiClient.get('/sessions');
       final List<dynamic> sessionsJson = response;
       
       final sessions = sessionsJson
@@ -105,7 +105,7 @@ class SessionRepository {
   Future<Session> getSession(String sessionId) async {
     try {
       // Try to get session from the server
-      final response = await apiClient.get('/api/v1/sessions/$sessionId');
+      final response = await apiClient.get('/sessions/$sessionId');
       return Session.fromJson(response);
     } catch (e) {
       // Get session from local database if API call fails

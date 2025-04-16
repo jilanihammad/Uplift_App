@@ -46,11 +46,23 @@ class Settings(BaseSettings):
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
+        if not v:  # Handle empty string case
+            return ["*"]
+        if isinstance(v, str):
+            if v == "*":  # Special case for allow all
+                return ["*"]
+            try:
+                if v.startswith("["):
+                    import json
+                    return json.loads(v)
+                else:
+                    return [i.strip() for i in v.split(",")]
+            except Exception as e:
+                print(f"Error parsing CORS origins: {e}, defaulting to allow all")
+                return ["*"]
+        elif isinstance(v, list):
             return v
-        raise ValueError(v)
+        return ["*"]  # Default to allow all in case of any errors
 
     # Database settings based on environment
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
