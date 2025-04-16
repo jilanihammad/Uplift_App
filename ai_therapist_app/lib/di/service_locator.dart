@@ -25,6 +25,7 @@ import '../services/memory_service.dart';
 import '../services/therapy_graph_service.dart';
 import '../services/config_service.dart';
 import '../services/firebase_service.dart';
+import '../services/backend_service.dart';
 
 import '../utils/connectivity_checker.dart';
 
@@ -43,6 +44,9 @@ Future<void> setupServiceLocator() async {
   
   // Register Firebase service
   serviceLocator.registerSingleton<FirebaseService>(FirebaseService());
+  
+  // Register BackendService
+  serviceLocator.registerSingleton<BackendService>(BackendService());
   
   // Get configuration from ConfigService
   final baseUrl = configService.llmApiEndpoint;

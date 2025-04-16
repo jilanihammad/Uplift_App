@@ -1,12 +1,39 @@
 // lib/config/api.dart
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'dart:async';
 
 class ApiConfig {
   // Use a getter for baseUrl that checks the environment
   static String get baseUrl {
     return kDebugMode
-        ? 'http://10.0.2.2:8000/api/v1'
-        : 'https://api-fuukqlcsha-uc.a.run.app/api/v1';
+        ? 'http://10.0.2.2:8001/api/v1'
+        : 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/api/v1';
+  }
+  
+  // Add a getter for the base URL without the /api/v1 path
+  static String get baseUrlWithoutPath {
+    return kDebugMode
+        ? 'http://10.0.2.2:8001'
+        : 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+  }
+  
+  // Check if the backend is available
+  static Future<bool> isBackendAvailable() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/llm/status'),
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 5));
+      
+      // Log the response for debugging
+      debugPrint('Backend availability check: ${response.statusCode} - ${response.statusCode >= 200 && response.statusCode < 300}');
+      
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint('Backend availability check failed: $e');
+      return false;
+    }
   }
   
   // Authentication endpoints

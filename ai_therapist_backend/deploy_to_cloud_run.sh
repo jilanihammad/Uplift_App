@@ -5,11 +5,11 @@
 set -e
 
 # Configuration variables - update these
-PROJECT_ID="your-gcp-project-id"
+PROJECT_ID="upliftapp-cd86e"
 SERVICE_NAME="ai-therapist-backend"
 REGION="us-central1"
-SECRET_NAMES=("POSTGRES_PASSWORD" "SECRET_KEY" "GROQ_API_KEY" "OPENAI_API_KEY")
-DB_INSTANCE_NAME="your-postgres-instance"
+SECRET_NAMES=("POSTGRES_PASSWORD" "SECRET_KEY" "GROQ_API_KEY" "OPENAI_API_KEY" "STRIPE_SECRET_KEY" "STRIPE_WEBHOOK_SECRET" "ENCRYPTION_KEY")
+DB_INSTANCE_NAME="jilaniuplift"
 DB_NAME="ai_therapist"
 GCS_BUCKET_NAME="ai-therapist-audio-files"
 
@@ -38,11 +38,16 @@ fi
 echo -e "${YELLOW}Setting GCP project to ${PROJECT_ID}...${NC}"
 gcloud config set project ${PROJECT_ID}
 
+# Skip validation and proceed with deployment
+echo -e "${YELLOW}Proceeding with deployment to project ${PROJECT_ID}...${NC}"
+
 # Create GCS bucket if it doesn't exist
 echo -e "${YELLOW}Ensuring GCS bucket exists...${NC}"
 if ! gcloud storage buckets describe gs://${GCS_BUCKET_NAME} &> /dev/null; then
     echo -e "${YELLOW}Creating GCS bucket ${GCS_BUCKET_NAME}...${NC}"
     gcloud storage buckets create gs://${GCS_BUCKET_NAME} --location=${REGION}
+else
+    echo -e "${GREEN}GCS bucket ${GCS_BUCKET_NAME} already exists.${NC}"
 fi
 
 # Check for required secrets
@@ -53,6 +58,8 @@ for SECRET_NAME in "${SECRET_NAMES[@]}"; do
         echo -e "gcloud secrets create ${SECRET_NAME} --replication-policy=\"automatic\""
         echo -e "echo -n \"your-secret-value\" | gcloud secrets versions add ${SECRET_NAME} --data-file=-"
         exit 1
+    else
+        echo -e "${GREEN}Secret ${SECRET_NAME} exists.${NC}"
     fi
 done
 
@@ -72,8 +79,9 @@ gcloud run deploy ${SERVICE_NAME} \
     --memory=1Gi \
     --min-instances=0 \
     --max-instances=10 \
-    --set-env-vars="APP_ENV=production,GCS_BUCKET_NAME=${GCS_BUCKET_NAME},POSTGRES_DB=${DB_NAME}" \
-    --update-secrets="POSTGRES_PASSWORD=POSTGRES_PASSWORD:latest,SECRET_KEY=SECRET_KEY:latest,GROQ_API_KEY=GROQ_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest" \
+    --port=8080 \
+    --set-env-vars="APP_ENV=production,GCS_BUCKET_NAME=${GCS_BUCKET_NAME},POSTGRES_DB=${DB_NAME},POSTGRES_USER=postgres,POSTGRES_SERVER=${DB_INSTANCE_NAME},BACKEND_CORS_ORIGINS=*" \
+    --update-secrets="POSTGRES_PASSWORD=POSTGRES_PASSWORD:latest,SECRET_KEY=SECRET_KEY:latest,GROQ_API_KEY=GROQ_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,ENCRYPTION_KEY=ENCRYPTION_KEY:latest" \
     --set-cloudsql-instances="${PROJECT_ID}:${REGION}:${DB_INSTANCE_NAME}"
 
 # Get the URL
@@ -85,7 +93,7 @@ echo -e "${YELLOW}Don't forget to update your frontend application with this new
 
 # Optional health check
 echo -e "${YELLOW}Performing health check...${NC}"
-curl -s ${SERVICE_URL}/api/v1/health | grep -q "status" && echo -e "${GREEN}Health check passed!${NC}" || echo -e "${RED}Health check failed!${NC}"
+curl -s ${SERVICE_URL} | grep -q "message" && echo -e "${GREEN}Health check passed!${NC}" || echo -e "${RED}Health check failed!${NC}"
 
 echo -e "${YELLOW}Notes:${NC}"
 echo -e "1. Make sure your Cloud SQL instance '${DB_INSTANCE_NAME}' is properly set up"

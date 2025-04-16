@@ -1,0 +1,15 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install basic dependencies
+RUN pip install --no-cache-dir fastapi uvicorn gunicorn
+
+# Copy just our test app
+COPY simple_test_app.py .
+
+# Environment variable for the port
+ENV PORT 8080
+
+# Run our app
+CMD exec uvicorn simple_test_app:app --host 0.0.0.0 --port $PORT 

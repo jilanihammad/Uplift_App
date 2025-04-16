@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 import '../di/service_locator.dart';
 import 'voice_service.dart';
 import 'memory_service.dart';
@@ -10,6 +12,7 @@ import '../services/therapy_graph_service.dart';
 import '../services/therapy_conversation_graph.dart';
 import '../models/conversation_memory.dart';
 import '../data/datasources/remote/api_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum TherapyMood {
   veryHappy,
@@ -161,6 +164,39 @@ class TherapyService {
     ]
   };
   
+  // Cache for API responses to avoid redundant processing
+  final Map<String, String> _responseCache = {};
+  
+  // Process parameters in background for API response
+  static Future<Map<String, dynamic>> _prepareApiPayload(Map<String, dynamic> params) async {
+    final userMessage = params['userMessage'] as String;
+    final memoryContext = params['memoryContext'] as String;
+    final systemPrompt = params['systemPrompt'] as String;
+    final graphResult = params['graphResult'] as Map<String, dynamic>;
+    final therapeuticApproach = params['therapeuticApproach'] as String;
+    
+    // Prepare system prompt with context
+    String effectiveSystemPrompt = systemPrompt;
+    if (graphResult.containsKey('prompt') && graphResult['prompt'] != null) {
+      effectiveSystemPrompt = '$systemPrompt\n\n${graphResult['prompt']}';
+    }
+    
+    // Add memory context to the system prompt
+    if (memoryContext.isNotEmpty) {
+      effectiveSystemPrompt = '$effectiveSystemPrompt\n\nRELEVANT CONTEXT FROM PREVIOUS SESSIONS:\n$memoryContext';
+    }
+    
+    // Return the prepared payload
+    return {
+      'message': userMessage,
+      'system_prompt': effectiveSystemPrompt,
+      'conversation_state': graphResult['state'] ?? 'exploration',
+      'emotion': graphResult['analysis']?['emotion'] ?? 'neutral',
+      'topics': graphResult['analysis']?['topics'] ?? [],
+      'approach': therapeuticApproach,
+    };
+  }
+  
   // Method to initialize the therapy service
   Future<void> init() async {
     // Initialize memory service
@@ -220,7 +256,7 @@ class TherapyService {
     bool voiceServiceAvailable = true;
     
     try {
-      // Check if voice service is initialized
+      // Check if voice service is initialized (do this on main thread since it's quick)
       try {
         await _voiceService.initialize();
       } catch (e) {
@@ -230,30 +266,52 @@ class TherapyService {
         voiceServiceAvailable = false;
       }
       
-      // Get text response
+      // Get text response (already optimized with compute)
       final textResponse = await processUserMessage(userMessage);
       
-      // Only attempt audio generation if voice service is available
+      // Process audio generation in parallel to UI updates
+      String? audioPath;
       if (voiceServiceAvailable) {
         try {
-          // Generate audio for the response
-          final audioPath = await _voiceService.generateAudio(textResponse, isAiSpeaking: true);
+          // Get token for authentication in the background isolate
+          final prefs = await SharedPreferences.getInstance();
+          final authToken = prefs.getString('auth_token');
           
-          return {
-            'text': textResponse,
-            'audioPath': audioPath,
-          };
+          // Use compute to move audio generation to a separate isolate
+          audioPath = await compute(_generateAudioInBackground, {
+            'text': textResponse, 
+            'voiceServiceUrl': _voiceService.apiUrl,
+            'authToken': authToken
+          });
+          
+          // If background generation failed, try direct generation as fallback
+          if (audioPath == null) {
+            if (kDebugMode) {
+              print('Background audio generation failed, trying direct generation');
+            }
+            audioPath = await _voiceService.generateAudio(textResponse, isAiSpeaking: true);
+          }
         } catch (e) {
           if (kDebugMode) {
-            print('Warning: Could not generate audio: $e');
+            print('Warning: Could not generate audio in background: $e');
+            print('Trying direct audio generation as fallback...');
+          }
+          
+          // Try with direct generation as a fallback
+          try {
+            audioPath = await _voiceService.generateAudio(textResponse, isAiSpeaking: true);
+          } catch (fallbackError) {
+            if (kDebugMode) {
+              print('Fallback audio generation also failed: $fallbackError');
+            }
           }
         }
       }
       
-      // Return text-only response if audio generation failed or voice service is unavailable
+      // Return response with audio path if available
       return {
         'text': textResponse,
-        'audioPath': null,
+        'audioPath': audioPath,
       };
     } catch (e) {
       if (kDebugMode) {
@@ -267,79 +325,119 @@ class TherapyService {
     }
   }
   
+  // Generate audio in a background isolate
+  static Future<String?> _generateAudioInBackground(Map<String, dynamic> params) async {
+    final text = params['text'] as String;
+    final apiUrl = params['voiceServiceUrl'] as String;
+    final authToken = params['authToken'] as String?;
+    
+    try {
+      print('Background audio generation started for text: "${text.substring(0, min(20, text.length))}..."');
+      print('Using API URL: $apiUrl');
+      print('Authentication token available: ${authToken != null ? 'Yes' : 'No'}');
+      
+      // Simple audio generation using HTTP directly since we can't use the VoiceService in isolate
+      final uri = Uri.parse('$apiUrl/voice/synthesize');
+      final headers = {
+        'Content-Type': 'application/json',
+        if (authToken != null) 'Authorization': 'Bearer $authToken',
+      };
+      
+      print('Sending request to: $uri');
+      final stopwatch = Stopwatch()..start();
+      final response = await http.post(
+        uri,
+        headers: headers,
+        body: jsonEncode({'text': text, 'voice': 'Jennifer-PlayAI'})
+      );
+      stopwatch.stop();
+      
+      print('Response received in ${stopwatch.elapsedMilliseconds}ms with status code: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('Successfully generated audio, URL: ${data['audio_url']}');
+        return data['audio_url'];
+      } else {
+        print('Audio generation failed with status code: ${response.statusCode}');
+        print('Response body: ${response.body}');
+        print('Response headers: ${response.headers}');
+      }
+    } catch (e) {
+      print('Error generating audio in background: $e');
+      if (e is SocketException) {
+        print('Socket exception details: ${e.message}, address: ${e.address}, port: ${e.port}');
+      } else if (e is http.ClientException) {
+        print('HTTP client exception: ${e.message}');
+      }
+    }
+    
+    print('Background audio generation returned null - falling back to direct generation');
+    return null;
+  }
+  
   // Process a user message and generate a therapist response
   Future<String> processUserMessage(String userMessage) async {
     try {
-      // Step 1: Retrieve memory context for the conversation
-      final memoryContext = await _memoryService.getMemoryContext();
-      
-      // Step 2: Process user input through the conversation graph
-      Map<String, dynamic> graphResult = await _conversationGraph.processUserInput(userMessage);
-      
-      // Step 3: Update the system prompt with graph-derived prompt if available
-      String effectiveSystemPrompt = _systemPrompt;
-      if (graphResult.containsKey('prompt') && graphResult['prompt'] != null) {
-        // Combine the base system prompt with the graph-specific prompt
-        effectiveSystemPrompt = '$_systemPrompt\n\n${graphResult['prompt']}';
+      // Check cache first for quick responses to repeated messages
+      if (_responseCache.containsKey(userMessage)) {
+        if (kDebugMode) {
+          print('Using cached response for message');
+        }
+        return _responseCache[userMessage]!;
       }
       
-      // Step 4: Add memory context to the system prompt
-      if (memoryContext.isNotEmpty) {
-        effectiveSystemPrompt = '$effectiveSystemPrompt\n\nRELEVANT CONTEXT FROM PREVIOUS SESSIONS:\n$memoryContext';
-      }
+      // Step 1: Retrieve memory context in background
+      final memoryContextFuture = compute(
+        _getMemoryContextBackground, 
+        _memoryService
+      );
       
-      // Step 5: Use the API client to make a real API call to an LLM service
-      final apiClient = serviceLocator<ApiClient>();
+      // Step 2: Process user input through the conversation graph in background
+      final graphResultFuture = compute(
+        _processUserInputBackground, 
+        {'graph': _conversationGraph, 'userMessage': userMessage}
+      );
       
-      // Prepare the payload for the API with enhanced context
-      final payload = {
-        'message': userMessage,
-        'system_prompt': effectiveSystemPrompt,
-        'conversation_state': graphResult['state'] ?? 'exploration',
-        'emotion': graphResult['analysis']?['emotion'] ?? 'neutral',
-        'topics': graphResult['analysis']?['topics'] ?? [],
-        'approach': _therapeuticApproach.toString().split('.').last,
-      };
+      // Wait for both background tasks to complete
+      final results = await Future.wait([memoryContextFuture, graphResultFuture]);
+      final memoryContext = results[0] as String;
+      final graphResult = results[1] as Map<String, dynamic>;
+      
+      // Step 3-5: Prepare API payload in background
+      final payload = await compute(_prepareApiPayload, {
+        'userMessage': userMessage,
+        'memoryContext': memoryContext,
+        'systemPrompt': _systemPrompt,
+        'graphResult': graphResult,
+        'therapeuticApproach': _therapeuticApproach.toString().split('.').last,
+      });
       
       // Make the actual API call
       try {
+        final apiClient = serviceLocator<ApiClient>();
         final response = await apiClient.post('/ai/response', body: payload);
         
         if (kDebugMode) {
-          print('Received response from end_session API: $response');
+          print('Received response from API');
         }
         
         if (response != null && response.containsKey('response')) {
-          // Extract any insights detected in the response
-          if (response.containsKey('insights') && response['insights'] != null) {
-            final insights = response['insights'];
-            if (insights is List && insights.isNotEmpty) {
-              for (final insight in insights) {
-                await _memoryService.addInsight(insight, 'ai');
-              }
-            }
-          }
-          
-          // Save interaction to memory
-          await _memoryService.addInteraction(
+          // Process insights and save to memory in background
+          _processInsightsAndSaveMemory(
             userMessage, 
-            response['response'], 
-            {
-              'state': graphResult['state'] ?? 'exploration',
-              'emotion': graphResult['analysis']?['emotion'] ?? 'neutral',
-              'topics': graphResult['analysis']?['topics'] ?? [],
-            }
+            response, 
+            graphResult
           );
           
-          // Extract any detected emotional state
-          if (graphResult.containsKey('analysis') && 
-              graphResult['analysis'].containsKey('emotion') && 
-              graphResult['analysis'].containsKey('emotionIntensity')) {
-            await _memoryService.updateEmotionalState(
-              graphResult['analysis']['emotion'],
-              graphResult['analysis']['emotionIntensity'],
-              userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage
-            );
+          // Cache the response for future use
+          _responseCache[userMessage] = response['response'];
+          
+          // Limit cache size to avoid memory issues
+          if (_responseCache.length > 100) {
+            // Remove oldest entries when cache gets too large
+            final oldestKey = _responseCache.keys.first;
+            _responseCache.remove(oldestKey);
           }
           
           return response['response'];
@@ -349,78 +447,150 @@ class TherapyService {
           print('API Error: $e');
           print('Falling back to template-based response');
         }
-        // Fall back to template-based response if the API call fails
       }
       
-      // Fall back to the template-based approach as before
-      final lowerMessage = userMessage.toLowerCase();
-      
-      // Generate a seed based on the message content for more varied responses
-      int seed = 0;
-      for (int i = 0; i < userMessage.length; i++) {
-        seed += userMessage.codeUnitAt(i);
-      }
-      
-      // Find matching keywords with better detection
-      List<String> matchedKeywords = [];
-      for (final keyword in _responseTemplates.keys) {
-        if (lowerMessage.contains(keyword)) {
-          matchedKeywords.add(keyword);
-        }
-      }
-      
-      String response = '';
-      
-      // If we found matches, combine elements from multiple templates
-      if (matchedKeywords.isNotEmpty) {
-        // Get a response from each matched category
-        List<String> possibleResponses = [];
-        for (final keyword in matchedKeywords) {
-          final responses = _responseTemplates[keyword]!;
-          final randomIndex = (seed + keyword.length) % responses.length;
-          possibleResponses.add(responses[randomIndex]);
-        }
-        
-        // If multiple matches, pick based on seed, otherwise use the single match
-        final responseIndex = seed % possibleResponses.length;
-        response = possibleResponses[responseIndex];
-      } else {
-        // For more dynamic responses when no specific keyword is matched
-        List<String> defaultResponses = [
-          "Thank you for sharing that with me. Can you tell me more about how that makes you feel?",
-          "I appreciate you opening up. How long have you been experiencing this?",
-          "I'm listening and I'm here to support you. What strategies have you tried so far?",
-          "That sounds challenging. Could you elaborate on what aspects are most difficult for you?",
-          "I understand. How have these feelings been affecting your daily life and relationships?",
-          "I'm curious to know more about when you first noticed this pattern.",
-          "That's an important insight. How would you like things to be different?",
-          "Thank you for trusting me with this. What would be most helpful for you right now?",
-          "I'm wondering how this connects to other areas of your life?",
-          "Let's explore this further. What thoughts come up for you when you experience this?"
-        ];
-        
-        // Use the seed to select a response, making it seem more dynamic
-        final randomIndex = seed % defaultResponses.length;
-        response = defaultResponses[randomIndex];
-      }
-      
-      // Save the interaction to memory even for template responses
-      await _memoryService.addInteraction(
-        userMessage,
-        response,
-        {
-          'state': graphResult['state'] ?? 'exploration',
-          'fromTemplate': true,
-        }
+      // Generate fallback response in background
+      final fallbackResponse = await compute(
+        _generateFallbackResponse, 
+        {'message': userMessage, 'templates': _responseTemplates}
       );
       
-      return response;
+      // Cache fallback response too
+      _responseCache[userMessage] = fallbackResponse;
+      
+      return fallbackResponse;
     } catch (e) {
       if (kDebugMode) {
         print('Error processing user message: $e');
       }
+      
       return "I'm sorry, I'm having trouble processing that right now. Could you try expressing that differently?";
     }
+  }
+  
+  // Background method to get memory context
+  static Future<String> _getMemoryContextBackground(MemoryService memoryService) async {
+    try {
+      return await memoryService.getMemoryContext();
+    } catch (e) {
+      print('Error getting memory context in background: $e');
+      return '';
+    }
+  }
+  
+  // Background method to process user input through graph
+  static Future<Map<String, dynamic>> _processUserInputBackground(Map<String, dynamic> params) async {
+    try {
+      final graph = params['graph'] as TherapyConversationGraph;
+      final userMessage = params['userMessage'] as String;
+      return await graph.processUserInput(userMessage);
+    } catch (e) {
+      print('Error processing user input in background: $e');
+      return {};
+    }
+  }
+  
+  // Process insights and save to memory (don't await this to avoid blocking)
+  Future<void> _processInsightsAndSaveMemory(
+    String userMessage, 
+    Map<String, dynamic> response, 
+    Map<String, dynamic> graphResult
+  ) async {
+    try {
+      // Extract any insights detected in the response
+      if (response.containsKey('insights') && response['insights'] != null) {
+        final insights = response['insights'];
+        if (insights is List && insights.isNotEmpty) {
+          for (final insight in insights) {
+            await _memoryService.addInsight(insight, 'ai');
+          }
+        }
+      }
+      
+      // Save interaction to memory
+      await _memoryService.addInteraction(
+        userMessage, 
+        response['response'], 
+        {
+          'state': graphResult['state'] ?? 'exploration',
+          'emotion': graphResult['analysis']?['emotion'] ?? 'neutral',
+          'topics': graphResult['analysis']?['topics'] ?? [],
+        }
+      );
+      
+      // Extract any detected emotional state
+      if (graphResult.containsKey('analysis') && 
+          graphResult['analysis'].containsKey('emotion') && 
+          graphResult['analysis'].containsKey('emotionIntensity')) {
+        await _memoryService.updateEmotionalState(
+          graphResult['analysis']['emotion'],
+          graphResult['analysis']['emotionIntensity'],
+          userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error processing insights and saving memory: $e');
+      }
+    }
+  }
+  
+  // Generate fallback response in background
+  static Future<String> _generateFallbackResponse(Map<String, dynamic> params) async {
+    final userMessage = params['message'] as String;
+    final responseTemplates = params['templates'] as Map<String, List<String>>;
+    
+    final lowerMessage = userMessage.toLowerCase();
+    
+    // Generate a seed based on the message content for more varied responses
+    int seed = 0;
+    for (int i = 0; i < userMessage.length; i++) {
+      seed += userMessage.codeUnitAt(i);
+    }
+    
+    // Find matching keywords with better detection
+    List<String> matchedKeywords = [];
+    for (final keyword in responseTemplates.keys) {
+      if (lowerMessage.contains(keyword)) {
+        matchedKeywords.add(keyword);
+      }
+    }
+    
+    String response = '';
+    
+    // If we found matches, combine elements from multiple templates
+    if (matchedKeywords.isNotEmpty) {
+      // Get a response from each matched category
+      List<String> possibleResponses = [];
+      for (final keyword in matchedKeywords) {
+        final responses = responseTemplates[keyword]!;
+        final randomIndex = (seed + keyword.length) % responses.length;
+        possibleResponses.add(responses[randomIndex]);
+      }
+      
+      // If multiple matches, pick based on seed, otherwise use the single match
+      final responseIndex = seed % possibleResponses.length;
+      response = possibleResponses[responseIndex];
+    } else {
+      // For more dynamic responses when no specific keyword is matched
+      List<String> defaultResponses = [
+        "Thank you for sharing that with me. Can you tell me more about how that makes you feel?",
+        "I appreciate you opening up. How long have you been experiencing this?",
+        "I'm listening and I'm here to support you. What strategies have you tried so far?",
+        "That sounds challenging. Could you elaborate on what aspects are most difficult for you?",
+        "I understand. How have these feelings been affecting your daily life and relationships?",
+        "I'm curious to know more about when you first noticed this pattern.",
+        "That's an important insight. How would you like things to be different?",
+        "Thank you for trusting me with this. What would be most helpful for you right now?",
+        "I'm wondering how this connects to other areas of your life?",
+        "Let's explore this further. What thoughts come up for you when you experience this?"
+      ];
+      
+      final randomIndex = seed % defaultResponses.length;
+      response = defaultResponses[randomIndex];
+    }
+    
+    return response;
   }
   
   // End a therapy session and generate a summary

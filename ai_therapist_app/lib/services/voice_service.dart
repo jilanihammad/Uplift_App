@@ -54,6 +54,9 @@ class VoiceService {
   // Backend server URL
   late String _backendUrl;
   
+  // Getter for accessing backend URL from other services
+  String get apiUrl => _backendUrl;
+  
   // Flag to indicate if we're running in a web environment
   final bool _isWeb = kIsWeb;
   
