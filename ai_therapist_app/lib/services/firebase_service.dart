@@ -56,6 +56,14 @@ class FirebaseService {
       }
       
       try {
+        if (kDebugMode) {
+          print('FirebaseService: Skipping Firestore initialization to avoid errors');
+        }
+        
+        // Set Firestore as unavailable - don't even try to initialize it
+        _firestoreAvailable = false;
+        
+        /*
         _firestore = FirebaseFirestore.instance;
         
         // Set longer timeouts for Firestore operations
@@ -73,12 +81,39 @@ class FirebaseService {
         while (!firestoreConnected && retryCount < maxRetries) {
           try {
             if (kDebugMode) print('FirebaseService: Firestore connection attempt ${retryCount + 1}');
-            await _firestore?.collection('_test').doc('test').get()
-                .timeout(Duration(seconds: 5 + (retryCount * 3))); // Increase timeout with each retry
             
-            firestoreConnected = true;
-            _firestoreAvailable = true;
-            if (kDebugMode) print('FirebaseService: Firestore initialized and working');
+            // First check if we're dealing with a Datastore Mode project
+            try {
+              final testRef = _firestore?.collection('_test');
+              
+              // Try to use a transaction which will fail quickly for Datastore Mode
+              await _firestore?.runTransaction((transaction) async {
+                // This will fail immediately with FAILED_PRECONDITION if Datastore Mode
+                return null;
+              }).timeout(Duration(seconds: 5 + (retryCount * 3)));
+              
+              // If we get here, it's not Datastore Mode
+              firestoreConnected = true;
+              _firestoreAvailable = true;
+              if (kDebugMode) print('FirebaseService: Firestore initialized and working');
+            } catch (e) {
+              // Check if it's a Datastore Mode error
+              final errorString = e.toString();
+              if (errorString.contains('Datastore Mode') || 
+                  errorString.contains('FAILED_PRECONDITION')) {
+                if (kDebugMode) {
+                  print('FirebaseService: Project is using Firestore in Datastore Mode.');
+                  print('This app requires Firestore Native Mode. Please check Firebase Console settings.');
+                }
+                // Don't retry for Datastore Mode errors
+                retryCount = maxRetries;
+                _firestoreAvailable = false;
+                break;
+              } else {
+                // Normal connection error, try again
+                throw e;
+              }
+            }
           } catch (firestoreError) {
             retryCount++;
             if (kDebugMode) {
@@ -96,6 +131,7 @@ class FirebaseService {
             }
           }
         }
+        */
       } catch (e) {
         if (kDebugMode) print('FirebaseService: Firestore initialization failed: $e');
         _firestoreAvailable = false;

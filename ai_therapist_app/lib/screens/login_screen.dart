@@ -7,6 +7,7 @@ import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/config/routes.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -63,10 +64,10 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() {
           _isLoading = state is AuthLoading;
         });
-        
+
         if (state is AuthAuthenticated) {
           // Navigate to home screen when authenticated
-          context.go('/home');
+          context.go(AppRouter.home);
         } else if (state is AuthError) {
           // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
@@ -173,7 +174,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: _isLoading ? null : () => context.go('/phone_login'),
+                  onPressed: _isLoading
+                      ? null
+                      : () => context.go(AppRouter.phoneLogin),
                   icon: const Icon(
                     Icons.phone_android,
                     size: 24,
@@ -183,7 +186,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextButton(
-                  onPressed: _isLoading ? null : () => context.go('/register'),
+                  onPressed:
+                      _isLoading ? null : () => context.go(AppRouter.register),
                   child: const Text('Don\'t have an account? Sign up'),
                 ),
               ],

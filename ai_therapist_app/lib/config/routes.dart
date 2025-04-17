@@ -55,53 +55,63 @@ class AppRouter {
     initialLocation: splash,
     debugLogDiagnostics: true,
     redirect: (BuildContext context, GoRouterState state) async {
+      print("ROUTER DEBUG: Redirect called with location: ${state.matchedLocation}");
+      
       // Access services needed for routing decisions
-      final authService = serviceLocator<AuthService>();
-      
-      // Check if user is logged in and onboarding status - note async/await
-      final bool isLoggedIn = await authService.isLoggedIn;
-      final bool hasCompletedSignup = await authService.hasCompletedSignup;
-      
-      print("Router redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, path: ${state.matchedLocation}");
-      
-      final bool isGoingToAuth = state.matchedLocation == login || 
-                                state.matchedLocation == register ||
-                                state.matchedLocation == phoneLogin;
-      final bool isGoingToOnboarding = state.matchedLocation == onboarding;
-      final bool isGoingToSplash = state.matchedLocation == splash;
-      
-      // If at splash, don't redirect yet
-      if (isGoingToSplash) {
-        print("Router: At splash screen, no redirection needed");
-        return null;
+      try {
+        final authService = serviceLocator<AuthService>();
+        
+        // Check if user is logged in and onboarding status - note async/await
+        final bool isLoggedIn = await authService.isLoggedIn;
+        final bool hasCompletedSignup = await authService.hasCompletedSignup;
+        
+        print("ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, path: ${state.matchedLocation}");
+        
+        final bool isGoingToAuth = state.matchedLocation == login || 
+                                  state.matchedLocation == register ||
+                                  state.matchedLocation == phoneLogin;
+        final bool isGoingToOnboarding = state.matchedLocation == onboarding;
+        final bool isGoingToSplash = state.matchedLocation == splash;
+        
+        // If at splash, don't redirect yet
+        if (isGoingToSplash) {
+          print("ROUTER DEBUG: At splash screen, no redirection needed");
+          return null;
+        }
+        
+        // If not logged in and not going to auth screens, redirect to login
+        if (!isLoggedIn && !isGoingToAuth && !isGoingToOnboarding) {
+          print("ROUTER DEBUG: User not logged in, redirecting to login");
+          return login;
+        }
+        
+        // If logged in but hasn't completed signup process, redirect to onboarding
+        // ONLY if not already going to onboarding
+        if (isLoggedIn && !hasCompletedSignup && !isGoingToOnboarding) {
+          print("ROUTER DEBUG: User is logged in but hasn't completed signup, redirecting to onboarding");
+          return onboarding;
+        }
+        
+        // If logged in and has completed signup but trying to go to onboarding, redirect to home
+        if (isLoggedIn && hasCompletedSignup && isGoingToOnboarding) {
+          print("ROUTER DEBUG: User already completed signup, redirecting from onboarding to home");
+          return home;
+        }
+        
+        // If logged in and going to auth screens, redirect to home or onboarding
+        if (isLoggedIn && isGoingToAuth) {
+          final redirectTo = hasCompletedSignup ? home : onboarding;
+          print("ROUTER DEBUG: User is logged in and going to auth screen, redirecting to $redirectTo");
+          return redirectTo;
+        }
+        
+        // Log the final routing decision
+        print("ROUTER DEBUG: No redirection needed for path: ${state.matchedLocation}");
+        
+      } catch (e) {
+        print("ROUTER DEBUG ERROR: Exception during redirection: $e");
+        // On error, allow navigation to continue without redirection
       }
-      
-      // If not logged in and not going to auth screens, redirect to login
-      if (!isLoggedIn && !isGoingToAuth && !isGoingToOnboarding) {
-        print("Router: User not logged in, redirecting to login");
-        return login;
-      }
-      
-      // If logged in but hasn't completed signup process, redirect to onboarding
-      // ONLY if not already going to onboarding
-      if (isLoggedIn && !hasCompletedSignup && !isGoingToOnboarding) {
-        print("Router: User is logged in but hasn't completed signup, redirecting to onboarding");
-        return onboarding;
-      }
-      
-      // If logged in and has completed signup but trying to go to onboarding, redirect to home
-      if (isLoggedIn && hasCompletedSignup && isGoingToOnboarding) {
-        print("Router: User already completed signup, redirecting from onboarding to home");
-        return home;
-      }
-      
-      // If logged in and going to auth screens, redirect to home or onboarding
-      if (isLoggedIn && isGoingToAuth) {
-        return hasCompletedSignup ? home : onboarding;
-      }
-      
-      // Log the final routing decision
-      print("Router: No redirection needed for path: ${state.matchedLocation}");
       
       // No redirection needed
       return null;

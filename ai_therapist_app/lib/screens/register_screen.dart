@@ -7,6 +7,7 @@ import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/config/routes.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -36,7 +37,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordController.dispose();
     super.dispose();
   }
-  
+
   // Google sign in method
   Future<void> _signInWithGoogle() async {
     setState(() {
@@ -65,10 +66,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         setState(() {
           _isLoading = state is AuthLoading;
         });
-        
+
         if (state is AuthAuthenticated) {
           // Navigate to home screen when registration succeeds
-          context.go('/home');
+          context.go(AppRouter.home);
         } else if (state is AuthError) {
           // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
@@ -191,7 +192,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: _isLoading ? null : () => context.go('/phone_login'),
+                  onPressed: _isLoading
+                      ? null
+                      : () => context.go(AppRouter.phoneLogin),
                   icon: const Icon(
                     Icons.phone_android,
                     size: 24,
@@ -201,7 +204,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextButton(
-                  onPressed: _isLoading ? null : () => context.go('/login'),
+                  onPressed:
+                      _isLoading ? null : () => context.go(AppRouter.login),
                   child: const Text('Already have an account? Sign in'),
                 ),
               ],

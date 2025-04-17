@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/auth_service.dart';
+import '../../config/routes.dart';
 import 'welcome_screen.dart';
 import 'profile_name_screen.dart';
 import 'profile_goals_screen.dart';
@@ -23,43 +24,44 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
   final _onboardingService = GetIt.instance<OnboardingService>();
   final _authService = GetIt.instance<AuthService>();
   late ValueNotifier<OnboardingStep> _stepNotifier;
-  
+
   @override
   void initState() {
     super.initState();
     _stepNotifier = _onboardingService.stepChanged;
-    
+
     // Listen for step changes to detect completion
     _stepNotifier.addListener(_onStepChanged);
   }
-  
+
   @override
   void dispose() {
     _stepNotifier.removeListener(_onStepChanged);
     super.dispose();
   }
-  
+
   void _onStepChanged() {
     if (_stepNotifier.value == OnboardingStep.complete) {
       // Mark the user as having completed signup when onboarding is done
       print('OnboardingWrapper: Marking user as having completed signup');
       _authService.completeSignup();
-      
+
       // Navigate to home screen
       if (mounted) {
         print('OnboardingWrapper: Detected complete step, navigating to home');
-        context.go('/home');
+        context.go(AppRouter.home);
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<OnboardingStep>(
       valueListenable: _onboardingService.stepChanged,
       builder: (context, step, child) {
-        print('OnboardingWrapper: ValueListenableBuilder triggered with step: $step');
-        
+        print(
+            'OnboardingWrapper: ValueListenableBuilder triggered with step: $step');
+
         return Scaffold(
           body: SafeArea(
             child: _getScreen(),
@@ -68,11 +70,11 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
       },
     );
   }
-  
+
   void _goToNextStep() {
     _onboardingService.goToNextStep();
   }
-  
+
   void _goToPreviousStep() {
     // Implement previous step navigation
     final currentIndex = _onboardingService.currentStep.index;
@@ -81,7 +83,7 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
       _onboardingService.goToStep(previousStep);
     }
   }
-  
+
   Widget _getScreen() {
     switch (_onboardingService.currentStep) {
       case OnboardingStep.welcome:
@@ -102,4 +104,4 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
         return Container(); // Fallback
     }
   }
-} 
+}
