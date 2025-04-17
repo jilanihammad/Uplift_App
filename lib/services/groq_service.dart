@@ -11,7 +11,6 @@ class GroqService {
   late ApiClient _apiClient;
   
   // API connection details
-  late String _apiKey;
   late String _llmModelId;
   late String _ttsModelId;
   late String _transcriptionModelId;
@@ -26,12 +25,11 @@ class GroqService {
   Future<void> init() async {
     try {
       final config = serviceLocator<ConfigService>();
-      _apiKey = config.groqApiKey;
       _llmModelId = config.llmModelId;
       _ttsModelId = config.ttsModelId;
       _transcriptionModelId = config.transcriptionModelId;
       
-      // Initialize API client with the Firebase backend URL
+      // Initialize API client with the backend URL
       _apiClient = ApiClient(baseUrl: config.llmApiEndpoint);
       
       // Initialize LangChain memory
@@ -39,7 +37,6 @@ class GroqService {
       
       if (kDebugMode) {
         print('GroqService: Initializing with endpoint: ${config.llmApiEndpoint}');
-        print('GroqService: Using API key: ${_apiKey.substring(0, 5)}...');
         print('GroqService: Using LLM model: $_llmModelId');
         print('GroqService: Using TTS model: $_ttsModelId');
         print('GroqService: Using Transcription model: $_transcriptionModelId');
@@ -48,10 +45,8 @@ class GroqService {
       
       // Check if backend LLM service is available
       try {
-        // Use your Firebase backend's status endpoint
-        final response = await _apiClient.get('/api/v1/llm/status', customHeaders: {
-          'Authorization': 'Bearer $_apiKey',
-        });
+        // Use your backend's status endpoint
+        final response = await _apiClient.get('/api/v1/llm/status');
         
         if (kDebugMode) {
           print('GroqService: Status response: $response');
@@ -141,8 +136,6 @@ class GroqService {
         'model': model ?? _llmModelId,
         'temperature': temperature,
         'max_tokens': maxTokens,
-      }, customHeaders: {
-        'Authorization': 'Bearer $_apiKey',
       });
       
       if (response != null && response.containsKey('response')) {
@@ -178,8 +171,6 @@ class GroqService {
         'text': text,
         'voice': voice,
         'model': _ttsModelId,
-      }, customHeaders: {
-        'Authorization': 'Bearer $_apiKey',
       });
       
       if (response != null && response.containsKey('audio_url')) {
@@ -208,8 +199,6 @@ class GroqService {
       final response = await _apiClient.post('/voice/transcribe', body: {
         'audio_url': audioUrl,
         'model': _transcriptionModelId,
-      }, customHeaders: {
-        'Authorization': 'Bearer $_apiKey',
       });
       
       if (response != null && response.containsKey('transcription')) {

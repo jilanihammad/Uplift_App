@@ -27,8 +27,14 @@ class EnvironmentSettings:
         
     def _get_api_base_url(self):
         """Get the base URL for the API based on the current environment"""
-        if self.is_local:
-            return "http://localhost:8000"
+        # Check if we're running in Google Cloud
+        if os.getenv("GOOGLE_CLOUD", "0") == "1":
+            # When in Cloud Run, we should use port 8080
+            port = os.getenv("PORT", "8080")
+            return f"http://localhost:{port}"
+        elif self.is_local:
+            port = os.getenv("PORT", "8001")
+            return f"http://localhost:{port}"
         elif self.is_development:
             return "https://api-dev-fuukqlcsha-uc.a.run.app"
         elif self.is_staging:
