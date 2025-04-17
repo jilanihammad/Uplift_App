@@ -18,7 +18,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: '***REMOVED***',
-    appId: '1:385290373302:android:792fc2455cfd6f50d07e17',
+    appId: '1:385290373302:android:01e06b856f7be445d07e17',
     messagingSenderId: '385290373302',
     projectId: 'upliftapp-cd86e',
     storageBucket: 'upliftapp-cd86e.firebasestorage.app',

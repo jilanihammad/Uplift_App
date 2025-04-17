@@ -2,27 +2,32 @@
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
+import 'dart:io' show Platform;
 
 class ApiConfig {
   // Use a getter for baseUrl that checks the environment
   static String get baseUrl {
-    return kDebugMode
-        ? 'http://10.0.2.2:8001/api/v1'
-        : 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/api/v1';
+    // Always use the cloud backend URL
+    return 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/api/v1';
   }
   
   // Add a getter for the base URL without the /api/v1 path
   static String get baseUrlWithoutPath {
-    return kDebugMode
-        ? 'http://10.0.2.2:8001'
-        : 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+    // Always use the cloud backend URL
+    return 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+  }
+  
+  // Firebase project URL
+  static String get firebaseProjectUrl {
+    return 'https://upliftapp-cd86e.web.app';
   }
   
   // Check if the backend is available
   static Future<bool> isBackendAvailable() async {
     try {
+      final uri = Uri.parse('$baseUrl/llm/status');
       final response = await http.get(
-        Uri.parse('$baseUrl/llm/status'),
+        uri,
         headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 5));
       
@@ -33,6 +38,27 @@ class ApiConfig {
     } catch (e) {
       debugPrint('Backend availability check failed: $e');
       return false;
+    }
+  }
+  
+  // Execute a function with fallback if backend is unavailable
+  static Future<T> executeWithFallback<T>({
+    required Future<T> Function() apiCall,
+    required T Function() fallback,
+  }) async {
+    try {
+      // First check if backend is available
+      final isAvailable = await isBackendAvailable();
+      if (!isAvailable) {
+        debugPrint('Backend unavailable, using fallback');
+        return fallback();
+      }
+      
+      // Try to execute the API call
+      return await apiCall();
+    } catch (e) {
+      debugPrint('API call failed, using fallback: $e');
+      return fallback();
     }
   }
   

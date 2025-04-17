@@ -78,9 +78,19 @@ class ApiClient {
   // GET request
   Future<dynamic> get(String endpoint, {Map<String, dynamic>? queryParams}) async {
     final token = await _getToken();
-    final uri = Uri.parse('$baseUrl$endpoint').replace(
-      queryParameters: queryParams,
-    );
+    
+    // Handle endpoints that should not have the /api/v1 prefix
+    final bool needsApiPrefix = !endpoint.startsWith('/voice/') && 
+                                !endpoint.startsWith('/ai/') && 
+                                !endpoint.startsWith('/therapy/') &&
+                                !endpoint.startsWith('/sessions');
+    
+    final String urlString = needsApiPrefix 
+        ? '$baseUrl$endpoint' 
+        : baseUrl.replaceAll('/api/v1', '') + endpoint;
+        
+    final Uri uri = Uri.parse(urlString);
+    final Uri uriWithParams = queryParams != null ? uri.replace(queryParameters: queryParams) : uri;
     
     final headers = {
       'Content-Type': 'application/json',
@@ -88,8 +98,12 @@ class ApiClient {
     };
     
     try {
+      if (kDebugMode) {
+        print('Making GET request to: $uriWithParams');
+      }
+      
       final response = await _retryRequest(() => httpClient.get(
-        uri,
+        uriWithParams,
         headers: headers,
       ));
       
@@ -118,7 +132,16 @@ class ApiClient {
   // POST request
   Future<dynamic> post(String endpoint, {dynamic body}) async {
     final token = await _getToken();
-    final uri = Uri.parse('$baseUrl$endpoint');
+    
+    // Handle endpoints that should not have the /api/v1 prefix
+    final bool needsApiPrefix = !endpoint.startsWith('/voice/') && 
+                                !endpoint.startsWith('/ai/') && 
+                                !endpoint.startsWith('/therapy/') &&
+                                !endpoint.startsWith('/sessions');
+    
+    final uri = Uri.parse(needsApiPrefix 
+        ? '$baseUrl$endpoint' 
+        : baseUrl.replaceAll('/api/v1', '') + endpoint);
     
     final headers = {
       'Content-Type': 'application/json',
@@ -126,6 +149,10 @@ class ApiClient {
     };
     
     try {
+      if (kDebugMode) {
+        print('Making POST request to: $uri');
+      }
+      
       final response = await _retryRequest(() => httpClient.post(
         uri,
         headers: headers,
@@ -196,7 +223,16 @@ class ApiClient {
   // PATCH request
   Future<dynamic> patch(String endpoint, {dynamic body}) async {
     final token = await _getToken();
-    final uri = Uri.parse('$baseUrl$endpoint');
+    
+    // Handle endpoints that should not have the /api/v1 prefix
+    final bool needsApiPrefix = !endpoint.startsWith('/voice/') && 
+                                !endpoint.startsWith('/ai/') && 
+                                !endpoint.startsWith('/therapy/') &&
+                                !endpoint.startsWith('/sessions');
+    
+    final uri = Uri.parse(needsApiPrefix 
+        ? '$baseUrl$endpoint' 
+        : baseUrl.replaceAll('/api/v1', '') + endpoint);
     
     final headers = {
       'Content-Type': 'application/json',
@@ -204,6 +240,10 @@ class ApiClient {
     };
     
     try {
+      if (kDebugMode) {
+        print('Making PATCH request to: $uri');
+      }
+      
       final response = await _retryRequest(() => httpClient.patch(
         uri,
         headers: headers,
@@ -270,27 +310,42 @@ class ApiClient {
     }
   }
   
-  // Handle API response
+  // Handle response and process JSON
   dynamic _handleResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      if (response.body.isEmpty) return null;
+      if (response.body.isEmpty) {
+        return {};
+      }
       return jsonDecode(response.body);
-    } else {
+    } else if (response.statusCode == 401) {
       throw ApiException(
         statusCode: response.statusCode,
-        message: _getErrorMessage(response),
+        message: 'Authentication required. Please log in again.',
+      );
+    } else {
+      String errorMessage = 'Request failed with status: ${response.statusCode}';
+      
+      try {
+        final Map<String, dynamic> body = jsonDecode(response.body);
+        if (body.containsKey('message')) {
+          errorMessage = body['message'];
+        } else if (body.containsKey('error')) {
+          errorMessage = body['error'];
+        }
+      } catch (e) {
+        // If we can't parse the error, just use the status code
+      }
+      
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: errorMessage,
       );
     }
   }
   
-  // Extract error message from response
-  String _getErrorMessage(http.Response response) {
-    try {
-      final body = jsonDecode(response.body);
-      return body['detail'] ?? body['message'] ?? 'Unknown error occurred';
-    } catch (e) {
-      return response.reasonPhrase ?? 'Unknown error occurred';
-    }
+  // Close the client when done
+  void close() {
+    httpClient.close();
   }
 }
 
@@ -298,10 +353,13 @@ class ApiException implements Exception {
   final int statusCode;
   final String message;
   
-  ApiException({required this.statusCode, required this.message});
+  ApiException({
+    required this.statusCode,
+    required this.message,
+  });
   
   @override
-  String toString() => 'ApiException: [$statusCode] $message';
+  String toString() => 'ApiException: $statusCode - $message';
 }
 
 class TimeoutException extends IOException {

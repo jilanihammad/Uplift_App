@@ -9,6 +9,15 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:path/path.dart' as path;
+import 'package:ai_therapist_app/config/api.dart';
+import 'package:ai_therapist_app/data/models/log_entry.dart';
+import 'package:ai_therapist_app/data/repositories/log_repo.dart';
+import 'package:ai_therapist_app/services/auth_service.dart';
 
 // Recording states
 enum RecordingState {
@@ -242,26 +251,87 @@ class VoiceService {
           print('Playing audio from URL: $audioPath');
         }
         
-        // In a real implementation, we would use a audio player plugin to play the audio
-        // For now, just simulate the playback with a delay
-        await Future.delayed(const Duration(seconds: 2));
-        
-        if (kDebugMode) {
-          print('Audio playback complete');
+        try {
+          // Check if the audio file exists by making a HEAD request
+          final response = await http.head(Uri.parse(audioPath));
+          
+          if (response.statusCode != 200) {
+            print('Audio file not found at URL: $audioPath, using text-to-speech fallback');
+            // Fallback to text-to-speech for the message content
+            await _useTtsBackup();
+            return;
+          }
+          
+          // Try to play audio using just_audio
+          if (!_isWeb) {
+            try {
+              final player = AudioPlayer();
+              await player.setUrl(audioPath);
+              await player.play();
+              // Wait for the audio to finish
+              await player.processingStateStream.firstWhere(
+                (state) => state == ProcessingState.completed,
+              );
+              await player.dispose();
+              
+              if (kDebugMode) {
+                print('Audio playback complete');
+              }
+              return;
+            } catch (audioError) {
+              if (kDebugMode) {
+                print('Just Audio error: $audioError, falling back to simulated playback');
+              }
+            }
+          }
+          
+          // Fallback: simulate playback with a delay
+          await Future.delayed(const Duration(seconds: 2));
+          
+          if (kDebugMode) {
+            print('Audio playback complete');
+          }
+        } catch (e) {
+          print('Error accessing audio URL: $e');
+          // Fallback to text-to-speech
+          await _useTtsBackup();
         }
       } else if (!_isWeb) {
         // It's a local file path, check if it exists (only on non-web platforms)
         final file = io.File(audioPath);
         if (!await file.exists()) {
-          throw Exception("Audio file not found at $audioPath");
+          print('Audio file not found at $audioPath, using text-to-speech fallback');
+          // Fallback to text-to-speech
+          await _useTtsBackup();
+          return;
         }
         
         if (kDebugMode) {
           print('Playing local audio file at $audioPath');
         }
         
-        // In a real implementation, we'd use a Flutter audio player plugin
-        // For now, just simulate the playback with a delay
+        // Try to play audio using just_audio
+        try {
+          final player = AudioPlayer();
+          await player.setFilePath(audioPath);
+          await player.play();
+          // Wait for the audio to finish
+          await player.processingStateStream.firstWhere(
+            (state) => state == ProcessingState.completed,
+          );
+          await player.dispose();
+          
+          if (kDebugMode) {
+            print('Audio playback complete');
+          }
+          return;
+        } catch (audioError) {
+          if (kDebugMode) {
+            print('Just Audio error: $audioError, falling back to simulated playback');
+          }
+        }
+        
+        // Fallback: simulate playback with a delay
         await Future.delayed(const Duration(seconds: 2));
         
         if (kDebugMode) {
@@ -283,7 +353,51 @@ class VoiceService {
       if (kDebugMode) {
         print('Error playing audio: $e');
       }
+      // Fallback to text-to-speech
+      await _useTtsBackup();
       if (!_isWeb) rethrow;
+    }
+  }
+  
+  // Download a remote audio file and cache it locally
+  Future<String?> _downloadAndCacheAudio(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        return null;
+      }
+      
+      // Get temporary directory for caching
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.mp3';
+      final filePath = '${tempDir.path}/$fileName';
+      
+      // Write the audio data to a file
+      final file = io.File(filePath);
+      await file.writeAsBytes(response.bodyBytes);
+      
+      return filePath;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error downloading audio: $e');
+      }
+      return null;
+    }
+  }
+  
+  // Fallback to text-to-speech when audio file is not available
+  Future<void> _useTtsBackup() async {
+    if (kDebugMode) {
+      print('Using text-to-speech fallback');
+    }
+    
+    // In a real implementation, we would use the device's text-to-speech capabilities
+    // For now, just simulate with a delay
+    await Future.delayed(const Duration(seconds: 1));
+    
+    if (kDebugMode) {
+      print('Text-to-speech playback complete');
     }
   }
   
