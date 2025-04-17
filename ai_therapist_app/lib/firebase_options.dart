@@ -4,23 +4,58 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
+///
+/// This is configured for Android only as the app is targeting the Google Play Store.
+/// For other platforms, mock options are provided for development/testing.
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    // Only include Android platform since we're targeting Google Play Store
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return android;
+    if (kIsWeb) {
+      throw UnsupportedError(
+        'DefaultFirebaseOptions have not been configured for platform Web',
+      );
     }
     
-    throw UnsupportedError(
-      'DefaultFirebaseOptions have not been configured for platform ${defaultTargetPlatform.name}',
-    );
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      case TargetPlatform.iOS:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for platform iOS',
+        );
+      case TargetPlatform.macOS:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for platform macOS',
+        );
+      case TargetPlatform.windows:
+        // Return mock options for Windows development
+        return _getDevFirebaseOptions();
+      case TargetPlatform.linux:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for platform Linux',
+        );
+      case TargetPlatform.fuchsia:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for platform Fuchsia',
+        );
+    }
   }
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: '***REMOVED***',
-    appId: '1:385290373302:android:01e06b856f7be445d07e17',
-    messagingSenderId: '385290373302',
+    appId: '1:123456789012:android:abcdef0123456789',
+    messagingSenderId: '123456789012',
     projectId: 'upliftapp-cd86e',
-    storageBucket: 'upliftapp-cd86e.firebasestorage.app',
+    storageBucket: 'upliftapp-cd86e.appspot.com',
   );
+  
+  // Provide mock options for development on non-mobile platforms
+  static FirebaseOptions _getDevFirebaseOptions() {
+    return const FirebaseOptions(
+      apiKey: 'dev-api-key',
+      appId: 'dev-app-id',
+      messagingSenderId: 'dev-sender-id',
+      projectId: 'upliftapp-cd86e',
+      storageBucket: 'upliftapp-cd86e.appspot.com',
+    );
+  }
 } 

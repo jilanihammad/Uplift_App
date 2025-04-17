@@ -1,18 +1,20 @@
 # PowerShell script to build a release APK for the AI Therapist App
 
-# Set the output directory and file name
-$outputDir = "C:\Releases"
-$version = "1.0.0"
-$apkName = "ai_therapist_app_v$version.apk"
-$buildPath = "build\app\outputs\flutter-apk\app-release.apk"
+Write-Host "Building Uplift Therapist App Release Version..." -ForegroundColor Green
 
-# Create the output directory if it doesn't exist
+# Define variables
+$outputDir = "C:\Releases"
+$apkName = "uplift_therapist_v1.0.0.apk"
+$backendApi = "https://ai-therapist-backend-fuukqlcsha-uc.a.run.app"
+$firebaseProject = "upliftapp-cd86e"
+
+# Create output directory if it doesn't exist
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir | Out-Null
-    Write-Host "Created output directory: $outputDir" -ForegroundColor Green
+    Write-Host "Created output directory: $outputDir" -ForegroundColor Yellow
 }
 
-# Clean previous builds
+# Clean previous build artifacts
 Write-Host "Cleaning previous builds..." -ForegroundColor Yellow
 flutter clean
 
@@ -20,21 +22,33 @@ flutter clean
 Write-Host "Getting dependencies..." -ForegroundColor Yellow
 flutter pub get
 
-# Build the release APK
-Write-Host "Building release APK..." -ForegroundColor Cyan
-flutter build apk --release
+# Build release APK
+Write-Host "Building release APK..." -ForegroundColor Green
+flutter build apk --release --dart-define=API_BASE_URL=$backendApi --dart-define=FIREBASE_PROJECT=$firebaseProject
 
 # Check if build was successful
-if (Test-Path $buildPath) {
-    # Copy the APK to the output directory
-    Copy-Item $buildPath "$outputDir\$apkName" -Force
+if ($LASTEXITCODE -eq 0) {
+    # Copy APK to output directory
+    $sourcePath = "build\app\outputs\flutter-apk\app-release.apk"
+    $destPath = Join-Path -Path $outputDir -ChildPath $apkName
     
-    Write-Host "`nBuild successful!" -ForegroundColor Green
-    Write-Host "APK saved to: $outputDir\$apkName" -ForegroundColor Green
-    Write-Host "`nIMPORTANT: Before installing on your device:" -ForegroundColor Magenta
-    Write-Host "1. Make sure your backend is running using the start_backend.ps1 script" -ForegroundColor White
-    Write-Host "2. Verify you've updated the IP address in api.dart with your computer's local network IP" -ForegroundColor White
-    Write-Host "3. Ensure your phone is connected to the same WiFi network as your computer" -ForegroundColor White
+    Copy-Item -Path $sourcePath -Destination $destPath -Force
+    
+    Write-Host "Release build successful!" -ForegroundColor Green
+    Write-Host "APK saved to: $destPath" -ForegroundColor Cyan
+    Write-Host "Backend API: $backendApi" -ForegroundColor Cyan
+    Write-Host "Firebase Project: $firebaseProject" -ForegroundColor Cyan
+    
+    # Optional: Calculate APK size
+    $apkSize = (Get-Item $destPath).Length / 1MB
+    Write-Host "APK Size: $($apkSize.ToString("#.##")) MB" -ForegroundColor Cyan
 } else {
-    Write-Host "`nBuild failed! APK not found at: $buildPath" -ForegroundColor Red
-} 
+    Write-Host "Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+}
+
+Write-Host "Build process completed." -ForegroundColor Green
+
+Write-Host "`nIMPORTANT: Before installing on your device:" -ForegroundColor Magenta
+Write-Host "1. Make sure your backend is running using the start_backend.ps1 script" -ForegroundColor White
+Write-Host "2. Verify you've updated the IP address in api.dart with your computer's local network IP" -ForegroundColor White
+Write-Host "3. Ensure your phone is connected to the same WiFi network as your computer" -ForegroundColor White 

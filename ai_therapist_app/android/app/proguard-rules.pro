@@ -5,6 +5,7 @@
 -keep class io.flutter.view.** { *; }
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
+-keep class io.flutter.plugin.editing.** { *; }
 
 # Firebase
 -keep class com.google.firebase.** { *; }
@@ -33,14 +34,40 @@
 # Firebase Storage
 -keep class com.google.firebase.storage.** { *; }
 
-# Gson specific classes
--keep class sun.misc.Unsafe { *; }
--keep class com.google.gson.stream.** { *; }
+# Gson
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn sun.misc.**
+-keep class com.google.gson.** { *; }
+-keep class * implements com.google.gson.TypeAdapter
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+-keepclassmembers,allowobfuscation class * {
+  @com.google.gson.annotations.SerializedName <fields>;
+}
 
 # Android
 -keep class android.support.v4.app.** { *; }
 -keep interface android.support.v4.app.** { *; }
 
 # Keep your model classes
+-keep class com.maya.uplift.models.** { *; }
 -keep class com.maya.uplift.data.models.** { *; }
--keep class com.maya.uplift.domain.entities.** { *; } 
+-keep class com.maya.uplift.domain.entities.** { *; }
+
+# Just Audio
+-keep class com.ryanheise.** { *; }
+
+# Auth
+-keep class com.google.android.gms.auth.** { *; }
+
+# HTTP
+-dontwarn org.codehaus.mojo.animal_sniffer.*
+
+# Play Core
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
+
+# Fix for R8 full mode issues
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,RuntimeVisibleTypeAnnotations,AnnotationDefault 

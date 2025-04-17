@@ -9,23 +9,32 @@ class ConnectivityChecker {
   // Check for internet connection
   Future<bool> hasConnection() async {
     if (kIsWeb) {
-      // On web, assume connection is available
+      // On web, assume connection is always available
       return true;
     }
     
-    // Handle the case where we get a list of connection results or a single result
-    final result = await _connectivity.checkConnectivity();
-    
-    if (result is List<ConnectivityResult>) {
-      // If we get a list, check if any connection is available
-      return result.any((r) => r != ConnectivityResult.none);
-    } else if (result is ConnectivityResult) {
-      // If we get a single result, check if it's not none
-      return result != ConnectivityResult.none;
+    try {
+      // Get the connectivity result
+      final dynamic result = await _connectivity.checkConnectivity();
+      
+      // Handle different return types
+      if (result is Iterable) {
+        // For platforms returning a list of connectivity results
+        for (var r in result) {
+          if (r != ConnectivityResult.none) {
+            return true;
+          }
+        }
+        return false;
+      } else {
+        // For platforms returning a single result (including web stub)
+        return result != ConnectivityResult.none;
+      }
+    } catch (e) {
+      print('Error checking connectivity: $e');
+      // Default to assuming no connection on error
+      return false;
     }
-    
-    // Default return if we get an unexpected type
-    return false;
   }
   
   // Get stream of connectivity changes
@@ -64,10 +73,22 @@ class ConnectivityChecker {
     if (context.mounted) {
       final messenger = ScaffoldMessenger.of(context);
       
-      // Handle both the List<ConnectivityResult> and single ConnectivityResult case
-      final bool isDisconnected = result is List<ConnectivityResult> 
-          ? result.every((r) => r == ConnectivityResult.none)
-          : result == ConnectivityResult.none;
+      // Check if disconnected based on result type
+      bool isDisconnected = false;
+      
+      if (result is Iterable) {
+        // All results must be 'none' to be considered disconnected
+        isDisconnected = true;
+        for (var r in result) {
+          if (r != ConnectivityResult.none) {
+            isDisconnected = false;
+            break;
+          }
+        } 
+      } else {
+        // Single result
+        isDisconnected = result == ConnectivityResult.none;
+      }
       
       if (isDisconnected) {
         messenger.showSnackBar(
