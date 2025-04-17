@@ -93,6 +93,12 @@ class TherapyConversationGraph {
     );
   }
   
+  /// Alias for processUserInput to maintain backward compatibility
+  /// This method analyzes the user message and returns guidance for response
+  Future<Map<String, dynamic>> analyzeMessage(String userMessage) async {
+    return processUserInput(userMessage);
+  }
+  
   /// Process user input through the graph and return appropriate response guidance
   Future<Map<String, dynamic>> processUserInput(String userInput) async {
     try {

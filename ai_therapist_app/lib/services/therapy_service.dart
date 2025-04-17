@@ -379,47 +379,33 @@ class TherapyService {
   // Process a user message and generate a therapist response
   Future<String> processUserMessage(String userMessage) async {
     try {
-      // Check cache first for quick responses to repeated messages
+      // Detect conversation state and analyze user message
+      final graphResult = await _conversationGraph.processUserInput(userMessage);
+      
+      // Check cache for existing response
       if (_responseCache.containsKey(userMessage)) {
-        if (kDebugMode) {
-          print('Using cached response for message');
-        }
         return _responseCache[userMessage]!;
       }
       
-      // Step 1: Retrieve memory context in background
-      final memoryContextFuture = compute(
-        _getMemoryContextBackground, 
-        _memoryService
-      );
+      // Build the request payload
+      final systemPrompt = _buildSystemPrompt(graphResult);
+      final payload = {
+        'message': userMessage,
+        'system_prompt': systemPrompt,
+      };
       
-      // Step 2: Process user input through the conversation graph in background
-      final graphResultFuture = compute(
-        _processUserInputBackground, 
-        {'graph': _conversationGraph, 'userMessage': userMessage}
-      );
-      
-      // Wait for both background tasks to complete
-      final results = await Future.wait([memoryContextFuture, graphResultFuture]);
-      final memoryContext = results[0] as String;
-      final graphResult = results[1] as Map<String, dynamic>;
-      
-      // Step 3-5: Prepare API payload in background
-      final payload = await compute(_prepareApiPayload, {
-        'userMessage': userMessage,
-        'memoryContext': memoryContext,
-        'systemPrompt': _systemPrompt,
-        'graphResult': graphResult,
-        'therapeuticApproach': _therapeuticApproach.toString().split('.').last,
-      });
-      
-      // Make the actual API call
+      // Make the API call
       try {
         final apiClient = serviceLocator<ApiClient>();
+        print('[DEBUG] Calling API: ${apiClient.baseUrl}/ai/response');
+        print('[DEBUG] Message length: ${userMessage.length}');
+        print('[DEBUG] System prompt length: ${systemPrompt.length}');
+        
         final response = await apiClient.post('/ai/response', body: payload);
         
-        if (kDebugMode) {
-          print('Received response from API');
+        print('[DEBUG] API Response received. Status: ${response != null ? "Success" : "Null"}');
+        if (response != null) {
+          print('[DEBUG] Response keys: ${response.keys.toList()}');
         }
         
         if (response != null && response.containsKey('response')) {
@@ -441,15 +427,20 @@ class TherapyService {
           }
           
           return response['response'];
+        } else {
+          print('[DEBUG] Invalid response format. Response was: $response');
         }
       } catch (e) {
-        if (kDebugMode) {
-          print('API Error: $e');
-          print('Falling back to template-based response');
+        print('[DEBUG] API Error: $e');
+        print('[DEBUG] Error type: ${e.runtimeType}');
+        if (e is ApiException) {
+          print('[DEBUG] API Exception status code: ${e.statusCode}, message: ${e.message}');
         }
+        print('[DEBUG] Falling back to template-based response');
       }
       
       // Generate fallback response in background
+      print('[DEBUG] Generating fallback response for message: "${userMessage.substring(0, userMessage.length > 20 ? 20 : userMessage.length)}..."');
       final fallbackResponse = await compute(
         _generateFallbackResponse, 
         {'message': userMessage, 'templates': _responseTemplates}
@@ -460,12 +451,35 @@ class TherapyService {
       
       return fallbackResponse;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error processing user message: $e');
-      }
+      print('[DEBUG] General error processing message: $e');
       
       return "I'm sorry, I'm having trouble processing that right now. Could you try expressing that differently?";
     }
+  }
+  
+  // Build system prompt based on graph analysis results
+  String _buildSystemPrompt(Map<String, dynamic> graphResult) {
+    String prompt = _systemPrompt;
+    
+    // Add graph-specific prompt guidance if available
+    if (graphResult.containsKey('prompt') && graphResult['prompt'] != null) {
+      prompt = '$prompt\n\n${graphResult['prompt']}';
+    }
+    
+    // Add state context
+    if (graphResult.containsKey('state') && graphResult['state'] != null) {
+      prompt = '$prompt\n\nCurrent conversation state: ${graphResult['state']}';
+    }
+    
+    // Add technique guidance if available
+    if (graphResult.containsKey('techniques') && graphResult['techniques'] != null) {
+      final techniques = graphResult['techniques'];
+      if (techniques is List && techniques.isNotEmpty) {
+        prompt = '$prompt\n\nUse these therapeutic techniques: ${techniques.join(', ')}';
+      }
+    }
+    
+    return prompt;
   }
   
   // Background method to get memory context
@@ -665,14 +679,13 @@ class TherapyService {
           
           // For debugging in Chrome, try a direct HTTP call to see the response
           try {
-            final backendUrl = kDebugMode 
-                ? 'http://10.0.2.2:8000' 
-                : 'https://api-fuukqlcsha-uc.a.run.app';
+            final backendUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
             
-            print('Attempting direct HTTP call to: $backendUrl/therapy/end_session');
+            final uri = Uri.parse('$backendUrl/therapy/end_session');
+            print('Attempting direct HTTP call to: $uri');
             
             final response = await http.post(
-              Uri.parse('$backendUrl/therapy/end_session'),
+              uri,
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode(payload),
             );
@@ -682,7 +695,7 @@ class TherapyService {
             
             if (response.statusCode >= 200 && response.statusCode < 300) {
               // If direct call succeeds, try to use its response
-              final responseBody = jsonDecode(response.body);
+              final Map<String, dynamic> responseBody = jsonDecode(response.body) as Map<String, dynamic>;
               return {
                 'summary': responseBody['summary'] ?? "Session summary generated via direct API call.",
                 'actionItems': responseBody.containsKey('action_items') && responseBody['action_items'] is List

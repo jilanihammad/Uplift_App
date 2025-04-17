@@ -7,12 +7,25 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:385290373302:android:792fc2455cfd6f50d07e17",
+        "mobilesdk_app_id": "1:385290373302:android:01e06b856f7be445d07e17",
         "android_client_info": {
-          "package_name": "com.example.ai_therapist_app"
+          "package_name": "com.maya.uplift"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "385290373302-ooblvvmrd0rkrfomrp17d6ejpa43bvff.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.maya.uplift",
+            "certificate_hash": "20436d2ff0e57b32f57a45b07b5120b0fdc7ab06"
+          }
+        },
+        {
+          "client_id": "385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBrbzVymLNT73grATEPRN68GV-8Wi5xccI"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

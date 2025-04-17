@@ -1,12 +1,15 @@
 // lib/main.dart
 import 'dart:async';
 import 'dart:io';
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show WidgetsFlutterBinding, DartPluginRegistrant;
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging_platform_interface/firebase_messaging_platform_interface.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
@@ -17,24 +20,30 @@ import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:ai_therapist_app/services/onboarding_service.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:ai_therapist_app/firebase_options.dart';
 import 'package:ai_therapist_app/services/firebase_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:ai_therapist_app/screens/splash_screen.dart';
+import 'package:ai_therapist_app/config/theme.dart';
+import 'debug_api.dart';
+import 'debug_firebase.dart'; // Import for debugging only
+import 'dart:async';
+import 'dart:convert';
+import 'dart:developer';
+import 'dart:isolate';
 
-// This needs to be outside of any class and marked with this annotation
+import 'package:ai_therapist_app/config/api.dart';
+
+// Background message handler for Firebase Cloud Messaging
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // If you need to use other Firebase services in the background, such as Firestore,
-  // make sure Firebase is initialized here if it wasn't already
+  // Initialize Firebase for the background isolate
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   
-  if (kDebugMode) {
-    print('Handling a background message: ${message.messageId}');
-    print('Background message data: ${message.data}');
-    if (message.notification != null) {
-      print('Background message notification: ${message.notification!.title}');
-    }
-  }
+  // Ensure the binary messenger is initialized for the background isolate
+  await FirebaseMessaging.instance.setAutoInitEnabled(true);
+  
+  print("Handling a background message: ${message.messageId}");
 }
 
 // Error handling bloc observer for logging
@@ -51,9 +60,8 @@ class SimpleBlocObserver extends BlocObserver {
 
 // Global app configuration
 final bool isDebugMode = kDebugMode;
-final String apiBaseUrl = isDebugMode 
-    ? 'http://10.0.2.2:8000'    // Android emulator localhost 
-    : 'https://upliftapp-cd86e.web.app'; // Updated production URL
+final String apiBaseUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app'; // Cloud backend URL
+final String firebaseProjectUrl = 'https://upliftapp-cd86e.web.app'; // Firebase project URL
 
 // Global error handler for unhandled exceptions
 void _handleGlobalError(Object error, StackTrace stack) {
@@ -87,43 +95,6 @@ class ServiceInitParams {
   final String serviceType;
   
   ServiceInitParams(this.serviceType);
-}
-
-// Initialize Firebase in the main thread, not in an isolate
-Future<bool> _initializeFirebase() async {
-  try {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      // Initialize Firebase Core first
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      
-      // Request permission for notifications if needed
-      await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        announcement: false,
-        badge: true,
-        carPlay: false,
-        criticalAlert: false,
-        provisional: false,
-        sound: true,
-      );
-      
-      // Get token for this device
-      String? token = await FirebaseMessaging.instance.getToken();
-      if (kDebugMode) {
-        print('FCM Token: $token');
-      }
-      
-      return true;
-    }
-    return false;
-  } catch (e) {
-    if (kDebugMode) {
-      print('Failed to initialize Firebase: $e');
-    }
-    return false;
-  }
 }
 
 // Initialize a service in an isolate
@@ -348,45 +319,104 @@ class LoadingApp extends StatelessWidget {
 
 // Fallback app widget if initialization fails
 class FallbackApp extends StatelessWidget {
-  const FallbackApp({super.key});
+  const FallbackApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Uplift - Fallback Mode',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
+      title: 'Uplift',
+      theme: AppTheme.lightTheme,
+      debugShowCheckedModeBanner: false,
+      home: _FallbackScreen(),
+    );
+  }
+}
+
+class _FallbackScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Firebase Connection Status'),
       ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Uplift - Fallback Mode'),
-          backgroundColor: Colors.blue.shade100,
-        ),
-        body: Center(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.warning_amber_rounded, size: 80, color: Colors.orange),
-              const SizedBox(height: 20),
+              const Icon(
+                Icons.cloud_off,
+                size: 64,
+                color: Colors.orange,
+              ),
+              const SizedBox(height: 24),
               const Text(
-                'App Initialization Failed',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                'Some Firebase services are unavailable',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 10),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  'The app could not initialize properly. This may be due to missing dependencies or configuration issues.',
-                  textAlign: TextAlign.center,
-                ),
+              const SizedBox(height: 16),
+              const Text(
+                'The app will continue to function with limited capabilities.',
+                style: TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 32),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                ),
                 onPressed: () {
-                  main(); // Try to restart the app
+                  // Try to reinitialize Firebase and restart the app
+                  runApp(const LoadingApp());
+                  
+                  // Use a microtask to allow the LoadingApp to render first
+                  Future.microtask(() async {
+                    try {
+                      // Re-initialize essential services
+                      await _initializeEssentialServices();
+                      
+                      // Start the remaining services in the background
+                      _initializeRemainingServices();
+                      
+                      // Run the main app
+                      runApp(const MyApp());
+                    } catch (e) {
+                      // If initialization fails again, go back to FallbackApp
+                      if (kDebugMode) {
+                        print('Error during retry initialization: $e');
+                      }
+                      runApp(const FallbackApp());
+                    }
+                  });
                 },
-                child: const Text('Try Again'),
+                child: const Text('Retry Connection', style: TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                ),
+                onPressed: () {
+                  // Continue to the main app anyway
+                  runApp(const MyApp());
+                },
+                child: const Text('Continue Anyway', style: TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const FirebaseDebugScreen(),
+                    ),
+                  );
+                },
+                child: const Text('View Detailed Status', style: TextStyle(fontSize: 16)),
               ),
             ],
           ),
@@ -397,28 +427,15 @@ class FallbackApp extends StatelessWidget {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(
-          create: (context) => AuthBloc(
-            authService: serviceLocator<AuthService>(),
-          )..add(CheckAuthStatusEvent()),
-        ),
-        // Add other Bloc providers here
-      ],
-      child: MaterialApp.router(
-        title: 'Uplift',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-          useMaterial3: true,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-        ),
-        routerConfig: AppRouter.router,
-      ),
+    return MaterialApp.router(
+      title: 'Uplift Therapist',
+      theme: AppTheme.lightTheme,
+      debugShowCheckedModeBanner: false,
+      routerConfig: AppRouter.router, // Use the GoRouter from routes.dart
     );
   }
 }

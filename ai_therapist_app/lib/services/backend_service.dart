@@ -37,8 +37,9 @@ class BackendService {
     }
     
     try {
+      final uri = Uri.parse('${ApiConfig.baseUrlWithoutPath}/api/v1/llm/status');
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrlWithoutPath}/api/v1/llm/status'),
+        uri,
         headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 5));
       
@@ -141,8 +142,9 @@ class BackendService {
     // No valid cache, execute the API call
     return executeWithFallback<Map<String, dynamic>>(
       apiCall: () async {
+        final uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
         final response = await http.get(
-          Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+          uri,
           headers: headers ?? {'Accept': 'application/json'},
         ).timeout(const Duration(seconds: 10));
         

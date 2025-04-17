@@ -1,4 +1,4 @@
-package com.example.ai_therapist_app
+package com.maya.uplift
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter/services.dart';
 
 /// Service for accessing configuration values and API keys
 /// Uses environment variables and secure storage
@@ -138,9 +139,10 @@ class ConfigService {
       if (envLlmEndpoint != null && envLlmEndpoint.isNotEmpty) {
         _llmApiEndpoint = envLlmEndpoint;
       } else if (_llmApiEndpoint.isEmpty) {
-        _llmApiEndpoint = kDebugMode
-            ? 'http://10.0.2.2:8000'
-            : 'https://api-fuukqlcsha-uc.a.run.app';
+        // For cloud/production - always use the cloud URL
+        _llmApiEndpoint = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+        
+        // Remove the debug mode check that would override with localhost
       }
       
       if (envVoiceEndpoint != null && envVoiceEndpoint.isNotEmpty) {
