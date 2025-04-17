@@ -75,6 +75,81 @@ class TherapyConversationGraph {
     }
   }
   
+  /// Analyze user message and provide guidance similar to processUserInput in non-LangChain implementation
+  /// This is to maintain compatibility with any code using analyzeMessage
+  Future<Map<String, dynamic>> analyzeMessage(String userMessage) async {
+    if (!_isSessionActive) {
+      await initializeSession();
+    }
+    
+    try {
+      // Add user message to conversation history
+      _state['conversation_history'].add({
+        'role': 'user',
+        'content': userMessage,
+      });
+      
+      // Perform simple analysis on the user message
+      final analysis = _simpleAnalysis(userMessage);
+      
+      // Return a structure compatible with the non-LangChain implementation
+      return {
+        'prompt': _getPhaseSpecificInstructions(_state['current_phase'] as String),
+        'state': _state['current_phase'],
+        'analysis': analysis,
+        'node': _state['current_phase'],
+        'techniques': _state['current_phase'] == 'insight_building' 
+            ? ['cognitive_restructuring', 'validation'] 
+            : ['active_listening', 'empathy'],
+        'approach': _state['therapeutic_approach'],
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        print('TherapyConversationGraph: Error in analyzeMessage: $e');
+      }
+      
+      return {
+        'prompt': "I'm here to listen and support you.",
+        'state': 'supportive',
+        'error': e.toString(),
+      };
+    }
+  }
+  
+  // Simple analysis of user message without calling external services
+  Map<String, dynamic> _simpleAnalysis(String userMessage) {
+    final String lowercaseInput = userMessage.toLowerCase();
+    
+    // Emotion detection (simplified)
+    String emotion = 'neutral';
+    double emotionIntensity = 5.0;
+    
+    if (lowercaseInput.contains('sad') || lowercaseInput.contains('depress')) {
+      emotion = 'sad';
+      emotionIntensity = 7.0;
+    } else if (lowercaseInput.contains('anxious') || lowercaseInput.contains('worry')) {
+      emotion = 'anxious';
+      emotionIntensity = 7.5;
+    } else if (lowercaseInput.contains('happy') || lowercaseInput.contains('joy')) {
+      emotion = 'happy';
+      emotionIntensity = 6.0;
+    }
+    
+    // Topic detection (simplified)
+    List<String> topics = [];
+    if (lowercaseInput.contains('work')) topics.add('work');
+    if (lowercaseInput.contains('family')) topics.add('family');
+    if (lowercaseInput.contains('relationship')) topics.add('relationships');
+    
+    return {
+      'emotion': emotion,
+      'emotionIntensity': emotionIntensity,
+      'topics': topics,
+      'distressLevel': emotion == 'sad' || emotion == 'anxious' ? 6.0 : 3.0,
+      'hasCognitiveDistortions': lowercaseInput.contains('always') || lowercaseInput.contains('never'),
+    };
+  }
+  
   // Initialize the graph structure
   void _initGraph() {
     try {

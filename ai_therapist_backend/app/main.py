@@ -67,7 +67,14 @@ app.mount("/audio", StaticFiles(directory="static/audio"), name="audio")
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to AI Therapist API"}
+    import os
+    port = os.environ.get("PORT", "8080")
+    return {"message": "Welcome to AI Therapist API", "status": "healthy", "port": port}
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint for Google Cloud Run."""
+    return {"status": "healthy"}
 
 @app.get(f"{settings.API_V1_STR}/llm/status")
 async def llm_status():
