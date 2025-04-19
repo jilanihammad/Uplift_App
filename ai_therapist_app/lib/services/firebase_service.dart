@@ -13,7 +13,7 @@ class FirebaseService {
   FirebaseStorage? _storage;
   FirebaseMessaging? _messaging;
   FirebaseAnalytics? _analytics;
-  
+
   bool _initialized = false;
   bool _authAvailable = false;
   bool _firestoreAvailable = false;
@@ -27,17 +27,17 @@ class FirebaseService {
   FirebaseStorage? get storage => _storageAvailable ? _storage : null;
   FirebaseMessaging? get messaging => _messagingAvailable ? _messaging : null;
   FirebaseAnalytics? get analytics => _analyticsAvailable ? _analytics : null;
-  
+
   // Check if Firebase is initialized
   bool get isInitialized => _initialized;
-  
+
   // Initialize Firebase services safely
   Future<void> init() async {
     try {
       if (kDebugMode) {
         print('FirebaseService: Starting initialization');
       }
-      
+
       // Try initializing each service separately with detailed logging
       try {
         _auth = FirebaseAuth.instance;
@@ -45,98 +45,42 @@ class FirebaseService {
         try {
           await _auth?.signInAnonymously();
           _authAvailable = true;
-          if (kDebugMode) print('FirebaseService: Auth initialized and working');
+          if (kDebugMode)
+            print('FirebaseService: Auth initialized and working');
         } catch (authError) {
-          if (kDebugMode) print('FirebaseService: Auth available but operation restricted: $authError');
+          if (kDebugMode)
+            print(
+                'FirebaseService: Auth available but operation restricted: $authError');
           _authAvailable = false;
         }
       } catch (e) {
-        if (kDebugMode) print('FirebaseService: Auth initialization failed: $e');
+        if (kDebugMode)
+          print('FirebaseService: Auth initialization failed: $e');
         _authAvailable = false;
       }
-      
+
       try {
         if (kDebugMode) {
-          print('FirebaseService: Skipping Firestore initialization to avoid errors');
+          print('FirebaseService: Initializing Firestore');
         }
-        
-        // Set Firestore as unavailable - don't even try to initialize it
-        _firestoreAvailable = false;
-        
-        /*
+
         _firestore = FirebaseFirestore.instance;
-        
-        // Set longer timeouts for Firestore operations
+        _firestoreAvailable = true;
+
+        // Set longer timeouts for Firestore operations if needed
         _firestore?.settings = const Settings(
           persistenceEnabled: true,
           cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
           sslEnabled: true,
         );
-        
-        // Test Firestore with exponential backoff retry
-        bool firestoreConnected = false;
-        int retryCount = 0;
-        const maxRetries = 3;
-        
-        while (!firestoreConnected && retryCount < maxRetries) {
-          try {
-            if (kDebugMode) print('FirebaseService: Firestore connection attempt ${retryCount + 1}');
-            
-            // First check if we're dealing with a Datastore Mode project
-            try {
-              final testRef = _firestore?.collection('_test');
-              
-              // Try to use a transaction which will fail quickly for Datastore Mode
-              await _firestore?.runTransaction((transaction) async {
-                // This will fail immediately with FAILED_PRECONDITION if Datastore Mode
-                return null;
-              }).timeout(Duration(seconds: 5 + (retryCount * 3)));
-              
-              // If we get here, it's not Datastore Mode
-              firestoreConnected = true;
-              _firestoreAvailable = true;
-              if (kDebugMode) print('FirebaseService: Firestore initialized and working');
-            } catch (e) {
-              // Check if it's a Datastore Mode error
-              final errorString = e.toString();
-              if (errorString.contains('Datastore Mode') || 
-                  errorString.contains('FAILED_PRECONDITION')) {
-                if (kDebugMode) {
-                  print('FirebaseService: Project is using Firestore in Datastore Mode.');
-                  print('This app requires Firestore Native Mode. Please check Firebase Console settings.');
-                }
-                // Don't retry for Datastore Mode errors
-                retryCount = maxRetries;
-                _firestoreAvailable = false;
-                break;
-              } else {
-                // Normal connection error, try again
-                throw e;
-              }
-            }
-          } catch (firestoreError) {
-            retryCount++;
-            if (kDebugMode) {
-              print('FirebaseService: Firestore connection attempt ${retryCount} failed: $firestoreError');
-            }
-            
-            if (retryCount < maxRetries) {
-              // Exponential backoff
-              final backoffDuration = Duration(milliseconds: 500 * (1 << retryCount));
-              if (kDebugMode) print('FirebaseService: Retrying in ${backoffDuration.inMilliseconds}ms');
-              await Future.delayed(backoffDuration);
-            } else {
-              if (kDebugMode) print('FirebaseService: All Firestore connection attempts failed');
-              _firestoreAvailable = false;
-            }
-          }
-        }
-        */
+
+        if (kDebugMode) print('FirebaseService: Firestore initialized');
       } catch (e) {
-        if (kDebugMode) print('FirebaseService: Firestore initialization failed: $e');
+        if (kDebugMode)
+          print('FirebaseService: Firestore initialization failed: $e');
         _firestoreAvailable = false;
       }
-      
+
       try {
         _storage = FirebaseStorage.instance;
         try {
@@ -145,48 +89,63 @@ class FirebaseService {
           _storageAvailable = true;
           if (kDebugMode) print('FirebaseService: Storage initialized');
         } catch (storageError) {
-          if (kDebugMode) print('FirebaseService: Storage available but operation failed: $storageError');
+          if (kDebugMode)
+            print(
+                'FirebaseService: Storage available but operation failed: $storageError');
           _storageAvailable = false;
         }
       } catch (e) {
-        if (kDebugMode) print('FirebaseService: Storage initialization failed: $e');
+        if (kDebugMode)
+          print('FirebaseService: Storage initialization failed: $e');
         _storageAvailable = false;
       }
-      
+
       try {
         _messaging = FirebaseMessaging.instance;
         try {
           String? token = await _messaging?.getToken();
           _messagingAvailable = token != null;
-          if (kDebugMode) print('FirebaseService: Messaging initialized and token obtained');
+          if (kDebugMode)
+            print('FirebaseService: Messaging initialized and token obtained');
         } catch (messagingError) {
-          if (kDebugMode) print('FirebaseService: Messaging available but operation failed: $messagingError');
+          if (kDebugMode)
+            print(
+                'FirebaseService: Messaging available but operation failed: $messagingError');
           _messagingAvailable = false;
         }
       } catch (e) {
-        if (kDebugMode) print('FirebaseService: Messaging initialization failed: $e');
+        if (kDebugMode)
+          print('FirebaseService: Messaging initialization failed: $e');
         _messagingAvailable = false;
       }
-      
+
       try {
         _analytics = FirebaseAnalytics.instance;
         _analyticsAvailable = true;
         if (kDebugMode) print('FirebaseService: Analytics initialized');
       } catch (e) {
-        if (kDebugMode) print('FirebaseService: Analytics initialization failed: $e');
+        if (kDebugMode)
+          print('FirebaseService: Analytics initialization failed: $e');
         _analyticsAvailable = false;
       }
-      
+
       // Consider Firebase initialized if at least one service is working
-      _initialized = _authAvailable || _firestoreAvailable || _storageAvailable || _messagingAvailable || _analyticsAvailable;
-      
+      _initialized = _authAvailable ||
+          _firestoreAvailable ||
+          _storageAvailable ||
+          _messagingAvailable ||
+          _analyticsAvailable;
+
       if (kDebugMode) {
         print('FirebaseService initialized with status:');
         print('- Auth: ${_authAvailable ? 'Available' : 'Unavailable'}');
-        print('- Firestore: ${_firestoreAvailable ? 'Available' : 'Unavailable'}');
+        print(
+            '- Firestore: ${_firestoreAvailable ? 'Available' : 'Unavailable'}');
         print('- Storage: ${_storageAvailable ? 'Available' : 'Unavailable'}');
-        print('- Messaging: ${_messagingAvailable ? 'Available' : 'Unavailable'}');
-        print('- Analytics: ${_analyticsAvailable ? 'Available' : 'Unavailable'}');
+        print(
+            '- Messaging: ${_messagingAvailable ? 'Available' : 'Unavailable'}');
+        print(
+            '- Analytics: ${_analyticsAvailable ? 'Available' : 'Unavailable'}');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -199,67 +158,67 @@ class FirebaseService {
 
   // Initialize Firebase messaging
   Future<void> initMessaging() async {
-    if (!_initialized) {
-      await init();
-    }
-    
-    // Skip if messaging is not available
-    if (!_messagingAvailable) {
-      if (kDebugMode) {
-        print('Skipping messaging initialization as it is unavailable');
-      }
+    debugPrint('FirebaseService: Entering initMessaging');
+
+    // Skip entire process if any condition isn't met
+    if (!_initialized || !_messagingAvailable || _messaging == null) {
+      debugPrint(
+          'FirebaseService: Skipping messaging initialization (not ready)');
       return;
     }
-    
+
     try {
-      // Request permission for notifications
-      final settings = await _messaging?.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
+      debugPrint('FirebaseService: Requesting notification permissions');
 
-      if (settings?.authorizationStatus == AuthorizationStatus.authorized) {
-        // Get FCM token
-        String? token = await _messaging?.getToken();
-        
-        // Store the token in Firestore if the user is logged in and Firestore is available
-        if (_firestoreAvailable && _authAvailable) {
-          User? currentUser = _auth?.currentUser;
-          if (currentUser != null && token != null && _firestore != null) {
-            try {
-              await _firestore!
-                  .collection('users')
-                  .doc(currentUser.uid)
-                  .update({'fcmToken': token});
-            } catch (e) {
-              if (kDebugMode) {
-                print('Error updating FCM token: $e');
-              }
-              // Token update failed, but we can continue
-            }
-          }
+      // Simple permission request - no fancy error handling to avoid type issues
+      try {
+        final settings = await _messaging!.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+
+        debugPrint(
+            'FirebaseService: Permission status: ${settings.authorizationStatus}');
+
+        // Only continue if authorized
+        if (settings.authorizationStatus != AuthorizationStatus.authorized) {
+          debugPrint('FirebaseService: Not authorized for notifications');
+          return;
         }
+      } catch (e) {
+        debugPrint('FirebaseService: Error requesting permissions: $e');
+        return;
+      }
 
-        // Handle foreground messages
-        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-          // Handle foreground message
-          if (kDebugMode) {
-            print('Got a message whilst in the foreground!');
-            print('Message data: ${message.data}');
+      // Token operations
+      try {
+        final token = await _messaging!.getToken();
+        if (token != null) {
+          debugPrint('FirebaseService: Got FCM token');
+        } else {
+          debugPrint('FirebaseService: Got null FCM token');
+        }
+      } catch (e) {
+        debugPrint('FirebaseService: Error getting FCM token: $e');
+      }
 
-            if (message.notification != null) {
-              print('Message also contained a notification: ${message.notification}');
-            }
-          }
-        });
+      // Setup listeners with minimal code
+      try {
+        FirebaseMessaging.onMessage.listen(
+          (message) =>
+              debugPrint('FirebaseService: Received foreground message'),
+          onError: (e) =>
+              debugPrint('FirebaseService: Message listener error: $e'),
+        );
+      } catch (e) {
+        debugPrint('FirebaseService: Error setting up message listener: $e');
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error in initMessaging: $e');
-      }
-      // Continue without messaging
+      debugPrint('FirebaseService: Error in initMessaging: $e');
     }
+
+    debugPrint('FirebaseService: Completed initMessaging');
   }
 
   // Try to reconnect to Firebase services
@@ -271,22 +230,26 @@ class FirebaseService {
   }
 
   // Log events to Firebase Analytics
-  Future<void> logEvent({
-    required String name,
-    Map<String, dynamic>? parameters,
-  }) async {
-    if (!_analyticsAvailable) return;
-    
+  Future<void> logEvent(String name, Map<String, dynamic> parameters) async {
+    if (!_initialized || !_analyticsAvailable) {
+      if (kDebugMode) {
+        print(
+            'Skipping analytics event logging: Firebase not ready or analytics unavailable.');
+      }
+      return;
+    }
+
     try {
-      // Convert Map<String, dynamic>? to Map<String, Object>? by removing any null values
-      final Map<String, Object>? nonNullParams = parameters?.map(
-        (key, value) => MapEntry(key, value as Object)
-      );
-      
+      // Filter out null values from parameters and cast to required type
+      final Map<String, Object> nonNullParams = Map.fromEntries(parameters
+          .entries
+          .where((entry) => entry.value != null)
+          .map((entry) => MapEntry(entry.key, entry.value as Object)));
+
       await _analytics?.logEvent(name: name, parameters: nonNullParams);
     } catch (e) {
       if (kDebugMode) {
-        print('Error logging event: $e');
+        print('Error logging analytics event: $e');
       }
     }
   }
@@ -294,7 +257,7 @@ class FirebaseService {
   // Get user document reference
   DocumentReference? getUserDocument(String userId) {
     if (!_firestoreAvailable) return null;
-    
+
     try {
       return _firestore?.collection('users').doc(userId);
     } catch (e) {
@@ -305,13 +268,27 @@ class FirebaseService {
     }
   }
 
+  // Get storage reference
+  Reference? getStorageRef() {
+    if (!_storageAvailable) return null;
+
+    try {
+      return _storage?.ref();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error getting storage reference: $e');
+      }
+      return null;
+    }
+  }
+
   // Upload file to Firebase Storage
   Future<String?> uploadFile(String path, dynamic file) async {
     if (!_storageAvailable) return null;
-    
+
     try {
       if (_storage == null) return null;
-      
+
       final ref = _storage!.ref().child(path);
       await ref.putFile(file);
       final url = await ref.getDownloadURL();
@@ -323,4 +300,4 @@ class FirebaseService {
       return null;
     }
   }
-} 
+}

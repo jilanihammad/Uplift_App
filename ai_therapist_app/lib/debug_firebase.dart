@@ -37,16 +37,16 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
       _isLoading = true;
       _retryCount++;
     });
-    
+
     try {
       // Check if Firebase is initialized
       bool isInitialized = Firebase.apps.isNotEmpty;
       setState(() {
-        _status = isInitialized 
-            ? 'Firebase is initialized correctly' 
+        _status = isInitialized
+            ? 'Firebase is initialized correctly'
             : 'Firebase is NOT initialized';
       });
-      
+
       // Try to get project info
       try {
         final options = Firebase.app().options;
@@ -91,7 +91,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
             break;
           } catch (retryError) {
             if (kDebugMode) {
-              print('Firestore attempt ${i+1} failed: $retryError');
+              print('Firestore attempt ${i + 1} failed: $retryError');
             }
             await Future.delayed(Duration(seconds: 1 + i));
             if (i == 2) {
@@ -123,8 +123,8 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
       try {
         final token = await FirebaseMessaging.instance.getToken();
         setState(() {
-          _messagingStatus = token != null 
-              ? 'Messaging is working correctly. Token: ${token.substring(0, 10)}...' 
+          _messagingStatus = token != null
+              ? 'Messaging is working correctly. Token: ${token.substring(0, 10)}...'
               : 'Could not get FCM token';
         });
       } catch (e) {
@@ -132,7 +132,6 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
           _messagingStatus = 'Messaging error: $e';
         });
       }
-
     } catch (e) {
       setState(() {
         _status = 'Firebase error: $e';
@@ -151,8 +150,9 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
       _authStatus = 'Reconnecting...';
       _firestoreStatus = 'Reconnecting...';
       _messagingStatus = 'Reconnecting...';
+      _storageStatus = 'Reconnecting...';
     });
-    
+
     try {
       // Get the Firebase service and force a reconnect
       if (serviceLocator.isRegistered<FirebaseService>()) {
@@ -165,7 +165,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
           print('FirebaseService not registered in service locator');
         }
       }
-      
+
       // Check status again
       await _checkFirebaseConnection();
     } catch (e) {
@@ -200,9 +200,11 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Attempt #$_retryCount', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                  Text('Attempt #$_retryCount',
+                      style: const TextStyle(fontSize: 14, color: Colors.grey)),
                   const SizedBox(height: 8),
-                  Text('Project: $_projectId (${_region})', style: const TextStyle(fontSize: 14)),
+                  Text('Project: $_projectId (${_region})',
+                      style: const TextStyle(fontSize: 14)),
                   const SizedBox(height: 16),
                   _buildStatusCard('Firebase Core', _status),
                   const SizedBox(height: 16),
@@ -275,15 +277,17 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
     String helpText = '';
     bool hasAuthIssue = _authStatus.contains('error');
     bool hasFirestoreIssue = _firestoreStatus.contains('error');
-    
+
     if (hasAuthIssue && _authStatus.contains('admin-restricted-operation')) {
-      helpText = 'Auth Issue: Enable Anonymous Authentication in the Firebase Console > Authentication > Sign-in methods';
+      helpText =
+          'Auth Issue: Enable Anonymous Authentication in the Firebase Console > Authentication > Sign-in methods';
     } else if (hasFirestoreIssue && _firestoreStatus.contains('unavailable')) {
-      helpText = 'Firestore Issue: This may be a temporary connectivity issue. Try again in a few minutes or check your project\'s Firestore database setup.';
+      helpText =
+          'Firestore Issue: This may be a temporary connectivity issue. Try again in a few minutes or check your project\'s Firestore database setup.';
     }
-    
+
     if (helpText.isEmpty) return const SizedBox.shrink();
-    
+
     return Card(
       color: Colors.amber[100],
       elevation: 2,
@@ -296,7 +300,8 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
               children: [
                 Icon(Icons.lightbulb, color: Colors.amber),
                 SizedBox(width: 8),
-                Text('Troubleshooting Suggestions', 
+                Text(
+                  'Troubleshooting Suggestions',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
@@ -312,7 +317,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
   Widget _buildStatusCard(String title, String message) {
     final isSuccess = message.contains('working correctly');
     final isError = message.contains('error');
-    
+
     return Card(
       elevation: 4,
       child: Padding(
@@ -345,4 +350,4 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
       ),
     );
   }
-} 
+}
