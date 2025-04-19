@@ -69,5 +69,34 @@
 -keep class com.google.android.play.core.** { *; }
 -dontwarn com.google.android.play.core.**
 
+# Keep classes related to Flutter HTTP client and networking
+-keep class io.flutter.plugins.urllauncher.** { *; }
+-keep class io.flutter.plugins.pathprovider.** { *; }
+-keep class io.flutter.plugins.sharedpreferences.** { *; }
+-keep class io.flutter.plugins.connectivity.** { *; }
+-keep class io.flutter.embedding.engine.plugins.** { *; }
+-keep class io.flutter.plugin.common.** { *; }
+-keep class io.flutter.plugin.platform.** { *; }
+-keep class dart.** { *; }
+-keep class io.dart.** { *; }
+
+# Keep classes for dart:convert and http package
+-keep class dart.convert.** { *; }
+-keep class dart.io.** { *; } # HTTP client uses dart:io
+-keep class org.conscrypt.** { *; } # Needed for TLS/SSL on some Android versions
+-keep class com.google.android.gms.security.** { *; } # For security providers
+-keepattributes Signature, InnerClasses, EnclosingMethod
+
+# Keep ConfigService to prevent removal of necessary fields/methods
+-keep class com.maya.uplift.services.ConfigService { *; }
+-keepclassmembers class com.maya.uplift.services.ConfigService { *; }
+
+# Broader rule to keep application Dart classes (replace if package structure differs)
+-keep class com.maya.uplift.** { *; }
+
+# Keep flutter_dotenv and shared_preferences related classes
+-keep class io.github.cdimascio.dotenv.** { *; }
+-keep class io.flutter.plugins.sharedpreferences.** { *; } # Already present but keep for clarity
+
 # Fix for R8 full mode issues
 -keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,RuntimeVisibleTypeAnnotations,AnnotationDefault 

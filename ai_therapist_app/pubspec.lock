@@ -361,30 +361,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.10+11"
-  firebase_app_check:
-    dependency: "direct main"
-    description:
-      name: firebase_app_check
-      sha256: "9c2b9af9204f5255501127b2e62597ead4003121a93eb385732a43e05fb182e3"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.2+5"
-  firebase_app_check_platform_interface:
-    dependency: transitive
-    description:
-      name: firebase_app_check_platform_interface
-      sha256: bac6ede93128828039f4cf95c5ecd2f7aca0daec41005ec8375b98d8fb470b1c
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.1+5"
-  firebase_app_check_web:
-    dependency: transitive
-    description:
-      name: firebase_app_check_web
-      sha256: d9a406cf2e99917aa20ab2c68c350550e5b0bd448d3095f7eeb48c4673d02797
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.0+9"
   firebase_auth:
     dependency: "direct main"
     description:
@@ -646,10 +622,10 @@ packages:
     dependency: "direct main"
     description:
       name: google_fonts
-      sha256: b1ac0fe2832c9cc95e5e88b57d627c5e68c223b9657f4b96e1487aa9098c7b82
+      sha256: "2776c66b3e97c6cdd58d1bd3281548b074b64f1fd5c8f82391f7456e38849567"
       url: "https://pub.dev"
     source: hosted
-    version: "6.2.1"
+    version: "4.0.5"
   google_identity_services_web:
     dependency: transitive
     description:
@@ -678,10 +654,10 @@ packages:
     dependency: transitive
     description:
       name: google_sign_in_ios
-      sha256: "29cd125f58f50ceb40e8253d3c0209e321eee3e5df16cd6d262495f7cad6a2bd"
+      sha256: "102005f498ce18442e7158f6791033bbc15ad2dcc0afa4cf4752e2722a516c96"
       url: "https://pub.dev"
     source: hosted
-    version: "5.8.1"
+    version: "5.9.0"
   google_sign_in_platform_interface:
     dependency: transitive
     description:

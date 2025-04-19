@@ -7,22 +7,20 @@ class AuthRepository {
   final ApiClient? apiClient;
   late SharedPreferences _prefs;
   bool _initialized = false;
-  final String baseUrl;
-  
+
   AuthRepository({
     this.apiClient,
-    required this.baseUrl,
   }) {
     _initPrefs();
   }
-  
+
   Future<void> _initPrefs() async {
     if (!_initialized) {
       _prefs = await SharedPreferences.getInstance();
       _initialized = true;
     }
   }
-  
+
   // Login with email and password
   Future<User> login(String email, String password) async {
     await _initPrefs();
@@ -34,19 +32,20 @@ class AuthRepository {
           'password': password,
         },
       );
-      
+
       // Store the token
       await _prefs.setString('auth_token', response['access_token']);
-      
+
       // Return the user
       return User.fromJson(response['user']);
     } else {
       // Mock implementation for testing
       await Future.delayed(const Duration(seconds: 1));
-      
+
       // Store mock token
-      await _prefs.setString('auth_token', 'mock_token_${DateTime.now().millisecondsSinceEpoch}');
-      
+      await _prefs.setString(
+          'auth_token', 'mock_token_${DateTime.now().millisecondsSinceEpoch}');
+
       // Return mock user
       return User(
         id: '1',
@@ -56,7 +55,7 @@ class AuthRepository {
       );
     }
   }
-  
+
   // Register a new user
   Future<User> register({
     required String name,
@@ -73,19 +72,20 @@ class AuthRepository {
           'password': password,
         },
       );
-      
+
       // Store the token
       await _prefs.setString('auth_token', response['access_token']);
-      
+
       // Return the user
       return User.fromJson(response['user']);
     } else {
       // Mock implementation for testing
       await Future.delayed(const Duration(seconds: 1));
-      
+
       // Store mock token
-      await _prefs.setString('auth_token', 'mock_token_${DateTime.now().millisecondsSinceEpoch}');
-      
+      await _prefs.setString(
+          'auth_token', 'mock_token_${DateTime.now().millisecondsSinceEpoch}');
+
       // Return mock user
       return User(
         id: '1',
@@ -95,7 +95,7 @@ class AuthRepository {
       );
     }
   }
-  
+
   // Logout user
   Future<void> logout() async {
     await _initPrefs();
@@ -110,9 +110,10 @@ class AuthRepository {
       await _prefs.remove('auth_token');
     }
   }
-  
+
   // Change password
-  Future<void> changePassword(String currentPassword, String newPassword) async {
+  Future<void> changePassword(
+      String currentPassword, String newPassword) async {
     if (apiClient != null) {
       await apiClient!.post(
         '/api/v1/auth/change-password',
@@ -123,7 +124,7 @@ class AuthRepository {
       );
     }
   }
-  
+
   // Request password reset
   Future<void> requestPasswordReset(String email) async {
     if (apiClient != null) {
@@ -135,7 +136,7 @@ class AuthRepository {
       );
     }
   }
-  
+
   // Confirm password reset
   Future<void> confirmPasswordReset(String token, String newPassword) async {
     if (apiClient != null) {
@@ -148,7 +149,7 @@ class AuthRepository {
       );
     }
   }
-  
+
   // Check if user is authenticated
   Future<bool> isAuthenticated() async {
     await _initPrefs();

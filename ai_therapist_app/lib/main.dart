@@ -1,4 +1,5 @@
 // lib/main.dart
+// Trivial change to trigger linter
 import 'dart:async';
 import 'dart:io';
 import 'dart:developer' as dev;
@@ -41,18 +42,78 @@ import 'dart:developer';
 import 'dart:isolate';
 
 import 'package:ai_therapist_app/config/api.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
+// import 'package:firebase_app_check/firebase_app_check.dart'; // Keep this commented out as it may be causing issues
+import 'package:ai_therapist_app/services/config_service.dart';
+import 'package:ai_therapist_app/data/repositories/auth_repository.dart';
+import 'package:ai_therapist_app/data/repositories/user_repository.dart';
+import 'package:ai_therapist_app/data/repositories/session_repository.dart';
+import 'package:ai_therapist_app/data/repositories/message_repository.dart';
+import 'package:ai_therapist_app/utils/error_handling.dart';
+import 'package:ai_therapist_app/utils/connectivity_checker.dart';
+import 'package:ai_therapist_app/utils/firestore_helpers.dart';
+import 'package:go_router/go_router.dart';
 
-// Background message handler for Firebase Cloud Messaging
+// Global variable to track Firebase initialization state
+bool _firebaseInitialized = false;
+
+// Background message handler (comment out body for now if causing issues)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Initialize Firebase for the background isolate
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Only initialize Firebase if it hasn't been initialized yet
+  if (!_firebaseInitialized) {
+    // Ensure Flutter is initialized in the isolate
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Ensure the binary messenger is initialized for the background isolate
-  await FirebaseMessaging.instance.setAutoInitEnabled(true);
+    try {
+      // Try to get existing Firebase app first
+      try {
+        Firebase.app();
+        debugPrint('[BackgroundHandler] Using existing Firebase app');
+      } catch (e) {
+        // Initialize Firebase if no existing app
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+        debugPrint('[BackgroundHandler] Firebase initialized');
+      }
+      _firebaseInitialized = true;
+    } catch (e) {
+      debugPrint('[BackgroundHandler] Firebase init error: $e');
+    }
+  }
 
-  print("Handling a background message: ${message.messageId}");
+  debugPrint('Handling a background message: ${message.messageId}');
+}
+
+// Global reference to FirebaseApp
+FirebaseApp? _app;
+
+// Single point of Firebase initialization to prevent duplicates
+Future<FirebaseApp?> _initializeFirebase() async {
+  if (_app != null) {
+    debugPrint('[initializeFirebase] Returning existing Firebase app instance');
+    return _app;
+  }
+
+  try {
+    // First try to get existing app
+    try {
+      _app = Firebase.app();
+      debugPrint('[initializeFirebase] Got existing Firebase app');
+    } catch (e) {
+      // If no existing app, initialize a new one
+      _app = await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('[initializeFirebase] Firebase newly initialized');
+    }
+    _firebaseInitialized = true;
+    return _app;
+  } catch (e, stack) {
+    debugPrint('[initializeFirebase] Error: $e');
+    debugPrint('[initializeFirebase] Stack: $stack');
+    return null;
+  }
 }
 
 // Error handling bloc observer for logging
@@ -102,478 +163,407 @@ void _handleGlobalError(Object error, StackTrace stack) {
   }
 }
 
-// Helper class for compute method parameters
-class ServiceInitParams {
-  final String serviceType;
-
-  ServiceInitParams(this.serviceType);
-}
-
-// Initialize a service in an isolate
-Future<bool> _initializeServiceIsolate(ServiceInitParams params) async {
-  try {
-    switch (params.serviceType) {
-      case 'userProfile':
-        if (serviceLocator.isRegistered<UserProfileService>()) {
-          await serviceLocator<UserProfileService>().init();
-        }
-        break;
-      case 'onboarding':
-        if (serviceLocator.isRegistered<OnboardingService>()) {
-          await serviceLocator<OnboardingService>().init();
-        }
-        break;
-      case 'therapy':
-        if (serviceLocator.isRegistered<TherapyService>()) {
-          await serviceLocator<TherapyService>().init();
-        }
-        break;
-      case 'firebase':
-        if (serviceLocator.isRegistered<FirebaseService>()) {
-          await serviceLocator<FirebaseService>().init();
-          await serviceLocator<FirebaseService>().initMessaging();
-        }
-        break;
-    }
-    return true;
-  } catch (e) {
-    if (kDebugMode) {
-      print('Failed to initialize ${params.serviceType} service: $e');
-    }
-    return false;
-  }
-}
-
-// Initialize the database in background
-Future<void> _initializeDatabase() async {
-  try {
-    final appDatabase = AppDatabase();
-    await appDatabase.database;
-    if (kDebugMode) {
-      print('Database initialized successfully');
-    }
-  } catch (e) {
-    if (kDebugMode) {
-      print('Database initialization failed: $e');
-    }
-  }
-}
-
 Future<void> main() async {
-  // Set up error handling
+  debugPrint('[Main] Starting app initialization.');
+
+  // 1. Ensure Flutter bindings are initialized first
+  WidgetsFlutterBinding.ensureInitialized();
+  debugPrint('[Main] Flutter bindings initialized.');
+
+  // 2. Initialize Firebase Core using our safe approach to prevent duplicates
+  final firebaseApp = await _initializeFirebase();
+  if (firebaseApp != null) {
+    debugPrint(
+        '[Main] Firebase initialization successful: ${firebaseApp.name}');
+  } else {
+    debugPrint('[Main] WARNING: Firebase initialization failed or incomplete.');
+  }
+
+  // 3. Only register background messaging handler after Firebase is initialized
+  if (_firebaseInitialized) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    debugPrint('[Main] Background messaging handler registered.');
+  }
+
+  // 4. Setup error handling
+  debugPrint('[Main] Setting up error handlers.');
   FlutterError.onError = (FlutterErrorDetails details) {
-    if (kDebugMode) {
-      FlutterError.dumpErrorToConsole(details);
-    }
+    FlutterError.presentError(details);
     _handleGlobalError(details.exception, details.stack ?? StackTrace.current);
   };
 
-  // This ensures Flutter is initialized in the same zone as runApp
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Register background message handler before anything else
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-  // Set up custom bloc observer for better error handling
-  Bloc.observer = SimpleBlocObserver();
-
-  try {
-    // Start the app immediately with a loading indicator
-    // This allows the UI to be responsive while services initialize
-    runApp(const LoadingApp());
-
-    // Initialize essential services first
-    await _initializeEssentialServices();
-
-    // Then initialize remaining services in the background
-    _initializeRemainingServices();
-
-    // Run the main app after essential services are ready
-    runApp(const MyApp());
-  } catch (e) {
-    if (kDebugMode) {
-      print('Error during app initialization: $e');
-    }
-    // Fallback to a simple app if initialization fails
-    runApp(const FallbackApp());
-  }
-}
-
-// Initialize essential services
-Future<void> _initializeEssentialServices() async {
-  try {
-    // Initialize Firebase Core first - this is required
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-
-    // Configure FirebaseAppCheck for better security
-    await FirebaseAppCheck.instance.activate(
-      // Use debug provider for dev/test
-      webProvider: ReCaptchaV3Provider('recaptcha-v3-site-key'),
-      androidProvider:
-          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    );
-
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      String? token = await FirebaseMessaging.instance.getToken();
-      if (kDebugMode) {
-        print('FCM Token: $token');
-        print('Firebase initialized successfully on Android');
-      }
-    }
-  } catch (e) {
-    if (kDebugMode) {
-      print('Error initializing Firebase: $e');
-    }
-    // Continue even if Firebase init fails
+  // 5. Setup Bloc observer for debugging
+  if (kDebugMode) {
+    Bloc.observer = SimpleBlocObserver();
+    debugPrint('[Main] Set up Bloc observer for debugging.');
   }
 
-  // Initialize dependencies for service locator
-  await setupServiceLocator();
-
-  // Initialize essential services synchronously
+  // 6. Initialize service locator (GetIt)
+  debugPrint('[Main] Setting up service locator...');
   try {
-    if (serviceLocator.isRegistered<OnboardingService>()) {
-      await serviceLocator<OnboardingService>().init();
-      if (kDebugMode) {
-        print("OnboardingService initialized synchronously");
-      }
-    }
+    await setupServiceLocator();
+    debugPrint('[Main] Service locator setup complete.');
   } catch (e) {
-    if (kDebugMode) {
-      print("Error initializing OnboardingService synchronously: $e");
-    }
+    debugPrint('[Main] ERROR during service locator setup: $e');
   }
-}
 
-// Initialize remaining services in the background
-void _initializeRemainingServices() {
-  // Use a microtask to ensure UI is responsive first
-  Future.microtask(() async {
+  // 7. Initialize other services
+  debugPrint('[Main] Initializing app services...');
+  try {
+    // First check connectivity - this is quick
+    debugPrint('[Main] Checking network connectivity...');
+    final connectivityChecker = ConnectivityChecker();
+    final isConnected = await connectivityChecker.isOffline() == false;
+    debugPrint(
+        '[Main] Network is ${isConnected ? "available ✅" : "unavailable ⚠️"}');
+
+    // Initialize database - required for basic functionality
     try {
-      final List<Future<void>> initTasks = [];
-
-      // Request permissions only after UI is shown
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        initTasks.add(_requestNotificationPermissions());
-      }
-
-      // Initialize Firebase service
-      initTasks.add(
-          compute(_initializeServiceIsolate, ServiceInitParams('firebase')));
-
-      // Initialize database asynchronously
-      initTasks.add(_initializeDatabase());
-
-      // Initialize other services in parallel
-      initTasks.add(
-          compute(_initializeServiceIsolate, ServiceInitParams('userProfile')));
-      initTasks.add(
-          compute(_initializeServiceIsolate, ServiceInitParams('therapy')));
-
-      // Wait for all initialization tasks to complete
-      await Future.wait(initTasks);
-
-      if (kDebugMode) {
-        print('All services initialized successfully');
-      }
+      debugPrint('[Main] Initializing database...');
+      final appDatabase = AppDatabase();
+      await appDatabase.database;
+      debugPrint('[Main] Database initialized successfully');
     } catch (e) {
-      if (kDebugMode) {
-        print('Error during background service initialization: $e');
+      debugPrint('[Main] ERROR initializing database: $e');
+    }
+
+    // Additional Firebase check for Firestore Native mode - only if connected
+    if (isConnected) {
+      try {
+        debugPrint('[Main] Verifying Firestore setup...');
+        final firestoreHelper = FirestoreHelper();
+        final isFirestoreReady = await safeOperation(
+              () => firestoreHelper.verifyFirestoreSetup(
+                requiredCollections: ['users', 'sessions', 'messages'],
+              ),
+              timeoutSeconds: 5,
+              operationName: 'Firestore verification',
+            ) ??
+            false;
+
+        if (isFirestoreReady) {
+          debugPrint('[Main] Firestore setup verified successfully ✅');
+        } else {
+          debugPrint('[Main] Issues with Firestore setup ⚠️');
+        }
+      } catch (e) {
+        debugPrint('[Main] Error checking Firestore: $e');
       }
     }
-  });
-}
 
-// Request notification permissions separately to avoid blocking the UI
-Future<void> _requestNotificationPermissions() async {
-  try {
-    // Request permission for notifications
-    await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
-    if (kDebugMode) {
-      print('Notification permissions requested');
-    }
+    // Initialize Firebase services if GetIt is available
+    await _initializeFirebaseServices();
+
+    // Initialize ConfigService and ApiClient with better error handling
+    await _initializeConfigAndApi();
+
+    // Initialize notification permissions if needed - safely
+    await _requestNotificationPermissions();
+
+    debugPrint('[Main] App services initialized successfully.');
   } catch (e) {
-    if (kDebugMode) {
-      print('Error requesting notification permissions: $e');
-    }
+    debugPrint('[Main] ERROR initializing services: $e');
   }
-}
 
-// Simple loading app to show while services initialize
-class LoadingApp extends StatelessWidget {
-  const LoadingApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Uplift',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
+  // Add explicit UI startup logging
+  debugPrint('[Main] Starting app UI...');
+  try {
+    runZonedGuarded(
+      () {
+        debugPrint('[Main] Running app in guarded zone.');
+        runApp(const AiTherapistApp());
+        debugPrint('[Main] App should now be visible!');
+      },
+      (error, stack) {
+        debugPrint('[Main] UNCAUGHT ERROR in app: $error');
+        debugPrint('[Main] Stack trace: $stack');
+        _handleGlobalError(error, stack);
+      },
+    );
+  } catch (e) {
+    debugPrint('[Main] Critical error in final app startup: $e');
+    // Last resort fallback - try to show a minimal error UI
+    runApp(MaterialApp(
       home: Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                'assets/images/uplift_logo.png',
-                width: 120,
-                height: 120,
-              ),
-              const SizedBox(height: 24),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 24),
-              const Text(
-                'Loading...',
-                style: TextStyle(fontSize: 16),
-              ),
-            ],
-          ),
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(child: Text('Error starting app: $e')),
+      ),
+    ));
+  }
+}
+
+// Initialize all other necessary services
+Future<void> _initializeServices() async {
+  // This method is no longer used - functionality moved to inline code in main()
+  debugPrint('[Main] WARNING: Using deprecated _initializeServices method');
+
+  // Database initialization handled directly in main() now
+
+  // Firebase services initialization moved to _initializeFirebaseServices()
+
+  // Initialize notification permissions if needed
+  try {
+    debugPrint(
+        '[Main] Requesting notification permissions via deprecated method...');
+    await _requestNotificationPermissions();
+    debugPrint('[Main] Notification permissions setup complete');
+  } catch (e) {
+    debugPrint('[Main] ERROR setting up notification permissions: $e');
+  }
+}
+
+// Request notification permissions
+Future<void> _requestNotificationPermissions() async {
+  // First check if we're running on a platform that supports notifications
+  // This is not strictly necessary but helps avoid unnecessary API calls
+  try {
+    debugPrint('[Main] Starting notification permission request');
+
+    // Skip if FirebaseService isn't registered
+    if (!serviceLocator.isRegistered<FirebaseService>()) {
+      debugPrint(
+          '[Main] FirebaseService not registered, skipping notification permissions');
+      return;
+    }
+
+    // Use safeOperation with increased timeout
+    await safeOperation(
+      () async {
+        final firebaseService = serviceLocator<FirebaseService>();
+        await firebaseService.initMessaging();
+        debugPrint('[Main] Notification permissions setup complete');
+      },
+      timeoutSeconds: 12, // Increased from 8
+      operationName: 'Notification permissions setup',
+    );
+  } catch (e) {
+    // Just log and continue - notifications are not critical for app functionality
+    debugPrint('[Main] Non-fatal error in notification setup: $e');
+  }
+}
+
+// Main app widget
+class AiTherapistApp extends StatefulWidget {
+  const AiTherapistApp({Key? key}) : super(key: key);
+
+  @override
+  State<AiTherapistApp> createState() => _AiTherapistAppState();
+}
+
+class _AiTherapistAppState extends State<AiTherapistApp> {
+  @override
+  Widget build(BuildContext context) {
+    // Wrap with ErrorBoundary to catch errors in the widget tree
+    return ErrorBoundary(
+      child: BlocProvider(
+        create: (context) => AuthBloc(
+          authService: serviceLocator<AuthService>(),
+        )..add(CheckAuthStatusEvent()),
+        child: MaterialApp.router(
+          title: 'AI Therapist',
+          theme: AppTheme.lightTheme,
+          themeMode: ThemeMode.light,
+          debugShowCheckedModeBanner: false,
+          routerConfig: AppRouter.router,
         ),
       ),
     );
   }
 }
 
-// Fallback app widget if initialization fails
-class FallbackApp extends StatelessWidget {
-  const FallbackApp({Key? key}) : super(key: key);
+// Error boundary widget to catch and display errors in the widget tree
+class ErrorBoundary extends StatefulWidget {
+  final Widget child;
+
+  const ErrorBoundary({Key? key, required this.child}) : super(key: key);
+
+  @override
+  _ErrorBoundaryState createState() => _ErrorBoundaryState();
+}
+
+class _ErrorBoundaryState extends State<ErrorBoundary> {
+  bool _hasError = false;
+  dynamic _error;
+  StackTrace? _stackTrace;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reset error state on rebuild
+    _hasError = false;
+    _error = null;
+    _stackTrace = null;
+  }
 
   @override
   Widget build(BuildContext context) {
-    try {
-      // Get AuthService from service locator
-      final authService = serviceLocator<AuthService>();
-
-      return MultiBlocProvider(
-        providers: [
-          BlocProvider<AuthBloc>(
-            create: (context) => AuthBloc(authService: authService),
+    if (_hasError) {
+      // Error view
+      return Material(
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('App Error'),
+            backgroundColor: Colors.red,
           ),
-        ],
-        child: MaterialApp.router(
-          title: 'Uplift',
-          theme: AppTheme.lightTheme,
-          debugShowCheckedModeBanner: false,
-          routerConfig: AppRouter.router,
-        ),
-      );
-    } catch (e) {
-      // If service locator initialization failed, provide a basic fallback
-      return MaterialApp(
-        title: 'Uplift - Error Mode',
-        theme: AppTheme.lightTheme,
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          appBar: AppBar(title: const Text('Service Error')),
-          body: Center(
-            child: Text('Service initialization error: $e'),
+          body: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.red,
+                  size: 60,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'An unexpected error occurred',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _error?.toString() ?? 'Unknown error',
+                  style: const TextStyle(fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _hasError = false;
+                      _error = null;
+                      _stackTrace = null;
+                    });
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
+
+    // If no error, show the normal content - fixed to properly return a Widget
+    // Set up the error handler first
+    ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
+      // Log the error
+      if (kDebugMode) {
+        print('Error caught by ErrorBoundary:');
+        print(errorDetails.exception);
+        print(errorDetails.stack);
+      }
+
+      // Update state to show error UI
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _hasError = true;
+          _error = errorDetails.exception;
+          _stackTrace = errorDetails.stack;
+        });
+      });
+
+      // Return an empty container for the error widget
+      return Container();
+    };
+
+    // Return the child widget
+    return widget.child;
   }
 }
 
-class _FallbackScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Firebase Connection Status'),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.cloud_off,
-                size: 64,
-                color: Colors.orange,
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Some Firebase services are unavailable',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'This may be due to network issues or Firebase project configuration. The app will still function with limited cloud connectivity.',
-                style: TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                ),
-                onPressed: () {
-                  // Try to reinitialize Firebase and restart the app
-                  runApp(const LoadingApp());
+// Add a helper method for Firebase services initialization
+Future<void> _initializeFirebaseServices() async {
+  try {
+    debugPrint('[Main] Initializing FirebaseService...');
+    if (serviceLocator.isRegistered<FirebaseService>()) {
+      await safeOperation(
+        () => serviceLocator<FirebaseService>().init(),
+        timeoutSeconds: 10,
+        operationName: 'Firebase services initialization',
+      );
+      debugPrint('[Main] FirebaseService initialized successfully');
+    } else {
+      debugPrint('[Main] FirebaseService not registered in serviceLocator');
+    }
+  } catch (e) {
+    debugPrint('[Main] ERROR initializing FirebaseService: $e');
+  }
+}
 
-                  // Use a microtask to allow the LoadingApp to render first
-                  Future.microtask(() async {
-                    try {
-                      // Re-initialize essential services with modified Firestore settings
-                      await Firebase.initializeApp(
-                        options: DefaultFirebaseOptions.currentPlatform,
-                      );
+// Helper method for initializing ConfigService and ApiClient
+Future<void> _initializeConfigAndApi() async {
+  try {
+    debugPrint('[Main] Initializing ConfigService...');
 
-                      // Explicitly configure Firestore with longer timeouts
-                      FirebaseFirestore.instance.settings = const Settings(
-                        persistenceEnabled: true,
-                        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-                        sslEnabled: true,
-                      );
-
-                      // Continue with service initialization
-                      await setupServiceLocator();
-                      _initializeRemainingServices();
-
-                      // Run the main app
-                      runApp(const MyApp());
-                    } catch (e) {
-                      // If initialization fails again, go back to FallbackApp
-                      if (kDebugMode) {
-                        print('Error during retry initialization: $e');
-                      }
-                      runApp(const FallbackApp());
-                    }
-                  });
-                },
-                child: const Text('Retry Connection',
-                    style: TextStyle(fontSize: 16)),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  // Continue to the main app anyway with normal mode
-                  runApp(const MyApp());
-                },
-                child: const Text('Continue Anyway',
-                    style: TextStyle(fontSize: 16)),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  // Skip Firebase initialization and continue with offline functionality
-                  try {
-                    final authService = serviceLocator<AuthService>();
-
-                    runApp(MultiBlocProvider(
-                      providers: [
-                        BlocProvider<AuthBloc>(
-                          create: (context) =>
-                              AuthBloc(authService: authService),
-                        ),
-                      ],
-                      child: MaterialApp.router(
-                        title: 'Uplift Therapist',
-                        theme: AppTheme.lightTheme,
-                        debugShowCheckedModeBanner: false,
-                        routerConfig: AppRouter.router,
-                      ),
-                    ));
-                  } catch (e) {
-                    if (kDebugMode) {
-                      print('Error in offline mode: $e');
-                    }
-                    runApp(const FallbackApp());
-                  }
-                },
-                child: const Text('Continue with Offline Mode',
-                    style: TextStyle(fontSize: 16)),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                ),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const FirebaseDebugScreen(),
-                    ),
-                  );
-                },
-                child: const Text('View Detailed Status',
-                    style: TextStyle(fontSize: 16)),
-              ),
-            ],
-          ),
-        ),
-      ),
+    // Create and initialize ConfigService
+    final configService = await safeOperation(
+      () async {
+        final service = ConfigService();
+        await service.init();
+        return service;
+      },
+      timeoutSeconds: 5,
+      operationName: 'ConfigService initialization',
     );
-  }
-}
 
-class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    print(
-        'MyApp build method called - Initializing MaterialApp with SplashScreen');
-    try {
-      // Get AuthService from service locator
-      final authService = serviceLocator<AuthService>();
-
-      // Wrap GoRouter with BlocProvider for AuthBloc
-      return MultiBlocProvider(
-        providers: [
-          BlocProvider<AuthBloc>(
-            create: (context) => AuthBloc(authService: authService),
-          ),
-        ],
-        child: MaterialApp.router(
-          title: 'Uplift Therapist',
-          theme: AppTheme.lightTheme,
-          debugShowCheckedModeBanner: false,
-          routerConfig: AppRouter.router,
-        ),
-      );
-    } catch (e) {
-      print('ERROR in MyApp build: $e');
-      // Fallback to simple MaterialApp on error
-      return MaterialApp(
-        title: 'Uplift Therapist - Error Mode',
-        theme: AppTheme.lightTheme,
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          appBar: AppBar(title: const Text('Error')),
-          body: Center(
-            child: Text('Application initialization error: $e'),
-          ),
-        ),
-      );
+    if (configService == null) {
+      debugPrint('[Main] Failed to initialize ConfigService');
+      return;
     }
+
+    // Register in service locator
+    serviceLocator.registerSingleton<ConfigService>(configService);
+
+    // Log the baseUrl for diagnostic purposes
+    final baseUrl = configService.llmApiEndpoint;
+    debugPrint('[Main] API baseUrl: $baseUrl');
+
+    if (baseUrl.isEmpty) {
+      debugPrint(
+          '[Main] WARNING: API baseUrl is empty! ApiClient may not work properly.');
+    }
+
+    // Create and register ApiClient
+    debugPrint('[Main] Creating ApiClient with baseUrl: $baseUrl');
+    final apiClient = ApiClient(configService: configService);
+    serviceLocator.registerSingleton<ApiClient>(apiClient);
+
+    // Register repositories that depend on ApiClient
+    debugPrint('[Main] Registering repositories...');
+
+    serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
+          apiClient: serviceLocator<ApiClient>(),
+        ));
+
+    serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
+          apiClient: serviceLocator<ApiClient>(),
+        ));
+
+    serviceLocator
+        .registerLazySingleton<SessionRepository>(() => SessionRepository(
+              apiClient: serviceLocator<ApiClient>(),
+              appDatabase: serviceLocator<AppDatabase>(),
+            ));
+
+    serviceLocator
+        .registerLazySingleton<MessageRepository>(() => MessageRepository(
+              apiClient: serviceLocator<ApiClient>(),
+              appDatabase: serviceLocator<AppDatabase>(),
+            ));
+
+    // Register TherapyService
+    serviceLocator
+        .registerLazySingleton<TherapyService>(() => TherapyService());
+
+    // Register AuthService
+    serviceLocator.registerLazySingleton<AuthService>(() => AuthService());
+
+    debugPrint(
+        '[Main] All repositories and services registered successfully ✅');
+  } catch (e) {
+    debugPrint('[Main] ERROR initializing ConfigService/ApiClient: $e');
   }
 }

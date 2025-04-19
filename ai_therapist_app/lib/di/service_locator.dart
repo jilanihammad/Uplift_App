@@ -32,74 +32,73 @@ import '../utils/connectivity_checker.dart';
 final serviceLocator = GetIt.instance;
 
 Future<void> setupServiceLocator() async {
-  // Check if already initialized to prevent duplicate registrations
+  // Check if already initialized
   if (serviceLocator.isRegistered<PrefsManager>()) {
     return;
   }
-  
-  // Initialize configuration service first
-  final configService = ConfigService();
-  serviceLocator.registerSingleton<ConfigService>(configService);
-  await configService.init();
-  
-  // Register Firebase service
+
+  // Register ConfigService, ApiClient, TherapyService in main.dart now
+  // REMOVE: final configService = ConfigService();
+  // REMOVE: serviceLocator.registerSingleton<ConfigService>(configService);
+
+  // Register Firebase service (assuming synchronous or handled elsewhere)
   serviceLocator.registerSingleton<FirebaseService>(FirebaseService());
-  
-  // Register BackendService
+
+  // Register BackendService (assuming synchronous or handled elsewhere)
   serviceLocator.registerSingleton<BackendService>(BackendService());
-  
-  // Get configuration from ConfigService
-  final baseUrl = configService.llmApiEndpoint;
+
+  // REMOVE: final baseUrl = configService.llmApiEndpoint;
+  // REMOVE: debugPrint(...);
 
   // Local Data Sources
   serviceLocator.registerLazySingleton<PrefsManager>(() => PrefsManager());
   serviceLocator.registerLazySingleton<AppDatabase>(() => AppDatabase());
   serviceLocator.registerLazySingleton<DatabaseHelper>(() => DatabaseHelper());
 
-  // Initialize PrefsManager
+  // Initialize PrefsManager (keep this sync init here)
   final prefsManager = serviceLocator<PrefsManager>();
   await prefsManager.init();
 
-  // Remote Data Source
-  serviceLocator.registerLazySingleton<ApiClient>(() => ApiClient(
-    baseUrl: baseUrl,
-  ));
+  // Remote Data Source - REMOVE ApiClient registration, will be done in main.dart
+  // REMOVE: serviceLocator.registerSingleton<ApiClient>(ApiClient(
+  // REMOVE:       configService: configService,
+  // REMOVE:     ));
 
-  // Repositories
-  serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
-    baseUrl: baseUrl,
-    apiClient: serviceLocator<ApiClient>(),
-  ));
+  // Repositories - REMOVE registrations needing ApiClient, will be done in main.dart
+  // REMOVE: serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
+  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
+  // REMOVE:     ));
+  // REMOVE: serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
+  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
+  // REMOVE:     ));
+  // REMOVE: serviceLocator.registerLazySingleton<SessionRepository>(() => SessionRepository(
+  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
+  // REMOVE:       appDatabase: serviceLocator<AppDatabase>(),
+  // REMOVE:     ));
+  // REMOVE: serviceLocator.registerLazySingleton<MessageRepository>(() => MessageRepository(
+  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
+  // REMOVE:       appDatabase: serviceLocator<AppDatabase>(),
+  // REMOVE:     ));
 
-  serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
-    apiClient: serviceLocator<ApiClient>(),
-  ));
-
-  serviceLocator.registerLazySingleton<SessionRepository>(() => SessionRepository(
-    apiClient: serviceLocator<ApiClient>(),
-    appDatabase: serviceLocator<AppDatabase>(),
-  ));
-
-  serviceLocator.registerLazySingleton<MessageRepository>(() => MessageRepository(
-    apiClient: serviceLocator<ApiClient>(),
-    appDatabase: serviceLocator<AppDatabase>(),
-  ));
-
-  // Services - register without initializing
-  serviceLocator.registerLazySingleton<AuthService>(() => AuthService());
-  serviceLocator.registerLazySingleton<NotificationService>(() => NotificationService());
-  serviceLocator.registerLazySingleton<ConnectivityChecker>(() => ConnectivityChecker());
-  serviceLocator.registerLazySingleton<PreferencesService>(() => PreferencesService());
-  serviceLocator.registerLazySingleton<VoiceService>(() => VoiceService());
-  serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService());
-  serviceLocator.registerLazySingleton<MemoryService>(() => MemoryService());
-  serviceLocator.registerLazySingleton<TherapyGraphService>(() => TherapyGraphService());
+  // Services - Register ones NOT initialized async in main.dart
+  // REMOVE: serviceLocator.registerLazySingleton<AuthService>(() => AuthService()); // Assume needs repo
+  serviceLocator
+      .registerLazySingleton<NotificationService>(() => NotificationService());
+  serviceLocator
+      .registerLazySingleton<ConnectivityChecker>(() => ConnectivityChecker());
+  serviceLocator
+      .registerLazySingleton<PreferencesService>(() => PreferencesService());
+  serviceLocator.registerLazySingleton<VoiceService>(
+      () => VoiceService()); // Keep if init is simple/separate
+  // REMOVE: serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService());
+  serviceLocator.registerLazySingleton<MemoryService>(
+      () => MemoryService()); // Keep if init is simple/separate
+  serviceLocator
+      .registerLazySingleton<TherapyGraphService>(() => TherapyGraphService());
   serviceLocator.registerLazySingleton<ProgressService>(() => ProgressService(
-    notificationService: serviceLocator<NotificationService>()
-  ));
-  serviceLocator.registerLazySingleton<UserProfileService>(() => UserProfileService());
-  serviceLocator.registerLazySingleton<OnboardingService>(() => OnboardingService());
-  
-  // Note: Initialization of services is now moved to main.dart
-  // to properly handle initialization errors
+      notificationService: serviceLocator<NotificationService>()));
+  serviceLocator.registerLazySingleton<UserProfileService>(
+      () => UserProfileService()); // Keep if init handled separately
+  serviceLocator.registerLazySingleton<OnboardingService>(
+      () => OnboardingService()); // Keep if init handled separately
 }

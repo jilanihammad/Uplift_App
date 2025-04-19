@@ -14,10 +14,10 @@ class MoodSetupScreen extends StatefulWidget {
 class _MoodSetupScreenState extends State<MoodSetupScreen> {
   final _onboardingService = GetIt.instance<OnboardingService>();
   final _progressService = GetIt.instance<ProgressService>();
-  
+
   Mood? _selectedMood;
   bool _isLoading = false;
-  
+
   Future<void> _saveAndContinue() async {
     if (_selectedMood == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -25,14 +25,15 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       // Log the initial mood
-      await _progressService.logMood(_selectedMood!, "Initial mood during setup");
+      await _progressService.logMood(
+          _selectedMood!, "Initial mood during setup");
       await _onboardingService.goToNextStep();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -68,8 +69,8 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
             Text(
               'How are you feeling right now?',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+                    fontWeight: FontWeight.bold,
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -79,7 +80,7 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 40),
-            
+
             // Mood selector
             MoodSelector(
               onMoodSelected: (mood) {
@@ -88,10 +89,9 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
                 });
               },
             ),
-            
+
             if (_selectedMood != null) ...[
               const SizedBox(height: 32),
-              
               Text(
                 'You selected: ${_selectedMood!.label}',
                 style: const TextStyle(
@@ -100,9 +100,9 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
                 ),
               ),
             ],
-            
+
             const Spacer(),
-            
+
             // Continue Button
             SizedBox(
               width: double.infinity,
@@ -114,15 +114,15 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: _isLoading 
-                  ? const CircularProgressIndicator()
-                  : const Text(
-                      'Continue',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                child: _isLoading
+                    ? const CircularProgressIndicator()
+                    : const Text(
+                        'Continue',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
               ),
             ),
           ],
@@ -130,4 +130,4 @@ class _MoodSetupScreenState extends State<MoodSetupScreen> {
       ),
     );
   }
-} 
+}
