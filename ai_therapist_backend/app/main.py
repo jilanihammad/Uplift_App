@@ -263,24 +263,24 @@ async def voice_synthesize(request: VoiceRequest):
     try:
         logger.info("Received TTS request: %s", request.text[:30] + "..." if len(request.text) > 30 else request.text)
         
-        # In a real implementation, you would call the TTS API
-        # For now, we'll save a placeholder file
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = f"static/audio/{timestamp}.mp3"
+        # Import voice_service here to avoid circular imports
+        from app.services.voice_service import voice_service
         
-        # For demo, copy error.mp3 as our audio file (should be preloaded in the static directory)
-        if not os.path.exists("static/audio/error.mp3"):
-            with open("static/audio/error.mp3", "wb") as f:
-                # Create an empty file if it doesn't exist
-                pass
+        # Set the requested voice if provided
+        if request.voice:
+            voice_service.set_voice(request.voice)
         
-        # Copy error.mp3 to our new file path
-        import shutil
-        shutil.copy("static/audio/error.mp3", file_path)
+        # Generate speech using the GROQ API via voice_service
+        audio_url = await voice_service.generate_speech(request.text)
         
-        # Return the URL to the audio file
-        audio_url = f"/audio/{timestamp}.mp3"
-        logger.info("Audio file saved at: %s", audio_url)
+        # Ensure we always have a URL, even if generation failed
+        if not audio_url:
+            logger.error("Failed to generate audio, returning fallback audio")
+            audio_url = "/audio/error.mp3"
+        
+        logger.info("Audio generated successfully at: %s", audio_url)
+        
+        # Return the URL to the audio file - note we use 'url' key to match Flutter app expectations
         return {"url": audio_url}
     
     except Exception as e:
