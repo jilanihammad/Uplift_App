@@ -4,6 +4,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path;
+import 'dart:io';
 
 /// Service for accessing configuration values and API keys
 /// Uses environment variables and secure storage
@@ -112,22 +114,54 @@ class ConfigService {
     try {
       bool envFileLoaded = false;
 
-      // Load .env file (for development)
-      if (kDebugMode) {
+      // Load .env file - try both standard locations
+      try {
+        // Try loading from project root first
+        await dotenv.load(fileName: ".env");
+        envFileLoaded = true;
+        debugPrint('[ConfigService] .env file loaded successfully');
+      } catch (e) {
+        debugPrint('[ConfigService] Error loading .env from project root: $e');
+
+        // Try loading with absolute path as fallback
         try {
-          await dotenv.load(fileName: ".env");
-          envFileLoaded = true;
+          // Get app directory
+          final Directory appDir = Directory.current;
+          final String envPath = path.join(appDir.path, '.env');
+          debugPrint('[ConfigService] Trying to load .env from: $envPath');
+
+          if (await File(envPath).exists()) {
+            await dotenv.load(fileName: envPath);
+            envFileLoaded = true;
+            debugPrint(
+                '[ConfigService] .env file loaded successfully from absolute path');
+          } else {
+            debugPrint('[ConfigService] .env file does not exist at: $envPath');
+          }
+        } catch (absPathError) {
           debugPrint(
-              '[ConfigService] .env file loaded successfully in debug mode');
-        } catch (e) {
-          debugPrint(
-              '[ConfigService] Failed to load .env file in debug mode: $e');
-          // Continue with defaults - no need to throw
+              '[ConfigService] Error loading .env from absolute path: $absPathError');
         }
       }
 
       if (!envFileLoaded) {
-        debugPrint('[ConfigService] Using default configuration values');
+        debugPrint(
+            '[ConfigService] Could not load .env file, using default configuration values');
+      } else {
+        // Log loaded environment variables for debugging (masking sensitive values)
+        final envVars = dotenv.env;
+        debugPrint(
+            '[ConfigService] Loaded ${envVars.length} environment variables:');
+        envVars.forEach((key, value) {
+          if (key.toLowerCase().contains('key') ||
+              key.toLowerCase().contains('secret')) {
+            // Mask sensitive values
+            debugPrint(
+                '  $key: ${value.substring(0, value.length > 4 ? 4 : value.length)}*****');
+          } else {
+            debugPrint('  $key: $value');
+          }
+        });
       }
 
       // Base URLs and endpoints - always safe get with fallbacks
