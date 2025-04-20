@@ -59,26 +59,18 @@ bool _firebaseInitialized = false;
 // Background message handler (comment out body for now if causing issues)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Only initialize Firebase if it hasn't been initialized yet
+  // Only get existing Firebase app if it hasn't been initialized yet
   if (!_firebaseInitialized) {
     // Ensure Flutter is initialized in the isolate
     WidgetsFlutterBinding.ensureInitialized();
 
     try {
-      // Try to get existing Firebase app first
-      try {
-        Firebase.app();
-        debugPrint('[BackgroundHandler] Using existing Firebase app');
-      } catch (e) {
-        // Initialize Firebase if no existing app
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-        debugPrint('[BackgroundHandler] Firebase initialized');
-      }
+      // Don't initialize, just get the existing app
+      Firebase.app();
+      debugPrint('[BackgroundHandler] Using existing Firebase app');
       _firebaseInitialized = true;
     } catch (e) {
-      debugPrint('[BackgroundHandler] Firebase init error: $e');
+      debugPrint('[BackgroundHandler] Firebase error: $e');
     }
   }
 
@@ -88,30 +80,22 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 // Global reference to FirebaseApp
 FirebaseApp? _app;
 
-// Single point of Firebase initialization to prevent duplicates
-Future<FirebaseApp?> _initializeFirebase() async {
+// Get the existing Firebase app instead of trying to initialize it
+Future<FirebaseApp?> _getExistingFirebaseApp() async {
   if (_app != null) {
-    debugPrint('[initializeFirebase] Returning existing Firebase app instance');
+    debugPrint('[Firebase] Returning cached Firebase app instance');
     return _app;
   }
 
   try {
-    // First try to get existing app
-    try {
-      _app = Firebase.app();
-      debugPrint('[initializeFirebase] Got existing Firebase app');
-    } catch (e) {
-      // If no existing app, initialize a new one
-      _app = await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      debugPrint('[initializeFirebase] Firebase newly initialized');
-    }
+    // Just get the existing app instance that was initialized by native code
+    _app = Firebase.app();
+    debugPrint(
+        '[Firebase] Successfully got existing Firebase app: ${_app?.name}');
     _firebaseInitialized = true;
     return _app;
-  } catch (e, stack) {
-    debugPrint('[initializeFirebase] Error: $e');
-    debugPrint('[initializeFirebase] Stack: $stack');
+  } catch (e) {
+    debugPrint('[Firebase] Error getting existing Firebase app: $e');
     return null;
   }
 }
@@ -170,16 +154,17 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint('[Main] Flutter bindings initialized.');
 
-  // 2. Initialize Firebase Core using our safe approach to prevent duplicates
-  final firebaseApp = await _initializeFirebase();
+  // 2. Access the existing Firebase app instance
+  final firebaseApp = await _getExistingFirebaseApp();
   if (firebaseApp != null) {
-    debugPrint(
-        '[Main] Firebase initialization successful: ${firebaseApp.name}');
+    debugPrint('[Main] Found existing Firebase app: ${firebaseApp.name}');
+    _firebaseInitialized = true;
   } else {
-    debugPrint('[Main] WARNING: Firebase initialization failed or incomplete.');
+    debugPrint(
+        '[Main] Could not get Firebase app instance, some features may be limited');
   }
 
-  // 3. Only register background messaging handler after Firebase is initialized
+  // 3. Only register background messaging handler if Firebase is available
   if (_firebaseInitialized) {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     debugPrint('[Main] Background messaging handler registered.');
@@ -476,8 +461,15 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
 
 // Add a helper method for Firebase services initialization
 Future<void> _initializeFirebaseServices() async {
+  if (!_firebaseInitialized) {
+    debugPrint(
+        '[Main] Skipping FirebaseService initialization as Firebase is not available');
+    return;
+  }
+
   try {
-    debugPrint('[Main] Initializing FirebaseService...');
+    debugPrint(
+        '[Main] Initializing FirebaseService with existing Firebase instance...');
     if (serviceLocator.isRegistered<FirebaseService>()) {
       await safeOperation(
         () => serviceLocator<FirebaseService>().init(),
