@@ -18,71 +18,62 @@ import 'package:ai_therapist_app/config/api.dart';
 import 'package:ai_therapist_app/data/models/log_entry.dart';
 import 'package:ai_therapist_app/data/repositories/log_repo.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Recording states
-enum RecordingState {
-  ready,
-  recording,
-  stopped,
-  paused,
-  error
-}
+enum RecordingState { ready, recording, stopped, paused, error }
 
 // Transcription models
-enum TranscriptionModel {
-  whisper,
-  deepgramAI,
-  assembly
-}
+enum TranscriptionModel { whisper, deepgramAI, assembly }
 
 class VoiceService {
   // Stream controllers for voice recording states
-  final StreamController<RecordingState> _recordingStateController = 
+  final StreamController<RecordingState> _recordingStateController =
       StreamController<RecordingState>.broadcast();
   Stream<RecordingState> get recordingState => _recordingStateController.stream;
-  
+
   // Current state of recording
   RecordingState _currentState = RecordingState.ready;
-  
+
   // Path to the CSM directory
   String? _csmPath;
-  
+
   // Speaker IDs
   final int _userSpeakerId = 0; // Speaker A
-  final int _aiSpeakerId = 1;    // Speaker B
-  
+  final int _aiSpeakerId = 1; // Speaker B
+
   // Audio context for the conversation
   List<Map<String, dynamic>> _conversationContext = [];
-  
+
   // Generated audio path
   String? _lastGeneratedAudioPath;
-  
+
   // API client for making requests to backend
   late ApiClient _apiClient;
-  
+
   // Backend server URL
   late String _backendUrl;
-  
+
   // Getter for accessing backend URL from other services
   String get apiUrl => _backendUrl;
-  
+
   // Flag to indicate if we're running in a web environment
   final bool _isWeb = kIsWeb;
-  
+
   // Method to initialize the voice service
   Future<void> initialize() async {
     try {
       // Get API client from service locator
       _apiClient = serviceLocator<ApiClient>();
-      
+
       // Get backend URL from config service
       final configService = serviceLocator<ConfigService>();
       _backendUrl = configService.llmApiEndpoint;
-      
+
       if (kDebugMode) {
         print('Voice service initialized with API client');
       }
-      
+
       // For web platform, use a simplified initialization
       if (_isWeb) {
         if (kDebugMode) {
@@ -92,7 +83,7 @@ class VoiceService {
         _recordingStateController.add(_currentState);
         return;
       }
-      
+
       // Request microphone permissions for recording (non-web platforms)
       if (!_isWeb) {
         var status = await Permission.microphone.request();
@@ -100,13 +91,13 @@ class VoiceService {
           throw Exception("Microphone permission not granted");
         }
       }
-      
+
       // Reset the conversation context
       _conversationContext = [];
-      
+
       _currentState = RecordingState.ready;
       _recordingStateController.add(_currentState);
-      
+
       if (kDebugMode) {
         print('Voice service initialized successfully');
       }
@@ -122,13 +113,13 @@ class VoiceService {
       }
     }
   }
-  
+
   // Start recording
   Future<void> startRecording() async {
     try {
       _currentState = RecordingState.recording;
       _recordingStateController.add(_currentState);
-      
+
       if (kDebugMode) {
         print('Recording started (${_isWeb ? 'web mode' : 'native mode'})');
       }
@@ -138,30 +129,30 @@ class VoiceService {
       if (!_isWeb) rethrow;
     }
   }
-  
+
   // Stop recording and get transcription using Groq API via backend
   Future<String> stopRecording() async {
     try {
       _currentState = RecordingState.stopped;
       _recordingStateController.add(_currentState);
-      
+
       if (kDebugMode) {
         print('Recording stopped (${_isWeb ? 'web mode' : 'native mode'})');
       }
-      
+
       // In a real implementation, we would have the audio file to send
       // For now, use a simulated transcription when in debug mode
       if (kDebugMode) {
         return "This is a simulated transcription for testing purposes.";
       }
-      
+
       try {
         // Make API call to the backend for speech-to-text using Groq API
         final response = await _apiClient.post('/voice/transcribe', body: {
           'audio_url': 'temp_audio_recording.mp3',
           'model': 'whisper-large-v3-turbo'
         });
-        
+
         if (response != null && response.containsKey('transcription')) {
           return response['transcription'];
         } else {
@@ -184,84 +175,155 @@ class VoiceService {
       return "Sorry, I couldn't process the audio. Please try again.";
     }
   }
-  
+
   // Generate audio using Groq API via backend
   Future<String> generateAudio(String text, {bool isAiSpeaking = true}) async {
     try {
       if (kDebugMode) {
         print('Generating audio for text: $text');
       }
-      
+
       // Add this utterance to the conversation context
       _conversationContext.add({
         'text': text,
         'speaker_id': isAiSpeaking ? _aiSpeakerId : _userSpeakerId,
       });
-      
+
       // We'll only keep the last 10 utterances to avoid context length issues
       if (_conversationContext.length > 10) {
-        _conversationContext = _conversationContext.sublist(_conversationContext.length - 10);
+        _conversationContext =
+            _conversationContext.sublist(_conversationContext.length - 10);
       }
-      
+
+      // Store the text for TTS fallback right away
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_tts_text', text);
+        if (kDebugMode) {
+          print('Stored text for TTS fallback: $text');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error storing text for TTS fallback: $e');
+        }
+        // Continue anyway, we still have the conversation context as backup
+      }
+
       try {
         // Make API call to the backend for text-to-speech using Groq API
         final response = await _apiClient.post('/voice/synthesize', body: {
           'text': text,
-          'voice': isAiSpeaking ? 'Jennifer-PlayAI' : 'Mason-PlayAI', // Updated to use valid Groq TTS voices
+          'voice': isAiSpeaking
+              ? 'Jennifer-PlayAI'
+              : 'Mason-PlayAI', // Updated to use valid Groq TTS voices
         });
-        
-        if (response != null && response.containsKey('audio_url')) {
+
+        if (kDebugMode) {
+          print('TTS API response: $response');
+        }
+
+        if (response != null) {
           // The backend returns a URL to the generated audio file
-          final audioUrl = response['audio_url'];
-          
+          final audioUrl = response['url'];
+
+          if (audioUrl == null || audioUrl.toString().isEmpty) {
+            if (kDebugMode) {
+              print(
+                  'Error: Received null or empty audio URL from backend. Using local TTS.');
+            }
+
+            // Fall back to local TTS immediately
+            // Generate a fake URL to trigger the fallback mechanism in playAudio
+            String localFallbackPath =
+                'local_tts://${DateTime.now().millisecondsSinceEpoch}';
+            _lastGeneratedAudioPath = localFallbackPath;
+
+            return localFallbackPath;
+          }
+
           // Construct the full URL
-          String fullAudioUrl = audioUrl.startsWith('http') 
-              ? audioUrl 
-              : '$_backendUrl$audioUrl';
-          
+          String fullAudioUrl =
+              audioUrl.startsWith('http') ? audioUrl : '$_backendUrl$audioUrl';
+
+          if (kDebugMode) {
+            print('Successfully generated audio, URL: $fullAudioUrl');
+          }
+
           _lastGeneratedAudioPath = fullAudioUrl;
           return fullAudioUrl;
         } else {
-          throw Exception("Invalid response format from speech synthesis API");
+          if (kDebugMode) {
+            print(
+                'Error: Received null response from backend. Using local TTS.');
+          }
+
+          // Generate a fake URL to trigger the fallback mechanism in playAudio
+          String localFallbackPath =
+              'local_tts://${DateTime.now().millisecondsSinceEpoch}';
+          _lastGeneratedAudioPath = localFallbackPath;
+
+          return localFallbackPath;
         }
       } catch (e) {
         if (kDebugMode) {
-          print('Error in speech synthesis API call: $e');
+          print('Error in speech synthesis API call: $e. Using local TTS.');
         }
-        
-        // Return a URL that indicates an error occurred
-        return '$_backendUrl/audio/error.mp3';
+
+        // Generate a fake URL to trigger the fallback mechanism in playAudio
+        String localFallbackPath =
+            'local_tts://${DateTime.now().millisecondsSinceEpoch}';
+        _lastGeneratedAudioPath = localFallbackPath;
+
+        return localFallbackPath;
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error generating audio: $e');
+        print('Error generating audio: $e. Using local TTS.');
       }
-      
-      // Return a URL that indicates an error occurred
-      return '$_backendUrl/audio/error.mp3';
+
+      // Generate a fake URL to trigger the fallback mechanism in playAudio
+      String localFallbackPath =
+          'local_tts://${DateTime.now().millisecondsSinceEpoch}';
+      _lastGeneratedAudioPath = localFallbackPath;
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_tts_text', text);
+      } catch (_) {
+        // Ignore error, we'll use conversation context
+      }
+
+      return localFallbackPath;
     }
   }
-  
+
   // Play an audio file
   Future<void> playAudio(String audioPath) async {
     try {
+      // Check if this is a local TTS fallback path
+      if (audioPath.startsWith('local_tts://')) {
+        await _useTtsBackup();
+        return;
+      }
+
       // Check if the path is a URL or a local file path
       if (audioPath.startsWith('http')) {
         if (kDebugMode) {
           print('Playing audio from URL: $audioPath');
         }
-        
+
         try {
           // Check if the audio file exists by making a HEAD request
           final response = await http.head(Uri.parse(audioPath));
-          
+
           if (response.statusCode != 200) {
-            print('Audio file not found at URL: $audioPath, using text-to-speech fallback');
+            print(
+                'Audio file not found at URL: $audioPath, using text-to-speech fallback');
             // Fallback to text-to-speech for the message content
             await _useTtsBackup();
             return;
           }
-          
+
           // Try to play audio using just_audio
           if (!_isWeb) {
             try {
@@ -273,21 +335,25 @@ class VoiceService {
                 (state) => state == ProcessingState.completed,
               );
               await player.dispose();
-              
+
               if (kDebugMode) {
                 print('Audio playback complete');
               }
               return;
             } catch (audioError) {
               if (kDebugMode) {
-                print('Just Audio error: $audioError, falling back to simulated playback');
+                print(
+                    'Just Audio error: $audioError, falling back to simulated playback');
               }
+              // Fallback to text-to-speech
+              await _useTtsBackup();
+              return;
             }
           }
-          
+
           // Fallback: simulate playback with a delay
           await Future.delayed(const Duration(seconds: 2));
-          
+
           if (kDebugMode) {
             print('Audio playback complete');
           }
@@ -300,16 +366,17 @@ class VoiceService {
         // It's a local file path, check if it exists (only on non-web platforms)
         final file = io.File(audioPath);
         if (!await file.exists()) {
-          print('Audio file not found at $audioPath, using text-to-speech fallback');
+          print(
+              'Audio file not found at $audioPath, using text-to-speech fallback');
           // Fallback to text-to-speech
           await _useTtsBackup();
           return;
         }
-        
+
         if (kDebugMode) {
           print('Playing local audio file at $audioPath');
         }
-        
+
         // Try to play audio using just_audio
         try {
           final player = AudioPlayer();
@@ -320,31 +387,28 @@ class VoiceService {
             (state) => state == ProcessingState.completed,
           );
           await player.dispose();
-          
+
           if (kDebugMode) {
             print('Audio playback complete');
           }
           return;
         } catch (audioError) {
           if (kDebugMode) {
-            print('Just Audio error: $audioError, falling back to simulated playback');
+            print(
+                'Just Audio error: $audioError, falling back to simulated playback');
           }
-        }
-        
-        // Fallback: simulate playback with a delay
-        await Future.delayed(const Duration(seconds: 2));
-        
-        if (kDebugMode) {
-          print('Audio playback complete');
+          // Fallback to text-to-speech
+          await _useTtsBackup();
+          return;
         }
       } else {
         // Web platform - simulate playback
         if (kDebugMode) {
           print('Web platform: playing audio from $audioPath');
         }
-        
+
         await Future.delayed(const Duration(seconds: 2));
-        
+
         if (kDebugMode) {
           print('Audio playback complete');
         }
@@ -358,7 +422,7 @@ class VoiceService {
       if (!_isWeb) rethrow;
     }
   }
-  
+
   // Download a remote audio file and cache it locally
   Future<String?> _downloadAndCacheAudio(String url) async {
     try {
@@ -367,16 +431,16 @@ class VoiceService {
       if (response.statusCode != 200) {
         return null;
       }
-      
+
       // Get temporary directory for caching
       final tempDir = await getTemporaryDirectory();
       final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.mp3';
       final filePath = '${tempDir.path}/$fileName';
-      
+
       // Write the audio data to a file
       final file = io.File(filePath);
       await file.writeAsBytes(response.bodyBytes);
-      
+
       return filePath;
     } catch (e) {
       if (kDebugMode) {
@@ -385,28 +449,96 @@ class VoiceService {
       return null;
     }
   }
-  
+
   // Fallback to text-to-speech when audio file is not available
   Future<void> _useTtsBackup() async {
     if (kDebugMode) {
       print('Using text-to-speech fallback');
     }
-    
-    // In a real implementation, we would use the device's text-to-speech capabilities
-    // For now, just simulate with a delay
-    await Future.delayed(const Duration(seconds: 1));
-    
-    if (kDebugMode) {
-      print('Text-to-speech playback complete');
+
+    try {
+      // Use actual Flutter TTS
+      final FlutterTts flutterTts = FlutterTts();
+
+      // Get the text to speak - start with default error message
+      String textToSpeak =
+          "I'm sorry, there was an issue with the audio playback.";
+
+      try {
+        // Try to get the saved text from SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        final savedText = prefs.getString('last_tts_text');
+
+        if (savedText != null && savedText.isNotEmpty) {
+          textToSpeak = savedText;
+          if (kDebugMode) {
+            print('Using saved text for TTS: $textToSpeak');
+          }
+        } else if (_conversationContext.isNotEmpty) {
+          // Fallback to conversation context if SharedPreferences doesn't have the text
+          for (int i = _conversationContext.length - 1; i >= 0; i--) {
+            if (_conversationContext[i]['speaker_id'] == _aiSpeakerId) {
+              textToSpeak = _conversationContext[i]['text'];
+              if (kDebugMode) {
+                print('Using conversation context text for TTS: $textToSpeak');
+              }
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print(
+              'Error retrieving saved text: $e, falling back to conversation context');
+        }
+
+        // Fallback to conversation context
+        if (_conversationContext.isNotEmpty) {
+          for (int i = _conversationContext.length - 1; i >= 0; i--) {
+            if (_conversationContext[i]['speaker_id'] == _aiSpeakerId) {
+              textToSpeak = _conversationContext[i]['text'];
+              break;
+            }
+          }
+        }
+      }
+
+      // Configure TTS
+      await flutterTts.setLanguage("en-US");
+      await flutterTts.setPitch(1.0);
+      await flutterTts.setSpeechRate(0.5); // Slightly slower for better clarity
+
+      if (kDebugMode) {
+        print('Speaking text: $textToSpeak');
+      }
+
+      // Speak the text
+      await flutterTts.speak(textToSpeak);
+
+      // Wait for speaking to complete
+      await flutterTts.awaitSpeakCompletion(true);
+
+      if (kDebugMode) {
+        print('Text-to-speech playback complete');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error using Flutter TTS: $e');
+        // Fallback to just a delay if TTS fails
+        await Future.delayed(const Duration(seconds: 1));
+        print('Simulated text-to-speech playback complete');
+      }
     }
   }
-  
+
   // Cleanup resources
   void dispose() {
     _recordingStateController.close();
-    
+
     // Clean up any temporary files (only on non-web platforms)
-    if (!_isWeb && _lastGeneratedAudioPath != null && !_lastGeneratedAudioPath!.startsWith('http')) {
+    if (!_isWeb &&
+        _lastGeneratedAudioPath != null &&
+        !_lastGeneratedAudioPath!.startsWith('http')) {
       try {
         final file = io.File(_lastGeneratedAudioPath!);
         if (file.existsSync()) {
