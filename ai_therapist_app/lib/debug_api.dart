@@ -14,7 +14,7 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
   String _responseText = 'No response yet';
   bool _isLoading = false;
   String _selectedEndpoint = 'Cloud';
-  
+
   final Map<String, String> _endpoints = {
     'Cloud': 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app',
     'Firebase': 'https://upliftapp-cd86e.web.app',
@@ -27,41 +27,47 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
     });
 
     try {
-      final String baseUrl = _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
-      final String message = _messageController.text.isNotEmpty 
-          ? _messageController.text 
+      final String baseUrl =
+          _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
+      final String message = _messageController.text.isNotEmpty
+          ? _messageController.text
           : 'Hello, I am feeling anxious today';
-      
+
       // First test the status endpoint
       setState(() {
         _responseText = 'Testing status endpoint: $baseUrl/api/v1/llm/status';
       });
-      
+
       final uri = Uri.parse('$baseUrl/api/v1/llm/status');
-      final statusResponse = await http.get(uri).timeout(const Duration(seconds: 10));
-      
+      final statusResponse =
+          await http.get(uri).timeout(const Duration(seconds: 10));
+
       setState(() {
-        _responseText = 'Status response (${statusResponse.statusCode}):\n${statusResponse.body}\n\nNow testing AI response...';
+        _responseText =
+            'Status response (${statusResponse.statusCode}):\n${statusResponse.body}\n\nNow testing AI response...';
       });
-      
+
       // Now test the AI response endpoint
       final postUri = Uri.parse('$baseUrl/ai/response');
-      final response = await http.post(
-        postUri,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'message': message,
-          'system_prompt': 'You are a helpful AI assistant.',
-          'temperature': 0.7,
-          'max_tokens': 500,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            postUri,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'message': message,
+              'system_prompt': 'You are a helpful AI assistant.',
+              'temperature': 0.7,
+              'max_tokens': 500,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       setState(() {
         _isLoading = false;
-        _responseText = 'Status code: ${response.statusCode}\n\nResponse:\n${response.body}\n\nHeaders:\n${response.headers}';
+        _responseText =
+            'Status code: ${response.statusCode}\n\nResponse:\n${response.body}\n\nHeaders:\n${response.headers}';
       });
     } catch (e) {
       setState(() {
@@ -136,4 +142,4 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
       ),
     );
   }
-} 
+}
