@@ -13,12 +13,14 @@ import json
 from typing import Optional, List
 from datetime import datetime
 import traceback
+import base64
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
 from app.core.rate_limiter import RateLimitMiddleware
 from app.core.security_middleware import SecurityMiddleware
 from app.core.logger import setup_logging
+from app.services.groq_service import GroqService
 
 # Configure logging
 setup_logging()
@@ -103,8 +105,10 @@ class VoiceRequest(BaseModel):
     model: str = None
 
 class TranscriptionRequest(BaseModel):
-    audio_url: str
-    model: str = None
+    audio_url: Optional[str] = None
+    audio_data: Optional[str] = None  # Base64 encoded audio data
+    audio_format: Optional[str] = "mp3"  # Format of the audio (mp3, wav, aac, etc.)
+    model: Optional[str] = None
 
 class EndSessionRequest(BaseModel):
     messages: list
@@ -273,34 +277,133 @@ async def voice_synthesize(request: VoiceRequest):
         # Generate speech using the GROQ API via voice_service
         audio_url = await voice_service.generate_speech(request.text)
         
+        # Log the result for debugging
+        logger.info("Voice service returned audio_url: %s", audio_url)
+        
         # Ensure we always have a URL, even if generation failed
         if not audio_url:
             logger.error("Failed to generate audio, returning fallback audio")
             audio_url = "/audio/error.mp3"
+            
+            # Check if the fallback file exists
+            import os
+            fallback_path = os.path.join("static/audio", "error.mp3")
+            if not os.path.exists(fallback_path):
+                logger.error("Fallback audio file %s does not exist", fallback_path)
+                # Create a directory for audio files if it doesn't exist
+                os.makedirs("static/audio", exist_ok=True)
+                # Create an empty file as absolute fallback
+                with open(fallback_path, "wb") as f:
+                    f.write(b"")
+                logger.info("Created empty fallback audio file at %s", fallback_path)
         
         logger.info("Audio generated successfully at: %s", audio_url)
         
         # Return the URL to the audio file - note we use 'url' key to match Flutter app expectations
-        return {"url": audio_url}
+        response_data = {"url": audio_url}
+        logger.info("Returning response: %s", response_data)
+        return response_data
     
     except Exception as e:
         logger.error("Error synthesizing speech: %s", str(e))
+        logger.error("Exception traceback: %s", traceback.format_exc())
+        
         # Return a fallback audio URL
-        return {"url": "/audio/error.mp3"}
+        fallback_url = "/audio/error.mp3"
+        logger.info("Returning fallback URL: %s", fallback_url)
+        return {"url": fallback_url}
 
 @app.post("/voice/transcribe")
-async def transcribe_audio(request: TranscriptionRequest):
-    """Handle transcription requests."""
+async def transcribe_audio(request: Request):
+    """Endpoint to transcribe audio sent as base64 encoded data."""
     try:
-        logger.info("Received transcription request for URL: %s", request.audio_url)
+        # Get the request body as JSON
+        json_data = await request.json()
+        audio_data = json_data.get("audio_data")
+        audio_format = json_data.get("audio_format", "aac")  # Default to aac if not specified
+        model = json_data.get("model", "distil-whisper-large-v3-en")  # Default to GROQ's distil-whisper model
         
-        # In a real implementation, you would download the audio and call the transcription API
-        # For demo purposes, return a mock response
-        return {"text": "This is a simulated transcription response. The actual transcription would be based on the audio content."}
-    
+        logger.info(f"Received transcription request. Format: {audio_format}, Model: {model}")
+        
+        # Check if audio data was provided
+        if not audio_data:
+            logger.warning("No audio data provided for transcription")
+            return {"text": "I couldn't hear anything. Please try again or type your message."}
+        
+        # Log the size of the received audio data
+        audio_data_length = len(audio_data) if audio_data else 0
+        logger.info(f"Audio data received: {audio_data_length} characters")
+        
+        # Decode the base64 audio data
+        try:
+            audio_bytes = base64.b64decode(audio_data)
+            logger.info(f"Successfully decoded audio: {len(audio_bytes)} bytes, format: {audio_format}")
+            
+            if len(audio_bytes) < 100:
+                logger.warning(f"Audio data too small ({len(audio_bytes)} bytes), likely invalid")
+                return {"text": "The recorded audio was too short. Please try again or type your message."}
+            
+            # Save to a temporary file
+            import tempfile
+            import os
+            
+            temp_dir = tempfile.gettempdir()
+            unique_id = uuid.uuid4()
+            temp_file_path = os.path.join(temp_dir, f"audio_transcription_{unique_id}.{audio_format}")
+            
+            logger.info(f"Will save audio to temporary file: {temp_file_path}")
+            
+            with open(temp_file_path, "wb") as f:
+                f.write(audio_bytes)
+            
+            # Verify the file was written successfully
+            if os.path.exists(temp_file_path):
+                file_size = os.path.getsize(temp_file_path)
+                logger.info(f"Saved audio to temporary file: {temp_file_path}, size: {file_size} bytes")
+            else:
+                logger.error(f"Failed to save audio file at {temp_file_path}")
+                return {"text": "Error saving the audio file. Please try again."}
+            
+            # Check if file exists and has content
+            if not os.path.exists(temp_file_path) or os.path.getsize(temp_file_path) == 0:
+                logger.error(f"Temporary file creation failed or file is empty: {temp_file_path}")
+                return {"text": "There was an issue processing your audio. Please try again or type your message."}
+            
+            # Call GROQ API for transcription
+            from app.services.groq_service import groq_service
+            
+            logger.info(f"Calling transcription service with model: {model}")
+            try:
+                transcription = await groq_service.transcribe_audio(temp_file_path, model)
+                logger.info(f"Transcription service returned: '{transcription}'")
+            except Exception as e:
+                logger.error(f"Error from transcription service: {str(e)}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return {"text": "There was an error with the transcription service. Please try again or type your message."}
+            
+            # Clean up the temporary file
+            try:
+                os.remove(temp_file_path)
+                logger.info("Temporary audio file removed")
+            except Exception as e:
+                logger.error(f"Error removing temporary file: {str(e)}")
+            
+            if transcription and transcription.strip():
+                logger.info(f"Transcription successful: {transcription}")
+                return {"text": transcription}
+            else:
+                logger.warning("Empty transcription result")
+                return {"text": "I couldn't understand what you said. Please try again or type your message."}
+                
+        except Exception as e:
+            logger.error(f"Error processing audio data: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"text": "I had trouble understanding your audio. Please try again or type your message."}
+            
     except Exception as e:
-        logger.error("Error transcribing audio: %s", str(e))
-        return {"text": "Sorry, I couldn't transcribe that audio. Could you please try again?"}
+        logger.error(f"Error in transcribe_audio endpoint: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {"text": "There was an issue with the transcription. Please try again or type your message."}
 
 # Session-related schemas
 class SessionUpdateRequest(BaseModel):

@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -19,6 +20,7 @@ import 'package:ai_therapist_app/data/models/log_entry.dart';
 import 'package:ai_therapist_app/data/repositories/log_repo.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:record/record.dart';
 
 // Recording states
 enum RecordingState { ready, recording, stopped, paused, error }
@@ -48,6 +50,10 @@ class VoiceService {
   // Generated audio path
   String? _lastGeneratedAudioPath;
 
+  // Recording related
+  late final AudioRecorder _audioRecorder;
+  String? _recordingPath;
+
   // API client for making requests to backend
   late ApiClient _apiClient;
 
@@ -59,6 +65,11 @@ class VoiceService {
 
   // Flag to indicate if we're running in a web environment
   final bool _isWeb = kIsWeb;
+
+  // Constructor - initialize recorder
+  VoiceService() {
+    _audioRecorder = AudioRecorder();
+  }
 
   // Method to initialize the voice service
   Future<void> initialize() async {
@@ -117,22 +128,86 @@ class VoiceService {
   // Start recording
   Future<void> startRecording() async {
     try {
-      _currentState = RecordingState.recording;
-      _recordingStateController.add(_currentState);
+      if (_isWeb) {
+        // Simulate recording in web mode
+        _currentState = RecordingState.recording;
+        _recordingStateController.add(_currentState);
+
+        if (kDebugMode) {
+          print('Recording started (web mode simulation)');
+        }
+        return;
+      }
+
+      // Check that microphone permission is granted
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        throw Exception('Microphone permission not granted');
+      }
+
+      // Get temp directory to store the recording
+      final tempDir = await getTemporaryDirectory();
+      _recordingPath =
+          '${tempDir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
       if (kDebugMode) {
-        print('Recording started (${_isWeb ? 'web mode' : 'native mode'})');
+        print('Will save recording to: $_recordingPath');
+      }
+
+      // Check if the recorder has been initialized
+      if (!await _audioRecorder.isRecording()) {
+        // Start recording
+        await _audioRecorder.start(
+          RecordConfig(
+            encoder:
+                AudioEncoder.aacLc, // We keep AAC for recording for quality
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: _recordingPath ??
+              '${(await getTemporaryDirectory()).path}/recording_fallback.m4a',
+        );
+
+        // Update state
+        _currentState = RecordingState.recording;
+        _recordingStateController.add(_currentState);
+
+        if (kDebugMode) {
+          print('Recording started with path: $_recordingPath');
+        }
       }
     } catch (e) {
       _currentState = RecordingState.error;
       _recordingStateController.add(_currentState);
+      if (kDebugMode) {
+        print('Error starting recording: $e');
+      }
       if (!_isWeb) rethrow;
     }
   }
 
-  // Stop recording and get transcription using Groq API via backend
+  // Stop recording and get transcription using OpenAI API via backend
   Future<String> stopRecording() async {
     try {
+      String recordedFilePath = '';
+
+      // Stop recording and get the file path
+      if (!_isWeb && await _audioRecorder.isRecording()) {
+        try {
+          // Stop recording
+          recordedFilePath = await _audioRecorder.stop() ?? '';
+
+          if (kDebugMode) {
+            print('Recording stopped, file saved at: $recordedFilePath');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error stopping recording: $e');
+          }
+        }
+      }
+
+      // Update state
       _currentState = RecordingState.stopped;
       _recordingStateController.add(_currentState);
 
@@ -140,39 +215,144 @@ class VoiceService {
         print('Recording stopped (${_isWeb ? 'web mode' : 'native mode'})');
       }
 
-      // In a real implementation, we would have the audio file to send
-      // For now, use a simulated transcription when in debug mode
-      if (kDebugMode) {
-        return "This is a simulated transcription for testing purposes.";
+      // If we have a recording, process it
+      if (!_isWeb && recordedFilePath.isNotEmpty) {
+        try {
+          // Read the recorded audio file
+          final io.File audioFile = io.File(recordedFilePath);
+          if (await audioFile.exists()) {
+            final bytes = await audioFile.readAsBytes();
+
+            if (bytes.isNotEmpty) {
+              if (kDebugMode) {
+                print('Audio file size: ${bytes.length} bytes');
+              }
+
+              final base64Audio = base64Encode(bytes);
+
+              if (kDebugMode) {
+                print(
+                    'Audio file encoded successfully, size: ${base64Audio.length} chars, sending to transcription API...');
+              }
+
+              try {
+                // Make API call with the actual audio data
+                final startTime = DateTime.now();
+                if (kDebugMode) {
+                  print('Using API URL: $_backendUrl for transcription');
+                  print('Sending request to: $_backendUrl/voice/transcribe');
+                }
+
+                final response =
+                    await _apiClient.post('/voice/transcribe', body: {
+                  'audio_data': base64Audio,
+                  'audio_format':
+                      'm4a', // Send as m4a format which is compatible with GROQ
+                  'model':
+                      'distil-whisper-large-v3-en' // Use the GROQ-supported model
+                });
+
+                final duration =
+                    DateTime.now().difference(startTime).inMilliseconds;
+                if (kDebugMode) {
+                  print(
+                      'Transcription API response in ${duration}ms: $response');
+                }
+
+                if (response != null && response.containsKey('text')) {
+                  final transcribedText = response['text'];
+                  if (kDebugMode) {
+                    print('Transcription successful: $transcribedText');
+                  }
+
+                  // Check if we got a meaningful transcription or an error message
+                  if (transcribedText != null && transcribedText.isNotEmpty) {
+                    // Check if this is an error message from the backend transcription service
+                    if (transcribedText
+                            .toLowerCase()
+                            .contains("error transcribing audio") ||
+                        transcribedText
+                            .toLowerCase()
+                            .contains("error processing") ||
+                        transcribedText
+                            .toLowerCase()
+                            .contains("couldn't understand") ||
+                        transcribedText
+                            .toLowerCase()
+                            .contains("please try again")) {
+                      if (kDebugMode) {
+                        print(
+                            'Received error message from transcription service: $transcribedText');
+                      }
+
+                      // Return an empty string to signal UI to focus text input instead of showing error
+                      return "";
+                    }
+
+                    // This appears to be a valid transcription
+                    return transcribedText;
+                  } else {
+                    if (kDebugMode) {
+                      print('Received empty transcription: $transcribedText');
+                    }
+                    // Fall through to user prompt
+                  }
+                } else {
+                  if (kDebugMode) {
+                    print(
+                        'Error: Invalid response format from transcription API: $response');
+                  }
+                }
+              } catch (e) {
+                if (kDebugMode) {
+                  print('Error calling transcription API: $e');
+                }
+              }
+            } else {
+              if (kDebugMode) {
+                print('Error: Audio file is empty.');
+              }
+            }
+          } else {
+            if (kDebugMode) {
+              print(
+                  'Error: Audio file does not exist at path: $recordedFilePath');
+            }
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error processing audio file: $e');
+          }
+          // Fall through to user prompt
+        } finally {
+          // Clean up the temporary recording file
+          try {
+            final file = io.File(recordedFilePath);
+            if (await file.exists()) {
+              await file.delete();
+              if (kDebugMode) {
+                print('Deleted temporary recording file');
+              }
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error cleaning up recording file: $e');
+            }
+          }
+        }
       }
 
-      try {
-        // Make API call to the backend for speech-to-text using Groq API
-        final response = await _apiClient.post('/voice/transcribe', body: {
-          'audio_url': 'temp_audio_recording.mp3',
-          'model': 'whisper-large-v3-turbo'
-        });
-
-        if (response != null && response.containsKey('transcription')) {
-          return response['transcription'];
-        } else {
-          throw Exception("Invalid response format from transcription API");
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error in transcription API call: $e');
-        }
-        // Fallback with a more helpful message
-        return "I couldn't hear you clearly. Could you please repeat that?";
-      }
+      // If we reach here, either there was no recording, or transcription failed
+      // Instead of using a hardcoded message, prompt the user to type their message
+      return ""; // Return empty string to signal UI to focus the text input field
     } catch (e) {
       _currentState = RecordingState.error;
       _recordingStateController.add(_currentState);
       if (kDebugMode) {
-        print('Error stopping recording: $e');
+        print('Error in stopRecording: $e');
       }
-      if (!_isWeb) rethrow;
-      return "Sorry, I couldn't process the audio. Please try again.";
+      // Return empty string to signal UI to focus text input
+      return "";
     }
   }
 
@@ -211,6 +391,15 @@ class VoiceService {
 
       try {
         // Make API call to the backend for text-to-speech using Groq API
+        // Include additional debugging for network requests
+        if (kDebugMode) {
+          print('Using API URL: $_backendUrl');
+          print('Sending request to: $_backendUrl/voice/synthesize');
+          print(
+              'Request body: {"text": "${text.substring(0, min(30, text.length))}...", "voice": "${isAiSpeaking ? 'Jennifer-PlayAI' : 'Mason-PlayAI'}"}');
+        }
+
+        final startTime = DateTime.now();
         final response = await _apiClient.post('/voice/synthesize', body: {
           'text': text,
           'voice': isAiSpeaking
@@ -218,13 +407,20 @@ class VoiceService {
               : 'Mason-PlayAI', // Updated to use valid Groq TTS voices
         });
 
+        final duration = DateTime.now().difference(startTime).inMilliseconds;
         if (kDebugMode) {
-          print('TTS API response: $response');
+          print(
+              'Response received in ${duration}ms with status code: ${response != null ? "200" : "null"}');
+          print('Response content: $response');
         }
 
         if (response != null) {
           // The backend returns a URL to the generated audio file
           final audioUrl = response['url'];
+
+          if (kDebugMode) {
+            print('Raw audio URL from response: $audioUrl');
+          }
 
           if (audioUrl == null || audioUrl.toString().isEmpty) {
             if (kDebugMode) {
@@ -241,9 +437,15 @@ class VoiceService {
             return localFallbackPath;
           }
 
-          // Construct the full URL
-          String fullAudioUrl =
-              audioUrl.startsWith('http') ? audioUrl : '$_backendUrl$audioUrl';
+          // Construct the full URL - ensure we're handling null correctly
+          String fullAudioUrl;
+          if (audioUrl.startsWith('http')) {
+            fullAudioUrl = audioUrl;
+          } else if (audioUrl.startsWith('/')) {
+            fullAudioUrl = '$_backendUrl$audioUrl';
+          } else {
+            fullAudioUrl = '$_backendUrl/$audioUrl';
+          }
 
           if (kDebugMode) {
             print('Successfully generated audio, URL: $fullAudioUrl');
@@ -534,6 +736,7 @@ class VoiceService {
   // Cleanup resources
   void dispose() {
     _recordingStateController.close();
+    _audioRecorder.dispose();
 
     // Clean up any temporary files (only on non-web platforms)
     if (!_isWeb &&

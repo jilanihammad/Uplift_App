@@ -10,18 +10,18 @@ class ApiConfig {
     // Always use the cloud backend URL
     return 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/api/v1';
   }
-  
+
   // Add a getter for the base URL without the /api/v1 path
   static String get baseUrlWithoutPath {
     // Always use the cloud backend URL
     return 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
   }
-  
+
   // Firebase project URL
   static String get firebaseProjectUrl {
     return 'https://upliftapp-cd86e.web.app';
   }
-  
+
   // Check if the backend is available
   static Future<bool> isBackendAvailable() async {
     try {
@@ -30,17 +30,18 @@ class ApiConfig {
         uri,
         headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 5));
-      
+
       // Log the response for debugging
-      debugPrint('Backend availability check: ${response.statusCode} - ${response.statusCode >= 200 && response.statusCode < 300}');
-      
+      debugPrint(
+          'Backend availability check: ${response.statusCode} - ${response.statusCode >= 200 && response.statusCode < 300}');
+
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
       debugPrint('Backend availability check failed: $e');
       return false;
     }
   }
-  
+
   // Execute a function with fallback if backend is unavailable
   static Future<T> executeWithFallback<T>({
     required Future<T> Function() apiCall,
@@ -53,7 +54,7 @@ class ApiConfig {
         debugPrint('Backend unavailable, using fallback');
         return fallback();
       }
-      
+
       // Try to execute the API call
       return await apiCall();
     } catch (e) {
@@ -61,34 +62,34 @@ class ApiConfig {
       return fallback();
     }
   }
-  
+
   // Authentication endpoints
   static const String login = '/auth/login';
   static const String register = '/auth/register';
-  
+
   // User endpoints
   static const String user = '/users/me';
-  
+
   // Assessment endpoints
   static const String assessments = '/assessments';
   static const String latestAssessment = '/assessments/latest';
-  
+
   // Session endpoints
   static const String sessions = '/sessions';
   static const String activeSession = '/sessions/active';
-  
+
   // Message endpoints
   static const String messages = '/messages';
-  
+
   // Action plan endpoints
   static const String actionPlans = '/action-plans';
-  
+
   // Note endpoints
   static const String notes = '/notes';
-  
+
   // Reminder endpoints
   static const String reminders = '/reminders';
-  
+
   // Subscription endpoints
   static const String subscriptions = '/subscriptions';
   static const String subscriptionPlans = '/subscriptions/plans';
