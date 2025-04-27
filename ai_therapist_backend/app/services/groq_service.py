@@ -1,6 +1,7 @@
 import logging
-import os
-from typing import Optional
+import json
+import traceback
+from typing import Optional, List, Dict, Any
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -11,190 +12,208 @@ logger = logging.getLogger(__name__)
 class GroqService:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
-        self.openai_api_key = settings.OPENAI_API_KEY or self.api_key  # Fallback to GROQ key if no OpenAI key
         
         # API endpoints
         self.groq_api_base_url = settings.GROQ_API_BASE_URL
-        self.groq_transcription_url = f"{self.groq_api_base_url}/audio/transcriptions"
-        self.openai_transcription_url = "https://api.openai.com/v1/audio/transcriptions"
+        self.chat_completions_url = f"{self.groq_api_base_url}/chat/completions"
         
         # Models
-        self.default_transcription_model = "whisper-1"  # Default OpenAI model
+        self.chat_model = settings.GROQ_LLM_MODEL_ID
+        
+        # Check if Groq is available
+        self.available = bool(self.api_key) and bool(self.chat_model)
+        
+        logger.info(f"GroqService initialized with:")
+        logger.info(f"API Base URL: {self.groq_api_base_url}")
+        logger.info(f"Chat Model: {self.chat_model}")
+        logger.info(f"API Key: {'Set' if self.api_key else 'Not set'}")
+        logger.info(f"Service available: {'Yes' if self.available else 'No'}")
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def transcribe_audio(self, audio_file_path: str, model: Optional[str] = None) -> str:
+    async def generate_response(self, 
+                               message: str,
+                               system_prompt: str = "",
+                               model: str = None,
+                               temperature: float = 0.7,
+                               max_tokens: int = 1000,
+                               context: List[Dict[str, str]] = None,
+                               user_info: Optional[Dict[str, Any]] = None) -> str:
         """
-        Transcribe audio using either GROQ API or OpenAI API based on the model specified.
+        Generate a response using Groq's chat completions API
         
         Args:
-            audio_file_path: Path to the audio file
-            model: Model ID to use for transcription
-                - "distil-whisper-large-v3-en": Uses GROQ API
-                - "whisper-1": Uses OpenAI API (fallback)
+            message: The user's message
+            system_prompt: Optional system prompt
+            model: Optional model override
+            temperature: Temperature for generation
+            max_tokens: Maximum tokens to generate
+            context: Optional conversation history
+            user_info: Additional user information
+            
+        Returns:
+            Generated text response
+        """
+        if not self.available:
+            logger.warning("Groq service unavailable - API key or model not set")
+            raise Exception("Groq service unavailable - API key or model not set")
+        
+        try:
+            # Prepare headers
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Build messages array
+            messages = []
+            
+            # Add system prompt if provided
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            else:
+                # Default system prompt for a therapist
+                default_prompt = """
+                You are an AI therapist designed to provide supportive and empathetic conversations to users seeking mental health support. Your primary role is to listen actively to the user. Encourage them to share their thoughts and feelings by asking open-ended questions and providing space for them to express themselves. Show empathy by acknowledging and validating the user's emotions. Use phrases like 'That sounds really tough' or 'I can understand why you feel that way.' Adapt your responses based on the user's input. If they seem to need more support, offer comforting words. If they want to explore solutions, gently guide them towards that. Be prepared to discuss a wide range of mental health topics, including but not limited to depression, anxiety, stress, loneliness, and relationship issues.
+                
+                Guidelines:
+                - Respond with empathy and genuine concern
+                - Speak less and listen more
+                - When the patient is crying, let them cry without interrupting them, be kind and patient
+                - Ask thoughtful, open-ended questions to deepen understanding
+                - Offer reflections and gentle observations
+                - Suggest practical strategies when appropriate
+                - Maintain professional boundaries
+                - Encourage self-care and healthy habits
+                - Never give medical advice or replace professional mental health care
+                """
+                messages.append({"role": "system", "content": default_prompt})
+            
+            # Add conversation history if provided
+            if context:
+                for msg in context:
+                    role = "user" if msg.get("isUser", False) else "assistant"
+                    messages.append({"role": role, "content": msg.get("content", "")})
+            
+            # Add current message
+            messages.append({"role": "user", "content": message})
+            
+            # Use provided model or default
+            model_to_use = model or self.chat_model
+            
+            # Prepare the request payload
+            payload = {
+                "model": model_to_use,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            }
+            
+            logger.info(f"Sending request to Groq API with model: {model_to_use}")
+            
+            # Make the API call
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    self.chat_completions_url,
+                    headers=headers,
+                    json=payload
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"Error from Groq API: {response.status_code} - {response.text}")
+                    raise Exception(f"Error from Groq API: {response.status_code} - {response.text}")
+                
+                # Parse the response
+                result = response.json()
+                
+                # Extract the assistant's message
+                if "choices" in result and len(result["choices"]) > 0:
+                    assistant_message = result["choices"][0]["message"]["content"]
+                    logger.info(f"Successfully generated response with Groq")
+                    return assistant_message
+                else:
+                    logger.error(f"Unexpected response format from Groq: {result}")
+                    raise Exception(f"Unexpected response format from Groq: {json.dumps(result)}")
+                    
+        except Exception as e:
+            logger.error(f"Error generating response with Groq: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Error generating response with Groq: {str(e)}")
+    
+    async def test_api(self) -> Dict[str, Any]:
+        """
+        Test the Groq API key and connection
         
         Returns:
-            Transcribed text
+            Dictionary with test results
         """
         try:
-            # Check if file exists
-            if not os.path.exists(audio_file_path):
-                logger.error(f"Audio file not found: {audio_file_path}")
-                return "Audio file not found"
+            # Prepare the result dictionary
+            result = {
+                "available": True,
+                "model": self.chat_model,
+                "error": None
+            }
             
-            # Check if file is empty
-            file_size = os.path.getsize(audio_file_path)
-            if file_size == 0:
-                logger.error(f"Audio file is empty: {audio_file_path}")
-                return "Audio file is empty"
+            # Check if the key is set
+            if not self.api_key:
+                result["available"] = False
+                result["error"] = "Groq API key is not set"
+                return result
             
-            logger.info(f"Processing audio file: {audio_file_path}, size: {file_size} bytes")
-            
-            # Determine which API to use based on the model requested
-            requested_model = model or self.default_transcription_model
-            if requested_model == "distil-whisper-large-v3-en":
-                logger.info(f"Using GROQ API with distil-whisper-large-v3-en model")
-                return await self._transcribe_with_groq(audio_file_path, "distil-whisper-large-v3-en")
-            else:
-                # Default to OpenAI API
-                logger.info(f"Using OpenAI API with whisper-1 model")
-                return await self._transcribe_with_openai(audio_file_path)
+            try:
+                # Prepare headers
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                }
                 
-        except Exception as e:
-            import traceback
-            logger.error(f"Error transcribing audio: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return f"Error transcribing audio: {str(e)}"
-    
-    async def _transcribe_with_groq(self, audio_file_path: str, model_id: str) -> str:
-        """Transcribe audio using GROQ's API"""
-        try:
-            # Prepare API call
-            headers = {
-                "Authorization": f"Bearer {self.api_key}"
-            }
-            
-            # Create formdata with file and model parameters
-            formdata = {
-                'model': model_id,
-                'response_format': 'json'
-            }
-            
-            # Log API key status (don't log the actual key)
-            if not self.api_key or len(self.api_key) < 10:
-                logger.error(f"Invalid or missing GROQ API key. Key length: {len(self.api_key) if self.api_key else 0}")
-                return "Error: Invalid GROQ API credentials"
-            else:
-                logger.info(f"Using GROQ API key: {self.api_key[:4]}...{self.api_key[-4:] if len(self.api_key) > 8 else ''}")
-            
-            # Open the file for sending
-            files = {
-                'file': open(audio_file_path, 'rb')
-            }
-            
-            try:
-                # Make API call with httpx
-                logger.info(f"Making GROQ API call to {self.groq_transcription_url} with model {model_id}")
+                # Prepare a minimal test request
+                payload = {
+                    "model": self.chat_model,
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Say hello"}
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 10
+                }
+                
+                # Make the API call
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(
-                        self.groq_transcription_url,
+                        self.chat_completions_url,
                         headers=headers,
-                        data=formdata,
-                        files=files
+                        json=payload
                     )
                     
-                    logger.info(f"Received response with status code: {response.status_code}")
-                    
-                    if response.status_code != 200:
-                        logger.error(f"Error from GROQ API: {response.status_code} - {response.text}")
-                        # Fall back to OpenAI if GROQ fails
-                        logger.info("Falling back to OpenAI API")
-                        return await self._transcribe_with_openai(audio_file_path)
-                    
-                    # Parse JSON response
-                    result = response.json()
-                    logger.info(f"GROQ API response content: {result}")
-                    
-                    # Extract transcription text
-                    if 'text' in result:
-                        transcription = result['text']
-                        logger.info(f"GROQ transcription successful: {transcription[:50]}...")
-                        return transcription
+                    if response.status_code == 200:
+                        # API key is working
+                        result["available"] = True
+                        result["message"] = "API key is working correctly"
+                        response_json = response.json()
+                        result["model"] = response_json.get("model", self.chat_model)
+                        self.available = True
                     else:
-                        logger.error(f"Unexpected response format from GROQ: {result}")
-                        # Fall back to OpenAI
-                        return await self._transcribe_with_openai(audio_file_path)
-            finally:
-                # Close the file
-                files['file'].close()
+                        # API key is not working
+                        result["available"] = False
+                        result["error"] = f"Error code: {response.status_code} - {response.text}"
+                        self.available = False
+                        
+            except Exception as api_error:
+                # Error making the API call
+                result["available"] = False
+                result["error"] = str(api_error)
+                self.available = False
+                
+            return result
+            
         except Exception as e:
-            logger.error(f"Error in GROQ transcription: {str(e)}")
-            # Fall back to OpenAI
-            logger.info("GROQ API call failed, falling back to OpenAI API")
-            return await self._transcribe_with_openai(audio_file_path)
-    
-    async def _transcribe_with_openai(self, audio_file_path: str) -> str:
-        """Transcribe audio using OpenAI's API"""
-        try:
-            model_id = "whisper-1"  # Always use whisper-1 for OpenAI
-            
-            # Prepare API call
-            headers = {
-                "Authorization": f"Bearer {self.openai_api_key}"
+            logger.error(f"Error testing Groq API: {str(e)}")
+            logger.error(traceback.format_exc())
+            return {
+                "available": False,
+                "error": str(e)
             }
-            
-            # Create formdata with file and model parameters
-            formdata = {
-                'model': model_id,
-                'response_format': 'json'
-            }
-            
-            # Log API key status (don't log the actual key)
-            if not self.openai_api_key or len(self.openai_api_key) < 10:
-                logger.error(f"Invalid or missing OpenAI API key. Key length: {len(self.openai_api_key) if self.openai_api_key else 0}")
-                return "Error: Invalid API credentials"
-            else:
-                logger.info(f"Using OpenAI API key: {self.openai_api_key[:4]}...{self.openai_api_key[-4:] if len(self.openai_api_key) > 8 else ''}")
-            
-            # Open the file for sending
-            files = {
-                'file': open(audio_file_path, 'rb')
-            }
-            
-            try:
-                # Make API call with httpx
-                logger.info(f"Making OpenAI API call to {self.openai_transcription_url}")
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        self.openai_transcription_url,
-                        headers=headers,
-                        data=formdata,
-                        files=files
-                    )
-                    
-                    logger.info(f"Received response with status code: {response.status_code}")
-                    
-                    if response.status_code != 200:
-                        logger.error(f"Error from OpenAI API: {response.status_code} - {response.text}")
-                        return f"Error transcribing audio: API returned status {response.status_code}"
-                    
-                    # Parse JSON response
-                    result = response.json()
-                    logger.info(f"OpenAI response content: {result}")
-                    
-                    # Extract transcription text
-                    if 'text' in result:
-                        transcription = result['text']
-                        logger.info(f"OpenAI transcription successful: {transcription[:50]}...")
-                        return transcription
-                    else:
-                        logger.error(f"Unexpected response format from OpenAI: {result}")
-                        return "Error processing transcription result: unexpected response format"
-            finally:
-                # Close the file
-                files['file'].close()
-        except Exception as e:
-            logger.error(f"Error in OpenAI transcription: {str(e)}")
-            return f"Error with OpenAI transcription: {str(e)}"
 
 # Create a singleton instance
 groq_service = GroqService() 

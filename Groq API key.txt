@@ -12,9 +12,46 @@ model ID: playai-tts
 Transcriptions to Convert audio to text endpoint: https://api.groq.com/openai/v1/audio/transcriptions
 Model ID: whisper-large-v3-turbo
 
+OpenAI API: 
+***REMOVED***
 
+TTS Model ID: gpt-4o-mini-tts
+
+Voice: Sage
+
+LLM: gpt-4.1-mini
+
+Endpoint: https://api.openai.com/v1/audio/speech
 
 Backend code (app/main.py). Endpoints defined in that file are:
 Chat (LLM): POST /ai/response
 Voice Synthesis (TTS): POST /voice/synthesize
 Transcription: POST /voice/transcribe
+
+****./deploy_to_cloud.ps1**** this deployment script fixed the docker cloud upload
+
+add correct environment variables to backend after this deployment
+
+backend URL newest: https://ai-therapist-backend-385290373302.us-central1.run.app
+backend URL new: https://new---ai-therapist-backend-fuukqlcsha-uc.a.run.app
+
+
+backend URLs are in the following files:
+
+build_release.ps1
+update_security.ps1
+build_cloud_release.ps1
+debug_main.dart
+debug_api.dart
+build_debug.ps1
+The app is already using the new backend URL in:
+lib/services/voice_service.dart
+lib/services/therapy_service.dart
+lib/services/config_service.dart
+lib/main.dart
+lib/config/api.dart
+lib/data/datasources/remote/api_client.dart
+android/app/src/main/res/xml/network_security_config.xml
+.env (app file has backend URLs etc.)
+.env (backend has all the API info)
+

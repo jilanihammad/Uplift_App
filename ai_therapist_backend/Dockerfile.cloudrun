@@ -2,28 +2,21 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set production environment
-ENV APP_ENV=production
-
-# Copy requirements and install dependencies
+# Install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn uvicorn
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Create directory for audio files
-RUN mkdir -p static/audio && chmod 777 static/audio
+# Environment variables
+ENV PORT=8080
+ENV ENVIRONMENT=production
+ENV GOOGLE_CLOUD=1
 
-# Port is provided by Cloud Run at runtime via the PORT env var
-ENV PORT 8080
+# Make sure we have the needed environment variables file
+# (Deploy script should copy .env file to deployment directory)
+RUN if [ ! -f .env ]; then echo "Error: .env file is required" && exit 1; fi
 
-# Use a simple entrypoint script that handles Cloud Run PORT variable
-CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 app.main:app 
+# Force the application to run on port 8080 for Cloud Run
+CMD uvicorn app.main:app --host 0.0.0.0 --port 8080 

@@ -1,6 +1,10 @@
 from fastapi import APIRouter
 
+from app.api.endpoints import ai, voice
+
 api_router = APIRouter()
+api_router.include_router(ai.router, prefix="/llm", tags=["ai"])
+api_router.include_router(voice.router, prefix="/voice", tags=["voice"])
 
 # Add your routes here, for example:
 # @api_router.get("/")

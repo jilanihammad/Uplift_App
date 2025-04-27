@@ -1,39 +1,35 @@
 # app/services/ai_service.py
-# app/services/ai_service.py (Updated for Groq API)
+# app/services/ai_service.py (Updated to use OpenAI Python SDK properly)
 
 import logging
 import requests
 import json
 import os
-import openai
+import traceback
 from typing import List, Dict, Any, Optional, Tuple
 from tenacity import retry, stop_after_attempt, wait_exponential
+from openai import OpenAI  # Import the OpenAI client
 
 from app.core.config import settings
 from app.services.encryption_service import encryption_service
-from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage
 from langchain.memory import ConversationBufferMemory
 
 logger = logging.getLogger(__name__)
 
-# Initialize the OpenAI client with Groq's API endpoint and API key
-client = openai.OpenAI(
-    base_url=settings.GROQ_API_BASE_URL,
-    api_key=settings.GROQ_API_KEY
-)
-
 class AIService:
     def __init__(self):
-        # Initialize LangChain components with Groq API
-        self.llm = ChatOpenAI(
-            temperature=0.7, 
-            model_name=settings.GROQ_LLM_MODEL_ID,
-            openai_api_key=settings.GROQ_API_KEY,
-            openai_api_base=settings.GROQ_API_BASE_URL
-        )
+        # Initialize service with OpenAI client
+        self.api_key = settings.OPENAI_API_KEY
+        self.client = OpenAI(api_key=self.api_key)  # Create the OpenAI client
+        self.model = "gpt-3.5-turbo"
+        self.available = bool(self.api_key)
         self.memory = ConversationBufferMemory(return_messages=True)
         self.conversation_chain = self.memory
+        
+        logger.info(f"AIService initialized with:")
+        logger.info(f"Model: {self.model}")
+        logger.info(f"API Key: {'Set' if self.api_key else 'Not set'}")
+        logger.info(f"Service available: {'Yes' if self.available else 'No'}")
 
     async def generate_response(
         self, 
@@ -42,7 +38,7 @@ class AIService:
         user_info: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Generate an AI response to the user's message using Groq API directly.
+        Generate an AI response to the user's message using OpenAI API directly.
         
         Args:
             message: The user's message
@@ -53,6 +49,11 @@ class AIService:
             The AI response text
         """
         try:
+            # Check if service is available
+            if not self.available:
+                logger.warning("LLM service unavailable - API key not set")
+                return "I'm listening and I'm here to support you. What strategies have you tried so far?"
+            
             # Convert context to message format
             messages = []
             
@@ -68,20 +69,29 @@ class AIService:
             # Add current message
             messages.append({"role": "user", "content": message})
             
-            # Make API call with httpx
-            response = client.chat.completions.create(
-                model=settings.GROQ_LLM_MODEL_ID,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=1000
-            )
+            logger.info(f"Generating response with OpenAI using Python SDK")
             
-            # Extract response text
-            response_text = response.choices[0].message.content
-            return response_text
+            try:
+                # Use the OpenAI client to create a chat completion
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1000
+                )
+                
+                # Extract the assistant's response
+                response_text = completion.choices[0].message.content
+                return response_text
+                
+            except Exception as e:
+                logger.error(f"Error calling OpenAI API: {str(e)}")
+                logger.error(traceback.format_exc())
+                return "I'm listening and I'm here to support you. What strategies have you tried so far?"
             
         except Exception as e:
             logger.error(f"Error generating AI response: {str(e)}")
+            logger.error(traceback.format_exc())
             # Fall back to a template-based response rather than crashing
             return "I'm listening and I'm here to support you. What strategies have you tried so far?"
     
@@ -147,6 +157,59 @@ class AIService:
             return personalized_prompt
         
         return base_prompt
+
+    async def test_api(self) -> Dict[str, Any]:
+        """
+        Test the OpenAI API key to ensure it's working correctly
+        
+        Returns:
+            Dictionary with test results
+        """
+        try:
+            # Send a minimal request to test the API key
+            result = {
+                "available": True,
+                "model": self.model,
+                "error": None
+            }
+            
+            # Test with OpenAI client
+            if not self.api_key:
+                result["available"] = False
+                result["error"] = "OpenAI API key is not set"
+                return result
+                
+            try:
+                # Use the OpenAI client for the test request
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Say hello"}
+                    ],
+                    temperature=0.7,
+                    max_tokens=10
+                )
+                
+                # If we reached here, the API key is working
+                result["available"] = True
+                result["message"] = "API key is working correctly"
+                result["model"] = completion.model
+                self.available = True
+                    
+            except Exception as api_error:
+                result["available"] = False
+                result["error"] = str(api_error)
+                self.available = False
+                
+            return result
+        except Exception as e:
+            logger.error(f"Error testing API: {str(e)}")
+            logger.error(traceback.format_exc())
+            return {
+                "available": False,
+                "error": str(e)
+            }
 
 
 ai_service = AIService()

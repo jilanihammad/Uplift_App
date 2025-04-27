@@ -19,6 +19,6 @@ if __name__ == "__main__":
     import uvicorn
     # Use local environment when running directly
     os.environ["APP_ENV"] = "local"
-    # Use PORT environment variable or default to 8001
-    port = int(os.environ.get("PORT", 8001))
+    # Use PORT environment variable or default to 8080 for Cloud Run compatibility
+    port = int(os.environ.get("PORT", 8080))
     uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
