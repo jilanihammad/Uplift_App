@@ -139,57 +139,65 @@ class ApiClient {
     }
   }
 
-  // POST request
-  Future<dynamic> post(String endpoint, {dynamic body}) async {
+  /// POST request to the API
+  Future<Map<String, dynamic>> post(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    String contentType = 'application/json',
+    bool isFormData = false,
+    Map<String, String>? additionalHeaders,
+    Map<String, String>? queryParams,
+    bool forceAuth = false,
+    bool handleErrors = true,
+  }) async {
+    if (kDebugMode) {
+      debugPrint(
+          '[RELEASE DEBUG] ApiClient.post - Starting post request to endpoint: $endpoint');
+    }
+
+    // Force the URL to be the latest cloud backend URL
+    final String forcedBaseUrl =
+        'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+
+    // Construct the complete URL - handle special endpoints differently
+    String urlString;
+    if (endpoint.startsWith('/voice/') ||
+        endpoint.startsWith('/ai/') ||
+        endpoint.startsWith('/therapy/') ||
+        endpoint.startsWith('/sessions')) {
+      // These endpoints don't need the /api/v1 prefix
+      urlString = '$forcedBaseUrl$endpoint';
+    } else if (endpoint.startsWith('/api/')) {
+      // These endpoints already have /api prefix
+      urlString = '$forcedBaseUrl$endpoint';
+    } else {
+      // Regular API endpoint needs the /api/v1 prefix
+      urlString = '$forcedBaseUrl/api/v1$endpoint';
+    }
+
     final token = await _getToken();
-    final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
-    debugPrint('[RELEASE DEBUG] ApiClient.post - Using baseUrl: "$baseUrl"');
-
-    final bool needsApiPrefix = !endpoint.startsWith('/voice/') &&
-        !endpoint.startsWith('/ai/') &&
-        !endpoint.startsWith('/therapy/') &&
-        !endpoint.startsWith('/sessions');
-
-    // <<< REMOVE TEMPORARY HARDCODING >>>
-    /* 
-    debugPrint(
-        '[RELEASE DEBUG] ApiClient.post - Original baseUrl: "$baseUrl", endpoint: "$endpoint", needsApiPrefix: $needsApiPrefix');
-    final String forcedBaseUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
-    debugPrint('[RELEASE DEBUG] ApiClient.post - FORCING baseUrl to: "$forcedBaseUrl"');
-    final String urlString = needsApiPrefix
-        ? '$forcedBaseUrl$endpoint' 
-        : forcedBaseUrl.replaceAll('/api/v1', '') + endpoint;
-    debugPrint('[RELEASE DEBUG] ApiClient.post - Constructed urlString: "$urlString"');
-    */
-
-    // Use the just-in-time baseUrl
-    final String urlString = needsApiPrefix
-        ? '$baseUrl$endpoint'
-        : baseUrl.replaceAll('/api/v1', '') + endpoint;
-    debugPrint(
-        '[RELEASE DEBUG] ApiClient.post - Constructed urlString: "$urlString"');
-
-    final uri = Uri.parse(urlString);
 
     final headers = {
-      'Content-Type': 'application/json',
+      'Content-Type': contentType,
       if (token != null) 'Authorization': 'Bearer $token',
     };
 
     try {
-      // Log removed, was for debugging empty baseUrl
-      // debugPrint('Making POST request to: $uri');
+      if (kDebugMode) {
+        print('Making POST request to: $urlString');
+      }
 
       final response = await _retryRequest(() => httpClient.post(
-            uri,
+            Uri.parse(urlString),
             headers: headers,
             body: jsonEncode(body),
           ));
 
       return _handleResponse(response);
     } catch (e) {
-      // Log removed, was for debugging empty baseUrl
-      // debugPrint('POST request failed: $e');
+      if (kDebugMode) {
+        print('POST request failed: $e');
+      }
 
       if (e is SocketException) {
         throw ApiException(

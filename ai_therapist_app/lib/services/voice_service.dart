@@ -77,9 +77,8 @@ class VoiceService {
       // Get API client from service locator
       _apiClient = serviceLocator<ApiClient>();
 
-      // Get backend URL from config service
-      final configService = serviceLocator<ConfigService>();
-      _backendUrl = configService.llmApiEndpoint;
+      // Get backend URL from config service and update to use the URL that's working
+      _backendUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
 
       if (kDebugMode) {
         print('Voice service initialized with API client');
@@ -396,15 +395,15 @@ class VoiceService {
           print('Using API URL: $_backendUrl');
           print('Sending request to: $_backendUrl/voice/synthesize');
           print(
-              'Request body: {"text": "${text.substring(0, min(30, text.length))}...", "voice": "${isAiSpeaking ? 'Jennifer-PlayAI' : 'Mason-PlayAI'}"}');
+              'Request body: {"text": "${text.substring(0, min(30, text.length))}...", "voice": "${isAiSpeaking ? 'sage' : 'onyx'}"}');
         }
 
         final startTime = DateTime.now();
         final response = await _apiClient.post('/voice/synthesize', body: {
           'text': text,
           'voice': isAiSpeaking
-              ? 'Jennifer-PlayAI'
-              : 'Mason-PlayAI', // Updated to use valid Groq TTS voices
+              ? 'sage'
+              : 'onyx', // Updated to use valid OpenAI TTS voices
         });
 
         final duration = DateTime.now().difference(startTime).inMilliseconds;
@@ -442,9 +441,13 @@ class VoiceService {
           if (audioUrl.startsWith('http')) {
             fullAudioUrl = audioUrl;
           } else if (audioUrl.startsWith('/')) {
-            fullAudioUrl = '$_backendUrl$audioUrl';
+            // Use the correct backend URL (without "new---" prefix)
+            fullAudioUrl =
+                'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app$audioUrl';
           } else {
-            fullAudioUrl = '$_backendUrl/$audioUrl';
+            // Use the correct backend URL (without "new---" prefix)
+            fullAudioUrl =
+                'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/$audioUrl';
           }
 
           if (kDebugMode) {

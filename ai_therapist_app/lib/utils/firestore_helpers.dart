@@ -8,7 +8,16 @@ class FirestoreHelper {
   // Singleton instance
   static final FirestoreHelper _instance = FirestoreHelper._internal();
   factory FirestoreHelper() => _instance;
-  FirestoreHelper._internal();
+  FirestoreHelper._internal() {
+    // Initialize Firestore with the specified database ID
+    _firestore = FirebaseFirestore.instanceFor(
+      app: FirebaseFirestore.instance.app,
+      databaseId: 'upliftdb',
+    );
+  }
+
+  // Firestore instance with custom database
+  late final FirebaseFirestore _firestore;
 
   // Tracking verified collections
   final Set<String> _verifiedCollections = {};
@@ -53,37 +62,37 @@ class FirestoreHelper {
   Future<bool> _checkNativeMode() async {
     try {
       // Try a very simple transaction with increased timeout - this will fail quickly in Datastore mode
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
+      await _firestore.runTransaction((transaction) async {
         // Empty transaction just to test if Native mode is enabled
         return null;
       }).timeout(const Duration(seconds: 10)); // Increased from 5 to 10 seconds
 
-      debugPrint('Firestore: Native mode confirmed! ✅');
+      debugPrint('Firestore (upliftdb): Native mode confirmed! ✅');
       return true;
     } catch (e) {
       if (e.toString().contains('Datastore Mode') ||
           e.toString().contains('FAILED_PRECONDITION')) {
-        debugPrint('Firestore: Project is using Datastore Mode ❌');
+        debugPrint('Firestore (upliftdb): Project is using Datastore Mode ❌');
         return false;
       }
 
       // If there's a timeout, try a simpler test
       if (e is TimeoutException) {
         debugPrint(
-            'Firestore: Transaction test timed out, trying simpler test...');
+            'Firestore (upliftdb): Transaction test timed out, trying simpler test...');
         try {
           // Just try to access a collection as a simpler test
-          await FirebaseFirestore.instance
+          await _firestore
               .collection('_test_collection')
               .limit(1)
               .get()
               .timeout(const Duration(seconds: 5));
           debugPrint(
-              'Firestore: Simple collection test passed, assuming Native mode ✅');
+              'Firestore (upliftdb): Simple collection test passed, assuming Native mode ✅');
           return true;
         } catch (innerError) {
           debugPrint(
-              'Firestore: Simple collection test also failed: $innerError');
+              'Firestore (upliftdb): Simple collection test also failed: $innerError');
         }
       }
 
@@ -96,8 +105,7 @@ class FirestoreHelper {
   /// Verify a collection exists
   Future<bool> _verifyCollection(String collectionName) async {
     try {
-      final collectionRef =
-          FirebaseFirestore.instance.collection(collectionName);
+      final collectionRef = _firestore.collection(collectionName);
       final snapshot = await safeOperation(
         () => collectionRef.limit(1).get(),
         timeoutSeconds: 5,
@@ -106,7 +114,7 @@ class FirestoreHelper {
 
       final exists = snapshot != null;
       debugPrint(
-          'Firestore: Collection "$collectionName" ${exists ? "exists ✅" : "not found ❓"}');
+          'Firestore (upliftdb): Collection "$collectionName" ${exists ? "exists ✅" : "not found ❓"}');
 
       return exists;
     } catch (e) {
@@ -129,16 +137,16 @@ class FirestoreHelper {
       }
 
       // Create a placeholder document to ensure collection exists
-      final docRef = FirebaseFirestore.instance
-          .collection(collectionName)
-          .doc('_collection_init');
+      final docRef =
+          _firestore.collection(collectionName).doc('_collection_init');
       await docRef.set({
         'created': FieldValue.serverTimestamp(),
         'initialized': true,
       });
 
       _verifiedCollections.add(collectionName);
-      debugPrint('Firestore: Collection "$collectionName" created ✅');
+      debugPrint(
+          'Firestore (upliftdb): Collection "$collectionName" created ✅');
       return true;
     } catch (e) {
       debugPrint('Error ensuring collection "$collectionName": $e');

@@ -62,10 +62,10 @@ class ConfigService {
     bool? useMockLlmResponses,
     bool? isProductionMode,
   }) {
-    // Optional parameters for testing or DI
-    this._llmApiEndpoint = llmApiEndpoint ??
+    // Force update to new URL regardless of what was passed
+    this._llmApiEndpoint =
         'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
-    this._voiceModelEndpoint = voiceModelEndpoint ?? '';
+    this._voiceModelEndpoint = voiceModelEndpoint ?? this._llmApiEndpoint;
     this._groqApiKey = groqApiKey ?? '';
     this._useMockTranscription = useMockTranscription ?? false;
     this._useMockLlmResponses = useMockLlmResponses ?? false;
@@ -181,7 +181,7 @@ class ConfigService {
       final envTranscriptionModelId = _safeGetEnv('TRANSCRIPTION_MODEL_ID');
 
       // Flags
-      final envIsProd = _safeGetEnv('IS_PRODUCTION') == 'true';
+      final envIsProd = _safeGetEnv('IS_PRODUCTION_MODE') == 'true';
 
       // Set base URLs and endpoints
       if (envGroqBaseUrl.isNotEmpty) {

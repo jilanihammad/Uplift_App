@@ -350,62 +350,86 @@ class TherapyService {
 
     try {
       print(
-          'Background audio generation started for text: "${text.substring(0, min(20, text.length))}..."');
-      print('Using API URL: $apiUrl');
+          '[DEBUG] Background audio generation started for text: "${text.substring(0, min(20, text.length))}..."');
+
+      // Force the correct backend URL regardless of what's passed in
+      final backendUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+
+      print('[DEBUG] Using API URL: $backendUrl');
       print(
-          'Authentication token available: ${authToken != null ? 'Yes' : 'No'}');
+          '[DEBUG] Authentication token available: ${authToken != null ? 'Yes' : 'No'}');
 
       // Simple audio generation using HTTP directly since we can't use the VoiceService in isolate
-      final uri = Uri.parse('$apiUrl/voice/synthesize');
+      final uri = Uri.parse('$backendUrl/voice/synthesize');
       final headers = {
         'Content-Type': 'application/json',
         if (authToken != null) 'Authorization': 'Bearer $authToken',
       };
 
-      print('Sending request to: $uri');
+      print('[DEBUG] Sending request to: $uri');
       final stopwatch = Stopwatch()..start();
       final response = await http.post(uri,
-          headers: headers,
-          body: jsonEncode({'text': text, 'voice': 'Jennifer-PlayAI'}));
+          headers: headers, body: jsonEncode({'text': text, 'voice': 'sage'}));
       stopwatch.stop();
 
       print(
-          'Response received in ${stopwatch.elapsedMilliseconds}ms with status code: ${response.statusCode}');
+          '[DEBUG] Response received in ${stopwatch.elapsedMilliseconds}ms with status code: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Successfully generated audio, URL: ${data['audio_url']}');
-        return data['audio_url'];
+        print('[DEBUG] Response body: ${response.body}');
+
+        // Use the correct backend URL for the audio file URL
+        String audioUrl = data['url'];
+        if (audioUrl != null && audioUrl.startsWith('/')) {
+          audioUrl = '$backendUrl$audioUrl';
+        }
+        print('[DEBUG] Successfully generated audio, URL: $audioUrl');
+        return audioUrl;
       } else {
         print(
-            'Audio generation failed with status code: ${response.statusCode}');
-        print('Response body: ${response.body}');
-        print('Response headers: ${response.headers}');
+            '[DEBUG] Audio generation failed with status code: ${response.statusCode}');
+        print('[DEBUG] Response body: ${response.body}');
+        print('[DEBUG] Response headers: ${response.headers}');
       }
     } catch (e) {
-      print('Error generating audio in background: $e');
+      print('[DEBUG] Error generating audio in background: $e');
+      print('[DEBUG] Error type: ${e.runtimeType}');
+
       if (e is SocketException) {
         print(
-            'Socket exception details: ${e.message}, address: ${e.address}, port: ${e.port}');
+            '[DEBUG] Socket exception details: ${e.message}, address: ${e.address}, port: ${e.port}');
       } else if (e is http.ClientException) {
-        print('HTTP client exception: ${e.message}');
+        print('[DEBUG] HTTP client exception: ${e.message}');
+      } else if (e is FormatException) {
+        print(
+            '[DEBUG] Format exception (likely JSON parsing error): ${e.message}');
+      } else if (e is TimeoutException) {
+        print('[DEBUG] Request timed out');
       }
     }
 
     print(
-        'Background audio generation returned null - falling back to direct generation');
+        '[DEBUG] Background audio generation returned null - falling back to direct generation');
     return null;
   }
 
   // Process a user message and generate a therapist response
   Future<String> processUserMessage(String userMessage) async {
     try {
+      debugPrint(
+          '[DEBUG] Starting processUserMessage for: "${userMessage.substring(0, min(20, userMessage.length))}..."');
+
       // Detect conversation state and analyze user message
       final graphResult =
           await _conversationGraph.processUserInput(userMessage);
 
+      debugPrint(
+          '[DEBUG] Graph analysis complete. State: ${graphResult['state'] ?? 'unknown'}');
+
       // Check cache for existing response
       if (_responseCache.containsKey(userMessage)) {
+        debugPrint('[DEBUG] Cache hit! Using cached response');
         return _responseCache[userMessage]!;
       }
 
@@ -418,10 +442,18 @@ class TherapyService {
 
       // Make the API call
       try {
+        debugPrint('[DEBUG] Preparing to call API endpoint: /ai/response');
         final apiClient = serviceLocator<ApiClient>();
+
+        // Log API endpoint being used
+        debugPrint(
+            '[DEBUG] Using API URL: https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/ai/response');
+
         final response = await apiClient.post('/ai/response', body: payload);
 
         if (response != null && response.containsKey('response')) {
+          debugPrint('[DEBUG] API call successful. Response received.');
+
           // Process insights and save to memory in background
           _processInsightsAndSaveMemory(userMessage, response, graphResult);
 
@@ -438,24 +470,44 @@ class TherapyService {
           return response['response'];
         } else {
           debugPrint(
-              '[RELEASE DEBUG] Invalid response format. Response was: $response');
+              '[DEBUG] Invalid response format. Response was: $response');
+          debugPrint(
+              '[DEBUG] Response keys: ${response?.keys.toList() ?? "null"}');
+          debugPrint(
+              '[DEBUG] Response type: ${response?.runtimeType ?? "null"}');
         }
       } catch (e, stackTrace) {
-        debugPrint('[RELEASE DEBUG] API Error: $e');
-        debugPrint('[RELEASE DEBUG] Error type: ${e.runtimeType}');
-        debugPrint('[RELEASE DEBUG] Stack Trace: $stackTrace');
-        if (e is ApiException) {
+        debugPrint('[DEBUG] API Error: $e');
+        debugPrint('[DEBUG] Error type: ${e.runtimeType}');
+        debugPrint('[DEBUG] Stack Trace: $stackTrace');
+
+        // More detailed error reporting
+        if (e is SocketException) {
           debugPrint(
-              '[RELEASE DEBUG] API Exception status code: ${e.statusCode}, message: ${e.message}');
+              '[DEBUG] Network error: ${e.message}. Address: ${e.address}, Port: ${e.port}');
+        } else if (e is TimeoutException) {
+          debugPrint('[DEBUG] Request timed out');
+        } else if (e is ApiException) {
+          debugPrint(
+              '[DEBUG] API Exception status code: ${e.statusCode}, message: ${e.message}');
+        } else if (e is FormatException) {
+          debugPrint(
+              '[DEBUG] Format exception (likely JSON parsing error): ${e.message}');
+        } else if (e is HttpException) {
+          debugPrint('[DEBUG] HTTP exception: ${e.message}');
         }
+
         debugPrint(
-            '[RELEASE DEBUG] Falling back to template-based response inside CATCH');
-        return "Fallback due to API Error: ${e.runtimeType}";
+            '[DEBUG] Falling back to template-based response inside CATCH');
+        return "Fallback due to API Error: ${e.runtimeType} - ${e.toString()}";
       }
 
       // Generate fallback response in background if API call failed or response was invalid
       debugPrint(
-          '[RELEASE DEBUG] Generating fallback response for message: "${userMessage.substring(0, userMessage.length > 20 ? 20 : userMessage.length)}..." OUTSIDE CATCH');
+          '[DEBUG] Generating fallback response for message: "${userMessage.substring(0, userMessage.length > 20 ? 20 : userMessage.length)}..." OUTSIDE CATCH');
+      debugPrint(
+          '[DEBUG] API call didn\'t throw but didn\'t return valid response');
+
       final fallbackResponse = await compute(_generateFallbackResponse,
           {'message': userMessage, 'templates': _responseTemplates});
 
@@ -464,9 +516,10 @@ class TherapyService {
 
       return fallbackResponse;
     } catch (e, stackTrace) {
-      debugPrint('[RELEASE DEBUG] General error processing message: $e');
-      debugPrint('[RELEASE DEBUG] Outer Stack Trace: $stackTrace');
-      return "Fallback due to General Error: ${e.runtimeType}";
+      debugPrint('[DEBUG] General error processing message: $e');
+      debugPrint('[DEBUG] Error type: ${e.runtimeType}');
+      debugPrint('[DEBUG] Outer Stack Trace: $stackTrace');
+      return "Fallback due to General Error: ${e.runtimeType} - ${e.toString()}";
     }
   }
 
@@ -778,6 +831,64 @@ class TherapyService {
   // Get available therapeutic tools for the current state
   List<String> getAvailableTools() {
     return _conversationGraph.currentNode.tools;
+  }
+
+  // Check the status of all backend services
+  Future<Map<String, dynamic>> checkServiceStatus() async {
+    try {
+      debugPrint('[DEBUG] Checking service status...');
+      final apiClient = serviceLocator<ApiClient>();
+      final backendUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+
+      try {
+        // Make a request to the service status endpoint
+        debugPrint('[DEBUG] Making request to ${backendUrl}/llm/status');
+        final response = await apiClient.get('/llm/status');
+
+        if (response != null) {
+          debugPrint('[DEBUG] Service status response: $response');
+          return response as Map<String, dynamic>;
+        } else {
+          debugPrint('[DEBUG] Got null response from service status endpoint');
+          return {
+            'error': 'No response received from status endpoint',
+            'status': 'offline'
+          };
+        }
+      } catch (e) {
+        debugPrint('[DEBUG] Error checking service status: $e');
+        debugPrint('[DEBUG] Error type: ${e.runtimeType}');
+
+        if (e is SocketException) {
+          return {
+            'error': 'Network error: ${e.message}',
+            'status': 'offline',
+            'details': 'Cannot connect to server'
+          };
+        } else if (e is TimeoutException) {
+          return {
+            'error': 'Request timed out',
+            'status': 'timeout',
+            'details': 'Server took too long to respond'
+          };
+        } else if (e is ApiException) {
+          return {
+            'error': 'API error: ${e.message}',
+            'status': 'error',
+            'status_code': e.statusCode,
+            'details': e.message
+          };
+        }
+
+        return {'error': 'Unknown error: ${e.toString()}', 'status': 'error'};
+      }
+    } catch (e) {
+      debugPrint('[DEBUG] General error in checkServiceStatus: $e');
+      return {
+        'error': 'Error checking service status: ${e.toString()}',
+        'status': 'error'
+      };
+    }
   }
 
   // Set user preferences in memory
