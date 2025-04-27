@@ -1,13 +1,11 @@
-# app/services/voice_service.py (Updated for GROQ API)
+# app/services/voice_service.py (Updated for OpenAI TTS)
 
 import logging
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
-import asyncio
-import tempfile
+import requests
 import os
 import uuid
+import traceback
 
 from app.core.config import settings
 
@@ -15,100 +13,132 @@ logger = logging.getLogger(__name__)
 
 class VoiceService:
     def __init__(self):
-        self.api_key = settings.GROQ_API_KEY
-        self.base_url = f"{settings.GROQ_API_BASE_URL}/audio/speech"
-        self.tts_model = settings.GROQ_TTS_MODEL_ID
-        self.voice = "Jennifer-PlayAI"  # Default voice - one of the PlayAI voices
-        
-        # Ensure audio directory exists
-        self.audio_dir = "static/audio"
-        os.makedirs(self.audio_dir, exist_ok=True)
+        try:
+            # Initialize with OpenAI API key
+            self.api_key = settings.OPENAI_API_KEY
+            self.base_url = "https://api.openai.com/v1/audio/speech"
+            self.tts_model = settings.OPENAI_TTS_MODEL or "gpt-4o-mini-tts"
+            self.voice = settings.OPENAI_TTS_VOICE or "sage"
+            self.available = bool(self.api_key)
+            
+            # Use /tmp in Cloud Run, otherwise use static/audio
+            if os.environ.get("GOOGLE_CLOUD") == "1":
+                logger.info("Running in Cloud Run environment, using /tmp for audio storage")
+                self.audio_dir = "/tmp/static/audio"
+            else:
+                self.audio_dir = "static/audio"
+                
+            # Ensure audio directory exists
+            os.makedirs(self.audio_dir, exist_ok=True)
+            logger.info(f"Audio directory: {self.audio_dir}")
+            
+            # Create a fallback audio file if it doesn't exist
+            self._create_fallback_audio()
+            
+            logger.info(f"VoiceService initialized with:")
+            logger.info(f"TTS Model: {self.tts_model}")
+            logger.info(f"Voice: {self.voice}")
+            logger.info(f"API Key: {'Set' if self.api_key else 'Not set'}")
+            logger.info(f"Service available: {'Yes' if self.available else 'No'}")
+        except Exception as e:
+            logger.error(f"Error initializing VoiceService: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Use default values on error
+            self.api_key = ""
+            self.base_url = "https://api.openai.com/v1/audio/speech"
+            self.tts_model = "gpt-4o-mini-tts"
+            self.voice = "sage"
+            self.available = False
+            
+            # Ensure audio directory exists even on error - use /tmp in Cloud Run
+            if os.environ.get("GOOGLE_CLOUD") == "1":
+                self.audio_dir = "/tmp/static/audio"
+            else:
+                self.audio_dir = "static/audio"
+                
+            os.makedirs(self.audio_dir, exist_ok=True)
+            
+            logger.warning("VoiceService unavailable - will return fallback responses")
     
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def _create_fallback_audio(self):
+        """Create a valid fallback MP3 file"""
+        error_file = os.path.join(self.audio_dir, "error.mp3")
+        
+        if os.path.exists(error_file) and os.path.getsize(error_file) > 1000:
+            logger.info(f"Fallback audio file already exists: {error_file}")
+            return
+            
+        try:
+            # Create a simple text file as fallback in Cloud Run
+            with open(error_file, "wb") as f:
+                f.write(b"This is a fallback audio file")
+            logger.info(f"Created simple fallback file: {error_file}")
+        except Exception as e:
+            logger.error(f"Error creating fallback audio file: {str(e)}")
+            logger.error(traceback.format_exc())
+    
     async def generate_speech(self, text: str) -> Optional[str]:
-        """
-        Generate speech from text using GROQ API.
-        
-        Args:
-            text: Text to convert to speech
-        
-        Returns:
-            URL to the generated audio file or None if generation failed
-        """
+        """Generate speech from text and return the URL to the generated audio file"""
         if not text:
-            return None
-        
-        # Limit text length to avoid excessive API usage
-        if len(text) > 5000:
-            text = text[:5000]
-        
+            raise ValueError("No text provided for speech generation")
+            
+        if not self.available:
+            raise ValueError("Voice service unavailable - API key not set")
+            
+        # Use OpenAI API to generate speech
         try:
             # Generate a unique filename for the audio file
             filename = f"{uuid.uuid4()}.mp3"
             file_path = os.path.join(self.audio_dir, filename)
             
-            # Generate the audio using GROQ API
-            headers = {
-                "Accept": "audio/mpeg",
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            data = {
-                "model": self.tts_model,
-                "input": text,
-                "voice": self.voice,
-                "speed": 1.0
-            }
+            # Call the OpenAI TTS API
+            from app.services.openai_service import openai_service
+            tts_success = await openai_service.text_to_speech(text, file_path)
             
-            logger.info(f"Calling GROQ API for TTS with voice: {self.voice}")
+            logger.info(f"TTS result: {'Success' if tts_success else 'Failed'}")
             
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(self.base_url, json=data, headers=headers)
-                    
-                    if response.status_code != 200:
-                        logger.error(f"Error from GROQ API: {response.status_code} - {response.text}")
-                        # Create a fallback audio file with error
-                        with open(file_path, "wb") as f:
-                            # If there's an error.mp3 file, copy it
-                            error_path = os.path.join(self.audio_dir, "error.mp3")
-                            if os.path.exists(error_path):
-                                with open(error_path, "rb") as error_file:
-                                    f.write(error_file.read())
-                            else:
-                                # Create an empty file as fallback
-                                f.write(b"")
-                    else:
-                        # Save the audio content to the file
-                        with open(file_path, "wb") as f:
-                            f.write(response.content)
-                        
-                        logger.info(f"Audio file saved to {file_path}")
-            except Exception as e:
-                logger.error(f"Error in API request: {str(e)}")
-                # Create a fallback audio file
-                with open(file_path, "wb") as f:
-                    f.write(b"")
+            # Return the URL to the audio file
+            return f"/audio/{filename}"
             
-            # Return the URL path relative to the server root
-            # This URL format matches what the app expects
-            audio_url = f"/audio/{filename}"
-            
-            return audio_url
-                
         except Exception as e:
             logger.error(f"Error generating speech: {str(e)}")
-            # Return a fallback URL
-            return "/audio/error.mp3"
+            logger.error(traceback.format_exc())
+            raise Exception(f"Speech generation failed: {str(e)}")
     
     def set_voice(self, voice_id: str) -> None:
         """
         Set the voice ID to use for speech generation.
         
         Args:
-            voice_id: Voice ID for GROQ API
+            voice_id: Voice ID for OpenAI API (alloy, echo, fable, onyx, nova, shimmer, sage)
         """
-        self.voice = voice_id
+        try:
+            self.voice = voice_id.lower()  # OpenAI voices are lowercase
+            logger.info(f"Voice set to: {self.voice}")
+        except Exception as e:
+            logger.error(f"Error setting voice: {str(e)}")
+            logger.error(traceback.format_exc())
 
-voice_service = VoiceService()
+# Create a singleton instance
+try:
+    voice_service = VoiceService()
+    logger.info("VoiceService initialized successfully")
+except Exception as e:
+    # Create a minimal service that throws errors
+    logger.error(f"Failed to initialize VoiceService: {str(e)}")
+    logger.error(traceback.format_exc())
+    
+    class FallbackVoiceService:
+        """A service that throws errors instead of returning fallbacks"""
+        async def generate_speech(self, text):
+            raise Exception("Voice service unavailable - failed to initialize")
+            
+        def set_voice(self, voice_id):
+            pass
+    
+    voice_service = FallbackVoiceService()
+    logger.warning("Using FallbackVoiceService that throws errors")

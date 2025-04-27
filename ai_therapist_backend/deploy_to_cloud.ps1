@@ -124,10 +124,11 @@ $deployCmd = @(
     "--cpu=$CPU",
     "--timeout=$TIMEOUT",
     "--concurrency=$CONCURRENCY",
-    "--allow-unauthenticated"
+    "--allow-unauthenticated",
+    "--set-env-vars=ENVIRONMENT=production,PYTHONUNBUFFERED=1,UVICORN_TIMEOUT=300"
 )
 
-# Add all environment variables to the command
+# Add all environment variables from .env to the command
 $deployCmd += $envVars
 
 # Execute the deployment command
@@ -167,4 +168,5 @@ try {
     Write-Host "Warning: Could not verify deployment. Error: $_" -ForegroundColor Yellow
 }
 
-Write-Host "You can now use this backend with your mobile app!" -ForegroundColor Cyan 
+Write-Host "You can now use this backend with your mobile app!" -ForegroundColor Cyan
+

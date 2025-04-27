@@ -1,0 +1,28 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ai-therapist-backend
+spec:
+  template:
+    spec:
+      containers:
+      - image: ${IMAGE}
+        env:
+        - name: OPENAI_API_KEY
+          value: "${OPENAI_API_KEY}"
+        - name: OPENAI_TTS_MODEL
+          value: "gpt-4o-mini-tts"
+        - name: OPENAI_TTS_VOICE
+          value: "sage"
+        # Database settings (if needed)
+        # - name: DATABASE_URL
+        #   value: "${DATABASE_URL}"
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+  traffic:
+  - percent: 100
+    latestRevision: true 

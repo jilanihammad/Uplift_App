@@ -2,16 +2,21 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
-# Copy application code
+# Copy all application code
 COPY . .
 
-# Environment variables
-ENV PORT=8000
-ENV ENVIRONMENT=production
+# Port on which the application will run
+ENV PORT=8080
 
-# Run the application
-CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT 
+# Expose the port
+EXPOSE 8080
+
+# Increase keepalive timeout
+ENV UVICORN_TIMEOUT=300
+
+# Start the application with a longer timeout
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 300 
