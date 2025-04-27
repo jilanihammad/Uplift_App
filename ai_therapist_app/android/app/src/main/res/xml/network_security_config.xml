@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="false">
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">ai-therapist-backend-385290373302.us-central1.run.app</domain>
         <domain includeSubdomains="true">ai-therapist-backend-fuukqlcsha-uc.a.run.app</domain>
-        <domain includeSubdomains="true">upliftapp-cd86e.web.app</domain>
-        <domain includeSubdomains="true">upliftapp-cd86e.firebaseapp.com</domain>
+        <domain includeSubdomains="true">new---ai-therapist-backend-fuukqlcsha-uc.a.run.app</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
     </domain-config>
 </network-security-config> 

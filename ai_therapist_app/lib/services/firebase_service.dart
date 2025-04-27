@@ -64,7 +64,11 @@ class FirebaseService {
           print('FirebaseService: Initializing Firestore');
         }
 
-        _firestore = FirebaseFirestore.instance;
+        // Initialize Firestore with custom database ID
+        _firestore = FirebaseFirestore.instanceFor(
+          app: FirebaseFirestore.instance.app,
+          databaseId: 'upliftdb',
+        );
         _firestoreAvailable = true;
 
         // Set longer timeouts for Firestore operations if needed
@@ -74,7 +78,9 @@ class FirebaseService {
           sslEnabled: true,
         );
 
-        if (kDebugMode) print('FirebaseService: Firestore initialized');
+        if (kDebugMode)
+          print(
+              'FirebaseService: Firestore initialized with database: upliftdb');
       } catch (e) {
         if (kDebugMode)
           print('FirebaseService: Firestore initialization failed: $e');

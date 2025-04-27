@@ -34,11 +34,12 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
   String _responseText = 'No response yet';
   bool _isLoading = false;
   String _selectedEndpoint = 'Cloud';
-  
+
   final Map<String, String> _endpoints = {
     'Cloud': 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app',
     'Local Emulator': 'http://10.0.2.2:8001',
-    'Local Device': 'http://192.168.1.100:8001', // Change this to your actual IP
+    'Local Device':
+        'http://192.168.1.100:8001', // Change this to your actual IP
   };
 
   Future<void> _testLlmStatus() async {
@@ -48,15 +49,18 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
     });
 
     try {
-      final String baseUrl = _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
-      
+      final String baseUrl =
+          _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
+
       // Test the status endpoint
       final uri = Uri.parse('$baseUrl/api/v1/llm/status');
-      final statusResponse = await http.get(uri).timeout(const Duration(seconds: 10));
-      
+      final statusResponse =
+          await http.get(uri).timeout(const Duration(seconds: 10));
+
       setState(() {
         _isLoading = false;
-        _responseText = 'Status response (${statusResponse.statusCode}):\n${statusResponse.body}';
+        _responseText =
+            'Status response (${statusResponse.statusCode}):\n${statusResponse.body}';
       });
     } catch (e) {
       setState(() {
@@ -73,29 +77,33 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
     });
 
     try {
-      final String baseUrl = _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
-      final String message = _messageController.text.isNotEmpty 
-          ? _messageController.text 
+      final String baseUrl =
+          _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
+      final String message = _messageController.text.isNotEmpty
+          ? _messageController.text
           : 'Hello, I am feeling anxious today';
-      
+
       // Test the AI response endpoint
       final uri = Uri.parse('$baseUrl/ai/response');
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'message': message,
-          'system_prompt': 'You are a helpful AI assistant.',
-          'temperature': 0.7,
-          'max_tokens': 500,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'message': message,
+              'system_prompt': 'You are a helpful AI assistant.',
+              'temperature': 0.7,
+              'max_tokens': 500,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       setState(() {
         _isLoading = false;
-        _responseText = 'AI Response (${response.statusCode}):\n${response.body}';
+        _responseText =
+            'AI Response (${response.statusCode}):\n${response.body}';
       });
     } catch (e) {
       setState(() {
@@ -112,28 +120,31 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
     });
 
     try {
-      final String baseUrl = _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
-      
+      final String baseUrl =
+          _endpoints[_selectedEndpoint] ?? _endpoints['Cloud']!;
+
       // Test various endpoints
       final List<String> endpointsToTest = [
         '/health',
         '/api/v1/llm/status',
         '/'
       ];
-      
+
       String results = '';
-      
+
       for (final endpoint in endpointsToTest) {
         try {
           final uri = Uri.parse('$baseUrl$endpoint');
-          final response = await http.get(uri).timeout(const Duration(seconds: 10));
-          
-          results += 'Endpoint: $endpoint\nStatus: ${response.statusCode}\nResponse: ${response.body}\n\n';
+          final response =
+              await http.get(uri).timeout(const Duration(seconds: 10));
+
+          results +=
+              'Endpoint: $endpoint\nStatus: ${response.statusCode}\nResponse: ${response.body}\n\n';
         } catch (e) {
           results += 'Endpoint: $endpoint\nError: $e\n\n';
         }
       }
-      
+
       setState(() {
         _isLoading = false;
         _responseText = 'Backend Endpoint Tests:\n\n$results';
@@ -222,4 +233,4 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
       ),
     );
   }
-} 
+}
