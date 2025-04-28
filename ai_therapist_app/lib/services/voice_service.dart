@@ -30,9 +30,12 @@ enum TranscriptionModel { whisper, deepgramAI, assembly }
 
 class VoiceService {
   // Stream controllers for voice recording states
-  final StreamController<RecordingState> _recordingStateController =
-      StreamController<RecordingState>.broadcast();
-  Stream<RecordingState> get recordingState => _recordingStateController.stream;
+  StreamController<RecordingState>? _recordingStateController;
+  Stream<RecordingState>? _recordingStateStream;
+  Stream<RecordingState> get recordingState {
+    _ensureStreamControllerIsActive();
+    return _recordingStateStream!;
+  }
 
   // Current state of recording
   RecordingState _currentState = RecordingState.ready;
@@ -69,11 +72,27 @@ class VoiceService {
   // Constructor - initialize recorder
   VoiceService() {
     _audioRecorder = AudioRecorder();
+    _ensureStreamControllerIsActive();
+  }
+
+  // Ensure the StreamController is active and not closed
+  void _ensureStreamControllerIsActive() {
+    if (_recordingStateController == null ||
+        _recordingStateController!.isClosed) {
+      _recordingStateController = StreamController<RecordingState>.broadcast();
+      _recordingStateStream = _recordingStateController!.stream;
+      if (kDebugMode) {
+        print('Created new recording state StreamController');
+      }
+    }
   }
 
   // Method to initialize the voice service
   Future<void> initialize() async {
     try {
+      // Make sure the stream controller is active
+      _ensureStreamControllerIsActive();
+
       // Get API client from service locator
       _apiClient = serviceLocator<ApiClient>();
 
@@ -90,7 +109,7 @@ class VoiceService {
           print('Initializing voice service in web mode');
         }
         _currentState = RecordingState.ready;
-        _recordingStateController.add(_currentState);
+        _recordingStateController!.add(_currentState);
         return;
       }
 
@@ -106,14 +125,24 @@ class VoiceService {
       _conversationContext = [];
 
       _currentState = RecordingState.ready;
-      _recordingStateController.add(_currentState);
+      _recordingStateController!.add(_currentState);
 
       if (kDebugMode) {
         print('Voice service initialized successfully');
       }
     } catch (e) {
       _currentState = RecordingState.error;
-      _recordingStateController.add(_currentState);
+      try {
+        if (_recordingStateController != null &&
+            !_recordingStateController!.isClosed) {
+          _recordingStateController!.add(_currentState);
+        }
+      } catch (streamError) {
+        if (kDebugMode) {
+          print('Error sending state to stream: $streamError');
+        }
+      }
+
       if (kDebugMode) {
         print('Error initializing voice service: $e');
       }
@@ -127,10 +156,13 @@ class VoiceService {
   // Start recording
   Future<void> startRecording() async {
     try {
+      // Ensure stream controller is active
+      _ensureStreamControllerIsActive();
+
       if (_isWeb) {
         // Simulate recording in web mode
         _currentState = RecordingState.recording;
-        _recordingStateController.add(_currentState);
+        _recordingStateController!.add(_currentState);
 
         if (kDebugMode) {
           print('Recording started (web mode simulation)');
@@ -169,7 +201,7 @@ class VoiceService {
 
         // Update state
         _currentState = RecordingState.recording;
-        _recordingStateController.add(_currentState);
+        _recordingStateController!.add(_currentState);
 
         if (kDebugMode) {
           print('Recording started with path: $_recordingPath');
@@ -177,7 +209,17 @@ class VoiceService {
       }
     } catch (e) {
       _currentState = RecordingState.error;
-      _recordingStateController.add(_currentState);
+      try {
+        if (_recordingStateController != null &&
+            !_recordingStateController!.isClosed) {
+          _recordingStateController!.add(_currentState);
+        }
+      } catch (streamError) {
+        if (kDebugMode) {
+          print('Error sending state to stream: $streamError');
+        }
+      }
+
       if (kDebugMode) {
         print('Error starting recording: $e');
       }
@@ -208,7 +250,7 @@ class VoiceService {
 
       // Update state
       _currentState = RecordingState.stopped;
-      _recordingStateController.add(_currentState);
+      _recordingStateController!.add(_currentState);
 
       if (kDebugMode) {
         print('Recording stopped (${_isWeb ? 'web mode' : 'native mode'})');
@@ -346,7 +388,7 @@ class VoiceService {
       return ""; // Return empty string to signal UI to focus the text input field
     } catch (e) {
       _currentState = RecordingState.error;
-      _recordingStateController.add(_currentState);
+      _recordingStateController!.add(_currentState);
       if (kDebugMode) {
         print('Error in stopRecording: $e');
       }
@@ -628,6 +670,40 @@ class VoiceService {
     }
   }
 
+  // Stop any ongoing audio playback
+  Future<void> stopAudio() async {
+    try {
+      if (kDebugMode) {
+        print('Stopping any ongoing audio playback');
+      }
+
+      // Stop Flutter TTS if it's speaking
+      final FlutterTts flutterTts = FlutterTts();
+      await flutterTts.stop();
+
+      // Stop any ongoing audio player
+      if (!_isWeb) {
+        try {
+          final player = AudioPlayer();
+          await player.stop();
+          await player.dispose();
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error stopping audio player: $e');
+          }
+        }
+      }
+
+      if (kDebugMode) {
+        print('Audio playback stopped successfully');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error stopping audio: $e');
+      }
+    }
+  }
+
   // Download a remote audio file and cache it locally
   Future<String?> _downloadAndCacheAudio(String url) async {
     try {
@@ -738,7 +814,17 @@ class VoiceService {
 
   // Cleanup resources
   void dispose() {
-    _recordingStateController.close();
+    try {
+      if (_recordingStateController != null &&
+          !_recordingStateController!.isClosed) {
+        _recordingStateController!.close();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error closing stream controller: $e');
+      }
+    }
+
     _audioRecorder.dispose();
 
     // Clean up any temporary files (only on non-web platforms)

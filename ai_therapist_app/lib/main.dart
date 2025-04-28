@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show WidgetsFlutterBinding, DartPluginRegistrant;
+import 'package:flutter/foundation.dart' show BindingBase;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -181,133 +182,137 @@ void _handleGlobalError(Object error, StackTrace stack) {
 }
 
 Future<void> main() async {
+  // Set zone error fatal to false to avoid Flutter zone binding errors
+  BindingBase.debugZoneErrorsAreFatal = false;
+
   debugPrint('[Main] Starting app initialization.');
 
-  // 1. Ensure Flutter bindings are initialized first
-  WidgetsFlutterBinding.ensureInitialized();
-  debugPrint('[Main] Flutter bindings initialized.');
-
-  // 2. Access the existing Firebase app instance
-  final firebaseApp = await _initializeFirebase();
-  if (firebaseApp != null) {
-    debugPrint('[Main] Found existing Firebase app: ${firebaseApp.name}');
-    _firebaseInitialized = true;
-  } else {
+  // Run the entire app in a single guarded zone to avoid zone mismatches
+  runZonedGuarded(() async {
+    // 1. Ensure Flutter bindings are initialized first - inside the same zone as runApp
+    final binding = WidgetsFlutterBinding.ensureInitialized();
     debugPrint(
-        '[Main] Could not get Firebase app instance, some features may be limited');
-  }
+        '[Main] Flutter bindings initialized in the same zone as runApp.');
 
-  // 3. Only register background messaging handler if Firebase is available
-  if (_firebaseInitialized) {
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-    debugPrint('[Main] Background messaging handler registered.');
-  }
+    // 2. Access the existing Firebase app instance
+    final firebaseApp = await _initializeFirebase();
+    if (firebaseApp != null) {
+      debugPrint('[Main] Found existing Firebase app: ${firebaseApp.name}');
+      _firebaseInitialized = true;
+    } else {
+      debugPrint(
+          '[Main] Could not get Firebase app instance, some features may be limited');
+    }
 
-  // 4. Setup error handling
-  debugPrint('[Main] Setting up error handlers.');
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    _handleGlobalError(details.exception, details.stack ?? StackTrace.current);
-  };
+    // 3. Only register background messaging handler if Firebase is available
+    if (_firebaseInitialized) {
+      FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler);
+      debugPrint('[Main] Background messaging handler registered.');
+    }
 
-  // 5. Setup Bloc observer for debugging
-  if (kDebugMode) {
-    Bloc.observer = SimpleBlocObserver();
-    debugPrint('[Main] Set up Bloc observer for debugging.');
-  }
+    // 4. Setup error handling
+    debugPrint('[Main] Setting up error handlers.');
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      _handleGlobalError(
+          details.exception, details.stack ?? StackTrace.current);
+    };
 
-  // 6. Initialize service locator (GetIt)
-  debugPrint('[Main] Setting up service locator...');
-  try {
-    await setupServiceLocator();
-    debugPrint('[Main] Service locator setup complete.');
-  } catch (e) {
-    debugPrint('[Main] ERROR during service locator setup: $e');
-  }
+    // 5. Setup Bloc observer for debugging
+    if (kDebugMode) {
+      Bloc.observer = SimpleBlocObserver();
+      debugPrint('[Main] Set up Bloc observer for debugging.');
+    }
 
-  // 7. Initialize other services
-  debugPrint('[Main] Initializing app services...');
-  try {
-    // First check connectivity - this is quick
-    debugPrint('[Main] Checking network connectivity...');
-    final connectivityChecker = ConnectivityChecker();
-    final isConnected = await connectivityChecker.isOffline() == false;
-    debugPrint(
-        '[Main] Network is ${isConnected ? "available ✅" : "unavailable ⚠️"}');
-
-    // Initialize database - required for basic functionality
+    // 6. Initialize service locator (GetIt)
+    debugPrint('[Main] Setting up service locator...');
     try {
-      debugPrint('[Main] Initializing database...');
-      final appDatabase = AppDatabase();
-      await appDatabase.database;
-      debugPrint('[Main] Database initialized successfully');
+      await setupServiceLocator();
+      debugPrint('[Main] Service locator setup complete.');
     } catch (e) {
-      debugPrint('[Main] ERROR initializing database: $e');
+      debugPrint('[Main] ERROR during service locator setup: $e');
     }
 
-    // Additional Firebase check for Firestore Native mode - only if connected
-    if (isConnected) {
+    // 7. Initialize other services
+    debugPrint('[Main] Initializing app services...');
+    try {
+      // First check connectivity - this is quick
+      debugPrint('[Main] Checking network connectivity...');
+      final connectivityChecker = ConnectivityChecker();
+      final isConnected = await connectivityChecker.isOffline() == false;
+      debugPrint(
+          '[Main] Network is ${isConnected ? "available ✅" : "unavailable ⚠️"}');
+
+      // Initialize database - required for basic functionality
       try {
-        debugPrint('[Main] Verifying Firestore setup...');
-        final firestoreHelper = FirestoreHelper();
-        final isFirestoreReady = await safeOperation(
-              () => firestoreHelper.verifyFirestoreSetup(
-                requiredCollections: ['users', 'sessions', 'messages'],
-              ),
-              timeoutSeconds: 5,
-              operationName: 'Firestore verification',
-            ) ??
-            false;
-
-        if (isFirestoreReady) {
-          debugPrint('[Main] Firestore setup verified successfully ✅');
-        } else {
-          debugPrint('[Main] Issues with Firestore setup ⚠️');
-        }
+        debugPrint('[Main] Initializing database...');
+        final appDatabase = AppDatabase();
+        await appDatabase.database;
+        debugPrint('[Main] Database initialized successfully');
       } catch (e) {
-        debugPrint('[Main] Error checking Firestore: $e');
+        debugPrint('[Main] ERROR initializing database: $e');
       }
+
+      // Additional Firebase check for Firestore Native mode - only if connected
+      if (isConnected) {
+        try {
+          debugPrint('[Main] Verifying Firestore setup...');
+          final firestoreHelper = FirestoreHelper();
+          final isFirestoreReady = await safeOperation(
+                () => firestoreHelper.verifyFirestoreSetup(
+                  requiredCollections: ['users', 'sessions', 'messages'],
+                ),
+                timeoutSeconds: 5,
+                operationName: 'Firestore verification',
+              ) ??
+              false;
+
+          if (isFirestoreReady) {
+            debugPrint('[Main] Firestore setup verified successfully ✅');
+          } else {
+            debugPrint('[Main] Issues with Firestore setup !');
+          }
+        } catch (e) {
+          debugPrint('[Main] Error checking Firestore: $e');
+        }
+      }
+
+      // Initialize Firebase services if GetIt is available
+      await _initializeFirebaseServices();
+
+      // Initialize ConfigService and ApiClient with better error handling
+      await _initializeConfigAndApi();
+
+      // Initialize notification permissions if needed - safely
+      await _requestNotificationPermissions();
+
+      debugPrint('[Main] App services initialized successfully.');
+    } catch (e) {
+      debugPrint('[Main] ERROR initializing services: $e');
     }
 
-    // Initialize Firebase services if GetIt is available
-    await _initializeFirebaseServices();
-
-    // Initialize ConfigService and ApiClient with better error handling
-    await _initializeConfigAndApi();
-
-    // Initialize notification permissions if needed - safely
-    await _requestNotificationPermissions();
-
-    debugPrint('[Main] App services initialized successfully.');
-  } catch (e) {
-    debugPrint('[Main] ERROR initializing services: $e');
-  }
-
-  // Add explicit UI startup logging
-  debugPrint('[Main] Starting app UI...');
-  try {
-    runZonedGuarded(
-      () {
-        debugPrint('[Main] Running app in guarded zone.');
-        runApp(const AiTherapistApp());
-        debugPrint('[Main] App should now be visible!');
-      },
-      (error, stack) {
-        debugPrint('[Main] UNCAUGHT ERROR in app: $error');
-        debugPrint('[Main] Stack trace: $stack');
-        _handleGlobalError(error, stack);
-      },
-    );
-  } catch (e) {
-    debugPrint('[Main] Critical error in final app startup: $e');
-    // Last resort fallback - try to show a minimal error UI
-    runApp(MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Error')),
-        body: Center(child: Text('Error starting app: $e')),
-      ),
-    ));
-  }
+    // Add explicit UI startup logging
+    debugPrint('[Main] Starting app UI...');
+    try {
+      debugPrint('[Main] Running app in same zone.');
+      runApp(const AiTherapistApp());
+      debugPrint('[Main] App should now be visible!');
+    } catch (e) {
+      debugPrint('[Main] Critical error in final app startup: $e');
+      // Last resort fallback - try to show a minimal error UI
+      runApp(MaterialApp(
+        home: Scaffold(
+          appBar: AppBar(title: const Text('Error')),
+          body: Center(child: Text('Error starting app: $e')),
+        ),
+      ));
+    }
+  }, (error, stack) {
+    debugPrint('[Main] UNCAUGHT ERROR in app: $error');
+    debugPrint('[Main] Stack trace: $stack');
+    _handleGlobalError(error, stack);
+  });
 }
 
 // Initialize all other necessary services

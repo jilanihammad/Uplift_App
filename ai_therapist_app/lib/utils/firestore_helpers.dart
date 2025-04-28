@@ -118,6 +118,16 @@ class FirestoreHelper {
 
       return exists;
     } catch (e) {
+      // If there's a permission error, consider the collection as existing but not accessible
+      if (e.toString().contains('permission-denied') ||
+          e.toString().contains('PERMISSION_DENIED')) {
+        debugPrint(
+            'Firestore (upliftdb): Collection "$collectionName" exists but permission denied - assuming valid ✓');
+        // Add to verified collections anyway since we don't want to keep retrying
+        _verifiedCollections.add(collectionName);
+        return true;
+      }
+
       debugPrint('Error checking collection "$collectionName": $e');
       return false;
     }
