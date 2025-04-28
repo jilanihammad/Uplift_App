@@ -31,7 +31,7 @@ import 'package:ai_therapist_app/di/service_locator.dart';
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
   static final _shellNavigatorKey = GlobalKey<NavigatorState>();
-  
+
   // Route names as constants for easy reference
   static const String splash = '/';
   static const String login = '/login';
@@ -55,64 +55,69 @@ class AppRouter {
     initialLocation: splash,
     debugLogDiagnostics: true,
     redirect: (BuildContext context, GoRouterState state) async {
-      print("ROUTER DEBUG: Redirect called with location: ${state.matchedLocation}");
-      
+      print(
+          "ROUTER DEBUG: Redirect called with location: ${state.matchedLocation}");
+
       // Access services needed for routing decisions
       try {
         final authService = serviceLocator<AuthService>();
-        
+
         // Check if user is logged in and onboarding status - note async/await
         final bool isLoggedIn = await authService.isLoggedIn;
         final bool hasCompletedSignup = await authService.hasCompletedSignup;
-        
-        print("ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, path: ${state.matchedLocation}");
-        
-        final bool isGoingToAuth = state.matchedLocation == login || 
-                                  state.matchedLocation == register ||
-                                  state.matchedLocation == phoneLogin;
+
+        print(
+            "ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, path: ${state.matchedLocation}");
+
+        final bool isGoingToAuth = state.matchedLocation == login ||
+            state.matchedLocation == register ||
+            state.matchedLocation == phoneLogin;
         final bool isGoingToOnboarding = state.matchedLocation == onboarding;
         final bool isGoingToSplash = state.matchedLocation == splash;
-        
+
         // If at splash, don't redirect yet
         if (isGoingToSplash) {
           print("ROUTER DEBUG: At splash screen, no redirection needed");
           return null;
         }
-        
+
         // If not logged in and not going to auth screens, redirect to login
         if (!isLoggedIn && !isGoingToAuth && !isGoingToOnboarding) {
           print("ROUTER DEBUG: User not logged in, redirecting to login");
           return login;
         }
-        
+
         // If logged in but hasn't completed signup process, redirect to onboarding
         // ONLY if not already going to onboarding
         if (isLoggedIn && !hasCompletedSignup && !isGoingToOnboarding) {
-          print("ROUTER DEBUG: User is logged in but hasn't completed signup, redirecting to onboarding");
+          print(
+              "ROUTER DEBUG: User is logged in but hasn't completed signup, redirecting to onboarding");
           return onboarding;
         }
-        
+
         // If logged in and has completed signup but trying to go to onboarding, redirect to home
         if (isLoggedIn && hasCompletedSignup && isGoingToOnboarding) {
-          print("ROUTER DEBUG: User already completed signup, redirecting from onboarding to home");
+          print(
+              "ROUTER DEBUG: User already completed signup, redirecting from onboarding to home");
           return home;
         }
-        
+
         // If logged in and going to auth screens, redirect to home or onboarding
         if (isLoggedIn && isGoingToAuth) {
           final redirectTo = hasCompletedSignup ? home : onboarding;
-          print("ROUTER DEBUG: User is logged in and going to auth screen, redirecting to $redirectTo");
+          print(
+              "ROUTER DEBUG: User is logged in and going to auth screen, redirecting to $redirectTo");
           return redirectTo;
         }
-        
+
         // Log the final routing decision
-        print("ROUTER DEBUG: No redirection needed for path: ${state.matchedLocation}");
-        
+        print(
+            "ROUTER DEBUG: No redirection needed for path: ${state.matchedLocation}");
       } catch (e) {
         print("ROUTER DEBUG ERROR: Exception during redirection: $e");
         // On error, allow navigation to continue without redirection
       }
-      
+
       // No redirection needed
       return null;
     },
@@ -122,13 +127,13 @@ class AppRouter {
         path: splash,
         builder: (context, state) => const SplashScreen(),
       ),
-      
+
       // Onboarding route
       GoRoute(
         path: onboarding,
         builder: (context, state) => const OnboardingWrapper(),
       ),
-      
+
       // Authentication routes
       GoRoute(
         path: login,
@@ -142,7 +147,7 @@ class AppRouter {
         path: phoneLogin,
         builder: (context, state) => const PhoneLoginScreen(),
       ),
-      
+
       // Session summary route
       GoRoute(
         path: sessionSummary,
@@ -158,7 +163,7 @@ class AppRouter {
           );
         },
       ),
-      
+
       // Session details route (from history)
       GoRoute(
         path: '/sessions/:sessionId',
@@ -167,13 +172,13 @@ class AppRouter {
           return SessionDetailsScreen(sessionId: sessionId);
         },
       ),
-      
+
       // Diagnostic screen route
       GoRoute(
         path: diagnostic,
         builder: (context, state) => const DiagnosticScreen(),
       ),
-      
+
       // Main app shell with bottom navigation
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
@@ -186,7 +191,7 @@ class AppRouter {
             path: home,
             builder: (context, state) => const HomeScreen(),
           ),
-          
+
           // Chat/Therapy session route
           GoRoute(
             path: chat,
@@ -202,25 +207,25 @@ class AppRouter {
               ),
             ],
           ),
-          
+
           // User profile route
           GoRoute(
             path: profile,
             builder: (context, state) => const ProfileScreen(),
           ),
-          
+
           // History/Past sessions route
           GoRoute(
             path: history,
             builder: (context, state) => const HistoryScreen(),
           ),
-          
+
           // Resources/Help route
           GoRoute(
             path: resources,
             builder: (context, state) => const ResourcesScreen(),
           ),
-          
+
           // Settings route
           GoRoute(
             path: settings,
@@ -233,7 +238,7 @@ class AppRouter {
               ),
             ],
           ),
-          
+
           // Progress tracking route
           GoRoute(
             path: progress,
@@ -249,9 +254,9 @@ class AppRouter {
 // Bottom navigation scaffold
 class ScaffoldWithNavBar extends StatelessWidget {
   final Widget child;
-  
+
   const ScaffoldWithNavBar({Key? key, required this.child}) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -264,21 +269,19 @@ class ScaffoldWithNavBar extends StatelessWidget {
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chat'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
   }
-  
+
   int _calculateSelectedIndex(BuildContext context) {
     final String location = GoRouterState.of(context).matchedLocation;
     if (location.startsWith(AppRouter.home)) return 0;
     if (location.startsWith(AppRouter.chat)) return 1;
     if (location.startsWith(AppRouter.history)) return 2;
-    if (location.startsWith(AppRouter.profile)) return 3;
     return 0;
   }
-  
+
   void _onItemTapped(int index, BuildContext context) {
     switch (index) {
       case 0:
@@ -290,9 +293,6 @@ class ScaffoldWithNavBar extends StatelessWidget {
       case 2:
         GoRouter.of(context).go(AppRouter.history);
         break;
-      case 3:
-        GoRouter.of(context).go(AppRouter.profile);
-        break;
     }
   }
 }
@@ -300,9 +300,9 @@ class ScaffoldWithNavBar extends StatelessWidget {
 // Error screen for handling navigation errors
 class ErrorScreen extends StatelessWidget {
   final Exception? error;
-  
+
   const ErrorScreen({Key? key, this.error}) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

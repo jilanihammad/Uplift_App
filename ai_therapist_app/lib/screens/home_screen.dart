@@ -88,10 +88,8 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: false,
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              // Navigate to notifications
-            },
+            icon: const Icon(Icons.settings),
+            onPressed: () => context.go('/profile'),
           ),
         ],
       ),

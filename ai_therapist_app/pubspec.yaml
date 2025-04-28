@@ -100,15 +100,15 @@ flutter:
 
 # Flutter Launcher Icons configuration
 flutter_launcher_icons:
-  android: "ic_launcher"
+  android: true
   ios: true
   image_path: "assets/icons/app_icon.png"
-  min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+  min_sdk_android: 21
   remove_alpha_ios: true
   web:
     generate: true
     image_path: "assets/icons/app_icon.png"
     background_color: "#FFFFFF"
-    theme_color: "#5E72E4"
+    theme_color: "#FFFFFF"
