@@ -44,6 +44,13 @@ class _ChatScreenState extends State<ChatScreen>
   Mood? _initialMood;
   TherapistStyle? _therapistStyle;
 
+  // Mode management variables
+  bool _isVoiceMode = true; // Default to voice mode
+  bool _isMicMuted = false;
+  bool _isSpeakerMuted = false;
+  bool _isTyping = false;
+  bool _isTtsSpeaking = false;
+
   // Voice recording variables
   late AnimationController _micAnimationController;
   late Animation<double> _micAnimation;
@@ -74,6 +81,9 @@ class _ChatScreenState extends State<ChatScreen>
       ),
     );
 
+    // Listen for text input to change button state
+    _messageController.addListener(_onTextChanged);
+
     // Load therapist style
     _loadTherapistStyle();
 
@@ -90,8 +100,18 @@ class _ChatScreenState extends State<ChatScreen>
     });
   }
 
+  void _onTextChanged() {
+    final isCurrentlyTyping = _messageController.text.isNotEmpty;
+    if (_isTyping != isCurrentlyTyping) {
+      setState(() {
+        _isTyping = isCurrentlyTyping;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.dispose();
     _recordingStateSubscription?.cancel();
@@ -121,27 +141,25 @@ class _ChatScreenState extends State<ChatScreen>
             ],
           ),
           actions: [
+            // Toggle between voice and text modes
+            if (!_showDurationSelector &&
+                !_showMoodSelector &&
+                !_isInitializing)
+              IconButton(
+                icon: Icon(_isVoiceMode ? Icons.menu : Icons.more_vert),
+                tooltip: _isVoiceMode
+                    ? 'Switch to text mode'
+                    : 'Switch to voice mode',
+                onPressed: _toggleChatMode,
+              ),
             // Only show End button when in actual chat (not during setup screens)
             if (!_showDurationSelector &&
                 !_showMoodSelector &&
                 !_isInitializing)
-              TextButton(
+              IconButton(
+                icon: const Icon(Icons.call_end, color: Colors.red),
+                tooltip: 'End Session',
                 onPressed: _endSession,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  backgroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18.0),
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                child: const Text(
-                  'End',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
               ),
             const SizedBox(width: 8),
           ],
@@ -152,74 +170,323 @@ class _ChatScreenState extends State<ChatScreen>
                 ? _buildDurationSelectorView()
                 : _showMoodSelector
                     ? _buildMoodSelectorView()
-                    : _buildChatView(),
+                    : _isVoiceMode
+                        ? _buildVoiceChatView()
+                        : _buildTextChatView(),
       ),
     );
   }
 
   Widget _buildDurationSelectorView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text(
-            'Choose Session Duration',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 40),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildDurationButton(5),
-              const SizedBox(width: 16),
-              _buildDurationButton(15),
-              const SizedBox(width: 16),
-              _buildDurationButton(30),
-            ],
-          ),
-        ],
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Theme.of(context).scaffoldBackgroundColor,
+            Theme.of(context).primaryColor.withOpacity(0.05),
+          ],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Choose Session Duration',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).primaryColor,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'How much time do you have today?',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 60),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildDurationButton(5),
+                const SizedBox(width: 24),
+                _buildDurationButton(15),
+                const SizedBox(width: 24),
+                _buildDurationButton(30),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildDurationButton(int minutes) {
-    return ElevatedButton(
-      onPressed: () => _handleDurationSelection(minutes),
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.all(24),
-        shape: const CircleBorder(),
-        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.7),
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      child: Text(
-        '$minutes min',
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _handleDurationSelection(minutes),
+          splashColor: Theme.of(context).primaryColor.withOpacity(0.3),
+          highlightColor: Theme.of(context).primaryColor.withOpacity(0.2),
+          child: Ink(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Theme.of(context).primaryColor.withOpacity(0.15),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withOpacity(0.5),
+                width: 2,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '$minutes',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
+                Text(
+                  'minutes',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Theme.of(context).primaryColor.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildMoodSelectorView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text(
-            'How are you feeling today?',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Theme.of(context).scaffoldBackgroundColor,
+            Theme.of(context).primaryColor.withOpacity(0.05),
+          ],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'How are you feeling today?',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).primaryColor,
+              ),
+            ),
+            const SizedBox(height: 40),
+            MoodSelector(
+              onMoodSelected: _handleMoodSelection,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper method to create circular buttons
+  Widget _buildCircularButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    Color? color,
+  }) {
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: (color ?? Theme.of(context).primaryColor)
+            .withOpacity(onPressed == null ? 0.4 : 0.85),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-          const SizedBox(height: 40),
-          MoodSelector(
-            onMoodSelected: _handleMoodSelection,
+        ],
+      ),
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: Center(
+              child: Icon(
+                icon,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceChatView() {
+    return Container(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: Column(
+        children: [
+          // Main empty area with central voice indicator
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Circle for voice visualization
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      color: _isTtsSpeaking
+                          ? Theme.of(context).primaryColor.withOpacity(0.7)
+                          : Theme.of(context).disabledColor.withOpacity(0.3),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Icon(
+                        _isTtsSpeaking ? Icons.volume_up : Icons.mic,
+                        size: 48,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    _isTtsSpeaking
+                        ? "Therapist is speaking..."
+                        : _isRecording
+                            ? "Listening to you..."
+                            : "Tap the mic button to speak",
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (_isProcessing) const LinearProgressIndicator(),
+
+          // Bottom control buttons
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              boxShadow: const [
+                BoxShadow(
+                  offset: Offset(0, -2),
+                  blurRadius: 4,
+                  color: Color.fromRGBO(0, 0, 0, 0.1),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Mic mute/unmute button
+                _buildCircularButton(
+                  icon: _isMicMuted ? Icons.mic_off : Icons.mic,
+                  tooltip:
+                      _isMicMuted ? 'Unmute Microphone' : 'Mute Microphone',
+                  onPressed: () {
+                    setState(() {
+                      _isMicMuted = !_isMicMuted;
+                    });
+
+                    if (_isMicMuted && _isRecording) {
+                      _voiceService.stopRecording();
+                    }
+                  },
+                  color: _isMicMuted ? Colors.grey : null,
+                ),
+
+                // Voice input button (recording)
+                _buildCircularButton(
+                  icon: _isRecording ? Icons.stop : Icons.voice_chat,
+                  tooltip: _isRecording ? 'Stop Recording' : 'Start Recording',
+                  onPressed: _isMicMuted ? null : _startVoiceInput,
+                  color: _isRecording ? Colors.red : null,
+                ),
+
+                // Speaker mute/unmute button
+                _buildCircularButton(
+                  icon: _isSpeakerMuted ? Icons.volume_off : Icons.volume_up,
+                  tooltip: _isSpeakerMuted ? 'Unmute Speaker' : 'Mute Speaker',
+                  onPressed: () {
+                    setState(() {
+                      _isSpeakerMuted = !_isSpeakerMuted;
+                    });
+
+                    if (_isSpeakerMuted) {
+                      _voiceService.stopAudio();
+                      setState(() {
+                        _isTtsSpeaking = false;
+                      });
+                    }
+                  },
+                  color: _isSpeakerMuted ? Colors.grey : null,
+                ),
+
+                // Exit voice mode button
+                _buildCircularButton(
+                  icon: Icons.menu,
+                  tooltip: 'Switch to Text Mode',
+                  onPressed: _toggleChatMode,
+                  color: Colors.grey,
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildChatView() {
+  Widget _buildTextChatView() {
     return Builder(
       builder: (context) => Column(
         children: [
@@ -253,39 +520,91 @@ class _ChatScreenState extends State<ChatScreen>
                 ),
               ],
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                ScaleTransition(
-                  scale: _micAnimation,
-                  child: IconButton(
-                    icon: Icon(
-                      _isRecording ? Icons.stop : Icons.mic,
-                      color: _isRecording ? Colors.red : null,
-                    ),
-                    onPressed: _startVoiceInput,
-                  ),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: const InputDecoration(
-                      hintText: 'Type your message...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(24)),
+                // Text input and send button
+                Row(
+                  children: [
+                    ScaleTransition(
+                      scale: _micAnimation,
+                      child: IconButton(
+                        icon: Icon(
+                          _isRecording ? Icons.stop : Icons.mic,
+                          color: _isRecording ? Colors.red : null,
+                        ),
+                        onPressed: _startVoiceInput,
                       ),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
-                    maxLines: null,
-                    textCapitalization: TextCapitalization.sentences,
-                    onSubmitted: (_) => _sendMessage(),
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        decoration: const InputDecoration(
+                          hintText: 'Type your message...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(24)),
+                          ),
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        ),
+                        maxLines: null,
+                        textCapitalization: TextCapitalization.sentences,
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: _isTyping
+                          ? const Icon(Icons.send)
+                          : const Icon(Icons.more_vert),
+                      tooltip:
+                          _isTyping ? 'Send message' : 'Switch to voice mode',
+                      onPressed: _isProcessing
+                          ? null
+                          : _isTyping
+                              ? _sendMessage
+                              : _toggleChatMode,
+                    ),
+                  ],
+                ),
+
+                // Add Switch to voice mode button
+                if (!_isTyping)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: InkWell(
+                      onTap: _toggleChatMode,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color:
+                              Theme.of(context).primaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Voice waves icon
+                            Icon(
+                              Icons.graphic_eq,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Switch to Voice Mode',
+                              style: TextStyle(
+                                color: Theme.of(context).primaryColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: _isProcessing ? null : _sendMessage,
-                ),
               ],
             ),
           ),
@@ -508,6 +827,8 @@ class _ChatScreenState extends State<ChatScreen>
       // For new sessions, we show the duration selector first, then mood selector
       setState(() {
         _showDurationSelector = true;
+        // Ensure we start in voice mode
+        _isVoiceMode = true;
       });
     }
   }
@@ -526,6 +847,8 @@ class _ChatScreenState extends State<ChatScreen>
       _initialMood = selectedMood;
       _showMoodSelector = false;
       _isProcessing = true; // Show loading indicator
+      // Ensure we start in voice mode
+      _isVoiceMode = true;
     });
 
     // Add initial AI message based on mood
@@ -572,34 +895,54 @@ class _ChatScreenState extends State<ChatScreen>
     setState(() {
       _messages.add(userMessage);
       _isProcessing = true;
+      _isTyping = false;
     });
 
     _scrollToBottom();
 
     // Get AI response using therapy service
     try {
-      // Get response from therapy service with audio
-      final response =
-          await _therapyService.processUserMessageWithAudio(message);
+      if (_isVoiceMode) {
+        // Voice mode - get response with audio
+        final response =
+            await _therapyService.processUserMessageWithAudio(message);
 
-      final aiMessage = TherapyMessage(
-        id: const Uuid().v4(),
-        content: response['text'],
-        isUser: false,
-        timestamp: DateTime.now(),
-        audioUrl: response['audioPath'],
-      );
+        final aiMessage = TherapyMessage(
+          id: const Uuid().v4(),
+          content: response['text'],
+          isUser: false,
+          timestamp: DateTime.now(),
+          audioUrl: response['audioPath'],
+        );
 
-      setState(() {
-        _messages.add(aiMessage);
-        _isProcessing = false;
-      });
+        setState(() {
+          _messages.add(aiMessage);
+          _isProcessing = false;
+        });
 
-      _scrollToBottom();
+        _scrollToBottom();
 
-      // Auto-play the response if audio is available
-      if (aiMessage.audioUrl != null) {
-        _playAudio(aiMessage.audioUrl!);
+        // Auto-play the response if audio is available
+        if (aiMessage.audioUrl != null && !_isSpeakerMuted) {
+          await _playAudio(aiMessage.audioUrl!, inVoiceMode: true);
+        }
+      } else {
+        // Text mode - get response without audio to save API calls
+        final response = await _therapyService.processUserMessage(message);
+
+        final aiMessage = TherapyMessage(
+          id: const Uuid().v4(),
+          content: response,
+          isUser: false,
+          timestamp: DateTime.now(),
+        );
+
+        setState(() {
+          _messages.add(aiMessage);
+          _isProcessing = false;
+        });
+
+        _scrollToBottom();
       }
     } catch (e) {
       setState(() {
@@ -628,20 +971,29 @@ class _ChatScreenState extends State<ChatScreen>
     _scrollToBottom();
 
     try {
-      // Generate audio for the welcome message
-      final audioPath =
-          await _voiceService.generateAudio(text, isAiSpeaking: true);
+      if (_isVoiceMode) {
+        // Generate audio for voice mode
+        final audioPath =
+            await _voiceService.generateAudio(text, isAiSpeaking: true);
 
-      // Update the message with the audio URL
-      final indexOfMessage = _messages.indexWhere((m) => m.id == message.id);
-      if (indexOfMessage != -1) {
+        // Update the message with the audio URL
+        final indexOfMessage = _messages.indexWhere((m) => m.id == message.id);
+        if (indexOfMessage != -1) {
+          setState(() {
+            _messages[indexOfMessage] = message.copyWith(audioUrl: audioPath);
+            _isProcessing = false;
+          });
+
+          // Auto-play the welcome message
+          if (!_isSpeakerMuted) {
+            await _playAudio(audioPath, inVoiceMode: true);
+          }
+        }
+      } else {
+        // In text mode, we don't generate audio
         setState(() {
-          _messages[indexOfMessage] = message.copyWith(audioUrl: audioPath);
           _isProcessing = false;
         });
-
-        // Auto-play the welcome message
-        _playAudio(audioPath);
       }
     } catch (e) {
       if (kDebugMode) {
@@ -691,28 +1043,48 @@ class _ChatScreenState extends State<ChatScreen>
 
           _scrollToBottom();
 
-          // Get AI response with audio
-          final response =
-              await _therapyService.processUserMessageWithAudio(transcription);
+          if (_isVoiceMode) {
+            // In voice mode, get AI response with audio
+            final response = await _therapyService
+                .processUserMessageWithAudio(transcription);
 
-          final aiMessage = TherapyMessage(
-            id: const Uuid().v4(),
-            content: response['text'],
-            isUser: false,
-            timestamp: DateTime.now(),
-            audioUrl: response['audioPath'],
-          );
+            final aiMessage = TherapyMessage(
+              id: const Uuid().v4(),
+              content: response['text'],
+              isUser: false,
+              timestamp: DateTime.now(),
+              audioUrl: response['audioPath'],
+            );
 
-          setState(() {
-            _messages.add(aiMessage);
-            _isProcessing = false;
-          });
+            setState(() {
+              _messages.add(aiMessage);
+              _isProcessing = false;
+            });
 
-          _scrollToBottom();
+            _scrollToBottom();
 
-          // Auto-play the response if audio is available
-          if (aiMessage.audioUrl != null) {
-            _playAudio(aiMessage.audioUrl!);
+            // Auto-play the response in voice mode
+            if (aiMessage.audioUrl != null && !_isSpeakerMuted) {
+              await _playAudio(aiMessage.audioUrl!, inVoiceMode: true);
+            }
+          } else {
+            // In text mode, get response without audio to save API calls
+            final response =
+                await _therapyService.processUserMessage(transcription);
+
+            final aiMessage = TherapyMessage(
+              id: const Uuid().v4(),
+              content: response,
+              isUser: false,
+              timestamp: DateTime.now(),
+            );
+
+            setState(() {
+              _messages.add(aiMessage);
+              _isProcessing = false;
+            });
+
+            _scrollToBottom();
           }
         } catch (e) {
           setState(() {
@@ -725,15 +1097,23 @@ class _ChatScreenState extends State<ChatScreen>
         }
       }
     } else {
-      // Start recording
+      // Start recording - if in voice mode and mic is muted, don't start
+      if (_isVoiceMode && _isMicMuted) return;
+
       await _voiceService.startRecording();
     }
   }
 
-  Future<void> _playAudio(String audioPath) async {
-    setState(() {
-      _isRecording = true;
-    });
+  Future<void> _playAudio(String audioPath, {bool inVoiceMode = false}) async {
+    if (inVoiceMode) {
+      setState(() {
+        _isTtsSpeaking = true;
+      });
+    } else {
+      setState(() {
+        _isRecording = true;
+      });
+    }
 
     try {
       await _voiceService.playAudio(audioPath);
@@ -742,9 +1122,17 @@ class _ChatScreenState extends State<ChatScreen>
         SnackBar(content: Text('Error playing audio: $e')),
       );
     } finally {
-      setState(() {
-        _isRecording = false;
-      });
+      if (mounted) {
+        if (inVoiceMode) {
+          setState(() {
+            _isTtsSpeaking = false;
+          });
+        } else {
+          setState(() {
+            _isRecording = false;
+          });
+        }
+      }
     }
   }
 
@@ -877,6 +1265,17 @@ class _ChatScreenState extends State<ChatScreen>
         SnackBar(content: Text('Error ending session: $e')),
       );
     }
+  }
+
+  // Toggle between voice and text chat modes
+  void _toggleChatMode() {
+    // Stop any ongoing audio before switching modes
+    _voiceService.stopAudio();
+
+    setState(() {
+      _isVoiceMode = !_isVoiceMode;
+      _isTtsSpeaking = false;
+    });
   }
 }
 
