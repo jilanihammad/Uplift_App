@@ -6,6 +6,7 @@ import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
+import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/models/user_profile.dart';
 import 'package:go_router/go_router.dart';
 
@@ -22,29 +23,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
   bool _isLoading = true;
-  
+  bool _darkModeEnabled = false;
+
   final _userProfileService = GetIt.instance<UserProfileService>();
+  final _themeService = GetIt.instance<ThemeService>();
   UserProfile? _userProfile;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
+    _darkModeEnabled = _themeService.isDarkMode;
   }
-  
+
   Future<void> _loadUserProfile() async {
     setState(() {
       _isLoading = true;
     });
-    
+
     // Get the user profile from the service
     _userProfile = _userProfileService.profile;
-    
+
     if (_userProfile != null) {
       _nameController.text = _userProfile!.name ?? '';
       _emailController.text = _userProfile!.email ?? '';
     }
-    
+
     if (mounted) {
       setState(() {
         _isLoading = false;
@@ -58,20 +62,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _emailController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       await _userProfileService.updateProfile(
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully')),
@@ -101,7 +105,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         body: const Center(child: CircularProgressIndicator()),
       );
     }
-    
+
     return BlocListener<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthUnauthenticated) {
@@ -176,7 +180,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     return null;
                   },
                 ),
-                
                 if (_userProfile != null) ...[
                   const SizedBox(height: 32),
                   const Divider(),
@@ -194,13 +197,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 12),
                   _buildProfileInfoCard(
                     'Therapy Goals',
-                    _userProfile!.goals.isEmpty 
-                        ? 'No goals specified' 
+                    _userProfile!.goals.isEmpty
+                        ? 'No goals specified'
                         : _userProfile!.goals.join(', '),
                     Icons.flag,
                   ),
                 ],
-                
                 const SizedBox(height: 32),
                 const Divider(),
                 ListTile(
@@ -218,6 +220,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () {
                     context.push('/settings/therapist_style');
+                  },
+                ),
+                const Divider(),
+                SwitchListTile(
+                  secondary: Icon(
+                    _darkModeEnabled ? Icons.dark_mode : Icons.light_mode,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                  title: const Text('Dark Mode'),
+                  value: _darkModeEnabled,
+                  onChanged: (value) {
+                    setState(() {
+                      _darkModeEnabled = value;
+                    });
+                    _themeService
+                        .setTheme(value ? ThemeMode.dark : ThemeMode.light);
                   },
                 ),
                 const Divider(),
@@ -249,7 +267,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
-  
+
   Widget _buildProfileInfoCard(String title, String content, IconData icon) {
     return Card(
       elevation: 2,

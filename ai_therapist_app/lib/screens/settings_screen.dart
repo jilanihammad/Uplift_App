@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/services/preferences_service.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
+import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/models/therapist_style.dart';
 
@@ -17,6 +18,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late PreferencesService _preferencesService;
   late NotificationService _notificationService;
+  late ThemeService _themeService;
   bool _darkModeEnabled = false;
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
@@ -31,12 +33,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _preferencesService = serviceLocator<PreferencesService>();
     _notificationService = serviceLocator<NotificationService>();
-    
+    _themeService = serviceLocator<ThemeService>();
+
     // Load preferences
-    _therapistStyleId = _preferencesService.preferences?.therapistStyleId ?? 'cbt';
-    _useVoiceByDefault = _preferencesService.preferences?.useVoiceByDefault ?? false;
+    _therapistStyleId =
+        _preferencesService.preferences?.therapistStyleId ?? 'cbt';
+    _useVoiceByDefault =
+        _preferencesService.preferences?.useVoiceByDefault ?? false;
     _dailyCheckInTime = _preferencesService.preferences?.dailyCheckInTime;
     _dailyCheckInEnabled = _dailyCheckInTime != null;
+    _darkModeEnabled = _themeService.isDarkMode;
   }
 
   @override
@@ -60,7 +66,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               SwitchListTile(
                 title: const Text('Use Voice by Default'),
-                subtitle: const Text('Enable voice input and output by default'),
+                subtitle:
+                    const Text('Enable voice input and output by default'),
                 value: _useVoiceByDefault,
                 onChanged: (value) {
                   setState(() {
@@ -76,7 +83,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               SwitchListTile(
                 title: const Text('Enable Daily Check-in'),
-                subtitle: const Text('Get a reminder to log your mood each day'),
+                subtitle:
+                    const Text('Get a reminder to log your mood each day'),
                 value: _dailyCheckInEnabled,
                 onChanged: (value) {
                   setState(() {
@@ -86,7 +94,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _dailyCheckInTime = const TimeOfDay(hour: 9, minute: 0);
                     }
                   });
-                  
+
                   if (value) {
                     _preferencesService.setDailyCheckInTime(_dailyCheckInTime);
                     _scheduleDailyCheckIn();
@@ -118,7 +126,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {
                     _darkModeEnabled = value;
                   });
-                  // Apply theme change
+                  _themeService
+                      .setTheme(value ? ThemeMode.dark : ThemeMode.light);
                 },
               ),
               ListTile(
@@ -236,7 +245,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
+          padding:
+              const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
           child: Text(
             title,
             style: const TextStyle(
@@ -296,23 +306,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-  
+
   Future<void> _selectCheckInTime() async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _dailyCheckInTime ?? const TimeOfDay(hour: 9, minute: 0),
     );
-    
+
     if (picked != null && picked != _dailyCheckInTime) {
       setState(() {
         _dailyCheckInTime = picked;
       });
-      
+
       _preferencesService.setDailyCheckInTime(picked);
       _scheduleDailyCheckIn();
     }
   }
-  
+
   void _scheduleDailyCheckIn() {
     if (_dailyCheckInTime != null) {
       _notificationService.scheduleDailyNotification(
@@ -324,11 +334,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
   }
-  
+
   void _cancelDailyCheckIn() {
     _notificationService.cancelNotification(1);
   }
-  
+
   String _formatTimeOfDay(TimeOfDay timeOfDay) {
     final now = DateTime.now();
     final dateTime = DateTime(
