@@ -26,6 +26,7 @@ import '../services/therapy_graph_service.dart';
 import '../services/config_service.dart';
 import '../services/firebase_service.dart';
 import '../services/backend_service.dart';
+import '../services/theme_service.dart';
 
 import '../utils/connectivity_checker.dart';
 
@@ -88,6 +89,7 @@ Future<void> setupServiceLocator() async {
       .registerLazySingleton<ConnectivityChecker>(() => ConnectivityChecker());
   serviceLocator
       .registerLazySingleton<PreferencesService>(() => PreferencesService());
+  serviceLocator.registerLazySingleton<ThemeService>(() => ThemeService());
   serviceLocator.registerLazySingleton<VoiceService>(
       () => VoiceService()); // Keep if init is simple/separate
   // REMOVE: serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService());

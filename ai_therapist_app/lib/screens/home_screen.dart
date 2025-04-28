@@ -27,20 +27,20 @@ class _HomeScreenState extends State<HomeScreen> {
   late PreferencesService _preferencesService;
   late UserProgress _progress;
   bool _progressInitialized = false;
-  
+
   @override
   void initState() {
     super.initState();
     _progressService = serviceLocator<ProgressService>();
     _preferencesService = serviceLocator<PreferencesService>();
     _progress = _progressService.progress;
-    
+
     // Listen for progress changes
     _progressService.progressChanged.addListener(_onProgressChanged);
-    
+
     _loadUserData();
   }
-  
+
   void _onProgressChanged() {
     if (mounted) {
       setState(() {
@@ -48,18 +48,18 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
   }
-  
+
   @override
   void dispose() {
     _progressService.progressChanged.removeListener(_onProgressChanged);
     super.dispose();
   }
-  
+
   Future<void> _loadUserData() async {
     // In a real app, fetch data from API or local storage
     // Simulate data loading
     await Future.delayed(const Duration(milliseconds: 500));
-    
+
     setState(() {
       // Example data
       _currentMood = Mood.neutral;
@@ -70,26 +70,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Format today's date
-    final today = DateTime.now();
-    final dateFormatter = DateFormat('EEEE, MMMM d, yyyy');
-    final formattedDate = dateFormatter.format(today);
-    
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Uplift'),
-            Text(
-              formattedDate,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.normal,
-              ),
-            ),
-          ],
+        title: Image.asset(
+          'assets/images/hs_logo.png',
+          height: 40,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            // Fallback to uplift_logo.png if hs_logo.png doesn't exist
+            return Image.asset(
+              'assets/images/uplift_logo.png',
+              height: 60,
+              fit: BoxFit.contain,
+            );
+          },
         ),
+        centerTitle: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications),
@@ -109,25 +105,24 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               // Greeting card
               _buildGreetingCard(),
-              
+
               const SizedBox(height: 24),
-              
+
               // Next session card moved up to position #2
-              if (_nextSessionDate != null)
-                _buildNextSessionCard(),
-              
+              if (_nextSessionDate != null) _buildNextSessionCard(),
+
               const SizedBox(height: 24),
-              
+
               // Progress tracking
               _buildProgressCard(),
-              
+
               const SizedBox(height: 24),
-              
+
               // Quick mood check
               _buildMoodCheckCard(),
-              
+
               const SizedBox(height: 24),
-              
+
               // Session actions
               Center(
                 child: _buildActionCard(
@@ -138,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   () => context.go('/history'),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
             ],
           ),
@@ -151,15 +146,15 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildGreetingCard() {
     final hour = DateTime.now().hour;
     String greeting;
-    
+
     // Get actual user name from UserProfileService
     final userProfileService = serviceLocator<UserProfileService>();
     String userName = userProfileService.profile?.name ?? "there";
-    
+
     if (hour < 12) {
       greeting = 'Good Morning';
     } else if (hour < 17) {
@@ -167,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       greeting = 'Good Evening';
     }
-    
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(
@@ -213,7 +208,8 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.psychology),
               label: const Text('Start Session'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 minimumSize: const Size(0, 0),
               ),
               onPressed: () => context.go('/chat'),
@@ -223,12 +219,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildMoodCheckCard() {
     // Get today's mood logs count
     final todayLogsCount = _progress.getTodayMoodLogsCount();
     final hasReachedLimit = todayLogsCount >= 3;
-    
+
     return Card(
       elevation: 2,
       child: Padding(
@@ -286,7 +282,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: Text(
                           "You've already logged your mood 3 times today. Today's logs: ${todayLogsCount}",
-                          style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              color: Colors.amber, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -300,7 +297,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildMoodOption(Mood.happy, '🙂'),
                 _buildMoodOption(Mood.neutral, '😐'),
                 _buildMoodOption(Mood.sad, '😢'),
-                _buildMoodOption(Mood.anxious, '😰'),               
+                _buildMoodOption(Mood.anxious, '😰'),
                 _buildMoodOption(Mood.angry, '😠'),
               ],
             ),
@@ -315,9 +312,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     : () {
                         // Log mood and update streak
                         _progressService.logMood(_currentMood);
-                        
+
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Mood logged successfully')),
+                          const SnackBar(
+                              content: Text('Mood logged successfully')),
                         );
                       },
                 child: const Text('Log My Mood'),
@@ -328,13 +326,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   void _showMoodLimitDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Daily Limit Reached'),
-        content: const Text("You've already logged your mood 3 times today. Would you like to view your mood history instead?"),
+        content: const Text(
+            "You've already logged your mood 3 times today. Would you like to view your mood history instead?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -351,10 +350,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildMoodOption(Mood mood, String emoji) {
     final isSelected = mood == _currentMood;
-    
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -364,7 +363,9 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+          color: isSelected
+              ? Theme.of(context).primaryColor.withOpacity(0.1)
+              : null,
           borderRadius: BorderRadius.circular(16),
           border: isSelected
               ? Border.all(color: Theme.of(context).primaryColor)
@@ -377,8 +378,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
-  Widget _buildActionCard(String title, IconData icon, Color bgColor, Color iconColor, VoidCallback onTap) {
+
+  Widget _buildActionCard(String title, IconData icon, Color bgColor,
+      Color iconColor, VoidCallback onTap) {
     return Card(
       elevation: 2,
       child: InkWell(
@@ -416,10 +418,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildNextSessionCard() {
     final dateFormat = DateFormat.yMMMd().add_jm();
-    
+
     return Card(
       elevation: 2,
       child: Padding(
@@ -479,11 +481,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   void _showRescheduleDialog() {
-    DateTime selectedDate = _nextSessionDate ?? DateTime.now().add(const Duration(days: 1));
+    DateTime selectedDate =
+        _nextSessionDate ?? DateTime.now().add(const Duration(days: 1));
     TimeOfDay selectedTime = TimeOfDay.fromDateTime(selectedDate);
-    
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -568,7 +571,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildResourcesGrid() {
     return GridView.count(
       crossAxisCount: 1,
@@ -586,8 +589,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-  
-  Widget _buildResourceCard(String title, String subtitle, IconData icon, Color color) {
+
+  Widget _buildResourceCard(
+      String title, String subtitle, IconData icon, Color color) {
     return Card(
       elevation: 2,
       child: InkWell(
@@ -628,7 +632,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildStreakBadge(int streak) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -640,7 +644,8 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.local_fire_department, color: Colors.orange, size: 14),
+          const Icon(Icons.local_fire_department,
+              color: Colors.orange, size: 14),
           const SizedBox(width: 2),
           Text(
             '$streak',
@@ -654,17 +659,17 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildProgressCard() {
     if (!_progressInitialized) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     // Get consistency information from the progress service
     final consistencyRate = _progressService.getConsistencyRate();
     final consistencyStatus = _progressService.getConsistencyStatus();
     final consistencyColor = _progressService.getConsistencyColor();
-    
+
     // Determine icon based on consistency status
     IconData consistencyIcon;
     if (consistencyStatus == 'Very Consistent') {
@@ -674,7 +679,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       consistencyIcon = Icons.timelapse;
     }
-    
+
     return Card(
       elevation: 2,
       child: InkWell(
@@ -701,11 +706,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              
+
               // Consistency badge
               Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: consistencyColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -728,7 +734,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
               Text(
                 'Based on your activity in the last 7 days (${(_progress.activeDaysLastWeek)} active days)',
@@ -738,7 +744,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              
+
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -766,7 +772,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   Widget _buildStatItem(String value, String label, IconData icon) {
     return Column(
       children: [

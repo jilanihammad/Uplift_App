@@ -13,6 +13,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging_platform_interface/firebase_messaging_platform_interface.dart';
+import 'package:provider/provider.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
@@ -52,6 +53,7 @@ import 'package:ai_therapist_app/utils/error_handling.dart';
 import 'package:ai_therapist_app/utils/connectivity_checker.dart';
 import 'package:ai_therapist_app/utils/firestore_helpers.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ai_therapist_app/services/theme_service.dart';
 
 // Global variable to track Firebase initialization state
 bool _firebaseInitialized = false;
@@ -367,20 +369,42 @@ class AiTherapistApp extends StatefulWidget {
 }
 
 class _AiTherapistAppState extends State<AiTherapistApp> {
+  late ThemeService _themeService;
+
+  @override
+  void initState() {
+    super.initState();
+    _themeService = serviceLocator<ThemeService>();
+    _initTheme();
+  }
+
+  Future<void> _initTheme() async {
+    await _themeService.init();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     // Wrap with ErrorBoundary to catch errors in the widget tree
     return ErrorBoundary(
-      child: BlocProvider(
-        create: (context) => AuthBloc(
-          authService: serviceLocator<AuthService>(),
-        )..add(CheckAuthStatusEvent()),
-        child: MaterialApp.router(
-          title: 'AI Therapist',
-          theme: AppTheme.lightTheme,
-          themeMode: ThemeMode.light,
-          debugShowCheckedModeBanner: false,
-          routerConfig: AppRouter.router,
+      child: ChangeNotifierProvider.value(
+        value: _themeService,
+        child: Consumer<ThemeService>(
+          builder: (context, themeService, _) {
+            return BlocProvider(
+              create: (context) => AuthBloc(
+                authService: serviceLocator<AuthService>(),
+              )..add(CheckAuthStatusEvent()),
+              child: MaterialApp.router(
+                title: 'AI Therapist',
+                theme: AppTheme.lightTheme,
+                darkTheme: AppTheme.darkTheme,
+                themeMode: themeService.themeMode,
+                debugShowCheckedModeBanner: false,
+                routerConfig: AppRouter.router,
+              ),
+            );
+          },
         ),
       ),
     );
