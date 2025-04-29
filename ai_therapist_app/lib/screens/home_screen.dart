@@ -72,10 +72,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Image.asset(
           'assets/images/hs_logo.png',
           height: 40,
           fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
           errorBuilder: (context, error, stackTrace) {
             // Fallback to uplift_logo.png if hs_logo.png doesn't exist
             return Image.asset(
@@ -139,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.go('/chat'),
-        icon: const Icon(Icons.psychology),
+        icon: const Icon(Icons.favorite_border),
         label: const Text('Talk Now'),
       ),
     );
@@ -193,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 100,
                   errorBuilder: (context, error, stackTrace) {
                     return Icon(
-                      Icons.psychology,
+                      Icons.favorite,
                       size: 80,
                       color: Theme.of(context).primaryColor,
                     );
@@ -203,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              icon: const Icon(Icons.psychology),
+              icon: const Icon(Icons.favorite_border),
               label: const Text('Start Session'),
               style: ElevatedButton.styleFrom(
                 padding:
@@ -750,7 +753,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildStatItem(
                     '${_progress.sessionsThisWeek}',
                     'Sessions',
-                    Icons.psychology,
+                    Icons.favorite_border,
                   ),
                   _buildStatItem(
                     '${_progress.moodLogsThisWeek}',

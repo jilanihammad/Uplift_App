@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.6
 
   # State management
@@ -45,7 +47,7 @@ dependencies:
   flutter_svg: ^2.0.9
   cached_network_image: ^3.4.1
   google_fonts: ^4.0.4
-  intl: ^0.20.2
+  intl: ^0.19.0
   lottie: ^3.3.1
 
   # Audio and voice processing

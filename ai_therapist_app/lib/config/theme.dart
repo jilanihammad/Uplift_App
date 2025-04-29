@@ -2,10 +2,17 @@ import 'package:flutter/material.dart';
 
 // App theme configuration
 class AppTheme {
-  // Primary colors
-  static const Color primaryColor = Color(0xFF5E72E4); // Indigo blue
-  static const Color primaryLightColor = Color(0xFF7B8FF7);
-  static const Color primaryDarkColor = Color(0xFF324AB2);
+  // Primary colors - Twitter blue (used for navigation active items)
+  static const Color primaryColor = Color(0xFF1DA1F2); // Twitter blue
+  static const Color primaryLightColor =
+      Color(0xFF60C4FF); // Lighter Twitter blue
+  static const Color primaryDarkColor =
+      Color(0xFF0C7BBF); // Darker Twitter blue
+
+  // Button colors - brighter blue similar to Twitter blue in dark mode
+  static const Color buttonColor = Color(0xFF38B6FF);
+  static const Color buttonLightColor = Color(0xFF7DCFFF);
+  static const Color buttonDarkColor = Color(0xFF1C92DB);
 
   // Secondary colors
   static const Color secondaryColor = Color(0xFF11CDEF); // Cyan
@@ -58,6 +65,13 @@ class AppTheme {
       ),
       primaryColor: primaryColor,
       scaffoldBackgroundColor: backgroundColor,
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        selectedItemColor: primaryColor,
+        unselectedItemColor: textSecondaryColor,
+        backgroundColor: Colors.white,
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
         foregroundColor: textPrimaryColor,
@@ -70,32 +84,25 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
+          backgroundColor: buttonColor,
           foregroundColor: Colors.white,
-          backgroundColor: primaryColor,
-          elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: primaryColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+          foregroundColor: buttonColor,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: primaryColor,
-          side: const BorderSide(color: primaryColor),
+          foregroundColor: buttonColor,
+          side: BorderSide(color: buttonColor),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -197,6 +204,13 @@ class AppTheme {
       ),
       primaryColor: primaryColor,
       scaffoldBackgroundColor: darkBackgroundColor,
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        selectedItemColor: primaryColor,
+        unselectedItemColor: darkTextSecondaryColor,
+        backgroundColor: darkCardColor,
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: darkCardColor,
         foregroundColor: darkTextPrimaryColor,
@@ -209,32 +223,25 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
+          backgroundColor: buttonColor,
           foregroundColor: Colors.white,
-          backgroundColor: primaryColor,
-          elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: primaryColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+          foregroundColor: buttonColor,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: primaryColor,
-          side: const BorderSide(color: primaryColor),
+          foregroundColor: buttonColor,
+          side: BorderSide(color: buttonColor),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
