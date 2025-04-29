@@ -215,7 +215,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.psychology),
+                  leading: const Icon(Icons.favorite),
                   title: const Text('Therapist Style'),
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () {

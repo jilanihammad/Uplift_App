@@ -15,6 +15,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging_platform_interface/firebase_messaging_platform_interface.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
@@ -407,6 +408,14 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                 themeMode: themeService.themeMode,
                 debugShowCheckedModeBanner: false,
                 routerConfig: AppRouter.router,
+                localizationsDelegates: [
+                  GlobalMaterialLocalizations.delegate,
+                  GlobalWidgetsLocalizations.delegate,
+                  GlobalCupertinoLocalizations.delegate,
+                ],
+                supportedLocales: const [
+                  Locale('en', ''), // English
+                ],
               ),
             );
           },
@@ -443,9 +452,25 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
   @override
   Widget build(BuildContext context) {
     if (_hasError) {
-      // Error view
-      return Material(
-        child: Scaffold(
+      // Create a self-contained error UI with proper localization
+      final errorTheme = ThemeData(
+        primaryColor: Colors.red,
+        primarySwatch: Colors.red,
+        colorScheme: ColorScheme.light(primary: Colors.red),
+      );
+
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: errorTheme,
+        localizationsDelegates: [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('en', ''), // English
+        ],
+        home: Scaffold(
           appBar: AppBar(
             title: const Text('App Error'),
             backgroundColor: Colors.red,
@@ -491,7 +516,7 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
       );
     }
 
-    // If no error, show the normal content - fixed to properly return a Widget
+    // If no error, show the normal content
     // Set up the error handler first
     ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
       // Log the error
