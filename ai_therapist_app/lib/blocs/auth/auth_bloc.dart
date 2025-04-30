@@ -10,9 +10,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthService _authService;
   final OnboardingService _onboardingService;
 
-  AuthBloc({required AuthService authService})
-      : _authService = authService,
-        _onboardingService = serviceLocator<OnboardingService>(),
+  AuthBloc({
+    required AuthService authService,
+    required OnboardingService onboardingService,
+  })  : _authService = authService,
+        _onboardingService = onboardingService,
         super(AuthInitial()) {
     on<CheckAuthStatusEvent>(_checkAuthStatus);
     on<LoginEvent>(_login);

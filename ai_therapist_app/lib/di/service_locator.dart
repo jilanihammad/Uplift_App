@@ -185,10 +185,23 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered UserProfileService');
     }
 
+    // Register AuthService first without OnboardingService
+    if (!serviceLocator.isRegistered<AuthService>()) {
+      serviceLocator.registerLazySingleton<AuthService>(() => AuthService());
+      debugPrint('Registered AuthService');
+    }
+
+    // Register OnboardingService with AuthService injected
     if (!serviceLocator.isRegistered<OnboardingService>()) {
-      serviceLocator
-          .registerLazySingleton<OnboardingService>(() => OnboardingService());
-      debugPrint('Registered OnboardingService');
+      final authService = serviceLocator<AuthService>();
+      serviceLocator.registerLazySingleton<OnboardingService>(
+          () => OnboardingService(authService: authService));
+      debugPrint('Registered OnboardingService with AuthService');
+
+      // Connect the AuthService back to OnboardingService to break circular dependency
+      final onboardingService = serviceLocator<OnboardingService>();
+      authService.setOnboardingService(onboardingService);
+      debugPrint('Connected AuthService to OnboardingService');
     }
 
     // Mark core services as registered
@@ -229,7 +242,7 @@ Future<void> registerApiDependentServices(
       serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
             apiClient: serviceLocator<ApiClient>(),
           ));
-      debugPrint('Registered AuthRepository');
+      debugPrint('Registered AuthRepository with injected ApiClient');
     }
 
     if (!serviceLocator.isRegistered<UserRepository>()) {
@@ -262,11 +275,6 @@ Future<void> registerApiDependentServices(
       serviceLocator
           .registerLazySingleton<TherapyService>(() => TherapyService());
       debugPrint('Registered TherapyService');
-    }
-
-    if (!serviceLocator.isRegistered<AuthService>()) {
-      serviceLocator.registerLazySingleton<AuthService>(() => AuthService());
-      debugPrint('Registered AuthService');
     }
 
     DependencyStatus.apiDependenciesRegistered = true;
