@@ -415,6 +415,7 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                   if (serviceLocator.isRegistered<AuthService>()) {
                     final authBloc = AuthBloc(
                       authService: serviceLocator<AuthService>(),
+                      onboardingService: serviceLocator<OnboardingService>(),
                     )..add(CheckAuthStatusEvent());
 
                     // Register the AuthBloc in the service locator if not already registered
@@ -432,6 +433,8 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                     final authBloc = AuthBloc(
                       authService:
                           AuthService(), // Create a local instance as fallback
+                      onboardingService:
+                          OnboardingService(), // Create a local instance as fallback
                     );
 
                     // Register the minimal AuthBloc in the service locator
@@ -449,6 +452,8 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                   final authBloc = AuthBloc(
                     authService:
                         AuthService(), // Create a local instance as fallback
+                    onboardingService:
+                        OnboardingService(), // Create a local instance as fallback
                   );
 
                   // Register the fallback AuthBloc in the service locator
