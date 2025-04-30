@@ -27,6 +27,14 @@ class ConfigService {
   String _transcriptionEndpoint = '';
   String _transcriptionModelId = '';
 
+  // Firebase configuration
+  String _firebaseApiKey = '';
+  String _firebaseAppId = '';
+  String _firebaseMessagingSenderId = '';
+  String _firebaseProjectId = '';
+  String _firebaseStorageBucket = '';
+  String _firebaseDatabaseId = '';
+
   // Configuration flags
   bool _isProductionMode = false;
   bool _useMockLlmResponses = false;
@@ -47,6 +55,14 @@ class ConfigService {
   String get transcriptionEndpoint => _transcriptionEndpoint;
   String get transcriptionModelId => _transcriptionModelId;
 
+  // Getters for Firebase configuration
+  String get firebaseApiKey => _firebaseApiKey;
+  String get firebaseAppId => _firebaseAppId;
+  String get firebaseMessagingSenderId => _firebaseMessagingSenderId;
+  String get firebaseProjectId => _firebaseProjectId;
+  String get firebaseStorageBucket => _firebaseStorageBucket;
+  String get firebaseDatabaseId => _firebaseDatabaseId;
+
   // Getters for flags
   bool get isProductionMode => _isProductionMode;
   bool get useMockLlmResponses => _useMockLlmResponses;
@@ -62,10 +78,9 @@ class ConfigService {
     bool? useMockLlmResponses,
     bool? isProductionMode,
   }) {
-    // Force update to new URL regardless of what was passed
-    this._llmApiEndpoint =
-        'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
-    this._voiceModelEndpoint = voiceModelEndpoint ?? this._llmApiEndpoint;
+    // Initialize with default values
+    this._llmApiEndpoint = llmApiEndpoint ?? '';
+    this._voiceModelEndpoint = voiceModelEndpoint ?? '';
     this._groqApiKey = groqApiKey ?? '';
     this._useMockTranscription = useMockTranscription ?? false;
     this._useMockLlmResponses = useMockLlmResponses ?? false;
@@ -95,6 +110,12 @@ class ConfigService {
         print('LLM Model ID: $_llmModelId');
         print('TTS Model ID: $_ttsModelId');
         print('Transcription Model ID: $_transcriptionModelId');
+
+        // Print Firebase configuration (only in debug mode)
+        print('Firebase Project ID: $_firebaseProjectId');
+        print('Firebase Storage Bucket: $_firebaseStorageBucket');
+        print('Firebase Database ID: $_firebaseDatabaseId');
+
         // Only print first few characters of API key for debugging
         if (_groqApiKey.isNotEmpty) {
           print('Groq API Key: ${_groqApiKey.substring(0, 5)}...');
@@ -156,8 +177,11 @@ class ConfigService {
           if (key.toLowerCase().contains('key') ||
               key.toLowerCase().contains('secret')) {
             // Mask sensitive values
-            debugPrint(
-                '  $key: ${value.substring(0, value.length > 4 ? 4 : value.length)}*****');
+            if (value.length > 4) {
+              debugPrint('  $key: ${value.substring(0, 4)}*****');
+            } else {
+              debugPrint('  $key: ****');
+            }
           } else {
             debugPrint('  $key: $value');
           }
@@ -165,6 +189,7 @@ class ConfigService {
       }
 
       // Base URLs and endpoints - always safe get with fallbacks
+      final envBackendUrl = _safeGetEnv('BACKEND_URL');
       final envGroqBaseUrl = _safeGetEnv('GROQ_API_BASE_URL');
       final envLlmEndpoint = _safeGetEnv('LLM_API_ENDPOINT');
       final envVoiceEndpoint = _safeGetEnv('VOICE_MODEL_ENDPOINT');
@@ -180,8 +205,19 @@ class ConfigService {
       final envTtsModelId = _safeGetEnv('TTS_MODEL_ID');
       final envTranscriptionModelId = _safeGetEnv('TRANSCRIPTION_MODEL_ID');
 
+      // Firebase configuration
+      final envFirebaseApiKey = _safeGetEnv('FIREBASE_API_KEY');
+      final envFirebaseAppId = _safeGetEnv('FIREBASE_APP_ID');
+      final envFirebaseMessagingSenderId =
+          _safeGetEnv('FIREBASE_MESSAGING_SENDER_ID');
+      final envFirebaseProjectId = _safeGetEnv('FIREBASE_PROJECT_ID');
+      final envFirebaseStorageBucket = _safeGetEnv('FIREBASE_STORAGE_BUCKET');
+      final envFirebaseDatabaseId = _safeGetEnv('FIREBASE_DATABASE_ID');
+
       // Flags
       final envIsProd = _safeGetEnv('IS_PRODUCTION_MODE') == 'true';
+      final envUseVoiceFeatures = _safeGetEnv('USE_VOICE_FEATURES') == 'true';
+      final envEnableAnalytics = _safeGetEnv('ENABLE_ANALYTICS') == 'true';
 
       // Set base URLs and endpoints
       if (envGroqBaseUrl.isNotEmpty) {
@@ -190,130 +226,134 @@ class ConfigService {
         _groqApiBaseUrl = 'https://api.groq.com/openai/v1';
       }
 
-      // Simpler logic for LLM endpoint: Use env var in debug, otherwise use production URL
-      debugPrint(
-          '[RELEASE DEBUG] Evaluating _llmApiEndpoint logic. Current value: "$_llmApiEndpoint"');
-      if (kDebugMode && envLlmEndpoint != null && envLlmEndpoint.isNotEmpty) {
-        _llmApiEndpoint = envLlmEndpoint; // Use .env value only in debug
-        debugPrint(
-            '[RELEASE DEBUG] Set _llmApiEndpoint from .env: "$_llmApiEndpoint"');
-      } else if (!kDebugMode) {
-        _llmApiEndpoint =
-            'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app'; // Production URL
-        debugPrint(
-            '[RELEASE DEBUG] Set _llmApiEndpoint to PRODUCTION URL: "$_llmApiEndpoint"');
-      } else {
-        // Fallback if debug mode but no .env value (could be empty or set default)
-        _llmApiEndpoint = _llmApiEndpoint.isEmpty
-            ? 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app'
-            : _llmApiEndpoint;
-        debugPrint(
-            '[RELEASE DEBUG] Set _llmApiEndpoint via fallback: "$_llmApiEndpoint"');
+      // For backend URL
+      String effectiveBackendUrl =
+          'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+      if (envBackendUrl.isNotEmpty) {
+        effectiveBackendUrl = envBackendUrl;
       }
 
-      // Make sure voice endpoint also uses the correct base URL
-      if (envVoiceEndpoint != null && envVoiceEndpoint.isNotEmpty) {
+      // For LLM API endpoint
+      if (envLlmEndpoint.isNotEmpty) {
+        _llmApiEndpoint = envLlmEndpoint;
+      } else {
+        _llmApiEndpoint = effectiveBackendUrl;
+      }
+
+      // For voice endpoint
+      if (envVoiceEndpoint.isNotEmpty) {
         _voiceModelEndpoint = envVoiceEndpoint;
       } else {
-        // Use the potentially updated _llmApiEndpoint as the base for voice if not specified
         _voiceModelEndpoint = _llmApiEndpoint;
       }
 
       // Set model endpoints
-      if (envLlmModelEndpoint != null && envLlmModelEndpoint.isNotEmpty) {
+      if (envLlmModelEndpoint.isNotEmpty) {
         _llmModelEndpoint = envLlmModelEndpoint;
       } else {
         _llmModelEndpoint = 'https://api.groq.com/openai/v1/models';
       }
 
-      if (envTtsModelEndpoint != null && envTtsModelEndpoint.isNotEmpty) {
+      if (envTtsModelEndpoint.isNotEmpty) {
         _ttsModelEndpoint = envTtsModelEndpoint;
       } else {
         _ttsModelEndpoint = '$_groqApiBaseUrl/audio/speech';
       }
 
-      if (envTranscriptionEndpoint != null &&
-          envTranscriptionEndpoint.isNotEmpty) {
+      if (envTranscriptionEndpoint.isNotEmpty) {
         _transcriptionEndpoint = envTranscriptionEndpoint;
       } else {
         _transcriptionEndpoint = '$_groqApiBaseUrl/audio/transcriptions';
       }
 
       // Set model IDs
-      if (envLlmModelId != null && envLlmModelId.isNotEmpty) {
+      if (envLlmModelId.isNotEmpty) {
         _llmModelId = envLlmModelId;
       } else {
         _llmModelId = 'meta-llama/llama-4-scout-17b-16e-instruct';
       }
 
-      if (envTtsModelId != null && envTtsModelId.isNotEmpty) {
+      if (envTtsModelId.isNotEmpty) {
         _ttsModelId = envTtsModelId;
       } else {
         _ttsModelId = 'playai-tts';
       }
 
-      if (envTranscriptionModelId != null &&
-          envTranscriptionModelId.isNotEmpty) {
+      if (envTranscriptionModelId.isNotEmpty) {
         _transcriptionModelId = envTranscriptionModelId;
       } else {
         _transcriptionModelId = 'whisper-large-v3-turbo';
       }
 
-      // API Key
-      if (envGroqApiKey != null && envGroqApiKey.isNotEmpty) {
-        _groqApiKey = envGroqApiKey;
+      // Set Firebase configuration
+      if (envFirebaseApiKey.isNotEmpty) {
+        _firebaseApiKey = envFirebaseApiKey;
+      } else {
+        _firebaseApiKey =
+            '***REMOVED***'; // Default from android config
       }
 
-      // Flags
-      if (envIsProd) {
-        _isProductionMode = true;
+      if (envFirebaseAppId.isNotEmpty) {
+        _firebaseAppId = envFirebaseAppId;
+      } else {
+        _firebaseAppId =
+            '1:123456789012:android:abcdef0123456789'; // Default from android config
       }
 
-      // Disable mocks in production mode
-      if (_isProductionMode) {
-        _useMockLlmResponses = false;
-        _useMockTranscription = false;
+      if (envFirebaseMessagingSenderId.isNotEmpty) {
+        _firebaseMessagingSenderId = envFirebaseMessagingSenderId;
+      } else {
+        _firebaseMessagingSenderId =
+            '123456789012'; // Default from android config
       }
 
-      debugPrint(
-          '[RELEASE DEBUG] Exiting _loadEnvironmentVariables. Final _llmApiEndpoint: "$_llmApiEndpoint"');
+      if (envFirebaseProjectId.isNotEmpty) {
+        _firebaseProjectId = envFirebaseProjectId;
+      } else {
+        _firebaseProjectId = 'upliftapp-cd86e'; // Default from android config
+      }
+
+      if (envFirebaseStorageBucket.isNotEmpty) {
+        _firebaseStorageBucket = envFirebaseStorageBucket;
+      } else {
+        _firebaseStorageBucket =
+            'upliftapp-cd86e.appspot.com'; // Default from android config
+      }
+
+      if (envFirebaseDatabaseId.isNotEmpty) {
+        _firebaseDatabaseId = envFirebaseDatabaseId;
+      } else {
+        _firebaseDatabaseId = 'upliftdb'; // Default from FirebaseService
+      }
+
+      // Set flags
+      _isProductionMode = envIsProd;
+      _useMockTranscription = !envUseVoiceFeatures;
+
       debugPrint(
           '[ConfigService] Environment variables processed successfully');
     } catch (e) {
       debugPrint('[ConfigService] Error loading environment variables: $e');
-      debugPrint('[ConfigService] Continuing with default values');
-      // Ensure we have a valid API endpoint, even if environment loading fails
-      if (_llmApiEndpoint.isEmpty) {
-        _llmApiEndpoint =
-            'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
-        debugPrint('[ConfigService] Set fallback API endpoint after error');
-      }
     }
   }
 
-  /// Safely get an environment variable with a fallback
+  // Helper method to safely get environment variable
   String _safeGetEnv(String key) {
-    try {
-      return dotenv.env[key] ?? '';
-    } catch (e) {
-      debugPrint('[ConfigService] Error accessing env var $key: $e');
-      return '';
-    }
+    return dotenv.env[key] ?? '';
   }
 
   /// Load API keys from secure storage
   Future<void> _loadApiKeys() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final storedApiKeys = prefs.getString(_apiKeysPrefsKey);
+      final String? storedKeys = prefs.getString(_apiKeysPrefsKey);
 
-      if (storedApiKeys != null && storedApiKeys.isNotEmpty) {
-        // In a real app, you would decrypt this data
-        final apiKeysMap = json.decode(storedApiKeys) as Map<String, dynamic>;
+      if (storedKeys != null && storedKeys.isNotEmpty) {
+        final Map<String, dynamic> keyMap = json.decode(storedKeys);
 
-        // Set API keys if found in storage and not already set
-        if (_groqApiKey.isEmpty && apiKeysMap.containsKey('groq')) {
-          _groqApiKey = apiKeysMap['groq'] as String;
+        // In a real app, these would be encrypted/decrypted
+        if (keyMap.containsKey('groq_api_key')) {
+          _groqApiKey = keyMap['groq_api_key'];
         }
       }
     } catch (e) {
@@ -324,43 +364,38 @@ class ConfigService {
   }
 
   /// Save API keys to secure storage
-  Future<void> saveApiKeys({String? groqApiKey}) async {
+  Future<void> saveApiKey(String keyName, String value) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final String? storedKeys = prefs.getString(_apiKeysPrefsKey);
+      Map<String, dynamic> keyMap = {};
 
-      // Update in-memory values if provided
-      if (groqApiKey != null && groqApiKey.isNotEmpty) {
-        _groqApiKey = groqApiKey;
+      if (storedKeys != null && storedKeys.isNotEmpty) {
+        keyMap = json.decode(storedKeys);
       }
 
-      // Prepare data to save
-      final apiKeysMap = {
-        'groq': _groqApiKey,
-      };
+      // In a real app, this would be encrypted
+      keyMap[keyName] = value;
 
-      // In a real app, you would encrypt this data
-      final storedApiKeys = json.encode(apiKeysMap);
+      await prefs.setString(_apiKeysPrefsKey, json.encode(keyMap));
 
-      // Save to storage
-      await prefs.setString(_apiKeysPrefsKey, storedApiKeys);
-
-      if (kDebugMode) {
-        print('API keys saved successfully');
+      // Update in-memory API key if it's one we use
+      if (keyName == 'groq_api_key') {
+        _groqApiKey = value;
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error saving API keys: $e');
+        print('Error saving API key: $e');
       }
     }
   }
 
-  /// Load app version information
+  /// Load app info from package_info
   Future<void> _loadAppInfo() async {
     try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+      final PackageInfo packageInfo = await PackageInfo.fromPlatform();
+      _appVersion = packageInfo.version;
     } catch (e) {
-      _appVersion = 'Unknown';
       if (kDebugMode) {
         print('Error loading app info: $e');
       }

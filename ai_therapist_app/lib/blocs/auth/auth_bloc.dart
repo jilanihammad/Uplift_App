@@ -47,8 +47,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> _login(LoginEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
-      final success =
-          await _authService.login(event.email, event.password);
+      final success = await _authService.login(event.email, event.password);
       if (success) {
         final userInfoDynamic = await _authService.getUserInfo();
         final userInfo = _convertToStringMap(userInfoDynamic);
@@ -155,8 +154,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
   }
 
-  void _onPhoneCodeSent(
-      PhoneCodeSentEvent event, Emitter<AuthState> emit) {
+  void _onPhoneCodeSent(PhoneCodeSentEvent event, Emitter<AuthState> emit) {
     emit(PhoneCodeSent(
       verificationId: event.verificationId,
       resendToken: event.resendToken,
@@ -201,4 +199,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     });
     return stringMap;
   }
-} 
+
+  @override
+  Future<void> close() {
+    // Clean up any resources, subscriptions, or streams here
+    // For example, if we added any StreamSubscriptions in the future:
+    // _subscription?.cancel();
+    return super.close();
+  }
+}

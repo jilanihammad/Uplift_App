@@ -59,17 +59,25 @@ import 'package:ai_therapist_app/services/theme_service.dart';
 
 // Import the shared Firebase initialization utility
 import 'package:ai_therapist_app/utils/firebase_init.dart';
+import 'package:ai_therapist_app/utils/logging_service.dart';
 
-// Background message handler
+// Global variables for crucial service references
+FirebaseApp? _firebaseApp;
+ConfigService? _configService;
+ApiClient? _apiClient;
+
+// Firebase messaging background handler
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Ensure Flutter is initialized in the isolate
-  WidgetsFlutterBinding.ensureInitialized();
+  // This handler runs in its own isolate, so we need to re-initialize Firebase
+  await Firebase.initializeApp();
 
-  // Wait for Firebase to be initialized (or initialize it if not done yet)
-  await ensureFirebaseInitialized();
-
-  debugPrint('Handling a background message: ${message.messageId}');
+  // Safe logging since we can't use our LoggingService in this isolate
+  try {
+    print('Handling a background message: ${message.messageId}');
+  } catch (e) {
+    print('Error in background message handler: $e');
+  }
 }
 
 // Error handling bloc observer for logging
@@ -92,11 +100,14 @@ final String firebaseProjectUrl =
     'https://upliftapp-cd86e.web.app'; // Firebase project URL
 
 // Global error handler for unhandled exceptions
-void _handleGlobalError(Object error, StackTrace stack) {
-  if (kDebugMode) {
-    print('Unhandled error: $error');
-    print(stack);
-  }
+void _handleGlobalError(dynamic error, StackTrace stack) {
+  // Log the error details properly with LoggingService
+  logger.error(
+    'Uncaught global error',
+    error: error,
+    stackTrace: stack,
+    tag: 'GLOBAL',
+  );
 
   String errorMessage = 'An unexpected error occurred';
 
@@ -112,33 +123,33 @@ void _handleGlobalError(Object error, StackTrace stack) {
     errorMessage = 'Server connection timed out. Please try again later.';
   }
 
-  // Show a toast or notification here if possible
-  // Since we can't use BuildContext here, we'll just log it
-  if (kDebugMode) {
-    print('Error message for user: $errorMessage');
-  }
+  // Log the user-facing error message
+  logger.warning('Error message for user: $errorMessage', tag: 'USER_ERROR');
 }
 
 Future<void> main() async {
   // Set zone error fatal to false to avoid Flutter zone binding errors
   BindingBase.debugZoneErrorsAreFatal = false;
 
-  debugPrint('[Main] Starting app initialization.');
+  logger.info('[Main] Starting app initialization.');
 
   // Run the entire app in a single guarded zone to avoid zone mismatches
   runZonedGuarded(() async {
+    // 0. Initialize LoggingService first - enables proper logging for the rest of initialization
+    _initializeLogging();
+
     // 1. Ensure Flutter bindings are initialized first - inside the same zone as runApp
     final binding = WidgetsFlutterBinding.ensureInitialized();
-    debugPrint(
+    logger.info(
         '[Main] Flutter bindings initialized in the same zone as runApp.');
 
     // 2. Initialize Firebase using the synchronized method
     final firebaseApp = await ensureFirebaseInitialized();
     if (firebaseApp != null) {
-      debugPrint(
+      logger.info(
           '[Main] Firebase initialized successfully: ${firebaseApp.name}');
     } else {
-      debugPrint(
+      logger.warning(
           '[Main] Could not initialize Firebase, some features may be limited');
     }
 
@@ -146,11 +157,11 @@ Future<void> main() async {
     if (isFirebaseInitialized()) {
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
-      debugPrint('[Main] Background messaging handler registered.');
+      logger.info('[Main] Background messaging handler registered.');
     }
 
     // 4. Setup error handling
-    debugPrint('[Main] Setting up error handlers.');
+    logger.info('[Main] Setting up error handlers.');
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       _handleGlobalError(
@@ -160,42 +171,42 @@ Future<void> main() async {
     // 5. Setup Bloc observer for debugging
     if (kDebugMode) {
       Bloc.observer = SimpleBlocObserver();
-      debugPrint('[Main] Set up Bloc observer for debugging.');
+      logger.debug('[Main] Set up Bloc observer for debugging.');
     }
 
     // 6. Initialize service locator (GetIt)
-    debugPrint('[Main] Setting up service locator...');
+    logger.info('[Main] Setting up service locator...');
     try {
       await setupServiceLocator();
-      debugPrint('[Main] Service locator setup complete.');
+      logger.info('[Main] Service locator setup complete.');
     } catch (e) {
-      debugPrint('[Main] ERROR during service locator setup: $e');
+      logger.error('[Main] ERROR during service locator setup', error: e);
     }
 
     // 7. Initialize other services
-    debugPrint('[Main] Initializing app services...');
+    logger.info('[Main] Initializing app services...');
     try {
       // First check connectivity - this is quick
-      debugPrint('[Main] Checking network connectivity...');
+      logger.debug('[Main] Checking network connectivity...');
       final connectivityChecker = ConnectivityChecker();
       final isConnected = await connectivityChecker.isOffline() == false;
-      debugPrint(
+      logger.info(
           '[Main] Network is ${isConnected ? "available ✅" : "unavailable ⚠️"}');
 
       // Initialize database - required for basic functionality
       try {
-        debugPrint('[Main] Initializing database...');
+        logger.debug('[Main] Initializing database...');
         final appDatabase = serviceLocator<AppDatabase>();
         await appDatabase.database;
-        debugPrint('[Main] Database initialized successfully');
+        logger.info('[Main] Database initialized successfully');
       } catch (e) {
-        debugPrint('[Main] ERROR initializing database: $e');
+        logger.error('[Main] ERROR initializing database', error: e);
       }
 
       // Additional Firebase check for Firestore Native mode - only if connected
       if (isConnected) {
         try {
-          debugPrint('[Main] Verifying Firestore setup...');
+          logger.debug('[Main] Verifying Firestore setup...');
           final firestoreHelper = FirestoreHelper();
           final isFirestoreReady = await safeOperation(
                 () => firestoreHelper.verifyFirestoreSetup(
@@ -207,12 +218,12 @@ Future<void> main() async {
               false;
 
           if (isFirestoreReady) {
-            debugPrint('[Main] Firestore setup verified successfully ✅');
+            logger.info('[Main] Firestore setup verified successfully ✅');
           } else {
-            debugPrint('[Main] Issues with Firestore setup !');
+            logger.warning('[Main] Issues with Firestore setup !');
           }
         } catch (e) {
-          debugPrint('[Main] Error checking Firestore: $e');
+          logger.error('[Main] Error checking Firestore', error: e);
         }
       }
 
@@ -225,19 +236,19 @@ Future<void> main() async {
       // Initialize notification permissions if needed - safely
       await _requestNotificationPermissions();
 
-      debugPrint('[Main] App services initialized successfully.');
+      logger.info('[Main] App services initialized successfully.');
     } catch (e) {
-      debugPrint('[Main] ERROR initializing services: $e');
+      logger.error('[Main] ERROR initializing services', error: e);
     }
 
     // Add explicit UI startup logging
-    debugPrint('[Main] Starting app UI...');
+    logger.info('[Main] Starting app UI...');
     try {
-      debugPrint('[Main] Running app in same zone.');
+      logger.debug('[Main] Running app in same zone.');
       runApp(const AiTherapistApp());
-      debugPrint('[Main] App should now be visible!');
+      logger.info('[Main] App should now be visible!');
     } catch (e) {
-      debugPrint('[Main] Critical error in final app startup: $e');
+      logger.error('[Main] Critical error in final app startup', error: e);
       // Last resort fallback - try to show a minimal error UI
       runApp(MaterialApp(
         home: Scaffold(
@@ -247,10 +258,35 @@ Future<void> main() async {
       ));
     }
   }, (error, stack) {
-    debugPrint('[Main] UNCAUGHT ERROR in app: $error');
-    debugPrint('[Main] Stack trace: $stack');
+    logger.error('[Main] UNCAUGHT ERROR in app',
+        error: error, stackTrace: stack);
     _handleGlobalError(error, stack);
   });
+}
+
+// Initialize the logging service
+void _initializeLogging() {
+  // Set default log level based on build mode
+  if (kDebugMode) {
+    logger.setLogLevel(LogLevel.debug); // Show all logs in debug mode
+  } else {
+    logger.setLogLevel(
+        LogLevel.warning); // Only show warnings and errors in release
+  }
+
+  // Enable analytics logging in debug only
+  logger.setAnalyticsLogging(kDebugMode);
+
+  // Enable Crashlytics in release mode only
+  logger.setCrashlyticsEnabled(!kDebugMode);
+
+  if (kDebugMode) {
+    print('=== LoggingService initialized ===');
+    print('- Log level: ${kDebugMode ? 'DEBUG' : 'WARNING'}');
+    print('- Analytics logging: ${kDebugMode ? 'ENABLED' : 'DISABLED'}');
+    print('- Crashlytics: ${!kDebugMode ? 'ENABLED' : 'DISABLED'}');
+    print('==============================');
+  }
 }
 
 // Initialize all other necessary services
@@ -359,25 +395,52 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                 // Safely access AuthService
                 try {
                   if (serviceLocator.isRegistered<AuthService>()) {
-                    return AuthBloc(
+                    final authBloc = AuthBloc(
                       authService: serviceLocator<AuthService>(),
                     )..add(CheckAuthStatusEvent());
+
+                    // Register the AuthBloc in the service locator if not already registered
+                    if (!serviceLocator.isRegistered<AuthBloc>()) {
+                      serviceLocator.registerSingleton<AuthBloc>(authBloc);
+                      logger.debug(
+                          '[AiTherapistApp] AuthBloc registered in service locator');
+                    }
+
+                    return authBloc;
                   } else {
                     debugPrint(
                         '[AiTherapistApp] WARNING: AuthService not registered, using empty AuthBloc');
                     // Return an AuthBloc without calling CheckAuthStatusEvent to prevent errors
-                    return AuthBloc(
+                    final authBloc = AuthBloc(
                       authService:
                           AuthService(), // Create a local instance as fallback
                     );
+
+                    // Register the minimal AuthBloc in the service locator
+                    if (!serviceLocator.isRegistered<AuthBloc>()) {
+                      serviceLocator.registerSingleton<AuthBloc>(authBloc);
+                      logger.debug(
+                          '[AiTherapistApp] Minimal AuthBloc registered in service locator');
+                    }
+
+                    return authBloc;
                   }
                 } catch (e) {
                   debugPrint('[AiTherapistApp] Error creating AuthBloc: $e');
                   // Return a minimal AuthBloc that won't crash the app
-                  return AuthBloc(
+                  final authBloc = AuthBloc(
                     authService:
                         AuthService(), // Create a local instance as fallback
                   );
+
+                  // Register the fallback AuthBloc in the service locator
+                  if (!serviceLocator.isRegistered<AuthBloc>()) {
+                    serviceLocator.registerSingleton<AuthBloc>(authBloc);
+                    logger.debug(
+                        '[AiTherapistApp] Fallback AuthBloc registered in service locator');
+                  }
+
+                  return authBloc;
                 }
               },
               child: MaterialApp.router(
@@ -418,6 +481,18 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
         final appDatabase = serviceLocator<AppDatabase>();
         await appDatabase.close();
         debugPrint('[AiTherapistApp] Database connection closed');
+      }
+
+      // Close any BLoCs that were registered in the service locator
+      // This is a more reliable approach than using context which might not be available
+      if (serviceLocator.isRegistered<AuthBloc>()) {
+        try {
+          final authBloc = serviceLocator<AuthBloc>();
+          await authBloc.close();
+          logger.info('[AiTherapistApp] AuthBloc closed successfully');
+        } catch (e) {
+          logger.debug('[AiTherapistApp] Could not close AuthBloc: $e');
+        }
       }
 
       // Additional cleanup can be added here
@@ -549,69 +624,46 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
 // Add a helper method for Firebase services initialization
 Future<void> _initializeFirebaseServices() async {
   try {
-    // Wait for Firebase initialization to complete first
-    await ensureFirebaseInitialized();
+    // Wait briefly to prevent startup slowdown from multiple async operations
+    await Future.delayed(const Duration(milliseconds: 50));
 
-    if (!isFirebaseInitialized()) {
-      debugPrint(
-          '[Main] Skipping FirebaseService initialization as Firebase is not available');
-      return;
-    }
+    // Log entry
+    logger.debug(
+        'Initializing FirebaseService with existing Firebase instance...');
 
-    debugPrint(
-        '[Main] Initializing FirebaseService with existing Firebase instance...');
-    if (serviceLocator.isRegistered<FirebaseService>()) {
-      await safeOperation(
-        () => serviceLocator<FirebaseService>().init(),
-        timeoutSeconds: 10,
-        operationName: 'Firebase services initialization',
-      );
-      debugPrint('[Main] FirebaseService initialized successfully');
-    } else {
-      debugPrint('[Main] FirebaseService not registered in serviceLocator');
-    }
+    final firebaseService = serviceLocator<FirebaseService>();
+    await firebaseService.init();
+
+    logger.info('[Main] FirebaseService initialized successfully');
   } catch (e) {
-    debugPrint('[Main] ERROR initializing FirebaseService: $e');
+    logger.error('[Main] Error initializing FirebaseService', error: e);
   }
 }
 
 // Helper method for initializing ConfigService and ApiClient
 Future<void> _initializeConfigAndApi() async {
   try {
-    debugPrint('[Main] Initializing ConfigService...');
+    logger.debug('[Main] Initializing ConfigService...');
 
-    // Create and initialize ConfigService
-    final configService = await safeOperation(
-      () async {
-        final service = ConfigService();
-        await service.init();
-        return service;
-      },
-      timeoutSeconds: 5,
-      operationName: 'ConfigService initialization',
-    );
+    _configService = ConfigService();
+    await _configService!.init();
 
-    if (configService == null) {
-      debugPrint('[Main] Failed to initialize ConfigService');
-      return;
-    }
+    logger.debug('ConfigService initialized successfully');
 
-    // Create ApiClient with the ConfigService
-    debugPrint(
-        '[Main] Creating ApiClient with baseUrl: ${configService.llmApiEndpoint}');
-    final apiClient = ApiClient(configService: configService);
+    // Create and initialize ApiClient with correct parameters
+    logger.debug('[Main] Creating ApiClient with ConfigService');
 
-    // Use the new centralized registration method for API dependencies
-    await registerApiDependentServices(configService, apiClient);
+    _apiClient = ApiClient(configService: _configService!);
 
-    // Validate dependencies to ensure all required services are registered
-    final isValid = validateDependencies();
-    if (!isValid) {
-      debugPrint('[Main] WARNING: Some required dependencies are missing!');
-    } else {
-      debugPrint('[Main] All required dependencies validated successfully ✅');
-    }
+    // Register dependencies that require ConfigService and ApiClient
+    await registerApiDependentServices(_configService!, _apiClient!);
+
+    // Validate that all dependencies are registered
+    final allDepsValid = validateDependencies();
+    logger.info(
+        '[Main] All required dependencies validated successfully ${allDepsValid ? '✅' : '❌'}');
   } catch (e) {
-    debugPrint('[Main] ERROR initializing ConfigService/ApiClient: $e');
+    logger.error('[Main] Error initializing config and API',
+        error: e, stackTrace: StackTrace.current);
   }
 }
