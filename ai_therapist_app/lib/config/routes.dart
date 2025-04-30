@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:get_it/get_it.dart';
+import 'dart:async';
 
 // Import screen files with the correct paths
 import 'package:ai_therapist_app/screens/splash_screen.dart';
@@ -26,6 +27,7 @@ import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/services/onboarding_service.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/services/navigation_service.dart';
 
 /// The router configuration for the app
 class AppRouter {
@@ -252,25 +254,60 @@ class AppRouter {
 }
 
 // Bottom navigation scaffold
-class ScaffoldWithNavBar extends StatelessWidget {
+class ScaffoldWithNavBar extends StatefulWidget {
   final Widget child;
 
   const ScaffoldWithNavBar({Key? key, required this.child}) : super(key: key);
 
   @override
+  State<ScaffoldWithNavBar> createState() => _ScaffoldWithNavBarState();
+}
+
+class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
+  late final NavigationService _navigationService;
+  bool _isBottomNavVisible = true;
+  StreamSubscription? _navBarVisibilitySubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _navigationService = serviceLocator<NavigationService>();
+    _isBottomNavVisible = _navigationService.isBottomNavVisible;
+
+    // Listen for changes to bottom nav visibility
+    _navBarVisibilitySubscription =
+        _navigationService.bottomNavVisibilityStream.listen((isVisible) {
+      if (mounted) {
+        setState(() {
+          _isBottomNavVisible = isVisible;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _navBarVisibilitySubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: child,
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _calculateSelectedIndex(context),
-        onTap: (index) => _onItemTapped(index, context),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chat'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-        ],
-      ),
+      body: widget.child,
+      bottomNavigationBar: _isBottomNavVisible
+          ? BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              currentIndex: _calculateSelectedIndex(context),
+              onTap: (index) => _onItemTapped(index, context),
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+                BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chat'),
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.history), label: 'History'),
+              ],
+            )
+          : null,
     );
   }
 
