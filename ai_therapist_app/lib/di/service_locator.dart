@@ -29,78 +29,284 @@ import '../services/backend_service.dart';
 import '../services/theme_service.dart';
 
 import '../utils/connectivity_checker.dart';
+import '../data/datasources/local/database_provider.dart';
 
+/// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
 
+/// Dependency Registration Status - helps track initialized services
+/// and prevent duplicate or missing registrations
+class DependencyStatus {
+  static bool coreServicesRegistered = false;
+  static bool apiDependenciesRegistered = false;
+  static bool firebaseServicesRegistered = false;
+
+  /// Reset all status flags (useful for testing)
+  static void reset() {
+    coreServicesRegistered = false;
+    apiDependenciesRegistered = false;
+    firebaseServicesRegistered = false;
+  }
+}
+
+/// Main service locator setup function
+///
+/// This function registers core services that don't have complex initialization
+/// or dependencies. Services with async initialization or dependencies on
+/// other services are registered in main.dart.
+///
+/// Registration follows this order:
+/// 1. Core utility services (sync initialization)
+/// 2. Data sources (local storage, database)
+/// 3. Simple services without dependencies
+///
+/// NOT registered here (these are registered in main.dart):
+/// - ConfigService (async initialization)
+/// - ApiClient (depends on ConfigService)
+/// - Repositories (depend on ApiClient)
+/// - AuthService, TherapyService (depend on repositories)
+/// - Firebase-dependent services (complex async initialization)
 Future<void> setupServiceLocator() async {
-  // Check if already initialized
-  if (serviceLocator.isRegistered<PrefsManager>()) {
+  // Prevent duplicate registration if already called
+  if (DependencyStatus.coreServicesRegistered) {
+    debugPrint(
+        'Core services already registered, skipping setupServiceLocator()');
     return;
   }
 
-  // Register ConfigService, ApiClient, TherapyService in main.dart now
-  // REMOVE: final configService = ConfigService();
-  // REMOVE: serviceLocator.registerSingleton<ConfigService>(configService);
+  try {
+    debugPrint('Starting core service registration...');
 
-  // Register Firebase service (assuming synchronous or handled elsewhere)
-  serviceLocator.registerSingleton<FirebaseService>(FirebaseService());
+    // ===== FIREBASE SERVICE (Base registration only) =====
+    // Note: Actual initialization happens in main.dart
+    if (!serviceLocator.isRegistered<FirebaseService>()) {
+      serviceLocator.registerSingleton<FirebaseService>(FirebaseService());
+      debugPrint('Registered FirebaseService (base instance)');
+    }
 
-  // Register BackendService (assuming synchronous or handled elsewhere)
-  serviceLocator.registerSingleton<BackendService>(BackendService());
+    // ===== BACKEND SERVICE =====
+    if (!serviceLocator.isRegistered<BackendService>()) {
+      serviceLocator.registerSingleton<BackendService>(BackendService());
+      debugPrint('Registered BackendService');
+    }
 
-  // REMOVE: final baseUrl = configService.llmApiEndpoint;
-  // REMOVE: debugPrint(...);
+    // ===== LOCAL DATA SOURCES =====
+    // These services are registered and initialized here because they're
+    // fundamental and other services depend on them
 
-  // Local Data Sources
-  serviceLocator.registerLazySingleton<PrefsManager>(() => PrefsManager());
-  serviceLocator.registerLazySingleton<AppDatabase>(() => AppDatabase());
-  serviceLocator.registerLazySingleton<DatabaseHelper>(() => DatabaseHelper());
+    // PrefsManager (handles shared preferences)
+    if (!serviceLocator.isRegistered<PrefsManager>()) {
+      serviceLocator.registerLazySingleton<PrefsManager>(() => PrefsManager());
+      final prefsManager = serviceLocator<PrefsManager>();
+      await prefsManager.init();
+      debugPrint('Registered and initialized PrefsManager');
+    }
 
-  // Initialize PrefsManager (keep this sync init here)
-  final prefsManager = serviceLocator<PrefsManager>();
-  await prefsManager.init();
+    // Database services
+    if (!serviceLocator.isRegistered<AppDatabase>()) {
+      serviceLocator.registerLazySingleton<AppDatabase>(() => AppDatabase());
+      debugPrint('Registered AppDatabase');
+    }
 
-  // Remote Data Source - REMOVE ApiClient registration, will be done in main.dart
-  // REMOVE: serviceLocator.registerSingleton<ApiClient>(ApiClient(
-  // REMOVE:       configService: configService,
-  // REMOVE:     ));
+    // Register DatabaseProvider that uses AppDatabase
+    if (!serviceLocator.isRegistered<DatabaseProvider>()) {
+      serviceLocator
+          .registerLazySingleton<DatabaseProvider>(() => DatabaseProvider());
+      debugPrint('Registered DatabaseProvider');
+    }
 
-  // Repositories - REMOVE registrations needing ApiClient, will be done in main.dart
-  // REMOVE: serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
-  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
-  // REMOVE:     ));
-  // REMOVE: serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
-  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
-  // REMOVE:     ));
-  // REMOVE: serviceLocator.registerLazySingleton<SessionRepository>(() => SessionRepository(
-  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
-  // REMOVE:       appDatabase: serviceLocator<AppDatabase>(),
-  // REMOVE:     ));
-  // REMOVE: serviceLocator.registerLazySingleton<MessageRepository>(() => MessageRepository(
-  // REMOVE:       apiClient: serviceLocator<ApiClient>(),
-  // REMOVE:       appDatabase: serviceLocator<AppDatabase>(),
-  // REMOVE:     ));
+    // Register DatabaseHelper for backward compatibility
+    // This is needed until all references are migrated to DatabaseProvider
+    if (!serviceLocator.isRegistered<DatabaseHelper>()) {
+      serviceLocator
+          .registerLazySingleton<DatabaseHelper>(() => DatabaseHelper());
+      debugPrint('Registered DatabaseHelper (legacy adapter)');
+    }
 
-  // Services - Register ones NOT initialized async in main.dart
-  // REMOVE: serviceLocator.registerLazySingleton<AuthService>(() => AuthService()); // Assume needs repo
-  serviceLocator
-      .registerLazySingleton<NotificationService>(() => NotificationService());
-  serviceLocator
-      .registerLazySingleton<ConnectivityChecker>(() => ConnectivityChecker());
-  serviceLocator
-      .registerLazySingleton<PreferencesService>(() => PreferencesService());
-  serviceLocator.registerLazySingleton<ThemeService>(() => ThemeService());
-  serviceLocator.registerLazySingleton<VoiceService>(
-      () => VoiceService()); // Keep if init is simple/separate
-  // REMOVE: serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService());
-  serviceLocator.registerLazySingleton<MemoryService>(
-      () => MemoryService()); // Keep if init is simple/separate
-  serviceLocator
-      .registerLazySingleton<TherapyGraphService>(() => TherapyGraphService());
-  serviceLocator.registerLazySingleton<ProgressService>(() => ProgressService(
-      notificationService: serviceLocator<NotificationService>()));
-  serviceLocator.registerLazySingleton<UserProfileService>(
-      () => UserProfileService()); // Keep if init handled separately
-  serviceLocator.registerLazySingleton<OnboardingService>(
-      () => OnboardingService()); // Keep if init handled separately
+    // DatabaseHelper is being removed since its functionality
+    // is now consolidated into AppDatabase
+
+    // ===== UTILITY SERVICES =====
+    // These services have minimal dependencies and simple initialization
+
+    if (!serviceLocator.isRegistered<ConnectivityChecker>()) {
+      serviceLocator.registerLazySingleton<ConnectivityChecker>(
+          () => ConnectivityChecker());
+      debugPrint('Registered ConnectivityChecker');
+    }
+
+    if (!serviceLocator.isRegistered<NotificationService>()) {
+      serviceLocator.registerLazySingleton<NotificationService>(
+          () => NotificationService());
+      debugPrint('Registered NotificationService');
+    }
+
+    if (!serviceLocator.isRegistered<PreferencesService>()) {
+      serviceLocator.registerLazySingleton<PreferencesService>(
+          () => PreferencesService());
+      debugPrint('Registered PreferencesService');
+    }
+
+    if (!serviceLocator.isRegistered<ThemeService>()) {
+      serviceLocator.registerLazySingleton<ThemeService>(() => ThemeService());
+      debugPrint('Registered ThemeService');
+    }
+
+    // ===== SIMPLE DOMAIN SERVICES =====
+    // These services have minimal dependencies but may need initialization later
+
+    if (!serviceLocator.isRegistered<VoiceService>()) {
+      serviceLocator.registerLazySingleton<VoiceService>(() => VoiceService());
+      debugPrint('Registered VoiceService');
+    }
+
+    if (!serviceLocator.isRegistered<MemoryService>()) {
+      serviceLocator
+          .registerLazySingleton<MemoryService>(() => MemoryService());
+      debugPrint('Registered MemoryService');
+    }
+
+    if (!serviceLocator.isRegistered<TherapyGraphService>()) {
+      serviceLocator.registerLazySingleton<TherapyGraphService>(
+          () => TherapyGraphService());
+      debugPrint('Registered TherapyGraphService');
+    }
+
+    if (!serviceLocator.isRegistered<ProgressService>()) {
+      serviceLocator.registerLazySingleton<ProgressService>(() =>
+          ProgressService(
+              notificationService: serviceLocator<NotificationService>()));
+      debugPrint('Registered ProgressService');
+    }
+
+    if (!serviceLocator.isRegistered<UserProfileService>()) {
+      serviceLocator.registerLazySingleton<UserProfileService>(
+          () => UserProfileService());
+      debugPrint('Registered UserProfileService');
+    }
+
+    if (!serviceLocator.isRegistered<OnboardingService>()) {
+      serviceLocator
+          .registerLazySingleton<OnboardingService>(() => OnboardingService());
+      debugPrint('Registered OnboardingService');
+    }
+
+    // Mark core services as registered
+    DependencyStatus.coreServicesRegistered = true;
+    debugPrint('Core service registration complete');
+  } catch (e, stackTrace) {
+    debugPrint('ERROR during setupServiceLocator: $e');
+    debugPrint('Stack trace: $stackTrace');
+    rethrow; // Re-throw to allow caller to handle the error
+  }
+}
+
+/// Register API-dependent services
+///
+/// This should be called after ConfigService is initialized
+/// Note: This is called from main.dart in _initializeConfigAndApi()
+Future<void> registerApiDependentServices(
+    ConfigService configService, ApiClient apiClient) async {
+  if (DependencyStatus.apiDependenciesRegistered) {
+    debugPrint('API dependencies already registered');
+    return;
+  }
+
+  try {
+    // Register ConfigService and ApiClient
+    if (!serviceLocator.isRegistered<ConfigService>()) {
+      serviceLocator.registerSingleton<ConfigService>(configService);
+      debugPrint('Registered ConfigService');
+    }
+
+    if (!serviceLocator.isRegistered<ApiClient>()) {
+      serviceLocator.registerSingleton<ApiClient>(apiClient);
+      debugPrint('Registered ApiClient');
+    }
+
+    // Register repositories that depend on ApiClient and AppDatabase
+    if (!serviceLocator.isRegistered<AuthRepository>()) {
+      serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
+            apiClient: serviceLocator<ApiClient>(),
+          ));
+      debugPrint('Registered AuthRepository');
+    }
+
+    if (!serviceLocator.isRegistered<UserRepository>()) {
+      serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
+            apiClient: serviceLocator<ApiClient>(),
+          ));
+      debugPrint('Registered UserRepository');
+    }
+
+    if (!serviceLocator.isRegistered<SessionRepository>()) {
+      serviceLocator
+          .registerLazySingleton<SessionRepository>(() => SessionRepository(
+                apiClient: serviceLocator<ApiClient>(),
+                appDatabase: serviceLocator<AppDatabase>(),
+              ));
+      debugPrint('Registered SessionRepository');
+    }
+
+    if (!serviceLocator.isRegistered<MessageRepository>()) {
+      serviceLocator
+          .registerLazySingleton<MessageRepository>(() => MessageRepository(
+                apiClient: serviceLocator<ApiClient>(),
+                appDatabase: serviceLocator<AppDatabase>(),
+              ));
+      debugPrint('Registered MessageRepository');
+    }
+
+    // Register services that depend on repositories
+    if (!serviceLocator.isRegistered<TherapyService>()) {
+      serviceLocator
+          .registerLazySingleton<TherapyService>(() => TherapyService());
+      debugPrint('Registered TherapyService');
+    }
+
+    if (!serviceLocator.isRegistered<AuthService>()) {
+      serviceLocator.registerLazySingleton<AuthService>(() => AuthService());
+      debugPrint('Registered AuthService');
+    }
+
+    DependencyStatus.apiDependenciesRegistered = true;
+    debugPrint('API-dependent service registration complete');
+  } catch (e, stackTrace) {
+    debugPrint('ERROR during registerApiDependentServices: $e');
+    debugPrint('Stack trace: $stackTrace');
+    rethrow;
+  }
+}
+
+/// Check if all required dependencies are registered
+///
+/// This is useful for validating the DI setup before app launch
+bool validateDependencies() {
+  final requiredDependencies = <Type>[
+    PrefsManager,
+    AppDatabase,
+    DatabaseProvider,
+    FirebaseService,
+    ConfigService,
+    ApiClient,
+    TherapyService,
+    AuthService,
+  ];
+
+  final missing = <String>[];
+
+  for (final dependencyType in requiredDependencies) {
+    try {
+      serviceLocator.get(type: dependencyType);
+    } catch (e) {
+      missing.add(dependencyType.toString());
+    }
+  }
+
+  if (missing.isNotEmpty) {
+    debugPrint('WARNING: Missing required dependencies: ${missing.join(', ')}');
+    return false;
+  }
+
+  return true;
 }

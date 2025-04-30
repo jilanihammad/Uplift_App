@@ -185,7 +185,7 @@ Future<void> main() async {
       // Initialize database - required for basic functionality
       try {
         debugPrint('[Main] Initializing database...');
-        final appDatabase = AppDatabase();
+        final appDatabase = serviceLocator<AppDatabase>();
         await appDatabase.database;
         debugPrint('[Main] Database initialized successfully');
       } catch (e) {
@@ -317,13 +317,33 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
   @override
   void initState() {
     super.initState();
-    _themeService = serviceLocator<ThemeService>();
-    _initTheme();
+
+    try {
+      // Check if ThemeService is registered
+      if (serviceLocator.isRegistered<ThemeService>()) {
+        _themeService = serviceLocator<ThemeService>();
+        _initTheme();
+      } else {
+        // Fallback if service is not registered
+        debugPrint(
+            '[AiTherapistApp] WARNING: ThemeService not registered, using default theme');
+        _themeService = ThemeService(); // Create a local instance as fallback
+        _initTheme();
+      }
+    } catch (e) {
+      debugPrint('[AiTherapistApp] Error initializing theme: $e');
+      _themeService = ThemeService(); // Create a local instance as fallback
+    }
   }
 
   Future<void> _initTheme() async {
-    await _themeService.init();
-    if (mounted) setState(() {});
+    try {
+      await _themeService.init();
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('[AiTherapistApp] Error in _initTheme: $e');
+      // Continue with default theme
+    }
   }
 
   @override
@@ -335,9 +355,31 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
         child: Consumer<ThemeService>(
           builder: (context, themeService, _) {
             return BlocProvider(
-              create: (context) => AuthBloc(
-                authService: serviceLocator<AuthService>(),
-              )..add(CheckAuthStatusEvent()),
+              create: (context) {
+                // Safely access AuthService
+                try {
+                  if (serviceLocator.isRegistered<AuthService>()) {
+                    return AuthBloc(
+                      authService: serviceLocator<AuthService>(),
+                    )..add(CheckAuthStatusEvent());
+                  } else {
+                    debugPrint(
+                        '[AiTherapistApp] WARNING: AuthService not registered, using empty AuthBloc');
+                    // Return an AuthBloc without calling CheckAuthStatusEvent to prevent errors
+                    return AuthBloc(
+                      authService:
+                          AuthService(), // Create a local instance as fallback
+                    );
+                  }
+                } catch (e) {
+                  debugPrint('[AiTherapistApp] Error creating AuthBloc: $e');
+                  // Return a minimal AuthBloc that won't crash the app
+                  return AuthBloc(
+                    authService:
+                        AuthService(), // Create a local instance as fallback
+                  );
+                }
+              },
               child: MaterialApp.router(
                 title: 'AI Therapist',
                 theme: AppTheme.lightTheme,
@@ -359,6 +401,29 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    // Cleanup resources when the app is closed
+    _cleanupResources();
+    super.dispose();
+  }
+
+  // Cleanup app resources
+  Future<void> _cleanupResources() async {
+    try {
+      // Close database connection
+      if (serviceLocator.isRegistered<AppDatabase>()) {
+        final appDatabase = serviceLocator<AppDatabase>();
+        await appDatabase.close();
+        debugPrint('[AiTherapistApp] Database connection closed');
+      }
+
+      // Additional cleanup can be added here
+    } catch (e) {
+      debugPrint('[AiTherapistApp] Error during cleanup: $e');
+    }
   }
 }
 
@@ -531,55 +596,21 @@ Future<void> _initializeConfigAndApi() async {
       return;
     }
 
-    // Register in service locator
-    serviceLocator.registerSingleton<ConfigService>(configService);
-
-    // Log the baseUrl for diagnostic purposes
-    final baseUrl = configService.llmApiEndpoint;
-    debugPrint('[Main] API baseUrl: $baseUrl');
-
-    if (baseUrl.isEmpty) {
-      debugPrint(
-          '[Main] WARNING: API baseUrl is empty! ApiClient may not work properly.');
-    }
-
-    // Create and register ApiClient
-    debugPrint('[Main] Creating ApiClient with baseUrl: $baseUrl');
-    final apiClient = ApiClient(configService: configService);
-    serviceLocator.registerSingleton<ApiClient>(apiClient);
-
-    // Register repositories that depend on ApiClient
-    debugPrint('[Main] Registering repositories...');
-
-    serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
-          apiClient: serviceLocator<ApiClient>(),
-        ));
-
-    serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
-          apiClient: serviceLocator<ApiClient>(),
-        ));
-
-    serviceLocator
-        .registerLazySingleton<SessionRepository>(() => SessionRepository(
-              apiClient: serviceLocator<ApiClient>(),
-              appDatabase: serviceLocator<AppDatabase>(),
-            ));
-
-    serviceLocator
-        .registerLazySingleton<MessageRepository>(() => MessageRepository(
-              apiClient: serviceLocator<ApiClient>(),
-              appDatabase: serviceLocator<AppDatabase>(),
-            ));
-
-    // Register TherapyService
-    serviceLocator
-        .registerLazySingleton<TherapyService>(() => TherapyService());
-
-    // Register AuthService
-    serviceLocator.registerLazySingleton<AuthService>(() => AuthService());
-
+    // Create ApiClient with the ConfigService
     debugPrint(
-        '[Main] All repositories and services registered successfully ✅');
+        '[Main] Creating ApiClient with baseUrl: ${configService.llmApiEndpoint}');
+    final apiClient = ApiClient(configService: configService);
+
+    // Use the new centralized registration method for API dependencies
+    await registerApiDependentServices(configService, apiClient);
+
+    // Validate dependencies to ensure all required services are registered
+    final isValid = validateDependencies();
+    if (!isValid) {
+      debugPrint('[Main] WARNING: Some required dependencies are missing!');
+    } else {
+      debugPrint('[Main] All required dependencies validated successfully ✅');
+    }
   } catch (e) {
     debugPrint('[Main] ERROR initializing ConfigService/ApiClient: $e');
   }
