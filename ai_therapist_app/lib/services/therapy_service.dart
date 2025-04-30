@@ -127,10 +127,13 @@ class TherapyService {
   String _systemPrompt = '';
 
   // Voice service for audio generation
-  final VoiceService _voiceService = serviceLocator<VoiceService>();
+  final VoiceService _voiceService;
 
   // Memory service for maintaining context
-  final MemoryService _memoryService = serviceLocator<MemoryService>();
+  final MemoryService _memoryService;
+
+  // API client for making requests
+  final ApiClient _apiClient;
 
   // Therapy conversation graph for managing the flow of therapy
   late TherapyConversationGraph _conversationGraph;
@@ -174,6 +177,18 @@ class TherapyService {
 
   // Cache for API responses to avoid redundant processing
   final Map<String, String> _responseCache = {};
+
+  // Constructor with injected dependencies
+  TherapyService({
+    required VoiceService voiceService,
+    required MemoryService memoryService,
+    required ApiClient apiClient,
+  })  : _voiceService = voiceService,
+        _memoryService = memoryService,
+        _apiClient = apiClient {
+    // Initialize conversation graph
+    _conversationGraph = TherapyConversationGraph();
+  }
 
   // Process parameters in background for API response
   static Future<Map<String, dynamic>> _prepareApiPayload(
@@ -414,13 +429,15 @@ class TherapyService {
     return null;
   }
 
-  // Process a user message and generate a therapist response
+  // Process a user message and get AI response
   Future<String> processUserMessage(String userMessage) async {
     try {
-      debugPrint(
-          '[DEBUG] Starting processUserMessage for: "${userMessage.substring(0, min(20, userMessage.length))}..."');
+      // Check if the message is empty
+      if (userMessage.trim().isEmpty) {
+        return "I didn't catch that. Could you please repeat?";
+      }
 
-      // Detect conversation state and analyze user message
+      // Process through conversation graph to get context
       final graphResult =
           await _conversationGraph.processUserInput(userMessage);
 
@@ -443,13 +460,12 @@ class TherapyService {
       // Make the API call
       try {
         debugPrint('[DEBUG] Preparing to call API endpoint: /ai/response');
-        final apiClient = serviceLocator<ApiClient>();
 
         // Log API endpoint being used
         debugPrint(
             '[DEBUG] Using API URL: https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/ai/response');
 
-        final response = await apiClient.post('/ai/response', body: payload);
+        final response = await _apiClient.post('/ai/response', body: payload);
 
         if (response != null && response.containsKey('response')) {
           debugPrint('[DEBUG] API call successful. Response received.');
@@ -672,153 +688,151 @@ class TherapyService {
     return response;
   }
 
-  // End a therapy session and generate a summary
+  // End therapy session and generate a summary
   Future<Map<String, dynamic>> endSession(
       List<Map<String, dynamic>> messages) async {
     try {
       if (kDebugMode) {
-        print('Ending therapy session with ${messages.length} messages');
+        print('Making API call to end_session with payload: ${json.encode({
+              'messages_count': messages.length,
+              'system_prompt_length': _systemPrompt.length
+            })}');
       }
 
-      // Retrieve memory context for enhanced summary generation
-      final memoryContext = await _memoryService.getMemoryContext();
-
-      // Use the API client to make a real API call
-      final apiClient = serviceLocator<ApiClient>();
-
-      // Clean up messages to ensure they're properly formatted for the API
-      final cleanedMessages = messages
-          .map((msg) => {
-                'content': msg['content'] ?? '',
-                'isUser': msg['isUser'] ?? false,
-                'timestamp':
-                    msg['timestamp'] ?? DateTime.now().toIso8601String(),
-              })
-          .toList();
-
-      // Prepare the payload for the API with enhanced context
-      final payload = {
-        'messages': cleanedMessages,
-        'system_prompt': _systemPrompt,
-        'memory_context': memoryContext,
-        'therapeutic_approach': _therapeuticApproach.toString().split('.').last,
-        'visited_nodes':
-            _conversationGraph.currentState?.metadata['visited_nodes'] ?? [],
-      };
-
-      if (kDebugMode) {
-        print(
-            'Making API call to end_session with payload: ${jsonEncode(payload)}');
-      }
-
-      // Make the actual API call
+      // Make API call to end session and get summary
       try {
-        final response =
-            await apiClient.post('/therapy/end_session', body: payload);
-
-        if (kDebugMode) {
-          print('Received response from end_session API: $response');
-        }
+        final response = await _apiClient.post('/therapy/end_session',
+            body: {'messages': messages, 'system_prompt': _systemPrompt});
 
         if (response != null) {
-          // Extract therapeutic goals if available
-          if (response.containsKey('goals') && response['goals'] is List) {
-            await _memoryService
-                .updateTherapeuticGoals(List<String>.from(response['goals']));
+          if (kDebugMode) {
+            print(
+                'Received response from end_session API: ${json.encode(response)}');
           }
 
-          // Save significant insights
-          if (response.containsKey('insights') &&
-              response['insights'] is List) {
-            for (final insight in response['insights']) {
-              await _memoryService.addInsight(insight, 'session_summary');
-            }
+          if (kDebugMode) {
+            print('Session summary generated successfully');
           }
 
-          return {
-            'summary': response['summary'] ?? "Session summary not available.",
-            'actionItems': response.containsKey('action_items') &&
-                    response['action_items'] is List
-                ? List<String>.from(response['action_items'])
-                : [],
-            'insights':
-                response.containsKey('insights') && response['insights'] is List
-                    ? List<String>.from(response['insights'])
-                    : []
-          };
+          return response;
         } else {
-          throw Exception("API response was null or invalid");
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('API Error in endSession: $e');
-
-          // For debugging in Chrome, try a direct HTTP call to see the response
-          try {
-            final backendUrl =
-                'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
-
-            final uri = Uri.parse('$backendUrl/therapy/end_session');
-            print('Attempting direct HTTP call to: $uri');
-
-            final response = await http.post(
-              uri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode(payload),
-            );
-
-            print('Direct HTTP call status code: ${response.statusCode}');
-            print('Direct HTTP call response: ${response.body}');
-
-            if (response.statusCode >= 200 && response.statusCode < 300) {
-              // If direct call succeeds, try to use its response
-              final Map<String, dynamic> responseBody =
-                  jsonDecode(response.body) as Map<String, dynamic>;
-              return {
-                'summary': responseBody['summary'] ??
-                    "Session summary generated via direct API call.",
-                'actionItems': responseBody.containsKey('action_items') &&
-                        responseBody['action_items'] is List
-                    ? List<String>.from(responseBody['action_items'])
-                    : [],
-                'insights': responseBody.containsKey('insights') &&
-                        responseBody['insights'] is List
-                    ? List<String>.from(responseBody['insights'])
-                    : []
-              };
-            }
-          } catch (httpError) {
-            print('Direct HTTP call error: $httpError');
+          if (kDebugMode) {
+            print('Received null response from end_session API');
           }
 
-          print('Falling back to template-based summary');
+          // Try fallback summary generation
+          return _generateFallbackSummary(messages);
         }
-        // Fall back to template if API call fails
-      }
+      } catch (apiError) {
+        if (kDebugMode) {
+          print('API error in endSession: $apiError');
+          print('Error type: ${apiError.runtimeType}');
 
-      // Fallback if API call fails
-      return {
-        'summary':
-            "In this session, we discussed various aspects of your current challenges and explored potential coping strategies.",
-        'actionItems': [
-          "Practice deep breathing for 5 minutes when feeling anxious",
-          "Keep a mood journal to track emotional patterns",
-          "Schedule one self-care activity this week"
-        ],
-        'insights': [
-          "You've been making progress in recognizing your triggers",
-          "Your self-awareness is a significant strength",
-          "Small consistent steps can lead to meaningful change"
-        ]
-      };
+          if (apiError is SocketException) {
+            print(
+                'Socket exception: ${apiError.message}, address: ${apiError.address}, port: ${apiError.port}');
+          } else if (apiError is HttpException) {
+            print('HTTP exception: ${apiError.message}');
+          } else if (apiError is TimeoutException) {
+            print('Timeout exception');
+          } else if (apiError is FormatException) {
+            print('Format exception: ${apiError.message}');
+          }
+        }
+
+        // Generate a local fallback summary
+        return _generateFallbackSummary(messages);
+      }
     } catch (e) {
       if (kDebugMode) {
         print('Error ending session: $e');
+        print('Error type: ${e.runtimeType}');
       }
+
+      // Return a user-friendly error message
       return {
-        'summary': "Session summary not available.",
-        'actionItems': [],
-        'insights': []
+        'error': 'Unable to generate session summary',
+        'details': e.toString(),
+        'summary': 'Your session has ended. Thank you for using AI Therapist.',
+        'action_items': [
+          'Practice self-care',
+          'Remember the strategies discussed'
+        ],
+      };
+    }
+  }
+
+  // Generate a fallback summary when the API call fails
+  Map<String, dynamic> _generateFallbackSummary(
+      List<Map<String, dynamic>> messages) {
+    try {
+      if (kDebugMode) {
+        print('Generating fallback summary for ${messages.length} messages');
+      }
+
+      // Extract user messages for topics
+      final userMessages = messages
+          .where((m) => m['isUser'] == true)
+          .map((m) => m['content'] as String)
+          .toList();
+
+      // Simple topic extraction
+      final List<String> possibleTopics = [
+        'anxiety',
+        'stress',
+        'depression',
+        'relationships',
+        'work',
+        'family',
+        'health',
+        'emotions',
+        'self-care',
+        'goals',
+        'challenges',
+        'communication',
+        'personal growth'
+      ];
+
+      final List<String> detectedTopics = [];
+      for (final topic in possibleTopics) {
+        if (userMessages
+            .any((msg) => msg.toLowerCase().contains(topic.toLowerCase()))) {
+          detectedTopics.add(topic);
+        }
+      }
+
+      final summary = 'Thank you for your session today. ' +
+          'We discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, ' +
+          'and explored ways to approach these areas in your life. ' +
+          'Remember that personal growth takes time, and it\'s important to be patient with yourself.';
+
+      final actionItems = [
+        'Take time for self-reflection',
+        'Practice the strategies we discussed',
+        'Be kind to yourself',
+        'Return for another session when you feel ready'
+      ];
+
+      return {
+        'summary': summary,
+        'action_items': actionItems,
+        'topics': detectedTopics.take(5).toList(),
+        'generated_locally': true
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error generating fallback summary: $e');
+      }
+
+      // Most basic fallback
+      return {
+        'summary':
+            'Thank you for your session today. I hope our conversation was helpful.',
+        'action_items': [
+          'Take care of yourself',
+          'Return soon for another session'
+        ],
+        'error': 'Could not generate detailed summary: $e'
       };
     }
   }
