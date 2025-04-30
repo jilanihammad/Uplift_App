@@ -184,4 +184,29 @@ class FirestoreHelper {
 
     return allSuccess;
   }
+
+  /// Simple check for Firebase connectivity without checking specific collections
+  /// This is a lightweight alternative to verifyFirestoreSetup for production use
+  Future<bool> checkFirebaseConnection() async {
+    try {
+      // Simply check if we can connect to Firebase and make a basic query
+      // This doesn't validate specific collections or permissions
+      await _firestore
+          .collection('_connectivity_test')
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 2));
+      return true;
+    } catch (e) {
+      // If it's just a permission denied error, that means Firebase is connected
+      if (e.toString().contains('permission-denied') ||
+          e.toString().contains('PERMISSION_DENIED')) {
+        return true;
+      }
+
+      // Any other error likely means connectivity issues
+      debugPrint('Firebase connectivity check failed: $e');
+      return false;
+    }
+  }
 }

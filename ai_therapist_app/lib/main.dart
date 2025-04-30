@@ -208,22 +208,40 @@ Future<void> main() async {
         try {
           logger.debug('[Main] Verifying Firestore setup...');
           final firestoreHelper = FirestoreHelper();
-          final isFirestoreReady = await safeOperation(
-                () => firestoreHelper.verifyFirestoreSetup(
-                  requiredCollections: ['users', 'sessions', 'messages'],
-                ),
-                timeoutSeconds: 5,
-                operationName: 'Firestore verification',
-              ) ??
-              false;
 
-          if (isFirestoreReady) {
-            logger.info('[Main] Firestore setup verified successfully ✅');
+          // Only perform Firestore collection verification in debug mode
+          // Collections are created on-demand in Firestore, so this check is unnecessary in production
+          if (kDebugMode) {
+            final isFirestoreReady = await safeOperation(
+                  () => firestoreHelper.verifyFirestoreSetup(
+                    requiredCollections: ['users', 'sessions', 'messages'],
+                  ),
+                  timeoutSeconds: 3, // Reduced timeout
+                  operationName: 'Firestore verification',
+                ) ??
+                false;
+
+            if (isFirestoreReady) {
+              logger.info('[Main] Firestore setup verified successfully ✅');
+            } else {
+              logger.info(
+                  '[Main] Some Firestore collections not found yet - they will be created on demand');
+            }
           } else {
-            logger.warning('[Main] Issues with Firestore setup !');
+            // In release mode, just check basic Firebase connectivity without collection verification
+            final isFirebaseConnected = await safeOperation(
+                  () => firestoreHelper.checkFirebaseConnection(),
+                  timeoutSeconds: 2,
+                  operationName: 'Firebase connectivity check',
+                ) ??
+                false;
+
+            if (isFirebaseConnected) {
+              logger.info('[Main] Firebase connectivity verified ✅');
+            }
           }
         } catch (e) {
-          logger.error('[Main] Error checking Firestore', error: e);
+          logger.error('[Main] Error checking Firebase', error: e);
         }
       }
 
