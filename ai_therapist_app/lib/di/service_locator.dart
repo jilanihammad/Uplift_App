@@ -27,6 +27,7 @@ import '../services/config_service.dart';
 import '../services/firebase_service.dart';
 import '../services/backend_service.dart';
 import '../services/theme_service.dart';
+import '../services/navigation_service.dart';
 
 import '../utils/connectivity_checker.dart';
 import '../data/datasources/local/database_provider.dart';
@@ -215,6 +216,13 @@ Future<void> setupServiceLocator() async {
             voiceService: serviceLocator<VoiceService>(),
           ));
       debugPrint('Registered TherapyService with constructor injection');
+    }
+
+    // Register NavigationService
+    if (!serviceLocator.isRegistered<NavigationService>()) {
+      serviceLocator
+          .registerLazySingleton<NavigationService>(() => NavigationService());
+      debugPrint('Registered NavigationService');
     }
 
     // Mark core services as registered

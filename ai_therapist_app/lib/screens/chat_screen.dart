@@ -18,6 +18,7 @@ import '../models/therapist_style.dart';
 import '../models/user_preferences.dart';
 import '../models/therapy_message.dart';
 import '../data/repositories/session_repository.dart';
+import '../services/navigation_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -65,6 +66,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // Services
   final TherapyService _therapyService = serviceLocator<TherapyService>();
   final ProgressService _progressService = serviceLocator<ProgressService>();
+  final NavigationService _navigationService =
+      serviceLocator<NavigationService>();
 
   // Countdown timer variables
   Timer? _sessionTimer;
@@ -139,6 +142,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _rotationAnimationController.dispose();
     _voiceService.dispose();
     _sessionTimer?.cancel(); // Cancel the timer when disposing
+    _navigationService
+        .showBottomNav(); // Make sure bottom navigation is visible when screen is disposed
     super.dispose();
   }
 
@@ -501,41 +506,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Switch to Chat Mode button
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: InkWell(
-                    onTap: _toggleChatMode,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.chat_bubble_outline,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Switch to Chat Mode',
-                            style: TextStyle(
-                              color: Theme.of(context).primaryColor,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
                 // Control buttons
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -602,6 +572,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       color: _isSpeakerMuted ? Colors.grey : null,
                     ),
                   ],
+                ),
+
+                // Add spacing between the control buttons and Switch button
+                const SizedBox(height: 16),
+
+                // Switch to Chat Mode button
+                InkWell(
+                  onTap: _toggleChatMode,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Switch to Chat Mode',
+                          style: TextStyle(
+                            color: Theme.of(context).primaryColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -864,6 +869,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<bool> _confirmExit(BuildContext context) async {
     if (_messages.isEmpty) {
       // No messages to save, allow exit without confirmation
+      _navigationService.showBottomNav(); // Show navigation bar on exit
       return true;
     }
 
@@ -890,6 +896,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ],
       ),
     );
+
+    if (result == true) {
+      _navigationService
+          .showBottomNav(); // Show navigation bar on exit with confirmation
+    }
 
     return result ?? false;
   }
@@ -969,6 +980,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _handleDurationSelection(int minutes) {
+    // Hide the bottom navigation bar when user selects a duration
+    _navigationService.hideBottomNav();
+
     setState(() {
       _sessionDurationMinutes = minutes;
       _showDurationSelector = false;
@@ -1330,6 +1344,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _isEndingSession = true;
       _isProcessing = true;
     });
+
+    // Show the bottom navigation bar again when ending the session
+    _navigationService.showBottomNav();
 
     // Stop any ongoing audio playback immediately
     await _voiceService.stopAudio();
