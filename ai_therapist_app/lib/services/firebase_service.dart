@@ -6,6 +6,9 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 
+// Import to access the synchronized Firebase initialization function
+import 'package:ai_therapist_app/utils/firebase_init.dart';
+
 class FirebaseService {
   // Firebase instances - initialized lazily
   FirebaseAuth? _auth;
@@ -37,6 +40,9 @@ class FirebaseService {
       if (kDebugMode) {
         print('FirebaseService: Starting initialization');
       }
+
+      // Ensure Firebase Core is initialized first using the synchronized approach
+      await ensureFirebaseInitialized();
 
       // Try initializing each service separately with detailed logging
       try {

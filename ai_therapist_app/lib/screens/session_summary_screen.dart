@@ -10,7 +10,7 @@ class SessionSummaryScreen extends StatelessWidget {
   final List<String> actionItems;
   final List<TherapyMessage> messages;
   final Mood? initialMood;
-  
+
   const SessionSummaryScreen({
     Key? key,
     required this.sessionId,
@@ -23,13 +23,14 @@ class SessionSummaryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final sessionDuration = messages.isNotEmpty 
+    final sessionDuration = messages.isNotEmpty
         ? now.difference(messages.first.timestamp)
         : Duration.zero;
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Session Summary'),
+        automaticallyImplyLeading: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.share),
@@ -55,44 +56,32 @@ class SessionSummaryScreen extends StatelessWidget {
                     const Text(
                       'Session Details',
                       style: TextStyle(
-                        fontSize: 20, 
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 16),
+                    _buildDetailRow(Icons.calendar_today, 'Date',
+                        DateFormat.yMMMd().format(now)),
+                    _buildDetailRow(Icons.access_time, 'Duration',
+                        _formatDuration(sessionDuration)),
                     _buildDetailRow(
-                      Icons.calendar_today, 
-                      'Date', 
-                      DateFormat.yMMMd().format(now)
-                    ),
-                    _buildDetailRow(
-                      Icons.access_time, 
-                      'Duration', 
-                      _formatDuration(sessionDuration)
-                    ),
-                    _buildDetailRow(
-                      Icons.chat, 
-                      'Messages', 
-                      messages.length.toString()
-                    ),
+                        Icons.chat, 'Messages', messages.length.toString()),
                     if (initialMood != null)
-                      _buildDetailRow(
-                        Icons.mood, 
-                        'Initial Mood', 
-                        _formatMood(initialMood!)
-                      ),
+                      _buildDetailRow(Icons.mood, 'Initial Mood',
+                          _formatMood(initialMood!)),
                   ],
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Session summary
             const Text(
               'Session Summary',
               style: TextStyle(
-                fontSize: 20, 
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -107,14 +96,14 @@ class SessionSummaryScreen extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Action items
             const Text(
-              'Action Items',
+              'Recommended Action Items',
               style: TextStyle(
-                fontSize: 20, 
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -125,28 +114,31 @@ class SessionSummaryScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: actionItems.map((item) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.check_circle_outline, color: Colors.green),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            item,
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )).toList(),
+                  children: actionItems
+                      .map((item) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.check_circle_outline,
+                                    color: Colors.green),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    item,
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ))
+                      .toList(),
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 32),
-            
+
             // Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -169,44 +161,14 @@ class SessionSummaryScreen extends StatelessWidget {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
-            // Feedback
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'How was your session?',
-                      style: TextStyle(
-                        fontSize: 16, 
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildFeedbackButton('😔', 'Not helpful'),
-                        _buildFeedbackButton('😐', 'Neutral'),
-                        _buildFeedbackButton('🙂', 'Good'),
-                        _buildFeedbackButton('😄', 'Excellent'),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildDetailRow(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -223,7 +185,8 @@ class SessionSummaryScreen extends StatelessWidget {
       ),
     );
   }
-  
+
+  // Keep this method in case it's used elsewhere
   Widget _buildFeedbackButton(String emoji, String label) {
     return Column(
       children: [
@@ -244,7 +207,7 @@ class SessionSummaryScreen extends StatelessWidget {
       ],
     );
   }
-  
+
   String _formatDuration(Duration duration) {
     int minutes = duration.inMinutes;
     if (minutes < 1) {
@@ -263,7 +226,7 @@ class SessionSummaryScreen extends StatelessWidget {
       }
     }
   }
-  
+
   String _formatMood(Mood mood) {
     final moodString = mood.toString().split('.').last;
     return moodString.substring(0, 1).toUpperCase() + moodString.substring(1);
@@ -274,7 +237,7 @@ class SessionSummaryScreen extends StatelessWidget {
     DateTime selectedDate = DateTime.now().add(const Duration(days: 7));
     TimeOfDay selectedTime = TimeOfDay(hour: 10, minute: 0);
     bool setReminder = true;
-    
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -352,17 +315,16 @@ class SessionSummaryScreen extends StatelessWidget {
                 onPressed: () {
                   // Save session and set reminder if needed
                   Navigator.pop(context);
-                  
+
                   // Show confirmation
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        'Session scheduled for ${DateFormat.yMMMEd().add_jm().format(selectedDate)}' +
-                        (setReminder ? ' with reminder' : '')
-                      ),
+                          'Session scheduled for ${DateFormat.yMMMEd().add_jm().format(selectedDate)}' +
+                              (setReminder ? ' with reminder' : '')),
                     ),
                   );
-                  
+
                   // Navigate to home screen
                   context.go('/home');
                 },
@@ -374,4 +336,4 @@ class SessionSummaryScreen extends StatelessWidget {
       ),
     );
   }
-} 
+}

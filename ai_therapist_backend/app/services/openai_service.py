@@ -265,16 +265,26 @@ class OpenAIService:
             logger.error(traceback.format_exc())
             raise Exception(f"TTS error: {str(e)}")
     
-    # Session summary generation is now handled by Groq service
-    """
+    # Implemented session summary generation method using Groq service
     async def generate_session_summary(self,
-                                       messages: List[Dict[str, Any]],
-                                       therapeutic_approach: str = "supportive",
-                                       system_prompt: str = "",
-                                       memory_context: str = "") -> Dict[str, Any]:
-        # This method is no longer used - we're using Groq for all text-based generations
+                                     messages: List[Dict[str, Any]],
+                                     therapeutic_approach: str = "supportive",
+                                     system_prompt: str = "",
+                                     memory_context: str = "") -> Dict[str, Any]:
+        """
+        Generate a summary of a therapy session using OpenAI's language model.
+        
+        Args:
+            messages: List of conversation messages
+            therapeutic_approach: Therapeutic approach used (supportive, CBT, etc.)
+            system_prompt: System prompt used in the conversation
+            memory_context: Additional context from memory
+            
+        Returns:
+            Dictionary with summary, action items, and insights
+        """
         if not self.available:
-            logger.warning("OpenAI LLM service unavailable - API key not set")
+            logger.warning("OpenAI LLM service unavailable for session summary - API key not set")
             return {
                 "summary": "In this session, we discussed various aspects of your current challenges and explored potential coping strategies.",
                 "action_items": [
@@ -289,13 +299,16 @@ class OpenAIService:
             }
         
         try:
+            # Import the groq service here to avoid circular imports
+            from app.services.groq_service import groq_service
+            
             # Create a summarization prompt
             conversation_text = ""
             for msg in messages:
                 role = "User" if msg.get("isUser", False) else "Therapist"
                 conversation_text += f"{role}: {msg.get('content', '')}\n\n"
             
-            summary_prompt = f\"\"\"
+            summary_prompt = f"""
             You are a skilled AI therapist assistant. Based on the conversation below, please provide:
             1. A concise summary of the key points discussed
             2. 3-5 actionable suggestions for the client
@@ -306,21 +319,38 @@ class OpenAIService:
             CONVERSATION:
             {conversation_text}
             
+            {memory_context}
+            
             Please format your response as JSON with the following structure:
             {{
                 "summary": "Summary of the session",
                 "action_items": ["Action 1", "Action 2", ...],
                 "insights": ["Insight 1", "Insight 2", ...]
             }}
-            \"\"\"
+            """
             
-            # Get the assistant's response using the existing method
-            response_text = await self.get_ai_response(
-                message=summary_prompt,
-                system_prompt=system_prompt,
-                temperature=0.7,
-                max_tokens=1000
-            )
+            # Get the assistant's response using the groq service
+            try:
+                response_text = await groq_service.generate_response(
+                    message=summary_prompt,
+                    temperature=0.7,
+                    max_tokens=2000
+                )
+            except Exception as groq_error:
+                logger.warning(f"Error using Groq for session summary: {str(groq_error)}")
+                logger.warning("Falling back to default summary")
+                return {
+                    "summary": "We had a thoughtful conversation about your current situation and explored some potential strategies moving forward.",
+                    "action_items": [
+                        "Take time for self-care activities",
+                        "Practice mindfulness exercises",
+                        "Reflect on the insights from our session"
+                    ],
+                    "insights": [
+                        "You're showing progress in how you approach challenges",
+                        "Your self-awareness is a significant strength"
+                    ]
+                }
             
             # Try to parse the JSON response
             try:
@@ -362,7 +392,6 @@ class OpenAIService:
                     "Your resilience is a key strength"
                 ]
             }
-    """
 
 # Create a singleton instance
 try:
@@ -381,6 +410,25 @@ except Exception as e:
             
         async def text_to_speech(self, text, output_path):
             raise Exception("TTS service unavailable - OpenAI service failed to initialize")
+        
+        async def generate_session_summary(self, messages, therapeutic_approach="supportive", system_prompt="", memory_context=""):
+            """
+            Fallback implementation of session summary generation.
+            Returns a generic session summary when the OpenAI service is unavailable.
+            """
+            logger.warning("Using fallback session summary generator - OpenAI service failed to initialize")
+            return {
+                "summary": "We had a productive conversation today exploring your thoughts and feelings.",
+                "action_items": [
+                    "Take time for self-care",
+                    "Practice mindfulness",
+                    "Reflect on today's insights"
+                ],
+                "insights": [
+                    "You're making progress in your journey",
+                    "Your resilience is a key strength"
+                ]
+            }
     
     openai_service = FallbackOpenAIService()
     logger.warning("Using FallbackOpenAIService that throws errors") 
