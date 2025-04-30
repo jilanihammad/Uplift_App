@@ -70,6 +70,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Timer? _sessionTimer;
   int _remainingTimeSeconds = 0;
 
+  // Declare a variable to track if session is being ended
+  bool _isEndingSession = false;
+
   @override
   void initState() {
     super.initState();
@@ -738,6 +741,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Widget _buildMessageItem(TherapyMessage message) {
     final isUser = message.isUser;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -775,7 +779,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   child: Text(
                     message.content,
                     style: TextStyle(
-                      color: isUser ? Colors.white : Colors.black87,
+                      fontSize: 15,
+                      color: isUser
+                          ? Colors.white
+                          : isDarkMode
+                              ? Colors.cyan[100]
+                              : Colors.black87,
                     ),
                   ),
                 ),
@@ -1287,9 +1296,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _endSession() async {
-    if (_messages.isEmpty) {
-      // No messages to end session with
-      Navigator.pop(context);
+    // Prevent multiple end session attempts
+    if (_isEndingSession || _isProcessing) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Session ending in progress...')),
+      );
       return;
     }
 
@@ -1298,8 +1309,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('End Session'),
-        content:
-            const Text('Are you sure you want to end this therapy session?'),
+        content: const Text('Are you sure you want to end this session?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -1315,12 +1325,32 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     if (result != true) return;
 
+    // Set flags to prevent multiple attempts
+    setState(() {
+      _isEndingSession = true;
+      _isProcessing = true;
+    });
+
     // Stop any ongoing audio playback immediately
     await _voiceService.stopAudio();
 
-    setState(() {
-      _isProcessing = true;
-    });
+    // Show a modal progress indicator
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Generating session summary...'),
+            ],
+          ),
+        ),
+      );
+    }
 
     try {
       if (kDebugMode) {
@@ -1345,8 +1375,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       // Get session summary from therapy service
       final sessionData = await _therapyService.endSession(messageList);
 
-      final summary = sessionData['summary'] as String;
-      final actionItems = sessionData['actionItems'] as List<dynamic>;
+      final summary = sessionData['summary'] as String? ??
+          'Thank you for your session today. I hope our conversation was helpful.';
+
+      final actionItems = sessionData['action_items'] as List<dynamic>? ??
+          sessionData['actionItems'] as List<dynamic>? ??
+          ['Take care of yourself', 'Return soon for another session'];
+
       final insights = sessionData['insights'] as List<dynamic>? ?? [];
 
       if (kDebugMode) {
@@ -1390,15 +1425,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         // Continue anyway - we don't want to block the user
       }
 
+      // Close the progress dialog if it's still showing
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      // Reset state flags
       setState(() {
+        _isEndingSession = false;
         _isProcessing = false;
       });
 
-      // Navigate to summary screen using GoRouter instead of named routes
+      // Navigate to summary screen using GoRouter
       if (!mounted) return;
 
-      // Use context.push for GoRouter navigation
-      context.push('/session_summary', extra: {
+      // Replace current screen with summary - prevents going back to chat screen
+      context.pushReplacement('/session_summary', extra: {
         'sessionId': _currentSessionId,
         'summary': summary,
         'actionItems': actionItems.cast<String>(),
@@ -1407,12 +1449,32 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         'initialMood': _initialMood,
       });
     } catch (e) {
+      // Close the progress dialog if it's still showing
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
       setState(() {
+        _isEndingSession = false;
         _isProcessing = false;
       });
 
+      if (kDebugMode) {
+        print('Error ending session: $e');
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error ending session: $e')),
+        SnackBar(
+          content: Text(
+              'Unable to generate session summary: ${e.toString().length > 100 ? '${e.toString().substring(0, 100)}...' : e}'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Try Again',
+            onPressed: () {
+              _endSession(); // Allow retry
+            },
+          ),
+        ),
       );
     }
   }
@@ -1454,6 +1516,8 @@ class ChatMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -1486,7 +1550,12 @@ class ChatMessage extends StatelessWidget {
               child: Text(
                 text,
                 style: TextStyle(
-                  color: isUser ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                  color: isUser
+                      ? Colors.white
+                      : isDarkMode
+                          ? Colors.cyan[100]
+                          : Colors.black87,
                 ),
               ),
             ),

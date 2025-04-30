@@ -58,7 +58,7 @@ class VoiceService {
   String? _recordingPath;
 
   // API client for making requests to backend
-  late ApiClient _apiClient;
+  final ApiClient _apiClient;
 
   // Backend server URL
   late String _backendUrl;
@@ -69,8 +69,10 @@ class VoiceService {
   // Flag to indicate if we're running in a web environment
   final bool _isWeb = kIsWeb;
 
-  // Constructor - initialize recorder
-  VoiceService() {
+  // Constructor - initialize recorder with injected dependencies
+  VoiceService({
+    required ApiClient apiClient,
+  }) : _apiClient = apiClient {
     _audioRecorder = AudioRecorder();
     _ensureStreamControllerIsActive();
   }
@@ -92,9 +94,6 @@ class VoiceService {
     try {
       // Make sure the stream controller is active
       _ensureStreamControllerIsActive();
-
-      // Get API client from service locator
-      _apiClient = serviceLocator<ApiClient>();
 
       // Get backend URL from config service and update to use the URL that's working
       _backendUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';

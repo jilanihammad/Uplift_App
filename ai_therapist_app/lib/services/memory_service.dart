@@ -26,12 +26,12 @@ class MemoryService {
   static const int _maxContextLength = 4000;
 
   // Database provider for persistence
-  late final DatabaseProvider _databaseProvider;
+  final DatabaseProvider _databaseProvider;
 
   // Constructor
-  MemoryService() {
-    _databaseProvider = serviceLocator<DatabaseProvider>();
-  }
+  MemoryService({
+    required DatabaseProvider databaseProvider,
+  }) : _databaseProvider = databaseProvider;
 
   /// Initialize the memory service by loading memories from persistence
   Future<void> init() async {

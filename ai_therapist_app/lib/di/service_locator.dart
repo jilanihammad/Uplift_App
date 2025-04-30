@@ -155,15 +155,18 @@ Future<void> setupServiceLocator() async {
     // ===== SIMPLE DOMAIN SERVICES =====
     // These services have minimal dependencies but may need initialization later
 
-    if (!serviceLocator.isRegistered<VoiceService>()) {
-      serviceLocator.registerLazySingleton<VoiceService>(() => VoiceService());
-      debugPrint('Registered VoiceService');
+    if (!serviceLocator.isRegistered<MemoryService>()) {
+      serviceLocator.registerLazySingleton<MemoryService>(() => MemoryService(
+            databaseProvider: serviceLocator<DatabaseProvider>(),
+          ));
+      debugPrint('Registered MemoryService with constructor injection');
     }
 
-    if (!serviceLocator.isRegistered<MemoryService>()) {
-      serviceLocator
-          .registerLazySingleton<MemoryService>(() => MemoryService());
-      debugPrint('Registered MemoryService');
+    if (!serviceLocator.isRegistered<VoiceService>()) {
+      serviceLocator.registerLazySingleton<VoiceService>(() => VoiceService(
+            apiClient: serviceLocator<ApiClient>(),
+          ));
+      debugPrint('Registered VoiceService with constructor injection');
     }
 
     if (!serviceLocator.isRegistered<TherapyGraphService>()) {
@@ -202,6 +205,16 @@ Future<void> setupServiceLocator() async {
       final onboardingService = serviceLocator<OnboardingService>();
       authService.setOnboardingService(onboardingService);
       debugPrint('Connected AuthService to OnboardingService');
+    }
+
+    // Register services that depend on repositories
+    if (!serviceLocator.isRegistered<TherapyService>()) {
+      serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
+            apiClient: serviceLocator<ApiClient>(),
+            memoryService: serviceLocator<MemoryService>(),
+            voiceService: serviceLocator<VoiceService>(),
+          ));
+      debugPrint('Registered TherapyService with constructor injection');
     }
 
     // Mark core services as registered
@@ -272,9 +285,12 @@ Future<void> registerApiDependentServices(
 
     // Register services that depend on repositories
     if (!serviceLocator.isRegistered<TherapyService>()) {
-      serviceLocator
-          .registerLazySingleton<TherapyService>(() => TherapyService());
-      debugPrint('Registered TherapyService');
+      serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
+            apiClient: serviceLocator<ApiClient>(),
+            memoryService: serviceLocator<MemoryService>(),
+            voiceService: serviceLocator<VoiceService>(),
+          ));
+      debugPrint('Registered TherapyService with constructor injection');
     }
 
     DependencyStatus.apiDependenciesRegistered = true;
