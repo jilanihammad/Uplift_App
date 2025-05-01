@@ -31,6 +31,10 @@ import '../services/navigation_service.dart';
 
 import '../utils/connectivity_checker.dart';
 import '../data/datasources/local/database_provider.dart';
+import '../services/memory_manager.dart';
+import '../services/message_processor.dart';
+import '../services/audio_generator.dart';
+import '../services/conversation_flow_manager.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -42,11 +46,26 @@ class DependencyStatus {
   static bool apiDependenciesRegistered = false;
   static bool firebaseServicesRegistered = false;
 
+  // Service initialization status tracking
+  static final Map<String, bool> initializedServices = {};
+
   /// Reset all status flags (useful for testing)
   static void reset() {
     coreServicesRegistered = false;
     apiDependenciesRegistered = false;
     firebaseServicesRegistered = false;
+    initializedServices.clear();
+  }
+
+  /// Mark a service as initialized
+  static void markInitialized(String serviceName) {
+    initializedServices[serviceName] = true;
+    debugPrint('Service marked as initialized: $serviceName');
+  }
+
+  /// Check if a service is initialized
+  static bool isInitialized(String serviceName) {
+    return initializedServices[serviceName] ?? false;
   }
 }
 
@@ -163,11 +182,76 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered MemoryService with constructor injection');
     }
 
+    // Register new refactored services
+    if (!serviceLocator.isRegistered<MemoryManager>()) {
+      serviceLocator.registerLazySingleton<MemoryManager>(() {
+        debugPrint('Creating MemoryManager instance (lazy initialization)');
+        final manager = MemoryManager(
+          memoryService: serviceLocator<MemoryService>(),
+        );
+
+        // Initialize only if needed when first accessed
+        manager.initializeOnlyIfNeeded().then((_) {
+          DependencyStatus.markInitialized('MemoryManager');
+          debugPrint('MemoryManager initialized on first access');
+        });
+
+        return manager;
+      });
+      debugPrint('Registered MemoryManager with true lazy initialization');
+    }
+
+    if (!serviceLocator.isRegistered<MessageProcessor>()) {
+      serviceLocator.registerLazySingleton<MessageProcessor>(() {
+        debugPrint('Creating MessageProcessor instance (lazy initialization)');
+        final processor = MessageProcessor(
+          apiClient: serviceLocator<ApiClient>(),
+        );
+
+        // Nothing to initialize for MessageProcessor
+        DependencyStatus.markInitialized('MessageProcessor');
+
+        return processor;
+      });
+      debugPrint('Registered MessageProcessor with constructor injection');
+    }
+
+    if (!serviceLocator.isRegistered<AudioGenerator>()) {
+      // Use lazy singleton to prevent immediate initialization
+      serviceLocator.registerLazySingleton<AudioGenerator>(() {
+        debugPrint('Creating AudioGenerator instance (lazy initialization)');
+        final generator = AudioGenerator(
+          voiceService: serviceLocator<VoiceService>(),
+          apiClient: serviceLocator<ApiClient>(),
+        );
+
+        // Initialize only if needed when first accessed
+        generator.initializeOnlyIfNeeded().then((_) {
+          DependencyStatus.markInitialized('AudioGenerator');
+          debugPrint('AudioGenerator initialized on first access');
+        });
+
+        return generator;
+      });
+      debugPrint('Registered AudioGenerator with true lazy initialization');
+    }
+
     if (!serviceLocator.isRegistered<VoiceService>()) {
-      serviceLocator.registerLazySingleton<VoiceService>(() => VoiceService(
-            apiClient: serviceLocator<ApiClient>(),
-          ));
-      debugPrint('Registered VoiceService with constructor injection');
+      serviceLocator.registerLazySingleton<VoiceService>(() {
+        debugPrint('Creating VoiceService instance (lazy initialization)');
+        final service = VoiceService(
+          apiClient: serviceLocator<ApiClient>(),
+        );
+
+        // Initialize only if needed when first accessed
+        service.initializeOnlyIfNeeded().then((_) {
+          DependencyStatus.markInitialized('VoiceService');
+          debugPrint('VoiceService initialized on first access');
+        });
+
+        return service;
+      });
+      debugPrint('Registered VoiceService with true lazy initialization');
     }
 
     if (!serviceLocator.isRegistered<TherapyGraphService>()) {
@@ -211,9 +295,10 @@ Future<void> setupServiceLocator() async {
     // Register services that depend on repositories
     if (!serviceLocator.isRegistered<TherapyService>()) {
       serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
+            messageProcessor: serviceLocator<MessageProcessor>(),
+            audioGenerator: serviceLocator<AudioGenerator>(),
+            memoryManager: serviceLocator<MemoryManager>(),
             apiClient: serviceLocator<ApiClient>(),
-            memoryService: serviceLocator<MemoryService>(),
-            voiceService: serviceLocator<VoiceService>(),
           ));
       debugPrint('Registered TherapyService with constructor injection');
     }
@@ -294,9 +379,10 @@ Future<void> registerApiDependentServices(
     // Register services that depend on repositories
     if (!serviceLocator.isRegistered<TherapyService>()) {
       serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
+            messageProcessor: serviceLocator<MessageProcessor>(),
+            audioGenerator: serviceLocator<AudioGenerator>(),
+            memoryManager: serviceLocator<MemoryManager>(),
             apiClient: serviceLocator<ApiClient>(),
-            memoryService: serviceLocator<MemoryService>(),
-            voiceService: serviceLocator<VoiceService>(),
           ));
       debugPrint('Registered TherapyService with constructor injection');
     }

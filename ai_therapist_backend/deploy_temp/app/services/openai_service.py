@@ -188,13 +188,14 @@ class OpenAIService:
             raise Exception(f"Transcription error: {str(e)}")
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def text_to_speech(self, text: str, output_path: str) -> bool:
+    async def text_to_speech(self, text: str, output_path: str, format_params: dict = None) -> bool:
         """
         Convert text to speech using OpenAI's TTS API
         
         Args:
             text: Text to convert to speech
             output_path: Path to save the audio file
+            format_params: Optional parameters for audio format and quality
             
         Returns:
             Boolean indicating success or failure
@@ -210,18 +211,32 @@ class OpenAIService:
         try:
             logger.info(f"Converting text to speech using model: {self.tts_model}, voice: {self.tts_voice}")
             
+            # Handle file extension based on format
+            audio_format = format_params.get("response_format", "mp3") if format_params else "mp3"
+            if audio_format == "opus" or audio_format == "ogg_opus":
+                # Make sure output path has correct extension
+                if not output_path.endswith((".opus", ".ogg")):
+                    output_path = output_path.rsplit(".", 1)[0] + ".ogg"
+            
             # Prepare API call
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
             
+            # Start with base payload
             payload = {
                 "model": self.tts_model,
                 "input": text,
                 "voice": self.tts_voice,
-                "response_format": "mp3"
+                "response_format": "mp3"  # Default
             }
+            
+            # Update with any format parameters
+            if format_params:
+                payload.update(format_params)
+                
+            logger.info(f"Using TTS parameters: format={payload.get('response_format')}, voice={payload.get('voice')}")
             
             # Make API call
             logger.info(f"Making OpenAI API call to {self.tts_endpoint}")

@@ -24,6 +24,12 @@ import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/services/therapy_service.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:ai_therapist_app/services/onboarding_service.dart';
+import 'package:ai_therapist_app/services/memory_service.dart';
+import 'package:ai_therapist_app/services/voice_service.dart';
+import 'package:ai_therapist_app/services/memory_manager.dart';
+import 'package:ai_therapist_app/services/message_processor.dart';
+import 'package:ai_therapist_app/services/audio_generator.dart';
+import 'package:ai_therapist_app/services/conversation_flow_manager.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'package:ai_therapist_app/firebase_options.dart';
@@ -684,6 +690,72 @@ Future<void> _initializeConfigAndApi() async {
 
     // Register dependencies that require ConfigService and ApiClient
     await registerApiDependentServices(_configService!, _apiClient!);
+
+    // Initialize all the refactored components in the right order
+    logger.debug(
+        '[Main] Initializing refactored service components (using initializeOnlyIfNeeded)...');
+
+    // Initialize services using their singleton pattern and initializeOnlyIfNeeded method
+    try {
+      // Create a set to track which services were successfully initialized
+      final Set<String> initializedServices = {};
+
+      // Initialize core services first (these have no dependencies on other services)
+      if (serviceLocator.isRegistered<MemoryService>()) {
+        final memoryService = serviceLocator<MemoryService>();
+        await memoryService.initializeOnlyIfNeeded();
+        initializedServices.add('MemoryService');
+        logger.debug('[Main] MemoryService initialized successfully');
+      }
+
+      if (serviceLocator.isRegistered<VoiceService>()) {
+        final voiceService = serviceLocator<VoiceService>();
+        await voiceService.initializeOnlyIfNeeded();
+        initializedServices.add('VoiceService');
+        logger.debug('[Main] VoiceService initialized successfully');
+      }
+
+      // Initialize conversation flow manager which has minimal dependencies
+      try {
+        final conversationFlowManager = ConversationFlowManager();
+        await conversationFlowManager.initializeOnlyIfNeeded();
+        initializedServices.add('ConversationFlowManager');
+        logger.debug('[Main] ConversationFlowManager initialized successfully');
+      } catch (e) {
+        logger.warning('[Main] Error initializing ConversationFlowManager',
+            error: e);
+      }
+
+      // Initialize the higher-level components (depend on core services)
+      if (serviceLocator.isRegistered<MemoryManager>()) {
+        final memoryManager = serviceLocator<MemoryManager>();
+        await memoryManager.initializeOnlyIfNeeded();
+        initializedServices.add('MemoryManager');
+        logger.debug('[Main] MemoryManager initialized successfully');
+      }
+
+      if (serviceLocator.isRegistered<AudioGenerator>()) {
+        final audioGenerator = serviceLocator<AudioGenerator>();
+        await audioGenerator.initializeOnlyIfNeeded();
+        initializedServices.add('AudioGenerator');
+        logger.debug('[Main] AudioGenerator initialized successfully');
+      }
+
+      // Initialize the TherapyService last (depends on most other services)
+      if (serviceLocator.isRegistered<TherapyService>()) {
+        final therapyService = serviceLocator<TherapyService>();
+        await therapyService.init();
+        initializedServices.add('TherapyService');
+        logger.debug('[Main] TherapyService initialized successfully');
+      }
+
+      // Log initialization summary
+      logger.info('[Main] Services initialized: ${initializedServices.length}');
+      logger.info(
+          '[Main] Successfully initialized: ${initializedServices.join(", ")}');
+    } catch (e) {
+      logger.error('[Main] Error initializing refactored components', error: e);
+    }
 
     // Validate that all dependencies are registered
     final allDepsValid = validateDependencies();

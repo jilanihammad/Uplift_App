@@ -188,13 +188,14 @@ class OpenAIService:
             raise Exception(f"Transcription error: {str(e)}")
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def text_to_speech(self, text: str, output_path: str) -> bool:
+    async def text_to_speech(self, text: str, output_path: str, format_params: dict = None) -> bool:
         """
         Convert text to speech using OpenAI's TTS API
         
         Args:
             text: Text to convert to speech
             output_path: Path to save the audio file
+            format_params: Optional parameters for audio format and quality
             
         Returns:
             Boolean indicating success or failure
@@ -210,18 +211,32 @@ class OpenAIService:
         try:
             logger.info(f"Converting text to speech using model: {self.tts_model}, voice: {self.tts_voice}")
             
+            # Handle file extension based on format
+            audio_format = format_params.get("response_format", "mp3") if format_params else "mp3"
+            if audio_format == "opus" or audio_format == "ogg_opus":
+                # Make sure output path has correct extension
+                if not output_path.endswith((".opus", ".ogg")):
+                    output_path = output_path.rsplit(".", 1)[0] + ".ogg"
+            
             # Prepare API call
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
             
+            # Start with base payload
             payload = {
                 "model": self.tts_model,
                 "input": text,
                 "voice": self.tts_voice,
-                "response_format": "mp3"
+                "response_format": "mp3"  # Default
             }
+            
+            # Update with any format parameters
+            if format_params:
+                payload.update(format_params)
+                
+            logger.info(f"Using TTS parameters: format={payload.get('response_format')}, voice={payload.get('voice')}")
             
             # Make API call
             logger.info(f"Making OpenAI API call to {self.tts_endpoint}")
@@ -315,7 +330,7 @@ class OpenAIService:
             
             {memory_context}
             
-            Please format your response as JSON with the following structure:
+            IMPORTANT: Please provide your response as a valid JSON object with the following structure, without any additional text, explanation, or markdown formatting:
             {{
                 "summary": "Summary of the session",
                 "action_items": ["Action 1", "Action 2", ...],
@@ -349,22 +364,56 @@ class OpenAIService:
             # Try to parse the JSON response
             try:
                 # Extract JSON from the response text (it might be wrapped in markdown code blocks)
+                json_str = response_text
+                
+                # Handle various formats the LLM might return
                 if "```json" in response_text:
                     json_str = response_text.split("```json")[1].split("```")[0].strip()
                 elif "```" in response_text:
                     json_str = response_text.split("```")[1].strip()
-                else:
-                    json_str = response_text
-                    
+                
+                # Handle cases where the LLM adds "Here is the response:" or similar text
+                if "Here is the response" in json_str:
+                    # Try to find JSON structure
+                    import re
+                    json_match = re.search(r'({[\s\S]*})', json_str)
+                    if json_match:
+                        json_str = json_match.group(1)
+                
+                logger.info(f"Extracted JSON string: {json_str[:100]}...")
+                
+                # Parse the JSON string
                 result = json.loads(json_str)
+                
+                # Verify result has the expected structure
+                if not isinstance(result, dict):
+                    raise ValueError("Response is not a dictionary")
+                
+                # Make sure all required fields are present
+                required_fields = ["summary", "action_items", "insights"]
+                for field in required_fields:
+                    if field not in result:
+                        result[field] = []
+                        if field == "summary":
+                            result[field] = "Session summary not available"
+                
                 logger.info("Session summary generated successfully")
                 return result
                 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
                 # If JSON parsing fails, create a structured response manually
-                logger.warning(f"Failed to parse LLM response as JSON: {str(e)}, creating structured response manually")
+                logger.warning(f"Failed to parse LLM response as JSON: {str(e)}, response: {response_text[:100]}...")
+                logger.warning("Creating structured response manually")
+                
+                # Attempt to extract meaningful content from the response
+                summary = response_text
+                if "summary" in response_text.lower():
+                    summary_lines = [line for line in response_text.split('\n') if "summary" in line.lower()]
+                    if summary_lines:
+                        summary = summary_lines[0].split(":", 1)[1].strip() if ":" in summary_lines[0] else summary_lines[0]
+                
                 return {
-                    "summary": response_text,
+                    "summary": summary,
                     "action_items": ["Practice mindfulness daily", "Journal about emotions"],
                     "insights": ["Working through challenges with good progress"]
                 }
