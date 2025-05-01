@@ -33,7 +33,7 @@ class _TestScreenState extends State<TestScreen> {
   String _responseText = 'No response yet';
   bool _isLoading = false;
   final String _baseUrl =
-      'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+      'https://ai-therapist-backend-385290373302.us-central1.run.app';
 
   Future<void> _testLlmStatus() async {
     setState(() {

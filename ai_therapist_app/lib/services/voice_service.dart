@@ -21,6 +21,7 @@ import 'package:ai_therapist_app/data/repositories/log_repo.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:record/record.dart';
+import '../config/app_config.dart'; // Import AppConfig
 
 // Recording states
 enum RecordingState { ready, recording, stopped, paused, error }
@@ -95,8 +96,8 @@ class VoiceService {
       // Make sure the stream controller is active
       _ensureStreamControllerIsActive();
 
-      // Get backend URL from config service and update to use the URL that's working
-      _backendUrl = 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+      // Get backend URL from AppConfig instead of hardcoding
+      _backendUrl = AppConfig().backendUrl;
 
       if (kDebugMode) {
         print('Voice service initialized with API client');
@@ -482,13 +483,11 @@ class VoiceService {
           if (audioUrl.startsWith('http')) {
             fullAudioUrl = audioUrl;
           } else if (audioUrl.startsWith('/')) {
-            // Use the correct backend URL (without "new---" prefix)
-            fullAudioUrl =
-                'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app$audioUrl';
+            // Use the backend URL from AppConfig instead of hardcoded value
+            fullAudioUrl = '${AppConfig().backendUrl}$audioUrl';
           } else {
-            // Use the correct backend URL (without "new---" prefix)
-            fullAudioUrl =
-                'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/$audioUrl';
+            // Use the backend URL from AppConfig instead of hardcoded value
+            fullAudioUrl = '${AppConfig().backendUrl}/$audioUrl';
           }
 
           if (kDebugMode) {

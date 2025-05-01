@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -18,8 +18,12 @@ class GroqService:
         self.groq_transcription_url = f"{self.groq_api_base_url}/audio/transcriptions"
         self.openai_transcription_url = "https://api.openai.com/v1/audio/transcriptions"
         
-        # Models
-        self.default_transcription_model = "whisper-1"  # Default OpenAI model
+        # Models - get from environment variables
+        self.default_transcription_model = settings.OPENAI_TRANSCRIPTION_MODEL or "whisper-1"
+        self.default_groq_transcription_model = settings.GROQ_TRANSCRIPTION_MODEL or "distil-whisper-large-v3-en"
+        
+        # Log initialization
+        logger.info(f"Groq service initialized with transcription models: OpenAI={self.default_transcription_model}, Groq={self.default_groq_transcription_model}")
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def transcribe_audio(self, audio_file_path: str, model: Optional[str] = None) -> str:
@@ -50,13 +54,15 @@ class GroqService:
             logger.info(f"Processing audio file: {audio_file_path}, size: {file_size} bytes")
             
             # Determine which API to use based on the model requested
-            requested_model = model or self.default_transcription_model
-            if requested_model == "distil-whisper-large-v3-en":
-                logger.info(f"Using GROQ API with distil-whisper-large-v3-en model")
-                return await self._transcribe_with_groq(audio_file_path, "distil-whisper-large-v3-en")
+            requested_model = model or self.default_groq_transcription_model
+            
+            # Check if we should use Groq's distil-whisper model
+            if requested_model == self.default_groq_transcription_model:
+                logger.info(f"Using GROQ API with {self.default_groq_transcription_model} model")
+                return await self._transcribe_with_groq(audio_file_path, self.default_groq_transcription_model)
             else:
                 # Default to OpenAI API
-                logger.info(f"Using OpenAI API with whisper-1 model")
+                logger.info(f"Using OpenAI API with {self.default_transcription_model} model")
                 return await self._transcribe_with_openai(audio_file_path)
                 
         except Exception as e:
@@ -135,7 +141,8 @@ class GroqService:
     async def _transcribe_with_openai(self, audio_file_path: str) -> str:
         """Transcribe audio using OpenAI's API"""
         try:
-            model_id = "whisper-1"  # Always use whisper-1 for OpenAI
+            # Use environment variable for model instead of hardcoded value
+            model_id = self.default_transcription_model
             
             # Prepare API call
             headers = {
@@ -154,6 +161,7 @@ class GroqService:
                 return "Error: Invalid API credentials"
             else:
                 logger.info(f"Using OpenAI API key: {self.openai_api_key[:4]}...{self.openai_api_key[-4:] if len(self.openai_api_key) > 8 else ''}")
+                logger.info(f"Using transcription model: {model_id}")
             
             # Open the file for sending
             files = {
@@ -195,6 +203,70 @@ class GroqService:
         except Exception as e:
             logger.error(f"Error in OpenAI transcription: {str(e)}")
             return f"Error with OpenAI transcription: {str(e)}"
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    async def chat_completion(self, messages: List[Dict[str, str]], model: Optional[str] = None, 
+                             temperature: float = 0.7, stream: bool = False, max_tokens: int = 1000) -> Dict[str, Any]:
+        """
+        Get a chat completion from Groq API.
+        
+        Args:
+            messages: List of message dictionaries with role and content
+            model: Model name to use (defaults to the one configured in settings)
+            temperature: Temperature parameter for generation
+            stream: Whether to stream the response
+            max_tokens: Maximum number of tokens to generate
+            
+        Returns:
+            Dictionary with the completion response
+        """
+        try:
+            # Use requested model or default from settings
+            llm_model = model or settings.GROQ_LLM_MODEL or "llama3-70b-8192"
+            
+            # Prepare the request data
+            request_data = {
+                "model": llm_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": stream,
+            }
+            
+            # Log request details
+            logger.info(f"Making GROQ chat completion request with model {llm_model}")
+            
+            # Prepare headers
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            chat_url = f"{self.groq_api_base_url}/chat/completions"
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    chat_url,
+                    headers=headers,
+                    json=request_data
+                )
+                
+                # Check for errors
+                if response.status_code != 200:
+                    logger.error(f"GROQ API error: {response.status_code} - {response.text}")
+                    return {"error": f"GROQ API error: {response.status_code} - {response.text}"}
+                
+                # Parse the response
+                result = response.json()
+                logger.info(f"GROQ completion successful with model {llm_model}")
+                
+                # Return the result
+                return result
+                
+        except Exception as e:
+            logger.error(f"Error in GROQ chat completion: {str(e)}")
+            logger.error(traceback.format_exc())
+            return {"error": f"Error in GROQ chat completion: {str(e)}"}
 
 # Create a singleton instance
 groq_service = GroqService() 

@@ -37,6 +37,7 @@ import 'package:ai_therapist_app/screens/chat_screen.dart';
 import 'package:ai_therapist_app/screens/profile_screen.dart';
 import 'package:ai_therapist_app/screens/onboarding/onboarding_wrapper.dart';
 import 'package:ai_therapist_app/config/theme.dart';
+import 'package:ai_therapist_app/config/app_config.dart';
 import 'debug_api.dart';
 import 'debug_firebase.dart'; // Import for debugging only
 import 'dart:async';
@@ -92,10 +93,8 @@ class SimpleBlocObserver extends BlocObserver {
   }
 }
 
-// Global app configuration
+// Global app configuration - Using AppConfig instead of hardcoded values
 final bool isDebugMode = kDebugMode;
-final String apiBaseUrl =
-    'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app'; // Cloud backend URL
 final String firebaseProjectUrl =
     'https://upliftapp-cd86e.web.app'; // Firebase project URL
 
@@ -142,6 +141,11 @@ Future<void> main() async {
     final binding = WidgetsFlutterBinding.ensureInitialized();
     logger.info(
         '[Main] Flutter bindings initialized in the same zone as runApp.');
+
+    // 1.5. Initialize AppConfig to load environment variables
+    await AppConfig.initialize();
+    AppConfig().logConfig();
+    logger.info('[Main] AppConfig initialized with environment variables.');
 
     // 2. Initialize Firebase using the synchronized method
     final firebaseApp = await ensureFirebaseInitialized();

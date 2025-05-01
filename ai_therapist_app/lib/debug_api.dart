@@ -16,7 +16,7 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
   String _selectedEndpoint = 'Cloud';
 
   final Map<String, String> _endpoints = {
-    'Cloud': 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app',
+    'Cloud': 'https://ai-therapist-backend-385290373302.us-central1.run.app',
     'Firebase': 'https://upliftapp-cd86e.web.app',
   };
 
