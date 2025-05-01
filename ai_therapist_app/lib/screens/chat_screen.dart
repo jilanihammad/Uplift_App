@@ -20,6 +20,7 @@ import '../models/therapy_message.dart';
 import '../data/repositories/session_repository.dart';
 import '../services/navigation_service.dart';
 import '../services/audio_generator.dart';
+import '../data/repositories/message_repository.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -1402,6 +1403,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       // Save the session to the repository
       try {
         final sessionRepository = serviceLocator<SessionRepository>();
+        final messageRepository = serviceLocator<MessageRepository>();
 
         // Ensure the session exists in the repository before updating it
         try {
@@ -1424,6 +1426,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           summary: summary,
           actionItems: actionItems.cast<String>(),
           initialMood: _initialMood,
+          messageRepository: messageRepository,
         );
 
         if (kDebugMode) {
