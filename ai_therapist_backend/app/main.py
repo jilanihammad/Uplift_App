@@ -601,6 +601,23 @@ async def add_session_message(session_id: str, message: dict):
         logger.error(f"Error adding message: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error adding message: {str(e)}")
 
+@app.post("/sessions/{session_id}/messages/batch", status_code=status.HTTP_200_OK)
+async def add_session_messages_batch(session_id: str, messages: List[dict]):
+    """Add multiple messages to a session in a single batch"""
+    try:
+        logger.info(f"Adding batch of {len(messages)} messages to session {session_id}")
+        # In a real implementation, you would save all messages to the database at once
+        # For now, we'll return a mock response with IDs for each message
+        message_ids = [str(uuid.uuid4()) for _ in range(len(messages))]
+        return {
+            "status": "success", 
+            "message_count": len(messages),
+            "message_ids": message_ids
+        }
+    except Exception as e:
+        logger.error(f"Error adding batch messages: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error adding batch messages: {str(e)}")
+
 # Legacy API endpoints with /api/v1 prefix included explicitly
 @app.get(f"{settings.API_V1_STR}/sessions", status_code=status.HTTP_200_OK)
 async def get_sessions_legacy():
@@ -626,6 +643,11 @@ async def delete_session_legacy(session_id: str):
 async def add_session_message_legacy(session_id: str, message: dict):
     """Legacy endpoint for adding a message to a session"""
     return await add_session_message(session_id, message)
+
+@app.post(f"{settings.API_V1_STR}/sessions/{{session_id}}/messages/batch", status_code=status.HTTP_200_OK)
+async def add_session_messages_batch_legacy(session_id: str, messages: List[dict]):
+    """Legacy endpoint for adding multiple messages to a session in a single batch"""
+    return await add_session_messages_batch(session_id, messages)
 
 # Replace the catch-all route with more specific error handlers
 @app.exception_handler(404)
@@ -687,6 +709,10 @@ async def root_delete_session(session_id: str):
 @root_router.post("/sessions/{session_id}/messages")
 async def root_add_session_message(session_id: str, message: dict):
     return await add_session_message(session_id, message)
+
+@root_router.post("/sessions/{session_id}/messages/batch")
+async def root_add_session_messages_batch(session_id: str, messages: List[dict]):
+    return await add_session_messages_batch(session_id, messages)
 
 # Include the root router
 app.include_router(root_router)
