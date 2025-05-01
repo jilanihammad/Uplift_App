@@ -6,6 +6,7 @@ import 'package:ai_therapist_app/services/therapy_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'dart:async';
+import 'package:ai_therapist_app/config/app_config.dart';
 
 /// A screen for diagnostic testing of critical app components like LLM and TTS
 class DiagnosticScreen extends StatefulWidget {
@@ -143,8 +144,7 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
 
       // Make a direct HTTP request to verify API accessibility
       try {
-        final backendUrl =
-            'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+        final backendUrl = AppConfig().backendUrl;
         final uri = Uri.parse('$backendUrl/llm/status');
 
         debugPrint('[DEBUG] Sending request to: $uri');

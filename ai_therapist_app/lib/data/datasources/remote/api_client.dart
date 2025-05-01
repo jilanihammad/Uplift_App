@@ -1,10 +1,14 @@
 // lib/data/datasources/remote/api_client.dart
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import '../../../services/config_service.dart'; // Corrected import path
+import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/services/auth_service.dart';
+import 'package:ai_therapist_app/config/app_config.dart'; // Import AppConfig
 
 class ApiClient {
   final http.Client httpClient;
@@ -155,9 +159,8 @@ class ApiClient {
           '[RELEASE DEBUG] ApiClient.post - Starting post request to endpoint: $endpoint');
     }
 
-    // Force the URL to be the latest cloud backend URL
-    final String forcedBaseUrl =
-        'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+    // Force the URL to be the backend URL from AppConfig
+    final String forcedBaseUrl = AppConfig().backendUrl;
 
     // Construct the complete URL - handle special endpoints differently
     String urlString;

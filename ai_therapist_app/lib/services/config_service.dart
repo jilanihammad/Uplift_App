@@ -228,7 +228,7 @@ class ConfigService {
 
       // For backend URL
       String effectiveBackendUrl =
-          'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+          'https://ai-therapist-backend-385290373302.us-central1.run.app';
       if (envBackendUrl.isNotEmpty) {
         effectiveBackendUrl = envBackendUrl;
       }

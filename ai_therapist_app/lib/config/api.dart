@@ -3,18 +3,19 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:ai_therapist_app/config/app_config.dart';
 
 class ApiConfig {
-  // Use a getter for baseUrl that checks the environment
+  // Use a getter for baseUrl that uses AppConfig
   static String get baseUrl {
-    // Always use the cloud backend URL
-    return 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/api/v1';
+    // Use the cloud backend URL from AppConfig
+    return '${AppConfig().apiBaseUrl}';
   }
 
   // Add a getter for the base URL without the /api/v1 path
   static String get baseUrlWithoutPath {
-    // Always use the cloud backend URL
-    return 'https://ai-therapist-backend-fuukqlcsha-uc.a.run.app';
+    // Use the cloud backend URL from AppConfig
+    return AppConfig().backendUrl;
   }
 
   // Firebase project URL
