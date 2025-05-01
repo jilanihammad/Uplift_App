@@ -11,6 +11,10 @@ import '../di/service_locator.dart';
 import 'custom_icons.dart'; // Import the custom icons
 import 'package:go_router/go_router.dart'; // Import GoRouter
 import '../config/routes.dart'; // Import route constants
+import '../services/config_service.dart';
+import '../data/datasources/remote/api_client.dart';
+import '../services/memory_manager.dart';
+import '../services/audio_generator.dart';
 
 class SplashScreen extends StatefulWidget {
   final bool skipFirebaseCheck;
@@ -78,6 +82,56 @@ class _SplashScreenState extends State<SplashScreen>
         await _onboardingService.init();
       }
 
+      // Ensure ConfigService and ApiClient are properly initialized
+      if (!serviceLocator.isRegistered<ConfigService>() ||
+          !serviceLocator.isRegistered<ApiClient>()) {
+        if (kDebugMode) {
+          print(
+              "SplashScreen: Waiting for ConfigService and ApiClient to be initialized");
+        }
+
+        // Wait a moment to allow initialization to complete in main.dart
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (!serviceLocator.isRegistered<ConfigService>() ||
+            !serviceLocator.isRegistered<ApiClient>()) {
+          if (kDebugMode) {
+            print(
+                "SplashScreen: ConfigService or ApiClient still not initialized, proceeding with caution");
+          }
+        }
+      }
+
+      // Make sure the refactored services are initialized
+      if (serviceLocator.isRegistered<MemoryManager>()) {
+        try {
+          final memoryManager = serviceLocator<MemoryManager>();
+          await memoryManager.initializeOnlyIfNeeded();
+          if (kDebugMode) {
+            print("SplashScreen: MemoryManager initialized lazily");
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print("SplashScreen: Error initializing MemoryManager: $e");
+          }
+        }
+      }
+
+      if (serviceLocator.isRegistered<AudioGenerator>()) {
+        try {
+          final audioGenerator = serviceLocator<AudioGenerator>();
+          await audioGenerator.initializeOnlyIfNeeded();
+          if (kDebugMode) {
+            print("SplashScreen: AudioGenerator initialized lazily");
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print("SplashScreen: Error initializing AudioGenerator: $e");
+          }
+        }
+      }
+
+      // Now get the BackendService
       _backendService = serviceLocator<BackendService>();
 
       setState(() {

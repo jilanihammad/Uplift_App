@@ -78,7 +78,7 @@ class VoiceService:
             logger.error(f"Error creating fallback audio file: {str(e)}")
             logger.error(traceback.format_exc())
     
-    async def generate_speech(self, text: str) -> Optional[str]:
+    async def generate_speech(self, text: str, format_params: dict = None) -> Optional[str]:
         """Generate speech from text and return the URL to the generated audio file"""
         if not text:
             raise ValueError("No text provided for speech generation")
@@ -88,8 +88,12 @@ class VoiceService:
             
         # Use OpenAI API to generate speech
         try:
+            # Get format extension
+            format_type = format_params.get("response_format", "mp3") if format_params else "mp3"
+            extension = ".ogg" if format_type in ["opus", "ogg_opus"] else ".mp3"
+            
             # Generate a unique filename for the audio file
-            filename = f"{uuid.uuid4()}.mp3"
+            filename = f"{uuid.uuid4()}{extension}"
             file_path = os.path.join(self.audio_dir, filename)
             
             # Ensure the directory exists
@@ -97,7 +101,7 @@ class VoiceService:
             
             # Call the OpenAI TTS API
             from app.services.openai_service import openai_service
-            tts_success = await openai_service.text_to_speech(text, file_path)
+            tts_success = await openai_service.text_to_speech(text, file_path, format_params)
             
             logger.info(f"TTS result: {'Success' if tts_success else 'Failed'}")
             
@@ -134,7 +138,7 @@ except Exception as e:
     
     class FallbackVoiceService:
         """A service that throws errors instead of returning fallbacks"""
-        async def generate_speech(self, text):
+        async def generate_speech(self, text, format_params=None):
             raise Exception("Voice service unavailable - failed to initialize")
             
         def set_voice(self, voice_id):

@@ -19,6 +19,7 @@ import '../models/user_preferences.dart';
 import '../models/therapy_message.dart';
 import '../data/repositories/session_repository.dart';
 import '../services/navigation_service.dart';
+import '../services/audio_generator.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -1082,9 +1083,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // Get AI response using therapy service
     try {
       if (_isVoiceMode) {
-        // Voice mode - get response with audio
+        // Voice mode - get response with streaming audio for faster playback
         final response =
-            await _therapyService.processUserMessageWithAudio(message);
+            await _therapyService.processUserMessageWithStreamingAudio(message);
 
         final aiMessage = TherapyMessage(
           id: const Uuid().v4(),
@@ -1101,10 +1102,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
         _scrollToBottom();
 
-        // Auto-play the response if audio is available
-        if (aiMessage.audioUrl != null && !_isSpeakerMuted) {
-          await _playAudio(aiMessage.audioUrl!, inVoiceMode: true);
-        }
+        // No need to manually play audio here as streaming method handles playback
       } else {
         // Text mode - get response without audio to save API calls
         final response = await _therapyService.processUserMessage(message);
@@ -1151,9 +1149,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       if (_isVoiceMode) {
-        // Generate audio for voice mode
-        final audioPath =
-            await _voiceService.generateAudio(text, isAiSpeaking: true);
+        // Use audio generator with streaming for faster response
+        final audioGenerator = serviceLocator<AudioGenerator>();
+
+        // Generate audio and stream it directly
+        final audioPath = await audioGenerator.generateAndStreamAudio(text);
 
         // Update the message with the audio URL
         final indexOfMessage = _messages.indexWhere((m) => m.id == message.id);
@@ -1163,10 +1163,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             _isProcessing = false;
           });
 
-          // Auto-play the welcome message
-          if (!_isSpeakerMuted) {
-            await _playAudio(audioPath, inVoiceMode: true);
-          }
+          // Audio is already playing due to streaming
         }
       } else {
         // In text mode, we don't generate audio
@@ -1223,9 +1220,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           _scrollToBottom();
 
           if (_isVoiceMode) {
-            // In voice mode, get AI response with audio
+            // In voice mode, get AI response with streaming audio for faster playback
             final response = await _therapyService
-                .processUserMessageWithAudio(transcription);
+                .processUserMessageWithStreamingAudio(transcription);
 
             final aiMessage = TherapyMessage(
               id: const Uuid().v4(),
@@ -1242,12 +1239,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
             _scrollToBottom();
 
-            // Auto-play the response in voice mode
-            if (aiMessage.audioUrl != null && !_isSpeakerMuted) {
-              await _playAudio(aiMessage.audioUrl!, inVoiceMode: true);
-            }
+            // No need to manually play audio here as streaming method handles playback
           } else {
-            // In text mode, get response without audio to save API calls
+            // Text mode - get response without audio to save API calls
             final response =
                 await _therapyService.processUserMessage(transcription);
 

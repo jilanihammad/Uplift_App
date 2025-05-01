@@ -1,0 +1,48 @@
+@router.post("/synthesize", response_class=JSONResponse)
+async def synthesize_voice(request: Request):
+    """
+    Generate voice from text using TTS service
+    """
+    try:
+        data = await request.json()
+        text = data.get("text", "")
+        voice = data.get("voice", None)
+        
+        # Extract format parameters (new)
+        format_params = {}
+        
+        # Get format parameters with defaults for optimal performance
+        format_params["response_format"] = data.get("format", "ogg_opus")  # Default to optimized format
+        
+        # Add bitrate parameter if specified
+        if "bitrate" in data:
+            format_params["bitrate"] = data.get("bitrate")
+        else:
+            format_params["bitrate"] = "24k"  # Default to optimized bitrate
+            
+        # Add mono parameter if specified
+        if "mono" in data:
+            format_params["mono"] = data.get("mono", True)
+        else:
+            format_params["mono"] = True  # Default to mono for better performance
+        
+        # Set voice if provided
+        if voice:
+            voice_service.set_voice(voice)
+            
+        if not text:
+            return JSONResponse({"error": "No text provided"}, status_code=400)
+            
+        logger.info(f"Synthesizing voice for text: {text[:30]}... with format: {format_params}")
+        
+        # Generate audio with format parameters
+        audio_url = await voice_service.generate_speech(text, format_params)
+        
+        if not audio_url:
+            return JSONResponse({"error": "Failed to generate speech"}, status_code=500)
+            
+        return JSONResponse({"url": audio_url})
+        
+    except Exception as e:
+        logger.error(f"Error synthesizing voice: {str(e)}")
+        return JSONResponse({"error": str(e)}, status_code=500) 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -22,6 +23,7 @@ import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:record/record.dart';
 import '../config/app_config.dart'; // Import AppConfig
+import 'dart:io';
 
 // Recording states
 enum RecordingState { ready, recording, stopped, paused, error }
@@ -30,6 +32,9 @@ enum RecordingState { ready, recording, stopped, paused, error }
 enum TranscriptionModel { whisper, deepgramAI, assembly }
 
 class VoiceService {
+  // Singleton instance
+  static VoiceService? _instance;
+
   // Stream controllers for voice recording states
   StreamController<RecordingState>? _recordingStateController;
   Stream<RecordingState>? _recordingStateStream;
@@ -70,12 +75,41 @@ class VoiceService {
   // Flag to indicate if we're running in a web environment
   final bool _isWeb = kIsWeb;
 
-  // Constructor - initialize recorder with injected dependencies
-  VoiceService({
-    required ApiClient apiClient,
-  }) : _apiClient = apiClient {
+  bool _isInitialized = false;
+
+  // Factory constructor to enforce singleton pattern
+  factory VoiceService({required ApiClient apiClient}) {
+    // Return existing instance if already created
+    if (_instance != null) {
+      if (kDebugMode) {
+        print('Reusing existing VoiceService instance');
+      }
+      return _instance!;
+    }
+
+    // Create new instance if first time
+    _instance = VoiceService._internal(apiClient: apiClient);
+    return _instance!;
+  }
+
+  // Private constructor for singleton pattern
+  VoiceService._internal({required ApiClient apiClient})
+      : _apiClient = apiClient {
     _audioRecorder = AudioRecorder();
     _ensureStreamControllerIsActive();
+    if (kDebugMode) {
+      print('VoiceService initialized with constructor injection');
+    }
+  }
+
+  // Check if service is initialized
+  bool get isInitialized => _isInitialized;
+
+  // Method to initialize the service only if it hasn't been initialized yet
+  Future<void> initializeOnlyIfNeeded() async {
+    if (!_isInitialized) {
+      await initialize();
+    }
   }
 
   // Ensure the StreamController is active and not closed
@@ -92,6 +126,14 @@ class VoiceService {
 
   // Method to initialize the voice service
   Future<void> initialize() async {
+    // Skip if already initialized
+    if (_isInitialized) {
+      if (kDebugMode) {
+        print('VoiceService already initialized, skipping initialize()');
+      }
+      return;
+    }
+
     try {
       // Make sure the stream controller is active
       _ensureStreamControllerIsActive();
@@ -110,6 +152,7 @@ class VoiceService {
         }
         _currentState = RecordingState.ready;
         _recordingStateController!.add(_currentState);
+        _isInitialized = true;
         return;
       }
 
@@ -126,6 +169,8 @@ class VoiceService {
 
       _currentState = RecordingState.ready;
       _recordingStateController!.add(_currentState);
+
+      _isInitialized = true;
 
       if (kDebugMode) {
         print('Voice service initialized successfully');
@@ -446,6 +491,9 @@ class VoiceService {
           'voice': isAiSpeaking
               ? 'sage'
               : 'onyx', // Updated to use valid OpenAI TTS voices
+          'format': 'ogg_opus', // More efficient than mp3
+          'bitrate': '24k', // Lower than default (64k), still good quality
+          'mono': true, // Single channel saves ~50% bandwidth
         });
 
         final duration = DateTime.now().difference(startTime).inMilliseconds;
@@ -539,6 +587,47 @@ class VoiceService {
       }
 
       return localFallbackPath;
+    }
+  }
+
+  // Use TTS backup and save to a specific file
+  Future<void> _useTtsBackupToFile(String text, String filePath) async {
+    try {
+      // Get the text from last TTS message
+      String textToSpeak = text;
+      try {
+        if (textToSpeak.isEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          textToSpeak = prefs.getString('last_tts_text') ?? '';
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error retrieving TTS text: $e');
+        }
+      }
+
+      // Use FlutterTts as a fallback
+      final flutterTts = FlutterTts();
+      await flutterTts.setLanguage('en-US');
+      await flutterTts.setSpeechRate(0.5);
+      await flutterTts.setPitch(1.0);
+
+      // Save the synthesized speech to a file
+      Directory directory = Directory(path.dirname(filePath));
+      if (!directory.existsSync()) {
+        directory.createSync(recursive: true);
+      }
+
+      await flutterTts.synthesizeToFile(textToSpeak, filePath);
+      _lastGeneratedAudioPath = filePath;
+
+      if (kDebugMode) {
+        print('TTS fallback used and saved to file: $filePath');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error in TTS fallback: $e');
+      }
     }
   }
 
@@ -807,6 +896,99 @@ class VoiceService {
         await Future.delayed(const Duration(seconds: 1));
         print('Simulated text-to-speech playback complete');
       }
+    }
+  }
+
+  // Play audio with progressive streaming (starts playing while still downloading)
+  Future<void> playStreamingAudio(String audioUrl) async {
+    try {
+      if (kDebugMode) {
+        print('Playing streaming audio from URL: $audioUrl');
+      }
+
+      if (_isWeb) {
+        if (kDebugMode) {
+          print(
+              'Web platform does not support streaming audio, using fallback');
+        }
+        await playAudio(audioUrl);
+        return;
+      }
+
+      // Check if the URL exists before attempting to stream
+      try {
+        final response = await http.head(Uri.parse(audioUrl));
+        if (response.statusCode != 200) {
+          if (kDebugMode) {
+            print('Audio URL not accessible: $audioUrl, using TTS fallback');
+          }
+          await _useTtsBackup();
+          return;
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error checking audio URL: $e, falling back to TTS');
+        }
+        await _useTtsBackup();
+        return;
+      }
+
+      // Create a player instance for streaming
+      final player = AudioPlayer();
+
+      try {
+        // Set the audio source with low buffer size for quicker start
+        await player.setAudioSource(
+          ProgressiveAudioSource(
+            Uri.parse(audioUrl),
+            // Lower buffer size helps start playback faster
+            headers: {
+              'Range': 'bytes=0-'
+            }, // Request range to enable progressive playback
+          ),
+          preload: false, // Don't preload the entire audio file
+        );
+
+        // Start playing as soon as enough is buffered
+        final playbackStartTime = DateTime.now();
+        await player.play();
+
+        if (kDebugMode) {
+          print(
+              'Streaming audio playback started in ${DateTime.now().difference(playbackStartTime).inMilliseconds}ms');
+        }
+
+        // Wait for playback to complete
+        await player.processingStateStream.firstWhere(
+          (state) => state == ProcessingState.completed,
+        );
+
+        if (kDebugMode) {
+          print('Streaming audio playback completed');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error streaming audio: $e');
+        }
+        // Try fallback to regular download and play method
+        try {
+          await playAudio(audioUrl);
+        } catch (fallbackError) {
+          if (kDebugMode) {
+            print('Fallback playback also failed: $fallbackError, using TTS');
+          }
+          await _useTtsBackup();
+        }
+      } finally {
+        // Clean up resources
+        await player.dispose();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error in streaming playback: $e');
+      }
+      // Last resort fallback
+      await _useTtsBackup();
     }
   }
 

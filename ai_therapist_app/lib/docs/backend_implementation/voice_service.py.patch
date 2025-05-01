@@ -1,0 +1,40 @@
+import uuid
+import os
+import traceback
+from typing import Optional
+
+class VoiceService:
+    async def generate_speech(self, text: str, format_params: dict = None) -> Optional[str]:
+        """Generate speech from text and return the URL to the generated audio file"""
+        if not text:
+            raise ValueError("No text provided for speech generation")
+        
+        if not self.available:
+            raise ValueError("Voice service unavailable - API key not set")
+        
+        # Use OpenAI API to generate speech
+        try:
+            # Get format extension
+            format_type = format_params.get("response_format", "mp3") if format_params else "mp3"
+            extension = ".ogg" if format_type in ["opus", "ogg_opus"] else ".mp3"
+            
+            # Generate a unique filename for the audio file
+            filename = f"{uuid.uuid4()}{extension}"
+            file_path = os.path.join(self.audio_dir, filename)
+            
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Call the OpenAI TTS API
+            from app.services.openai_service import openai_service
+            tts_success = await openai_service.text_to_speech(text, file_path, format_params)
+            
+            logger.info(f"TTS result: {'Success' if tts_success else 'Failed'}")
+            
+            # Return the URL to the audio file
+            return f"/audio/{filename}"
+            
+        except Exception as e:
+            logger.error(f"Error generating speech: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Speech generation failed: {str(e)}") 

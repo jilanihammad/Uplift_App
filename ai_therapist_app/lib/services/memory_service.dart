@@ -10,6 +10,12 @@ import '../data/datasources/local/database_provider.dart';
 /// Service for managing memory in therapy conversations.
 /// Implements LangChain-like memory capabilities for maintaining context across conversations.
 class MemoryService {
+  // Singleton instance
+  static MemoryService? _instance;
+
+  // Initialization flag
+  bool _isInitialized = false;
+
   // In-memory cache of conversation memories
   final List<ConversationMemory> _conversationMemories = [];
 
@@ -28,13 +34,49 @@ class MemoryService {
   // Database provider for persistence
   final DatabaseProvider _databaseProvider;
 
-  // Constructor
-  MemoryService({
-    required DatabaseProvider databaseProvider,
-  }) : _databaseProvider = databaseProvider;
+  // Factory constructor to enforce singleton pattern
+  factory MemoryService({required DatabaseProvider databaseProvider}) {
+    // Return existing instance if already created
+    if (_instance != null) {
+      if (kDebugMode) {
+        print('Reusing existing MemoryService instance');
+      }
+      return _instance!;
+    }
+
+    // Create new instance if first time
+    _instance = MemoryService._internal(databaseProvider: databaseProvider);
+    return _instance!;
+  }
+
+  // Private constructor for singleton pattern
+  MemoryService._internal({required DatabaseProvider databaseProvider})
+      : _databaseProvider = databaseProvider {
+    if (kDebugMode) {
+      print('MemoryService initialized with constructor injection');
+    }
+  }
+
+  /// Check if service is initialized
+  bool get isInitialized => _isInitialized;
+
+  /// Initialize only if needed - prevents redundant initializations
+  Future<void> initializeOnlyIfNeeded() async {
+    if (!_isInitialized) {
+      await init();
+    }
+  }
 
   /// Initialize the memory service by loading memories from persistence
   Future<void> init() async {
+    // Skip if already initialized
+    if (_isInitialized) {
+      if (kDebugMode) {
+        print('MemoryService already initialized, skipping init()');
+      }
+      return;
+    }
+
     try {
       // Load memories from database
       final memories = await _loadMemoriesFromDatabase();
@@ -53,6 +95,8 @@ class MemoryService {
 
       // Load user preferences
       await _loadUserPreferences();
+
+      _isInitialized = true;
 
       if (kDebugMode) {
         print('Memory service initialized with:');
