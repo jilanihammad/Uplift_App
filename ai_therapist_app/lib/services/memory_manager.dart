@@ -2,7 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/conversation_memory.dart';
 import '../services/memory_service.dart';
-import '../utils/logger_util.dart';
+import '../utils/logging_service.dart';
+import '../di/initialization_tracker.dart';
 
 /// Handles management of conversation memory and context for therapy sessions
 class MemoryManager {
@@ -21,11 +22,16 @@ class MemoryManager {
     if (_isInitialized) return;
 
     try {
-      await _memoryService.init();
-      _isInitialized = true;
-      log.i('Memory manager initialized successfully');
+      // Use initialization tracker for consistent initialization pattern
+      await initTracker.initializeWithRetry('MemoryManager', () async {
+        await _memoryService.init();
+        _isInitialized = true;
+      });
+
+      logger.info('Memory manager initialized successfully');
     } catch (e) {
-      log.e('Failed to initialize memory manager', e);
+      logger.error('Failed to initialize memory manager', error: e);
+      throw Exception('MemoryManager initialization failed: $e');
     }
   }
 
@@ -33,18 +39,23 @@ class MemoryManager {
   bool get isInitialized => _isInitialized;
 
   /// Initialize only if not already initialized
-  Future<void> initializeOnlyIfNeeded() async {
+  Future<void> initializeIfNeeded() async {
     if (!_isInitialized) {
       await init();
     }
   }
 
+  /// Legacy method for backward compatibility
+  Future<void> initializeOnlyIfNeeded() async {
+    return initializeIfNeeded();
+  }
+
   /// Get relevant context for the current conversation
   Future<String> getMemoryContext() async {
     try {
-      return await _memoryService.getMemoryContext();
+      return await _memoryService.getCurrentContext();
     } catch (e) {
-      log.e('Error retrieving memory context', e);
+      logger.error('Error retrieving memory context', error: e);
       return '';
     }
   }
@@ -53,10 +64,11 @@ class MemoryManager {
   Future<void> addInteraction(String userMessage, String aiResponse,
       Map<String, dynamic> metadata) async {
     try {
-      await _memoryService.addInteraction(userMessage, aiResponse, metadata);
-      log.d('Interaction added to memory');
+      await _memoryService.addMemory(userMessage, aiResponse,
+          metadata: metadata);
+      logger.debug('Interaction added to memory');
     } catch (e) {
-      log.e('Error adding interaction to memory', e);
+      logger.error('Error adding interaction to memory', error: e);
     }
   }
 
@@ -64,9 +76,9 @@ class MemoryManager {
   Future<void> addInsight(String insightText, String source) async {
     try {
       await _memoryService.addInsight(insightText, source);
-      log.d('Insight added to memory: $insightText');
+      logger.debug('Insight added to memory: $insightText');
     } catch (e) {
-      log.e('Error adding insight to memory', e);
+      logger.error('Error adding insight to memory', error: e);
     }
   }
 
@@ -74,31 +86,36 @@ class MemoryManager {
   Future<void> updateEmotionalState(
       String emotion, double intensity, String? trigger) async {
     try {
-      await _memoryService.updateEmotionalState(emotion, intensity, trigger);
-      log.d(
+      await _memoryService.recordEmotionalState(emotion, intensity,
+          trigger: trigger);
+      logger.debug(
           'Emotional state updated: $emotion (${intensity.toStringAsFixed(1)}/10)');
     } catch (e) {
-      log.e('Error updating emotional state', e);
+      logger.error('Error updating emotional state', error: e);
     }
   }
 
-  /// Update user preferences
+  /// Update user preferences - this is no longer supported in the new implementation
   Future<void> updateUserPreference(String key, dynamic value) async {
     try {
-      await _memoryService.updateUserPreference(key, value);
-      log.d('User preference updated: $key');
+      // Add a fallback implementation using insights
+      await _memoryService.addInsight(
+          'User preference: $key = $value', 'system');
+      logger.debug('User preference saved as insight: $key');
     } catch (e) {
-      log.e('Error updating user preference', e);
+      logger.error('Error saving user preference', error: e);
     }
   }
 
-  /// Update therapeutic goals
+  /// Update therapeutic goals - this is no longer supported in the new implementation
   Future<void> updateTherapeuticGoals(List<String> goals) async {
     try {
-      await _memoryService.updateTherapeuticGoals(goals);
-      log.d('Therapeutic goals updated: ${goals.join(", ")}');
+      // Add a fallback implementation using insights
+      await _memoryService.addInsight(
+          'Therapeutic goals: ${goals.join(", ")}', 'system');
+      logger.debug('Therapeutic goals saved as insight: ${goals.join(", ")}');
     } catch (e) {
-      log.e('Error updating therapeutic goals', e);
+      logger.error('Error saving therapeutic goals', error: e);
     }
   }
 
@@ -136,7 +153,7 @@ class MemoryManager {
                 : userMessage);
       }
     } catch (e) {
-      log.e('Error processing insights and saving memory', e);
+      logger.error('Error processing insights and saving memory', error: e);
     }
   }
 
@@ -144,9 +161,9 @@ class MemoryManager {
   static Future<String> getMemoryContextBackground(
       MemoryService memoryService) async {
     try {
-      return await memoryService.getMemoryContext();
+      return await memoryService.getCurrentContext();
     } catch (e) {
-      print('Error getting memory context in background: $e');
+      logger.error('Error getting memory context in background', error: e);
       return '';
     }
   }

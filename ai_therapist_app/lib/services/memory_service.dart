@@ -1,11 +1,14 @@
 // lib/services/memory_service.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation_memory.dart';
 import '../di/service_locator.dart';
 import '../data/datasources/local/database_provider.dart';
+import '../di/initialization_tracker.dart';
+import '../utils/logging_service.dart';
 
 /// Service for managing memory in therapy conversations.
 /// Implements LangChain-like memory capabilities for maintaining context across conversations.
@@ -34,184 +37,192 @@ class MemoryService {
   // Database provider for persistence
   final DatabaseProvider _databaseProvider;
 
-  // Factory constructor to enforce singleton pattern
-  factory MemoryService({required DatabaseProvider databaseProvider}) {
-    // Return existing instance if already created
-    if (_instance != null) {
-      if (kDebugMode) {
-        print('Reusing existing MemoryService instance');
-      }
-      return _instance!;
-    }
-
-    // Create new instance if first time
-    _instance = MemoryService._internal(databaseProvider: databaseProvider);
+  // Singleton factory constructor
+  factory MemoryService({
+    required DatabaseProvider databaseProvider,
+  }) {
+    _instance ??= MemoryService._internal(databaseProvider);
     return _instance!;
   }
 
-  // Private constructor for singleton pattern
-  MemoryService._internal({required DatabaseProvider databaseProvider})
-      : _databaseProvider = databaseProvider {
-    if (kDebugMode) {
-      print('MemoryService initialized with constructor injection');
-    }
-  }
+  // Private constructor
+  MemoryService._internal(this._databaseProvider);
 
-  /// Check if service is initialized
+  // Getter for initialization status
   bool get isInitialized => _isInitialized;
 
-  /// Initialize only if needed - prevents redundant initializations
-  Future<void> initializeOnlyIfNeeded() async {
+  // Initialize the service on-demand
+  Future<void> initializeIfNeeded() async {
     if (!_isInitialized) {
       await init();
     }
   }
 
-  /// Initialize the memory service by loading memories from persistence
+  // Initialize the MemoryService
   Future<void> init() async {
-    // Skip if already initialized
     if (_isInitialized) {
       if (kDebugMode) {
-        print('MemoryService already initialized, skipping init()');
+        logger.debug('MemoryService already initialized, skipping init()');
       }
       return;
     }
 
     try {
-      // Load memories from database
-      final memories = await _loadMemoriesFromDatabase();
-      _conversationMemories.clear();
-      _conversationMemories.addAll(memories);
+      // Register with initialization tracker
+      await initTracker.initializeWithRetry('MemoryService', () async {
+        // Load conversation memories from database
+        final memoryRecords = await _databaseProvider.query(
+          'conversation_memories',
+          orderBy: 'timestamp DESC',
+        );
 
-      // Load insights from database
-      final insights = await _loadInsightsFromDatabase();
-      _insights.clear();
-      _insights.addAll(insights);
+        _conversationMemories.clear();
+        for (final record in memoryRecords) {
+          try {
+            final memory = ConversationMemory.fromJson(record);
+            _conversationMemories.add(memory);
+          } catch (e) {
+            logger.warning('Error parsing conversation memory: $e');
+          }
+        }
 
-      // Load emotional states from database
-      final states = await _loadEmotionalStatesFromDatabase();
-      _emotionalStates.clear();
-      _emotionalStates.addAll(states);
+        // Load insights from database
+        final insightRecords =
+            await _databaseProvider.query('therapy_insights');
+        _insights.clear();
+        for (final record in insightRecords) {
+          try {
+            final insight = TherapyInsight.fromJson(record);
+            _insights.add(insight);
+          } catch (e) {
+            logger.warning('Error parsing therapy insight: $e');
+          }
+        }
 
-      // Load user preferences
-      await _loadUserPreferences();
+        // Load emotional states from database
+        final stateRecords = await _databaseProvider.query('emotional_states');
+        _emotionalStates.clear();
+        for (final record in stateRecords) {
+          try {
+            final state = EmotionalState.fromJson(record);
+            _emotionalStates.add(state);
+          } catch (e) {
+            logger.warning('Error parsing emotional state: $e');
+          }
+        }
 
-      _isInitialized = true;
-
-      if (kDebugMode) {
-        print('Memory service initialized with:');
-        print('- ${_conversationMemories.length} conversation memories');
-        print('- ${_insights.length} insights');
-        print('- ${_emotionalStates.length} emotional states');
-      }
+        _isInitialized = true;
+        logger.info('MemoryService initialized successfully');
+        logger.debug(
+            'Loaded ${_conversationMemories.length} memories, ${_insights.length} insights, and ${_emotionalStates.length} emotional states');
+      });
     } catch (e) {
-      if (kDebugMode) {
-        print('Failed to initialize memory service: $e');
-      }
+      logger.error('Failed to initialize MemoryService', error: e);
+      throw Exception('MemoryService initialization failed: $e');
     }
   }
 
-  /// Add a user-AI interaction to memory
-  Future<void> addInteraction(String userMessage, String aiResponse,
-      Map<String, dynamic> metadata) async {
+  /// Adds a new conversation memory pair (user message + AI response)
+  Future<void> addMemory(String userMessage, String aiResponse,
+      {Map<String, dynamic>? metadata}) async {
+    await initializeIfNeeded();
+
     final memory = ConversationMemory(
       userMessage: userMessage,
       aiResponse: aiResponse,
-      metadata: metadata,
+      metadata: metadata ?? {},
     );
 
-    // Add to in-memory cache
-    _conversationMemories.add(memory);
-
-    // Persist to database
     try {
-      await _saveMemoryToDatabase(memory);
+      _conversationMemories.add(memory);
+
+      // Persist to database
+      await _databaseProvider.insert('conversation_memories', memory.toJson());
+
+      logger.debug('Added new conversation memory');
     } catch (e) {
-      if (kDebugMode) {
-        print('Failed to save memory: $e');
-      }
+      logger.error('Failed to add conversation memory', error: e);
+      rethrow;
     }
   }
 
-  /// Add an insight to the memory
-  Future<void> addInsight(String insightText, String source) async {
-    final insight = TherapyInsight(
-      insight: insightText,
+  /// Adds a new insight discovered during therapy
+  Future<void> addInsight(String insight, String source) async {
+    await initializeIfNeeded();
+
+    final therapyInsight = TherapyInsight(
+      insight: insight,
       source: source,
     );
 
-    // Add to in-memory cache
-    _insights.add(insight);
-
-    // Persist to database
     try {
-      await _saveInsightToDatabase(insight);
+      // Add to in-memory cache
+      _insights.add(therapyInsight);
+
+      // Persist to database
+      await _databaseProvider.insert(
+          'therapy_insights', therapyInsight.toJson());
+
+      logger.debug('Added new therapy insight: $insight');
     } catch (e) {
-      if (kDebugMode) {
-        print('Failed to save insight: $e');
-      }
+      logger.error('Failed to add therapy insight', error: e);
+      rethrow;
     }
   }
 
-  /// Update the emotional state
-  Future<void> updateEmotionalState(
-      String emotion, double intensity, String? trigger) async {
+  /// Records the user's emotional state
+  Future<void> recordEmotionalState(String emotion, double intensity,
+      {String? trigger}) async {
+    await initializeIfNeeded();
+
     final state = EmotionalState(
       emotion: emotion,
       intensity: intensity,
       trigger: trigger,
     );
 
-    // Add to in-memory cache
-    _emotionalStates.add(state);
-
-    // Persist to database
     try {
-      await _saveEmotionalStateToDatabase(state);
+      // Add to in-memory cache
+      _emotionalStates.add(state);
+
+      // Persist to database
+      await _databaseProvider.insert('emotional_states', state.toJson());
+
+      logger
+          .debug('Recorded emotional state: $emotion (intensity: $intensity)');
     } catch (e) {
-      if (kDebugMode) {
-        print('Failed to save emotional state: $e');
-      }
+      logger.error('Failed to record emotional state', error: e);
+      rethrow;
     }
   }
 
-  /// Update therapeutic goals
-  Future<void> updateTherapeuticGoals(List<String> goals) async {
-    // Update user preferences with goals
-    await updateUserPreference('therapeutic_goals', goals);
-  }
+  /// Gets recent conversation memories up to a certain number
+  Future<List<ConversationMemory>> getRecentMemories({int limit = 5}) async {
+    await initializeIfNeeded();
 
-  /// Update a user preference
-  Future<void> updateUserPreference(String key, dynamic value) async {
-    _userPreferences[key] = value;
-    await _saveUserPreferences();
-  }
-
-  /// Get relevant memory context based on recency and relevance
-  Future<String> getMemoryContext() async {
-    if (_conversationMemories.isEmpty) return '';
-
-    // Sort memories by recency
+    // Sort memories by timestamp (most recent first)
     final sortedMemories = List<ConversationMemory>.from(_conversationMemories)
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-    // Get recent memories, limited by context size
-    final recentMemories = sortedMemories.take(10).toList();
+    // Return up to limit memories
+    return sortedMemories.take(limit).toList();
+  }
 
-    // Format memories as context string
+  /// Gets the current memory context as a string for LLM usage
+  Future<String> getCurrentContext({int memoryLimit = 5}) async {
+    await initializeIfNeeded();
+
     final StringBuffer contextBuffer = StringBuffer();
 
-    // Add user preferences if available
-    if (_userPreferences.isNotEmpty) {
-      contextBuffer.writeln('USER PREFERENCES:');
-      _userPreferences.forEach((key, value) {
-        if (value is List) {
-          contextBuffer.writeln('$key: ${value.join(", ")}');
-        } else {
-          contextBuffer.writeln('$key: $value');
-        }
-      });
-      contextBuffer.writeln();
+    // Add recent conversation history
+    final recentMemories = await getRecentMemories(limit: memoryLimit);
+    if (recentMemories.isNotEmpty) {
+      contextBuffer.writeln('RECENT CONVERSATION HISTORY:');
+      for (final memory in recentMemories) {
+        contextBuffer.writeln('User: ${memory.userMessage}');
+        contextBuffer.writeln('AI: ${memory.aiResponse}');
+        contextBuffer.writeln();
+      }
     }
 
     // Add key insights
@@ -229,74 +240,55 @@ class MemoryService {
       contextBuffer.writeln();
     }
 
-    // Add emotional patterns
+    // Add emotional states
     if (_emotionalStates.isNotEmpty) {
-      contextBuffer.writeln('EMOTIONAL PATTERNS:');
+      contextBuffer.writeln('EMOTIONAL STATES:');
       // Sort states by recency
       final sortedStates = List<EmotionalState>.from(_emotionalStates)
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-      // Group by emotion and calculate average intensity
-      final Map<String, List<EmotionalState>> emotionGroups = {};
-      for (final state in sortedStates) {
-        if (!emotionGroups.containsKey(state.emotion)) {
-          emotionGroups[state.emotion] = [];
+      // Add most recent emotional state
+      if (sortedStates.isNotEmpty) {
+        final state = sortedStates.first;
+        contextBuffer.writeln(
+            '- Current: ${state.emotion} (intensity: ${state.intensity}/10)');
+        if (state.trigger != null) {
+          contextBuffer.writeln('  Trigger: ${state.trigger}');
         }
-        emotionGroups[state.emotion]!.add(state);
       }
 
-      // Add emotion summaries
-      emotionGroups.forEach((emotion, states) {
-        final avgIntensity =
-            states.map((s) => s.intensity).reduce((a, b) => a + b) /
-                states.length;
-        contextBuffer.writeln(
-            '- $emotion: Average intensity ${avgIntensity.toStringAsFixed(1)}/10.0');
+      // Add emotional trends if we have enough data
+      if (sortedStates.length > 1) {
+        contextBuffer.writeln('- Trends: ');
+        // Logic for detecting trends would go here
+      }
 
-        // Add common triggers if available
-        final triggers = states
-            .where((s) => s.trigger != null)
-            .map((s) => s.trigger!)
-            .take(2)
-            .join(", ");
-        if (triggers.isNotEmpty) {
-          contextBuffer.writeln('  Common triggers: $triggers');
-        }
-      });
       contextBuffer.writeln();
     }
 
-    // Add conversation history
-    contextBuffer.writeln('RECENT CONVERSATION HISTORY:');
-    for (final memory in recentMemories) {
-      contextBuffer.writeln('User: ${memory.userMessage}');
-      contextBuffer.writeln('AI: ${memory.aiResponse}');
-      contextBuffer.writeln();
+    return contextBuffer.toString();
+  }
+
+  /// Clears all memory (use with caution)
+  Future<void> clearMemory() async {
+    await initializeIfNeeded();
+
+    try {
+      // Clear in-memory caches
+      _conversationMemories.clear();
+      _insights.clear();
+      _emotionalStates.clear();
+
+      // Clear database tables
+      await _databaseProvider.delete('conversation_memories');
+      await _databaseProvider.delete('therapy_insights');
+      await _databaseProvider.delete('emotional_states');
+
+      logger.info('Memory cleared successfully');
+    } catch (e) {
+      logger.error('Failed to clear memory', error: e);
+      rethrow;
     }
-
-    // Check if we're exceeding the max context length and truncate if needed
-    String context = contextBuffer.toString();
-    if (context.length > _maxContextLength) {
-      // Keep preferences and insights, truncate conversation history
-      final preferencesPart = _userPreferences.isNotEmpty
-          ? context.split('RECENT CONVERSATION HISTORY:')[0]
-          : '';
-
-      final conversationPart = context.split('RECENT CONVERSATION HISTORY:')[1];
-
-      // Calculate how much of the conversation history we can keep
-      final int availableSpace = _maxContextLength - preferencesPart.length;
-      final String truncatedConversation =
-          conversationPart.length > availableSpace
-              ? conversationPart.substring(0, availableSpace) + '...(truncated)'
-              : conversationPart;
-
-      context = preferencesPart +
-          'RECENT CONVERSATION HISTORY:' +
-          truncatedConversation;
-    }
-
-    return context;
   }
 
   // Helper method to get the minimum of two numbers
@@ -457,28 +449,6 @@ class MemoryService {
     } catch (e) {
       if (kDebugMode) {
         print('Error saving user preferences: $e');
-      }
-    }
-  }
-
-  // Clear all memory (for testing or user request)
-  Future<void> clearAllMemory() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('conversation_memories');
-      await prefs.remove('therapy_insights');
-      await prefs.remove('emotional_states');
-
-      _conversationMemories.clear();
-      _insights.clear();
-      _emotionalStates.clear();
-
-      if (kDebugMode) {
-        print('All memory cleared');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error clearing memory: $e');
       }
     }
   }
