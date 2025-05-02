@@ -5,17 +5,17 @@ import 'dart:convert';
 class ConversationMemory {
   /// The user's message that initiated this interaction.
   final String userMessage;
-  
+
   /// The AI's response to the user's message.
   final String aiResponse;
-  
+
   /// Metadata associated with this memory, such as detected emotions,
   /// conversation state, etc.
   final Map<String, dynamic> metadata;
-  
+
   /// Timestamp when this memory was created.
   final DateTime timestamp;
-  
+
   /// Constructor for creating a conversation memory.
   ConversationMemory({
     required this.userMessage,
@@ -23,35 +23,55 @@ class ConversationMemory {
     this.metadata = const {},
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
-  
+
   /// Convert to a JSON map.
   Map<String, dynamic> toJson() {
     return {
-      'userMessage': userMessage,
-      'aiResponse': aiResponse,
-      'metadata': metadata,
+      'id': timestamp.millisecondsSinceEpoch.toString(),
+      'user_message': userMessage,
+      'ai_response': aiResponse,
+      'metadata': json.encode(metadata),
       'timestamp': timestamp.toIso8601String(),
     };
   }
-  
+
   /// Create a JSON string representation.
   String toJsonString() {
     return json.encode(toJson());
   }
-  
+
   /// Create a ConversationMemory from a JSON map.
   factory ConversationMemory.fromJson(Map<String, dynamic> json) {
+    var metadataMap = <String, dynamic>{};
+
+    // Handle metadata that might be a string or a map
+    if (json['metadata'] != null) {
+      if (json['metadata'] is String) {
+        try {
+          metadataMap = jsonDecode(json['metadata'] as String);
+        } catch (e) {
+          // If decode fails, use empty map
+          metadataMap = {};
+        }
+      } else if (json['metadata'] is Map) {
+        metadataMap = Map<String, dynamic>.from(json['metadata'] as Map);
+      }
+    }
+
     return ConversationMemory(
-      userMessage: json['userMessage'] as String,
-      aiResponse: json['aiResponse'] as String,
-      metadata: json['metadata'] as Map<String, dynamic>? ?? {},
+      userMessage:
+          json['user_message'] as String? ?? json['userMessage'] as String,
+      aiResponse:
+          json['ai_response'] as String? ?? json['aiResponse'] as String,
+      metadata: metadataMap,
       timestamp: DateTime.parse(json['timestamp'] as String),
     );
   }
-  
+
   /// Create a ConversationMemory from a JSON string.
   factory ConversationMemory.fromJsonString(String jsonString) {
-    return ConversationMemory.fromJson(json.decode(jsonString) as Map<String, dynamic>);
+    return ConversationMemory.fromJson(
+        json.decode(jsonString) as Map<String, dynamic>);
   }
 }
 
@@ -59,20 +79,20 @@ class ConversationMemory {
 class TherapyInsight {
   /// The text content of the insight.
   final String insight;
-  
+
   /// Source of the insight (session summary, AI detection, user statement).
   final String source;
-  
+
   /// Timestamp when this insight was recorded.
   final DateTime timestamp;
-  
+
   /// Constructor for creating a therapy insight.
   TherapyInsight({
     required this.insight,
     required this.source,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
-  
+
   /// Convert to a JSON map.
   Map<String, dynamic> toJson() {
     return {
@@ -81,7 +101,7 @@ class TherapyInsight {
       'timestamp': timestamp.toIso8601String(),
     };
   }
-  
+
   /// Create a TherapyInsight from a JSON map.
   factory TherapyInsight.fromJson(Map<String, dynamic> json) {
     return TherapyInsight(
@@ -96,16 +116,16 @@ class TherapyInsight {
 class EmotionalState {
   /// The emotion label (sad, happy, anxious, etc.).
   final String emotion;
-  
+
   /// Intensity of the emotion on a scale from 0.0 to 10.0.
   final double intensity;
-  
+
   /// What triggered this emotional state (optional).
   final String? trigger;
-  
+
   /// Timestamp when this state was recorded.
   final DateTime timestamp;
-  
+
   /// Constructor for creating an emotional state.
   EmotionalState({
     required this.emotion,
@@ -113,7 +133,7 @@ class EmotionalState {
     this.trigger,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
-  
+
   /// Convert to a JSON map.
   Map<String, dynamic> toJson() {
     return {
@@ -123,7 +143,7 @@ class EmotionalState {
       'timestamp': timestamp.toIso8601String(),
     };
   }
-  
+
   /// Create an EmotionalState from a JSON map.
   factory EmotionalState.fromJson(Map<String, dynamic> json) {
     return EmotionalState(

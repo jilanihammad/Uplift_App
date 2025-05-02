@@ -19,7 +19,7 @@ class AppDatabase {
   static Database? _database;
 
   // Current database version - increment when schema changes
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 4;
 
   // Database file name
   static const String _databaseName = 'app_database.db';
@@ -216,9 +216,18 @@ class AppDatabase {
           await _migrateToV2(txn);
         }
 
+        // Migration to version 3
+        if (oldVersion < 3) {
+          await _migrateToV3(txn);
+        }
+
+        // Migration to version 4
+        if (oldVersion < 4) {
+          await _migrateToV4(txn);
+        }
+
         // Add future migrations here:
-        // if (oldVersion < 3) await _migrateToV3(txn);
-        // if (oldVersion < 4) await _migrateToV4(txn);
+        // if (oldVersion < 5) await _migrateToV5(txn);
       });
 
       debugPrint('Database upgraded successfully to version $newVersion');
@@ -246,13 +255,222 @@ class AppDatabase {
     debugPrint('Migration to version 2 completed');
   }
 
+  /// Migration to version 3: Add conversation_memories, therapy_insights tables for MemoryService
+  Future<void> _migrateToV3(Transaction txn) async {
+    debugPrint('Applying migration to version 3...');
+
+    // Check if conversation_memories table already exists
+    final convMemExists = await txn.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      ['conversation_memories'],
+    );
+
+    // Create conversation_memories table if it doesn't exist
+    if (convMemExists.isEmpty) {
+      await txn.execute('''
+        CREATE TABLE conversation_memories (
+          id TEXT PRIMARY KEY,
+          user_message TEXT NOT NULL,
+          ai_response TEXT NOT NULL,
+          metadata TEXT,
+          timestamp TEXT NOT NULL
+        )
+      ''');
+      debugPrint('Created conversation_memories table');
+
+      // Copy data from conversations to conversation_memories (if conversations exists)
+      final convExists = await txn.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        ['conversations'],
+      );
+
+      if (convExists.isNotEmpty) {
+        await txn.execute('''
+          INSERT INTO conversation_memories (id, user_message, ai_response, metadata, timestamp)
+          SELECT id, user_message, ai_response, metadata, timestamp FROM conversations
+        ''');
+        debugPrint('Migrated data from conversations to conversation_memories');
+      }
+    }
+
+    // Check if therapy_insights table already exists
+    final insightsExists = await txn.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      ['therapy_insights'],
+    );
+
+    // Create therapy_insights table if it doesn't exist
+    if (insightsExists.isEmpty) {
+      await txn.execute('''
+        CREATE TABLE therapy_insights (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          insight TEXT NOT NULL,
+          source TEXT NOT NULL,
+          timestamp TEXT NOT NULL
+        )
+      ''');
+      debugPrint('Created therapy_insights table');
+
+      // Copy data from insights to therapy_insights (if insights exists)
+      final oldInsightsExists = await txn.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        ['insights'],
+      );
+
+      if (oldInsightsExists.isNotEmpty) {
+        await txn.execute('''
+          INSERT INTO therapy_insights (id, insight, source, timestamp)
+          SELECT id, insight, source, timestamp FROM insights
+        ''');
+        debugPrint('Migrated data from insights to therapy_insights');
+      }
+    }
+
+    // Ensure emotional_states table exists
+    final emotionalStatesExists = await txn.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      ['emotional_states'],
+    );
+
+    if (emotionalStatesExists.isEmpty) {
+      await txn.execute('''
+        CREATE TABLE emotional_states (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          emotion TEXT NOT NULL,
+          intensity REAL NOT NULL,
+          trigger TEXT,
+          timestamp TEXT NOT NULL
+        )
+      ''');
+      debugPrint('Created emotional_states table');
+    }
+
+    debugPrint('Migration to version 3 completed');
+  }
+
+  /// Migration to version 4: Fix column names in conversation_memories table
+  Future<void> _migrateToV4(Transaction txn) async {
+    debugPrint('Applying migration to version 4...');
+
+    try {
+      // Check if conversation_memories table exists
+      final convMemExists = await txn.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        ['conversation_memories'],
+      );
+
+      if (convMemExists.isNotEmpty) {
+        // Rename the existing table
+        await txn.execute(
+            'ALTER TABLE conversation_memories RENAME TO conversation_memories_old');
+
+        // Create the new table with correct column names
+        await txn.execute('''
+          CREATE TABLE conversation_memories (
+            id TEXT PRIMARY KEY,
+            user_message TEXT NOT NULL,
+            ai_response TEXT NOT NULL,
+            metadata TEXT,
+            timestamp TEXT NOT NULL
+          )
+        ''');
+
+        // Copy data from old table to new table
+        await txn.execute('''
+          INSERT INTO conversation_memories 
+            SELECT id, user_message, ai_response, metadata, timestamp 
+            FROM conversation_memories_old
+        ''');
+
+        // Drop the old table
+        await txn.execute('DROP TABLE conversation_memories_old');
+
+        debugPrint('Fixed column names in conversation_memories table');
+      } else {
+        // Create the table with correct column names if it doesn't exist
+        await txn.execute('''
+          CREATE TABLE conversation_memories (
+            id TEXT PRIMARY KEY,
+            user_message TEXT NOT NULL,
+            ai_response TEXT NOT NULL,
+            metadata TEXT,
+            timestamp TEXT NOT NULL
+          )
+        ''');
+        debugPrint(
+            'Created conversation_memories table with correct column names');
+      }
+
+      // Similarly for the conversations table (legacy table)
+      final convExists = await txn.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        ['conversations'],
+      );
+
+      if (convExists.isNotEmpty) {
+        // Check column names in conversations table
+        final columns = await txn.rawQuery('PRAGMA table_info(conversations)');
+        bool needsMigration = true;
+
+        // Check if user_message and ai_response columns already exist
+        for (var column in columns) {
+          if (column['name'] == 'user_message' ||
+              column['name'] == 'ai_response') {
+            needsMigration = false;
+            break;
+          }
+        }
+
+        if (needsMigration) {
+          // Rename the existing table
+          await txn
+              .execute('ALTER TABLE conversations RENAME TO conversations_old');
+
+          // Create the new table with correct column names
+          await txn.execute('''
+            CREATE TABLE conversations (
+              id TEXT PRIMARY KEY,
+              user_message TEXT NOT NULL,
+              ai_response TEXT NOT NULL,
+              metadata TEXT,
+              timestamp TEXT NOT NULL
+            )
+          ''');
+
+          // Copy data from old table to new table
+          await txn.execute('''
+            INSERT INTO conversations 
+              SELECT id, user_message, ai_response, metadata, timestamp 
+              FROM conversations_old
+          ''');
+
+          // Drop the old table
+          await txn.execute('DROP TABLE conversations_old');
+
+          debugPrint('Fixed column names in conversations table');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error during migration to version 4: $e');
+      rethrow;
+    }
+
+    debugPrint('Migration to version 4 completed');
+  }
+
   /// Check if a table exists in the database
   Future<bool> tableExists(String tableName) async {
-    final db = await database;
-    final result = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        [tableName]);
-    return result.isNotEmpty;
+    try {
+      final db = await database;
+      final result = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+          [tableName]);
+      return result.isNotEmpty;
+    } catch (e, stackTrace) {
+      debugPrint('Error checking if table $tableName exists: $e');
+      _onError(e, stackTrace);
+      return false; // Safer to return false than throw
+    }
   }
 
   /// Close the database connection
