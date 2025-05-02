@@ -70,9 +70,171 @@ class MemoryService {
     try {
       // Register with initialization tracker
       await initTracker.initializeWithRetry('MemoryService', () async {
+        // First ensure database provider is initialized
+        await _databaseProvider.init();
+
+        // Verify required tables exist, create them if they don't
+        await _ensureTablesExist();
+
         // Load conversation memories from database
+        await _loadConversationMemories();
+
+        // Load insights from database
+        await _loadInsights();
+
+        // Load emotional states from database
+        await _loadEmotionalStates();
+
+        _isInitialized = true;
+        logger.info('MemoryService initialized successfully');
+        logger.debug(
+            'Loaded ${_conversationMemories.length} memories, ${_insights.length} insights, and ${_emotionalStates.length} emotional states');
+      });
+    } catch (e) {
+      logger.error('Failed to initialize MemoryService', error: e);
+      _isInitialized = false;
+      throw Exception('MemoryService initialization failed: $e');
+    }
+  }
+
+  /// Ensure all required tables exist in the database
+  Future<void> _ensureTablesExist() async {
+    try {
+      // Check if required tables exist
+      final convMemoriesExists =
+          await _databaseProvider.tableExists('conversation_memories');
+      final therapyInsightsExists =
+          await _databaseProvider.tableExists('therapy_insights');
+      final emotionalStatesExists =
+          await _databaseProvider.tableExists('emotional_states');
+
+      logger.debug(
+          'Table check: conversation_memories=${convMemoriesExists}, therapy_insights=${therapyInsightsExists}, emotional_states=${emotionalStatesExists}');
+
+      // Create tables if they don't exist (this is a fallback, migration should handle this)
+      if (!convMemoriesExists ||
+          !therapyInsightsExists ||
+          !emotionalStatesExists) {
+        logger.warning('Some required tables are missing, creating them now');
+        await _createMissingTables(
+            convMemoriesExists, therapyInsightsExists, emotionalStatesExists);
+      }
+    } catch (e) {
+      logger.error('Error checking/creating tables', error: e);
+      throw Exception('Failed to initialize database tables: $e');
+    }
+  }
+
+  /// Create any missing tables required by the MemoryService
+  Future<void> _createMissingTables(bool convMemoriesExists,
+      bool therapyInsightsExists, bool emotionalStatesExists) async {
+    try {
+      await _databaseProvider.transaction((txn) async {
+        // Create conversation_memories table if needed
+        if (!convMemoriesExists) {
+          await txn.execute('''
+            CREATE TABLE conversation_memories (
+              id TEXT PRIMARY KEY,
+              user_message TEXT NOT NULL,
+              ai_response TEXT NOT NULL,
+              metadata TEXT,
+              timestamp TEXT NOT NULL
+            )
+          ''');
+          logger.debug('Created conversation_memories table');
+
+          // Try to copy data from conversations table if it exists
+          try {
+            final conversationsExists =
+                await _databaseProvider.tableExists('conversations');
+            if (conversationsExists) {
+              await txn.execute('''
+                INSERT INTO conversation_memories (id, user_message, ai_response, metadata, timestamp)
+                SELECT id, user_message, ai_response, metadata, timestamp FROM conversations
+              ''');
+              logger.debug(
+                  'Migrated existing conversations to conversation_memories');
+            }
+          } catch (e) {
+            logger
+                .warning('Could not migrate data from conversations table: $e');
+          }
+        }
+
+        // Create therapy_insights table if needed
+        if (!therapyInsightsExists) {
+          await txn.execute('''
+            CREATE TABLE therapy_insights (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              insight TEXT NOT NULL,
+              source TEXT NOT NULL,
+              timestamp TEXT NOT NULL
+            )
+          ''');
+          logger.debug('Created therapy_insights table');
+
+          // Try to copy data from insights table if it exists
+          try {
+            final insightsExists =
+                await _databaseProvider.tableExists('insights');
+            if (insightsExists) {
+              await txn.execute('''
+                INSERT INTO therapy_insights (id, insight, source, timestamp)
+                SELECT id, insight, source, timestamp FROM insights
+              ''');
+              logger.debug('Migrated existing insights to therapy_insights');
+            }
+          } catch (e) {
+            logger.warning('Could not migrate data from insights table: $e');
+          }
+        }
+
+        // Create emotional_states table if needed
+        if (!emotionalStatesExists) {
+          await txn.execute('''
+            CREATE TABLE emotional_states (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              emotion TEXT NOT NULL,
+              intensity REAL NOT NULL,
+              trigger TEXT,
+              timestamp TEXT NOT NULL
+            )
+          ''');
+          logger.debug('Created emotional_states table');
+        }
+      });
+    } catch (e) {
+      logger.error('Failed to create missing tables', error: e);
+      throw Exception('Could not create required database tables: $e');
+    }
+  }
+
+  /// Load conversation memories from database with better error handling
+  Future<void> _loadConversationMemories() async {
+    try {
+      final memoryRecords = await _databaseProvider.query(
+        'conversation_memories',
+        orderBy: 'timestamp DESC',
+      );
+
+      _conversationMemories.clear();
+      for (final record in memoryRecords) {
+        try {
+          final memory = ConversationMemory.fromJson(record);
+          _conversationMemories.add(memory);
+        } catch (e) {
+          logger.warning('Error parsing conversation memory: $e');
+        }
+      }
+      logger.debug(
+          'Loaded ${_conversationMemories.length} conversation memories');
+    } catch (e) {
+      // Fall back to old table name if needed
+      try {
+        logger.warning(
+            'Failed to load from conversation_memories, trying conversations table');
         final memoryRecords = await _databaseProvider.query(
-          'conversation_memories',
+          'conversations',
           orderBy: 'timestamp DESC',
         );
 
@@ -82,43 +244,74 @@ class MemoryService {
             final memory = ConversationMemory.fromJson(record);
             _conversationMemories.add(memory);
           } catch (e) {
-            logger.warning('Error parsing conversation memory: $e');
+            logger.warning('Error parsing conversation from old table: $e');
           }
         }
+        logger.debug(
+            'Loaded ${_conversationMemories.length} conversations from legacy table');
+      } catch (fallbackError) {
+        logger.error('Failed to load conversation memories from either table',
+            error: fallbackError);
+        // Continue with empty memories rather than crashing
+      }
+    }
+  }
 
-        // Load insights from database
-        final insightRecords =
-            await _databaseProvider.query('therapy_insights');
+  /// Load insights from database with better error handling
+  Future<void> _loadInsights() async {
+    try {
+      final insightRecords = await _databaseProvider.query('therapy_insights');
+      _insights.clear();
+      for (final record in insightRecords) {
+        try {
+          final insight = TherapyInsight.fromJson(record);
+          _insights.add(insight);
+        } catch (e) {
+          logger.warning('Error parsing therapy insight: $e');
+        }
+      }
+      logger.debug('Loaded ${_insights.length} therapy insights');
+    } catch (e) {
+      // Fall back to old table name if needed
+      try {
+        logger.warning(
+            'Failed to load from therapy_insights, trying insights table');
+        final insightRecords = await _databaseProvider.query('insights');
         _insights.clear();
         for (final record in insightRecords) {
           try {
             final insight = TherapyInsight.fromJson(record);
             _insights.add(insight);
           } catch (e) {
-            logger.warning('Error parsing therapy insight: $e');
+            logger.warning('Error parsing insight from old table: $e');
           }
         }
+        logger.debug('Loaded ${_insights.length} insights from legacy table');
+      } catch (fallbackError) {
+        logger.error('Failed to load insights from either table',
+            error: fallbackError);
+        // Continue with empty insights rather than crashing
+      }
+    }
+  }
 
-        // Load emotional states from database
-        final stateRecords = await _databaseProvider.query('emotional_states');
-        _emotionalStates.clear();
-        for (final record in stateRecords) {
-          try {
-            final state = EmotionalState.fromJson(record);
-            _emotionalStates.add(state);
-          } catch (e) {
-            logger.warning('Error parsing emotional state: $e');
-          }
+  /// Load emotional states from database with better error handling
+  Future<void> _loadEmotionalStates() async {
+    try {
+      final stateRecords = await _databaseProvider.query('emotional_states');
+      _emotionalStates.clear();
+      for (final record in stateRecords) {
+        try {
+          final state = EmotionalState.fromJson(record);
+          _emotionalStates.add(state);
+        } catch (e) {
+          logger.warning('Error parsing emotional state: $e');
         }
-
-        _isInitialized = true;
-        logger.info('MemoryService initialized successfully');
-        logger.debug(
-            'Loaded ${_conversationMemories.length} memories, ${_insights.length} insights, and ${_emotionalStates.length} emotional states');
-      });
+      }
+      logger.debug('Loaded ${_emotionalStates.length} emotional states');
     } catch (e) {
-      logger.error('Failed to initialize MemoryService', error: e);
-      throw Exception('MemoryService initialization failed: $e');
+      logger.error('Failed to load emotional states', error: e);
+      // Continue with empty emotional states rather than crashing
     }
   }
 
@@ -136,13 +329,37 @@ class MemoryService {
     try {
       _conversationMemories.add(memory);
 
+      // Convert to database format (snake_case field names)
+      final Map<String, dynamic> dbData = {
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'user_message': userMessage,
+        'ai_response': aiResponse,
+        'metadata': jsonEncode(metadata ?? {}),
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
       // Persist to database
-      await _databaseProvider.insert('conversation_memories', memory.toJson());
+      try {
+        await _databaseProvider.insert('conversation_memories', dbData);
+      } catch (e) {
+        logger.error(
+            'Failed to insert into conversation_memories, trying fallback',
+            error: e);
+        // Try inserting into the legacy table as fallback
+        try {
+          await _databaseProvider.insert('conversations', dbData);
+          logger.debug('Added memory to legacy conversations table');
+        } catch (fallbackError) {
+          logger.error('Failed to save memory to any database table',
+              error: fallbackError);
+          // Already added to in-memory cache, so continue
+        }
+      }
 
       logger.debug('Added new conversation memory');
     } catch (e) {
       logger.error('Failed to add conversation memory', error: e);
-      rethrow;
+      // Don't rethrow to prevent app crashes
     }
   }
 
@@ -160,13 +377,27 @@ class MemoryService {
       _insights.add(therapyInsight);
 
       // Persist to database
-      await _databaseProvider.insert(
-          'therapy_insights', therapyInsight.toJson());
+      try {
+        await _databaseProvider.insert(
+            'therapy_insights', therapyInsight.toJson());
+      } catch (e) {
+        logger.error('Failed to insert into therapy_insights, trying fallback',
+            error: e);
+        // Try inserting into the legacy table as fallback
+        try {
+          await _databaseProvider.insert('insights', therapyInsight.toJson());
+          logger.debug('Added insight to legacy insights table');
+        } catch (fallbackError) {
+          logger.error('Failed to save insight to any database table',
+              error: fallbackError);
+          // Already added to in-memory cache, so continue
+        }
+      }
 
       logger.debug('Added new therapy insight: $insight');
     } catch (e) {
       logger.error('Failed to add therapy insight', error: e);
-      rethrow;
+      // Don't rethrow to prevent app crashes
     }
   }
 
@@ -186,13 +417,17 @@ class MemoryService {
       _emotionalStates.add(state);
 
       // Persist to database
-      await _databaseProvider.insert('emotional_states', state.toJson());
-
-      logger
-          .debug('Recorded emotional state: $emotion (intensity: $intensity)');
+      try {
+        await _databaseProvider.insert('emotional_states', state.toJson());
+        logger.debug(
+            'Recorded emotional state: $emotion (intensity: $intensity)');
+      } catch (e) {
+        logger.error('Failed to save emotional state to database', error: e);
+        // Already added to in-memory cache, so continue
+      }
     } catch (e) {
       logger.error('Failed to record emotional state', error: e);
-      rethrow;
+      // Don't rethrow to prevent app crashes
     }
   }
 
@@ -279,177 +514,44 @@ class MemoryService {
       _insights.clear();
       _emotionalStates.clear();
 
-      // Clear database tables
-      await _databaseProvider.delete('conversation_memories');
-      await _databaseProvider.delete('therapy_insights');
-      await _databaseProvider.delete('emotional_states');
+      // Clear database tables with error handling
+      try {
+        await _databaseProvider.delete('conversation_memories');
+      } catch (e) {
+        logger.warning('Failed to clear conversation_memories table: $e');
+        try {
+          await _databaseProvider.delete('conversations');
+        } catch (e2) {
+          logger.warning('Failed to clear conversations table: $e2');
+        }
+      }
+
+      try {
+        await _databaseProvider.delete('therapy_insights');
+      } catch (e) {
+        logger.warning('Failed to clear therapy_insights table: $e');
+        try {
+          await _databaseProvider.delete('insights');
+        } catch (e2) {
+          logger.warning('Failed to clear insights table: $e2');
+        }
+      }
+
+      try {
+        await _databaseProvider.delete('emotional_states');
+      } catch (e) {
+        logger.warning('Failed to clear emotional_states table: $e');
+      }
 
       logger.info('Memory cleared successfully');
     } catch (e) {
       logger.error('Failed to clear memory', error: e);
-      rethrow;
+      // Don't rethrow to prevent app crashes
     }
   }
 
   // Helper method to get the minimum of two numbers
   int min(int a, int b) {
     return a < b ? a : b;
-  }
-
-  // Database operations
-
-  Future<List<ConversationMemory>> _loadMemoriesFromDatabase() async {
-    try {
-      // This could be implemented using your DatabaseProvider to load from SQLite
-      // For now, we'll use SharedPreferences as a simple persistence mechanism
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? memoryJsonList =
-          prefs.getStringList('conversation_memories');
-
-      if (memoryJsonList == null || memoryJsonList.isEmpty) return [];
-
-      return memoryJsonList
-          .map((jsonStr) => ConversationMemory.fromJsonString(jsonStr))
-          .toList();
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading memories: $e');
-      }
-      return [];
-    }
-  }
-
-  Future<void> _saveMemoryToDatabase(ConversationMemory memory) async {
-    try {
-      // This could be implemented using your DatabaseProvider to save to SQLite
-      // For now, we'll use SharedPreferences as a simple persistence mechanism
-      final prefs = await SharedPreferences.getInstance();
-      List<String> memoryJsonList =
-          prefs.getStringList('conversation_memories') ?? [];
-
-      // Add new memory
-      memoryJsonList.add(memory.toJsonString());
-
-      // Keep list size manageable
-      if (memoryJsonList.length > 100) {
-        memoryJsonList = memoryJsonList.sublist(memoryJsonList.length - 100);
-      }
-
-      await prefs.setStringList('conversation_memories', memoryJsonList);
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error saving memory: $e');
-      }
-    }
-  }
-
-  Future<List<TherapyInsight>> _loadInsightsFromDatabase() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? insightJsonList =
-          prefs.getStringList('therapy_insights');
-
-      if (insightJsonList == null || insightJsonList.isEmpty) return [];
-
-      return insightJsonList
-          .map((jsonStr) => TherapyInsight.fromJson(json.decode(jsonStr)))
-          .toList();
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading insights: $e');
-      }
-      return [];
-    }
-  }
-
-  Future<void> _saveInsightToDatabase(TherapyInsight insight) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      List<String> insightJsonList =
-          prefs.getStringList('therapy_insights') ?? [];
-
-      // Add new insight
-      insightJsonList.add(json.encode(insight.toJson()));
-
-      // Keep list size manageable
-      if (insightJsonList.length > 50) {
-        insightJsonList = insightJsonList.sublist(insightJsonList.length - 50);
-      }
-
-      await prefs.setStringList('therapy_insights', insightJsonList);
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error saving insight: $e');
-      }
-    }
-  }
-
-  Future<List<EmotionalState>> _loadEmotionalStatesFromDatabase() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? stateJsonList =
-          prefs.getStringList('emotional_states');
-
-      if (stateJsonList == null || stateJsonList.isEmpty) return [];
-
-      return stateJsonList
-          .map((jsonStr) => EmotionalState.fromJson(json.decode(jsonStr)))
-          .toList();
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading emotional states: $e');
-      }
-      return [];
-    }
-  }
-
-  Future<void> _saveEmotionalStateToDatabase(EmotionalState state) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      List<String> stateJsonList =
-          prefs.getStringList('emotional_states') ?? [];
-
-      // Add new state
-      stateJsonList.add(json.encode(state.toJson()));
-
-      // Keep list size manageable
-      if (stateJsonList.length > 100) {
-        stateJsonList = stateJsonList.sublist(stateJsonList.length - 100);
-      }
-
-      await prefs.setStringList('emotional_states', stateJsonList);
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error saving emotional state: $e');
-      }
-    }
-  }
-
-  Future<void> _loadUserPreferences() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? prefsJson = prefs.getString('user_preferences');
-
-      if (prefsJson != null && prefsJson.isNotEmpty) {
-        final Map<String, dynamic> loadedPrefs = json.decode(prefsJson);
-        _userPreferences.clear();
-        _userPreferences.addAll(loadedPrefs);
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading user preferences: $e');
-      }
-    }
-  }
-
-  Future<void> _saveUserPreferences() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_preferences', json.encode(_userPreferences));
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error saving user preferences: $e');
-      }
-    }
   }
 }

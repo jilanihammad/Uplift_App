@@ -63,6 +63,7 @@ import 'package:ai_therapist_app/utils/connectivity_checker.dart';
 import 'package:ai_therapist_app/utils/firestore_helpers.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/services/theme_service.dart';
+import 'package:ai_therapist_app/data/datasources/local/database_provider.dart';
 
 // Import the shared Firebase initialization utility
 import 'package:ai_therapist_app/utils/firebase_init.dart';
@@ -211,6 +212,39 @@ Future<void> main() async {
         logger.debug('[Main] Initializing database...');
         final appDatabase = serviceLocator<AppDatabase>();
         await appDatabase.database;
+
+        // Verify database tables exist
+        logger.debug('[Main] Verifying database tables...');
+        final databaseProvider = serviceLocator<DatabaseProvider>();
+
+        // Check required tables, especially the ones introduced in migration v3
+        final requiredTables = [
+          'sessions',
+          'messages',
+          'conversation_memories',
+          'therapy_insights',
+          'emotional_states'
+        ];
+
+        final missingTables = <String>[];
+
+        for (final table in requiredTables) {
+          final exists = await databaseProvider.tableExists(table);
+          if (!exists) {
+            missingTables.add(table);
+            logger.warning('[Main] Table $table not found in database');
+          }
+        }
+
+        if (missingTables.isEmpty) {
+          logger.info(
+              '[Main] All required database tables verified successfully ✅');
+        } else {
+          logger.warning('[Main] Missing tables: ${missingTables.join(', ')}');
+          logger.warning(
+              '[Main] Will attempt to create missing tables during service initialization');
+        }
+
         logger.info('[Main] Database initialized successfully');
       } catch (e) {
         logger.error('[Main] ERROR initializing database', error: e);
