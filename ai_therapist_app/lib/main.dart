@@ -68,6 +68,9 @@ import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/utils/firebase_init.dart';
 import 'package:ai_therapist_app/utils/logging_service.dart';
 
+// Import the new logging config
+import 'utils/logging_config.dart';
+
 // Global variables for crucial service references
 FirebaseApp? _firebaseApp;
 ConfigService? _configService;
@@ -294,23 +297,25 @@ Future<void> main() async {
 
 // Initialize the logging service
 void _initializeLogging() {
-  // Set default log level based on build mode
-  if (kDebugMode) {
-    logger.setLogLevel(LogLevel.debug); // Show all logs in debug mode
-  } else {
-    logger.setLogLevel(
-        LogLevel.warning); // Only show warnings and errors in release
-  }
+  // Use the new logging config to set the appropriate log levels
+  loggingConfig.init(
+    // Set to true to enable more verbose logs in production for troubleshooting
+    // Set to false by default to reduce logging overhead in production
+    enableVerboseLogsInRelease: false,
+  );
 
-  // Enable analytics logging in debug only
-  logger.setAnalyticsLogging(kDebugMode);
-
-  // Enable Crashlytics in release mode only
-  logger.setCrashlyticsEnabled(!kDebugMode);
+  // Log the configuration (only visible in appropriate log levels)
+  logger
+      .info('Logging initialized with level: ${loggingConfig.currentLogLevel}');
+  logger.debug(
+      'Debug logging is ${loggingConfig.isDebugEnabled ? 'enabled' : 'disabled'}');
 
   if (kDebugMode) {
     print('=== LoggingService initialized ===');
-    print('- Log level: ${kDebugMode ? 'DEBUG' : 'WARNING'}');
+    print(
+        '- Log level: ${loggingConfig.currentLogLevel.toString().split('.').last.toUpperCase()}');
+    print(
+        '- Debug logs: ${loggingConfig.isDebugEnabled ? 'ENABLED' : 'DISABLED'}');
     print('- Analytics logging: ${kDebugMode ? 'ENABLED' : 'DISABLED'}');
     print('- Crashlytics: ${!kDebugMode ? 'ENABLED' : 'DISABLED'}');
     print('==============================');
@@ -693,68 +698,61 @@ Future<void> _initializeConfigAndApi() async {
 
     // Initialize all the refactored components in the right order
     logger.debug(
-        '[Main] Initializing refactored service components (using initializeOnlyIfNeeded)...');
+        '[Main] Initializing refactored service components (using initializeIfNeeded)...');
 
-    // Initialize services using their singleton pattern and initializeOnlyIfNeeded method
+    // Initialize services using their singleton pattern and initializeIfNeeded method
     try {
-      // Create a set to track which services were successfully initialized
-      final Set<String> initializedServices = {};
-
-      // Initialize core services first (these have no dependencies on other services)
-      if (serviceLocator.isRegistered<MemoryService>()) {
-        final memoryService = serviceLocator<MemoryService>();
-        await memoryService.initializeOnlyIfNeeded();
-        initializedServices.add('MemoryService');
-        logger.debug('[Main] MemoryService initialized successfully');
-      }
-
-      if (serviceLocator.isRegistered<VoiceService>()) {
-        final voiceService = serviceLocator<VoiceService>();
-        await voiceService.initializeOnlyIfNeeded();
-        initializedServices.add('VoiceService');
-        logger.debug('[Main] VoiceService initialized successfully');
-      }
-
-      // Initialize conversation flow manager which has minimal dependencies
-      try {
-        final conversationFlowManager = ConversationFlowManager();
-        await conversationFlowManager.initializeOnlyIfNeeded();
-        initializedServices.add('ConversationFlowManager');
-        logger.debug('[Main] ConversationFlowManager initialized successfully');
-      } catch (e) {
-        logger.warning('[Main] Error initializing ConversationFlowManager',
-            error: e);
-      }
-
-      // Initialize the higher-level components (depend on core services)
-      if (serviceLocator.isRegistered<MemoryManager>()) {
-        final memoryManager = serviceLocator<MemoryManager>();
-        await memoryManager.initializeOnlyIfNeeded();
-        initializedServices.add('MemoryManager');
-        logger.debug('[Main] MemoryManager initialized successfully');
-      }
-
-      if (serviceLocator.isRegistered<AudioGenerator>()) {
-        final audioGenerator = serviceLocator<AudioGenerator>();
-        await audioGenerator.initializeOnlyIfNeeded();
-        initializedServices.add('AudioGenerator');
-        logger.debug('[Main] AudioGenerator initialized successfully');
-      }
-
-      // Initialize the TherapyService last (depends on most other services)
-      if (serviceLocator.isRegistered<TherapyService>()) {
-        final therapyService = serviceLocator<TherapyService>();
-        await therapyService.init();
-        initializedServices.add('TherapyService');
-        logger.debug('[Main] TherapyService initialized successfully');
-      }
-
-      // Log initialization summary
-      logger.info('[Main] Services initialized: ${initializedServices.length}');
-      logger.info(
-          '[Main] Successfully initialized: ${initializedServices.join(", ")}');
+      logger.debug('[Main] Initializing MemoryService...');
+      final memoryService = serviceLocator<MemoryService>();
+      await memoryService.init();
+      logger.debug('[Main] MemoryService initialized ✓');
     } catch (e) {
-      logger.error('[Main] Error initializing refactored components', error: e);
+      logger.error('[Main] Error initializing MemoryService', error: e);
+    }
+
+    try {
+      logger.debug('[Main] Initializing VoiceService...');
+      final voiceService = serviceLocator<VoiceService>();
+      await voiceService.initialize();
+      logger.debug('[Main] VoiceService initialized ✓');
+    } catch (e) {
+      logger.error('[Main] Error initializing VoiceService', error: e);
+    }
+
+    try {
+      logger.debug('[Main] Initializing ConversationFlowManager...');
+      final conversationFlowManager = serviceLocator<ConversationFlowManager>();
+      await conversationFlowManager.init();
+      logger.debug('[Main] ConversationFlowManager initialized ✓');
+    } catch (e) {
+      logger.error('[Main] Error initializing ConversationFlowManager',
+          error: e);
+    }
+
+    // Memory manager depends on memory service
+    try {
+      logger.debug('[Main] Initializing MemoryManager...');
+      final memoryManager = serviceLocator<MemoryManager>();
+      await memoryManager.init();
+      logger.debug('[Main] MemoryManager initialized ✓');
+    } catch (e) {
+      logger.error('[Main] Error initializing MemoryManager', error: e);
+    }
+
+    try {
+      logger.debug('[Main] Initializing AudioGenerator...');
+      final audioGenerator = serviceLocator<AudioGenerator>();
+      await audioGenerator.initialize();
+      logger.debug('[Main] AudioGenerator initialized ✓');
+    } catch (e) {
+      logger.error('[Main] Error initializing AudioGenerator', error: e);
+    }
+
+    // Initialize the TherapyService last (depends on most other services)
+    if (serviceLocator.isRegistered<TherapyService>()) {
+      final therapyService = serviceLocator<TherapyService>();
+      await therapyService.init();
+      logger.debug('[Main] TherapyService initialized successfully');
     }
 
     // Validate that all dependencies are registered
