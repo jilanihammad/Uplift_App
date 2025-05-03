@@ -3,11 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:ai_therapist_app/firebase_options.dart';
 
-// Completer to ensure Firebase initialization happens only once
-final Completer<FirebaseApp?> _firebaseInitCompleter =
-    Completer<FirebaseApp?>();
-
-// Track Firebase initialization state
+// Flag to track Firebase initialization status
 bool _firebaseInitialized = false;
 
 // Global reference to FirebaseApp
@@ -19,52 +15,41 @@ FirebaseApp? _app;
 /// from different isolates or contexts. It uses a Completer to synchronize
 /// the initialization process and prevent race conditions.
 Future<FirebaseApp?> ensureFirebaseInitialized() async {
-  // Check if the initialization process has already started
-  if (!_firebaseInitCompleter.isCompleted) {
-    debugPrint('[Firebase] Starting Firebase initialization');
-    try {
-      // First try to get existing app
-      try {
-        _app = Firebase.app();
-        debugPrint('[Firebase] Got existing Firebase app: ${_app?.name}');
-      } catch (e) {
-        // If no existing app, initialize a new one
-        debugPrint('[Firebase] No existing app found, initializing: $e');
-        _app = await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-        debugPrint('[Firebase] Firebase newly initialized: ${_app?.name}');
-      }
-      _firebaseInitialized = true;
-      _firebaseInitCompleter.complete(_app);
-    } catch (e) {
-      // Special handling for duplicate app error
-      if (e.toString().contains('duplicate-app')) {
-        debugPrint(
-            '[Firebase] Caught duplicate app error, trying to get existing instance');
-        try {
-          _app = Firebase.app();
-          _firebaseInitialized = true;
-          _firebaseInitCompleter.complete(_app);
-        } catch (innerError) {
-          debugPrint(
-              '[Firebase] Failed to get existing app after error: $innerError');
-          _firebaseInitCompleter.completeError(innerError);
-        }
-      } else {
-        debugPrint('[Firebase] Error during Firebase initialization: $e');
-        _firebaseInitCompleter.completeError(e);
-      }
-    }
-  } else {
-    debugPrint('[Firebase] Waiting for existing Firebase initialization');
+  // First check if Firebase is already initialized
+  try {
+    // Get default app if it exists
+    FirebaseApp app = Firebase.app();
+    debugPrint('Firebase is already initialized: ${app.name}');
+    return app;
+  } catch (e) {
+    debugPrint('Firebase is not yet initialized, attempting to initialize...');
   }
 
-  // Wait for initialization to complete and return the result
   try {
-    return await _firebaseInitCompleter.future;
+    // Initialize Firebase with default options if not already initialized
+    FirebaseApp app = await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    // IMPORTANT: DO NOT initialize App Check here
+    debugPrint('Firebase initialized successfully: ${app.name}');
+    debugPrint(
+        'Firebase App Check is INTENTIONALLY DISABLED to fix auth issues');
+
+    return app;
   } catch (e) {
-    debugPrint('[Firebase] Error getting Firebase app from completer: $e');
+    debugPrint('Error initializing Firebase: $e');
+
+    if (e.toString().contains('duplicate-app')) {
+      // If the error is because Firebase is already initialized, return the existing app
+      try {
+        FirebaseApp app = Firebase.app();
+        debugPrint('Using existing Firebase app: ${app.name}');
+        return app;
+      } catch (innerError) {
+        debugPrint('Error getting existing Firebase app: $innerError');
+      }
+    }
     return null;
   }
 }

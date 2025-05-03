@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "385290373302-1ofelc6s0eam7ehtdcgrrhat8n3bub7f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.maya.uplift",
+            "certificate_hash": "9fbae5b7b4b9e983e5fa44fa23e6eb373425a8a2"
+          }
+        },
+        {
           "client_id": "385290373302-ooblvvmrd0rkrfomrp17d6ejpa43bvff.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

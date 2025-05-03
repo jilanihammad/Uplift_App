@@ -64,9 +64,12 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
 
       // Check Auth
       try {
-        await FirebaseAuth.instance.signInAnonymously();
+        // Don't sign in anonymously anymore
+        final user = FirebaseAuth.instance.currentUser;
         setState(() {
-          _authStatus = 'Auth is working correctly';
+          _authStatus = user != null
+              ? 'Auth is working correctly. User: ${user.isAnonymous ? "Anonymous" : user.email ?? user.uid}'
+              : 'Auth is working but no user is signed in';
         });
       } catch (e) {
         setState(() {

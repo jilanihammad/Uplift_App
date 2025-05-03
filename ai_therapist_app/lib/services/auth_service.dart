@@ -8,6 +8,9 @@ import 'package:flutter/foundation.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 
 class AuthService {
   // Keys for shared preferences
@@ -49,6 +52,36 @@ class AuthService {
   // Check if user is logged in
   Future<bool> get isLoggedIn async {
     await _ensureInitialized();
+
+    // Check if we're using Firebase Auth
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser != null) {
+      // If the user is anonymous, consider them not logged in
+      if (firebaseUser.isAnonymous) {
+        // Sign out anonymous users as they shouldn't be considered logged in
+        try {
+          await FirebaseAuth.instance.signOut();
+          print("AuthService: Signed out anonymous user");
+        } catch (e) {
+          print("AuthService: Error signing out anonymous user: $e");
+        }
+        return false;
+      }
+
+      // Verify the token is still valid
+      try {
+        // Force token refresh to ensure it's valid
+        await firebaseUser.getIdToken(true);
+        print("AuthService: User has valid Firebase token");
+        return true;
+      } catch (e) {
+        print("AuthService: Error refreshing token, signing out user: $e");
+        await logout();
+        return false;
+      }
+    }
+
+    // Fall back to token check
     final token = _prefs.getString(AUTH_TOKEN_KEY);
     return token != null && token.isNotEmpty;
   }
@@ -67,7 +100,8 @@ class AuthService {
       if (!serviceLocator.isRegistered<OnboardingService>()) {
         if (kDebugMode) {
           print(
-              "AuthService: OnboardingService not registered yet in syncWithOnboardingService");
+            "AuthService: OnboardingService not registered yet in syncWithOnboardingService",
+          );
         }
         return; // Skip if OnboardingService is not registered yet
       }
@@ -78,13 +112,15 @@ class AuthService {
 
       if (kDebugMode) {
         print(
-            "AuthService: Syncing with OnboardingService - hasCompletedSignup = $hasCompleted");
+          "AuthService: Syncing with OnboardingService - hasCompletedSignup = $hasCompleted",
+        );
       }
 
       if (hasCompleted) {
         if (kDebugMode) {
           print(
-              "AuthService: User has completed signup, ensuring onboarding is marked complete");
+            "AuthService: User has completed signup, ensuring onboarding is marked complete",
+          );
         }
         // If user has completed signup, make sure onboarding is also marked as complete
         await onboardingService.completeOnboarding();
@@ -106,90 +142,270 @@ class AuthService {
     }
   }
 
-  // Phone number verification (mock)
-  Future<bool> verifyPhoneNumber({
+  // Phone number verification with Firebase
+  Future<Map<String, dynamic>> verifyPhoneNumber({
     required String phoneNumber,
-    required Function onVerificationCompleted,
-    required Function onVerificationFailed,
+    required Function(PhoneAuthCredential) onVerificationCompleted,
+    required Function(FirebaseAuthException) onVerificationFailed,
     required Function(String, int?) onCodeSent,
     required Function(String) onCodeAutoRetrievalTimeout,
   }) async {
     try {
-      // Mock phone verification for testing
-      await Future.delayed(const Duration(seconds: 1));
-      _verificationId =
-          'mock-verification-id-${DateTime.now().millisecondsSinceEpoch}';
-      _resendToken = 123456;
-      onCodeSent(_verificationId!, _resendToken);
-      return true;
-    } catch (e) {
-      print('Phone verification error: $e');
-      return false;
-    }
-  }
+      print("AuthService: Starting phone verification for: $phoneNumber");
 
-  // Sign in with phone verification code (mock)
-  Future<bool> signInWithPhoneAuthCredential(
-      {required String verificationId, required String smsCode}) async {
-    try {
-      await _ensureInitialized();
-      // Mock phone sign in
-      await Future.delayed(const Duration(seconds: 1));
-      await _prefs.setString(AUTH_TOKEN_KEY,
-          'mock_phone_token_${DateTime.now().millisecondsSinceEpoch}');
-      await _prefs.setString(PHONE_KEY, '+1234567890');
-
-      // Check if this is first login
-      final hasCompleted = await hasCompletedSignup;
-      print(
-          "AuthService: signInWithPhone - hasCompletedSignup = $hasCompleted");
-
-      if (hasCompleted) {
-        // User has already completed signup/onboarding
-        final onboardingService = serviceLocator<OnboardingService>();
-        await onboardingService.completeOnboarding();
-        print(
-            "AuthService: signInWithPhone - Setting onboarding as complete for returning user");
-      } else {
-        // Mark as new user (this is their first login with phone)
-        await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
-
-        // Make sure onboarding is reset for new users
-        final onboardingService = serviceLocator<OnboardingService>();
-        await onboardingService.resetOnboarding();
-
-        print(
-            "AuthService: signInWithPhone - Setting up onboarding for new user");
+      // Make sure Firebase App Check is initialized
+      try {
+        // This is a no-op if already initialized, but ensures it's ready for phone auth
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: kDebugMode
+              ? AndroidProvider.debug
+              : AndroidProvider.playIntegrity,
+        );
+        print("AuthService: Pre-checked Firebase App Check for phone auth");
+      } catch (appCheckError) {
+        // Log but continue - we have fallbacks in place
+        print("AuthService: AppCheck warning for phone auth: $appCheckError");
       }
 
-      return true;
+      // Validate and format phone number
+      String formattedPhoneNumber = phoneNumber.trim();
+
+      // Add country code if missing
+      if (!formattedPhoneNumber.startsWith('+')) {
+        print("AuthService: Phone number missing country code, adding +1");
+        formattedPhoneNumber =
+            '+1${formattedPhoneNumber.replaceAll(RegExp(r'[^0-9]'), '')}';
+      } else {
+        // Just clean non-numeric chars except the +
+        formattedPhoneNumber =
+            '+${formattedPhoneNumber.substring(1).replaceAll(RegExp(r'[^0-9]'), '')}';
+      }
+
+      print("AuthService: Formatted phone number: $formattedPhoneNumber");
+
+      // Check for rate limiting before making the request
+      if (_isPhoneNumberRateLimited(formattedPhoneNumber)) {
+        print(
+          "AuthService: Phone number is rate limited, suggesting alternative auth method",
+        );
+        return {
+          'success': false,
+          'error': 'rate_limited',
+          'message':
+              'Too many verification attempts. Please try again later or use another sign-in method.',
+        };
+      }
+
+      // Set a shorter timeout for better UX
+      const Duration timeout = Duration(seconds: 30);
+
+      // Flag for successful code sent
+      bool codeSent = false;
+
+      // Use carefully formatted phone number
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: formattedPhoneNumber,
+        verificationCompleted: (PhoneAuthCredential credential) {
+          print("AuthService: Phone auth automatically verified");
+          onVerificationCompleted(credential);
+        },
+        verificationFailed: (FirebaseAuthException error) {
+          print(
+            "AuthService: Phone verification failed: ${error.code}: ${error.message}",
+          );
+          // Log detailed error for debugging
+          print("AuthService: Full error details: ${error.toString()}");
+
+          // Special handling for rate limiting errors
+          if (error.code == 'too-many-requests') {
+            print(
+              "AuthService: Detected rate limiting, adding to rate limited list",
+            );
+            _addRateLimitedNumber(formattedPhoneNumber);
+          }
+
+          // Special handling for missing client identifier
+          if (error.code == 'missing-client-identifier') {
+            print(
+              "AuthService: Missing client identifier error - this is usually due to Firebase App Check issues",
+            );
+            // Try to force App Check token refresh
+            try {
+              FirebaseAppCheck.instance.getToken(true).then((_) {
+                print("AuthService: Successfully refreshed App Check token");
+              }).catchError((e) {
+                print("AuthService: Failed to refresh App Check token: $e");
+              });
+            } catch (e) {
+              print("AuthService: Error refreshing App Check token: $e");
+            }
+          }
+
+          onVerificationFailed(error);
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          print(
+            "AuthService: SMS verification code sent to $formattedPhoneNumber",
+          );
+          _verificationId = verificationId; // Store for later use
+          _resendToken = resendToken; // Store for later use
+          codeSent = true;
+          onCodeSent(verificationId, resendToken);
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          print("AuthService: SMS auto-retrieval timeout");
+          onCodeAutoRetrievalTimeout(verificationId);
+        },
+        timeout: timeout,
+      );
+
+      return {
+        'success': true,
+        'codeSent': codeSent,
+        'phoneNumber': formattedPhoneNumber,
+      };
     } catch (e) {
-      print('Phone sign-in error: $e');
+      print('Phone verification general error: $e');
+      return {
+        'success': false,
+        'error': 'general_error',
+        'message': 'Unable to send verification code. Please try again later.',
+      };
+    }
+  }
+
+  // Additional private methods to handle rate limiting
+  final Map<String, DateTime> _rateLimitedPhoneNumbers = {};
+
+  bool _isPhoneNumberRateLimited(String phoneNumber) {
+    final limitExpiry = _rateLimitedPhoneNumbers[phoneNumber];
+    if (limitExpiry == null) return false;
+
+    // Check if the rate limit has expired (24 hours)
+    final now = DateTime.now();
+    if (now.isAfter(limitExpiry)) {
+      _rateLimitedPhoneNumbers.remove(phoneNumber);
+      return false;
+    }
+
+    return true;
+  }
+
+  void _addRateLimitedNumber(String phoneNumber) {
+    // Set rate limit for 24 hours
+    _rateLimitedPhoneNumbers[phoneNumber] = DateTime.now().add(
+      Duration(hours: 24),
+    );
+  }
+
+  // Sign in with phone verification code using Firebase
+  Future<bool> signInWithPhoneAuthCredential({
+    required String verificationId,
+    required String smsCode,
+  }) async {
+    try {
+      await _ensureInitialized();
+
+      print("AuthService: Attempting to sign in with phone verification code");
+
+      // Create the phone auth credential
+      final PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: smsCode.trim(),
+      );
+
+      // Sign in with credential with error handling
+      try {
+        final userCredential = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+        final user = userCredential.user;
+
+        if (user == null) {
+          print("AuthService: Firebase returned null user after phone auth");
+          return false;
+        }
+
+        print(
+          "AuthService: Successfully signed in with phone: ${user.phoneNumber}",
+        );
+
+        // Store the phone number if available
+        await _prefs.setString(PHONE_KEY, user.phoneNumber ?? '');
+
+        // Check if this is first login
+        final hasCompleted = await hasCompletedSignup;
+        print(
+          "AuthService: signInWithPhone - hasCompletedSignup = $hasCompleted",
+        );
+
+        if (hasCompleted) {
+          // User has already completed signup/onboarding
+          final onboardingService = serviceLocator<OnboardingService>();
+          await onboardingService.completeOnboarding();
+          print(
+            "AuthService: signInWithPhone - Setting onboarding as complete for returning user",
+          );
+        } else {
+          // Mark as new user (this is their first login with phone)
+          await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
+
+          // Make sure onboarding is reset for new users
+          final onboardingService = serviceLocator<OnboardingService>();
+          await onboardingService.resetOnboarding();
+          print(
+            "AuthService: signInWithPhone - Setting up onboarding for new user",
+          );
+        }
+
+        return true;
+      } catch (credentialError) {
+        print(
+          "AuthService: Error signing in with phone credential: $credentialError",
+        );
+
+        if (credentialError.toString().contains("invalid-verification-code")) {
+          print("AuthService: Invalid verification code entered");
+        }
+        return false;
+      }
+    } catch (e) {
+      print('Phone sign-in general error: $e');
       return false;
     }
   }
 
-  // Sign in with credential for auto-retrieval
-  Future<bool> signInWithCredential(dynamic credential) async {
+  // Sign in with credential for auto-retrieval using Firebase
+  Future<bool> signInWithCredential(PhoneAuthCredential credential) async {
     try {
       await _ensureInitialized();
-      // Mock credential sign in
-      await Future.delayed(const Duration(seconds: 1));
-      await _prefs.setString(AUTH_TOKEN_KEY,
-          'mock_auto_phone_token_${DateTime.now().millisecondsSinceEpoch}');
-      await _prefs.setString(PHONE_KEY, '+1234567890');
+
+      // Sign in with Firebase
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+      final user = userCredential.user;
+
+      if (user == null) {
+        return false;
+      }
+
+      // Store the phone number if available
+      await _prefs.setString(PHONE_KEY, user.phoneNumber ?? '');
 
       // Check if this is first login
       final hasCompleted = await hasCompletedSignup;
       print(
-          "AuthService: signInWithCredential - hasCompletedSignup = $hasCompleted");
+        "AuthService: signInWithCredential - hasCompletedSignup = $hasCompleted",
+      );
 
       if (hasCompleted) {
         // User has already completed signup/onboarding
         final onboardingService = serviceLocator<OnboardingService>();
         await onboardingService.completeOnboarding();
         print(
-            "AuthService: signInWithCredential - Setting onboarding as complete for returning user");
+          "AuthService: signInWithCredential - Setting onboarding as complete for returning user",
+        );
       } else {
         // Mark as new user (this is their first login with credential)
         await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
@@ -199,7 +415,8 @@ class AuthService {
         await onboardingService.resetOnboarding();
 
         print(
-            "AuthService: signInWithCredential - Setting up onboarding for new user");
+          "AuthService: signInWithCredential - Setting up onboarding for new user",
+        );
       }
 
       return true;
@@ -213,10 +430,20 @@ class AuthService {
   Future<bool> login(String email, String password) async {
     try {
       await _ensureInitialized();
-      // Mock authentication
-      await Future.delayed(const Duration(seconds: 1));
-      await _prefs.setString(AUTH_TOKEN_KEY,
-          'mock_token_${DateTime.now().millisecondsSinceEpoch}');
+
+      // Use Firebase Auth instead of mock implementation
+      final firebaseAuth = FirebaseAuth.instance;
+      final userCredential = await firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = userCredential.user;
+      if (user == null) {
+        return false;
+      }
+
+      // Store additional info
       await _prefs.setString(EMAIL_KEY, email);
 
       // Check if the user has completed signup
@@ -229,7 +456,8 @@ class AuthService {
         final onboardingService = serviceLocator<OnboardingService>();
         await onboardingService.completeOnboarding();
         print(
-            "AuthService: login - Setting onboarding as complete for returning user");
+          "AuthService: login - Setting onboarding as complete for returning user",
+        );
       }
 
       return true;
@@ -241,20 +469,28 @@ class AuthService {
     }
   }
 
-  // Register new user (mock)
+  // Register new user with Firebase
   Future<bool> register(String name, String email, String password) async {
     try {
       await _ensureInitialized();
 
-      // Mock registration
-      await Future.delayed(const Duration(seconds: 1));
+      // Use Firebase Auth instead of mock
+      final firebaseAuth = FirebaseAuth.instance;
+      final userCredential = await firebaseAuth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
-      // Store credentials
-      await _prefs.setString(AUTH_TOKEN_KEY,
-          'mock_token_${DateTime.now().millisecondsSinceEpoch}');
-      await _prefs.setString(EMAIL_KEY, email);
+      final user = userCredential.user;
+      if (user == null) {
+        return false;
+      }
+
+      // Update display name
+      await user.updateDisplayName(name);
 
       // Store user data
+      await _prefs.setString(EMAIL_KEY, email);
       await _prefs.setString('user_name', name);
 
       // Mark as new user (this is their first login)
@@ -279,47 +515,152 @@ class AuthService {
     await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, true);
   }
 
-  // Sign in with Google (mock)
+  // Sign in with Google - real implementation
   Future<bool> signInWithGoogle() async {
     try {
       await _ensureInitialized();
 
-      // Mock Google sign in
-      await Future.delayed(const Duration(seconds: 1));
+      print("AuthService: Starting Google SignIn flow");
 
-      // Store credentials
-      await _prefs.setString(AUTH_TOKEN_KEY,
-          'mock_google_token_${DateTime.now().millisecondsSinceEpoch}');
-      await _prefs.setString(EMAIL_KEY, 'google_user@example.com');
+      // SKIP Firebase App Check - causing too many problems
+      // Just attempt Google Sign-In directly
 
-      // Check if this is first login
-      final hasCompleted = await hasCompletedSignup;
+      // Configure Google Sign-In with minimal scopes to reduce permission issues
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        // Include all three recommended OAuth scopes - hardcoded to ensure consistency
+        scopes: ['email', 'profile', 'openid'],
+
+        // Use the OAuth client ID directly here - hardcoded to ensure it's always used
+        serverClientId:
+            '385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com',
+      );
+
       print(
-          "AuthService: signInWithGoogle - hasCompletedSignup = $hasCompleted");
+          "AuthService: GoogleSignIn configured with scopes: ['email', 'profile', 'openid']");
+      print(
+          "AuthService: GoogleSignIn client ID: 385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com");
 
-      if (hasCompleted) {
-        // Skip onboarding for returning users
-        final onboardingService = serviceLocator<OnboardingService>();
-        await onboardingService.completeOnboarding();
+      // First check if user is already signed in with Google
+      GoogleSignInAccount? googleUser;
+
+      try {
+        // Always try to sign out first to ensure a fresh start
+        await googleSignIn.signOut();
+        print("AuthService: Signed out from any previous Google sessions");
+
+        // Direct to interactive sign-in
+        print("AuthService: Triggering Google sign-in dialog");
+        googleUser = await googleSignIn.signIn();
+
+        if (googleUser == null) {
+          print("AuthService: User cancelled Google Sign-In");
+          return false;
+        }
         print(
-            "AuthService: signInWithGoogle - Setting onboarding as complete for returning user");
-      } else {
-        // Mark as new user (this is their first login with Google)
-        await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
+            "AuthService: Interactive Google signin successful: ${googleUser.email}");
+      } catch (e) {
+        print("AuthService: Interactive Google signin error: $e");
+        print("AuthService: Error details: ${e.runtimeType}");
 
-        // Make sure onboarding is reset for new users
-        final onboardingService = serviceLocator<OnboardingService>();
-        await onboardingService.resetOnboarding();
+        // Special handling for error code 10 (DEVELOPER_ERROR)
+        if (e.toString().contains("ApiException: 10:")) {
+          print(
+            "AuthService: Detected configuration error in Google Sign-In (error 10)",
+          );
+          print(
+            "AuthService: This typically means the SHA-1 certificate fingerprint is not configured in Firebase console",
+          );
+          // OAuth client ID info is useful for debugging
+          print(
+            "AuthService: Using OAuth Client ID: 385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com",
+          );
+          // Return false since this requires developer intervention
+          return false;
+        }
 
-        print(
-            "AuthService: signInWithGoogle - Setting up onboarding for new user");
+        // For other errors, try email/password fallback
+        return false;
       }
 
-      return true;
+      try {
+        // Get authentication details
+        print("AuthService: Getting auth tokens for: ${googleUser.email}");
+        final GoogleSignInAuthentication googleAuth =
+            await googleUser.authentication;
+
+        // Validate tokens before proceeding
+        if (googleAuth.accessToken == null || googleAuth.idToken == null) {
+          print("AuthService: Failed to get valid Google auth tokens");
+          return false;
+        }
+
+        // Create Firebase credential
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+
+        print("AuthService: Got Google auth tokens, signing in with Firebase");
+
+        // Sign in with Firebase
+        final userCredential = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+        final user = userCredential.user;
+
+        if (user == null) {
+          print("AuthService: Firebase returned null user after Google auth");
+          return false;
+        }
+
+        print("AuthService: Successfully signed in with Google: ${user.email}");
+
+        // Store relevant user info
+        await _prefs.setString(EMAIL_KEY, user.email ?? '');
+
+        // Check if this is first login
+        final hasCompleted = await hasCompletedSignup;
+        print(
+          "AuthService: signInWithGoogle - hasCompletedSignup = $hasCompleted",
+        );
+
+        if (hasCompleted) {
+          // Skip onboarding for returning users
+          final onboardingService = serviceLocator<OnboardingService>();
+          await onboardingService.completeOnboarding();
+          print(
+            "AuthService: signInWithGoogle - Setting onboarding as complete for returning user",
+          );
+        } else {
+          // Mark as new user (this is their first login with Google)
+          await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
+
+          // Reset onboarding for new users
+          final onboardingService = serviceLocator<OnboardingService>();
+          await onboardingService.resetOnboarding();
+          print(
+            "AuthService: signInWithGoogle - Setting up onboarding for new user",
+          );
+        }
+
+        return true;
+      } catch (authError) {
+        print(
+          "AuthService: Error during Firebase authentication with Google: $authError",
+        );
+
+        // Aggressive error recovery - try to sign out from Google to reset state
+        try {
+          await googleSignIn.signOut();
+          print("AuthService: Signed out of Google to reset state after error");
+        } catch (e) {
+          print("AuthService: Error during Google signout: $e");
+        }
+
+        return false;
+      }
     } catch (e) {
-      if (kDebugMode) {
-        print('Google sign-in error: $e');
-      }
+      print('Google sign-in error: $e');
       return false;
     }
   }
@@ -340,12 +681,15 @@ class AuthService {
     };
   }
 
-  // Logout
+  // Logout - updated to handle Firebase auth
   Future<bool> logout() async {
     try {
       await _ensureInitialized();
 
-      // Clear auth token
+      // Firebase logout
+      await FirebaseAuth.instance.signOut();
+
+      // Clear local auth token
       await _prefs.remove(AUTH_TOKEN_KEY);
 
       return true;
@@ -353,6 +697,39 @@ class AuthService {
       if (kDebugMode) {
         print('Logout error: $e');
       }
+      return false;
+    }
+  }
+
+  /// Force session verification and refresh
+  Future<bool> verifySession() async {
+    await _ensureInitialized();
+
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) {
+        print(
+          "AuthService: No Firebase user found during session verification",
+        );
+        return false;
+      }
+
+      if (firebaseUser.isAnonymous) {
+        print(
+          "AuthService: Anonymous user found during session verification, signing out",
+        );
+        await FirebaseAuth.instance.signOut();
+        return false;
+      }
+
+      // Force token refresh
+      await firebaseUser.getIdToken(true);
+      print("AuthService: Session verified successfully");
+      return true;
+    } catch (e) {
+      print("AuthService: Session verification failed: $e");
+      // Clear any invalid sessions
+      await logout();
       return false;
     }
   }

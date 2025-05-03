@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 abstract class AuthEvent extends Equatable {
   const AuthEvent();
@@ -73,7 +74,7 @@ class PhoneVerificationFailedEvent extends AuthEvent {
 }
 
 class PhoneCodeAutoRetrievalEvent extends AuthEvent {
-  final dynamic credential;
+  final PhoneAuthCredential credential;
 
   const PhoneCodeAutoRetrievalEvent({required this.credential});
 
@@ -101,4 +102,4 @@ class PhoneCodeSubmitEvent extends AuthEvent {
 
   @override
   List<Object> get props => [verificationId, smsCode];
-} 
+}

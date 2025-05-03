@@ -15,6 +15,7 @@ import '../services/config_service.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../services/memory_manager.dart';
 import '../services/audio_generator.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SplashScreen extends StatefulWidget {
   final bool skipFirebaseCheck;
@@ -51,8 +52,17 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 1500),
     )..repeat();
 
-    // Initialize services and navigate to the appropriate screen
-    _initializeAndNavigate();
+    // EMERGENCY FIX: Skip all initialization and just go to login after a brief delay
+    print(
+        "SplashScreen: EMERGENCY MODE - Will go directly to login after delay");
+
+    // Show splash for 2 seconds then FORCE go to login
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        print("SplashScreen: EMERGENCY NAVIGATION to login");
+        context.go(AppRouter.login);
+      }
+    });
   }
 
   @override
@@ -80,6 +90,93 @@ class _SplashScreenState extends State<SplashScreen>
       if (serviceLocator.isRegistered<OnboardingService>()) {
         _onboardingService = serviceLocator<OnboardingService>();
         await _onboardingService.init();
+      }
+
+      // Add a check for first app launch to force fresh login experience
+      final prefs = await SharedPreferences.getInstance();
+      final bool isFirstLaunch =
+          !(prefs.getBool('app_launched_before') ?? false);
+
+      if (isFirstLaunch) {
+        print(
+            "SplashScreen: First app launch detected, clearing any cached auth sessions");
+
+        // Clear any potentially cached Firebase auth session
+        try {
+          // Sign out from Firebase Auth
+          await FirebaseAuth.instance.signOut();
+
+          // Clear any stored auth tokens in local storage
+          await _authService.logout();
+
+          // Record that app has been launched
+          await prefs.setBool('app_launched_before', true);
+
+          print(
+              "SplashScreen: Successfully cleared auth state for first launch");
+
+          // After a short delay to show splash screen, navigate to login
+          await Future.delayed(const Duration(milliseconds: 1500));
+          if (mounted) {
+            context.go(AppRouter.login);
+          }
+          return; // Exit early to avoid further processing
+        } catch (e) {
+          print("SplashScreen: Error clearing auth state: $e");
+          // Continue processing
+        }
+      }
+
+      // Verify Firebase auth is working properly
+      setState(() {
+        _statusMessage = "Checking authentication...";
+        _loadingProgress = 0.2;
+      });
+
+      // Check Firebase user status
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      final isAnonymous = firebaseUser?.isAnonymous ?? false;
+
+      // If a user exists but is anonymous, we need to sign them out
+      if (isAnonymous) {
+        print("SplashScreen: Detected anonymous auth, will redirect to login");
+        try {
+          // Sign out the anonymous user first
+          await FirebaseAuth.instance.signOut();
+          print("SplashScreen: Anonymous user logged out successfully");
+        } catch (e) {
+          print("SplashScreen: Error logging out anonymous user: $e");
+        }
+
+        // Navigate to login after showing splash screen
+        await Future.delayed(const Duration(milliseconds: 1500));
+        if (mounted) {
+          context.go(AppRouter.login);
+        }
+        return; // Exit early to avoid further processing
+      }
+
+      // Handle non-anonymous users
+      if (firebaseUser != null && !isAnonymous) {
+        print("SplashScreen: Logged in user detected: ${firebaseUser.uid}");
+
+        // Ensure we have a valid token for backend requests
+        try {
+          final idToken = await firebaseUser.getIdToken(true);
+          print("SplashScreen: Successfully refreshed ID token");
+
+          // Store the token for API requests if we have a valid token
+          if (idToken != null && serviceLocator.isRegistered<ApiClient>()) {
+            final apiClient = serviceLocator<ApiClient>();
+            apiClient.updateAuthToken(idToken);
+            print("SplashScreen: Updated API client with fresh token");
+          }
+        } catch (tokenError) {
+          print("SplashScreen: Error refreshing ID token: $tokenError");
+          // Continue anyway - we'll retry connections later
+        }
+      } else {
+        print("SplashScreen: No user logged in");
       }
 
       // Ensure ConfigService and ApiClient are properly initialized
@@ -180,20 +277,49 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
-    // Navigate to appropriate screen
+    // Navigate to appropriate screen - if backend is unavailable but user is logged in, still go to home
     _navigateBasedOnAuth(isLoggedIn, hasCompletedSignup);
   }
 
   // Helper method to navigate based on auth status
   void _navigateBasedOnAuth(bool isLoggedIn, bool hasCompletedSignup) {
-    if (!isLoggedIn) {
+    // Always check for Firebase anonymous auth as well
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    final isAnonymous = firebaseUser?.isAnonymous ?? false;
+
+    // Add additional check for session validation at splash
+    bool canProceedToHome = isLoggedIn && hasCompletedSignup && !isAnonymous;
+    bool needsOnboarding = isLoggedIn && !hasCompletedSignup && !isAnonymous;
+
+    // Check backend connection and determine if we need a recovery path
+    bool forceLoginFlow = false;
+    if (!_backendAvailable && isLoggedIn) {
+      // If backend is unavailable but we have a valid Firebase user,
+      // we can still proceed without backend (in offline mode)
       if (kDebugMode) {
-        print("SplashScreen: Navigating to login screen");
+        print(
+            "SplashScreen: Backend unavailable but Firebase user valid, proceeding to appropriate screen");
+      }
+    }
+
+    // Log the navigation decision making for debugging
+    if (kDebugMode) {
+      print(
+          "SplashScreen: Navigation decision - canProceedToHome=$canProceedToHome, needsOnboarding=$needsOnboarding");
+      print(
+          "SplashScreen: Auth state details - isLoggedIn=$isLoggedIn, hasCompletedSignup=$hasCompletedSignup, isAnonymous=$isAnonymous, backendAvailable=$_backendAvailable");
+    }
+
+    // Final navigation decision
+    if (!canProceedToHome && !needsOnboarding || forceLoginFlow) {
+      if (kDebugMode) {
+        print(
+            "SplashScreen: Navigating to login screen (isLoggedIn=$isLoggedIn, isAnonymous=$isAnonymous)");
       }
       if (mounted) {
         context.go(AppRouter.login);
       }
-    } else if (!hasCompletedSignup) {
+    } else if (needsOnboarding) {
       if (kDebugMode) {
         print("SplashScreen: Navigating to onboarding");
       }
@@ -224,7 +350,6 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _checkBackendAvailability() async {
     setState(() {
       _statusMessage = "Checking connection...";
-      _loadingProgress = 0.3;
     });
 
     // Skip backend check if requested
@@ -241,25 +366,101 @@ class _SplashScreenState extends State<SplashScreen>
       return;
     }
 
-    try {
-      _backendAvailable = await compute(_checkBackend, _backendService);
+    // Max number of retries
+    int maxRetries = 2;
+    int retryCount = 0;
+    bool connectionSuccess = false;
 
-      if (!mounted) return;
+    while (retryCount < maxRetries && !connectionSuccess) {
+      try {
+        // More verbose logging for connection attempt
+        if (kDebugMode) {
+          print(
+              "SplashScreen: Checking backend connection via BackendService... (Attempt ${retryCount + 1})");
+        }
 
-      setState(() {
-        _statusMessage = _backendAvailable
-            ? "Connected to backend!"
-            : "Cannot connect to backend. Using offline mode.";
-        _loadingProgress = 0.6;
-      });
-    } catch (e) {
-      if (!mounted) return;
+        connectionSuccess = await compute(_checkBackend, _backendService);
 
+        if (!mounted) return;
+
+        if (connectionSuccess) {
+          setState(() {
+            _backendAvailable = true;
+            _statusMessage = "Connected to backend!";
+            _loadingProgress = 0.6;
+          });
+          if (kDebugMode) {
+            print("SplashScreen: Backend connection successful");
+          }
+          break; // Exit the retry loop on success
+        } else {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            if (kDebugMode) {
+              print("SplashScreen: Backend connection failed, retrying...");
+            }
+            // Wait briefly before retrying
+            await Future.delayed(const Duration(milliseconds: 500));
+          }
+        }
+      } catch (e) {
+        retryCount++;
+        if (kDebugMode) {
+          print("SplashScreen: Backend connection error: $e");
+          if (retryCount < maxRetries) {
+            print("SplashScreen: Retrying connection...");
+          }
+        }
+
+        // Wait briefly before retrying
+        if (retryCount < maxRetries) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+    }
+
+    // If all retries failed, proceed with offline mode
+    if (!connectionSuccess && mounted) {
       setState(() {
         _backendAvailable = false;
-        _statusMessage = "Connection error. Using offline mode.";
+        _statusMessage = "Cannot connect to backend. Using offline mode.";
         _loadingProgress = 0.6;
       });
+
+      if (kDebugMode) {
+        print(
+            "SplashScreen: Backend connection failed after $retryCount attempts");
+        print("SplashScreen: Will proceed with app flow in offline mode");
+      }
+
+      // Show alert dialog but allow user to continue without waiting for response
+      if (mounted) {
+        Future.delayed(Duration.zero, () {
+          showDialog(
+            context: context,
+            barrierDismissible: true,
+            builder: (context) => AlertDialog(
+              title: const Text('Backend Connection Issue'),
+              content: const Text(
+                'Could not connect to the therapy backend server. '
+                'This may cause limited functionality.\n\n'
+                'Please check your internet connection and try again.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Continue Anyway'),
+                ),
+              ],
+            ),
+          ).then((_) {
+            // Dialog was dismissed or button pressed
+            if (kDebugMode) {
+              print("SplashScreen: User acknowledged backend issue dialog");
+            }
+          });
+        });
+      }
     }
   }
 
@@ -392,6 +593,82 @@ class _SplashScreenState extends State<SplashScreen>
         backgroundColor: _backendAvailable ? Colors.green : Colors.red,
       ),
     );
+  }
+
+  // Multiple timeouts for each stage
+  void _startSplashTimeout() {
+    // FIRST TIMEOUT: Extremely short timeout to avoid black screen
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        print("SplashScreen: Quick sanity check at 1s, continuing startup");
+        _loadingProgress = 0.2;
+      }
+    });
+
+    // SECOND TIMEOUT: Force navigation after 3 seconds if still on "Checking connection"
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted &&
+          (_statusMessage.contains("Checking connection") ||
+              _statusMessage.contains("connection..."))) {
+        print(
+            "SplashScreen: Connectivity check timeout reached (3s), forcing navigation");
+        // Force backend to be considered unavailable to prevent waiting for it
+        _backendAvailable = false;
+        _loadingProgress = 0.8;
+
+        // Only check Firebase Auth status, not backend connectivity
+        _forceNavigateBasedOnFirebaseUser();
+      }
+    });
+
+    // THIRD TIMEOUT: For any other initialization issues
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted && _statusMessage != "Done") {
+        print("SplashScreen: General timeout reached (5s), forcing navigation");
+        _loadingProgress = 0.9;
+        _forceNavigateBasedOnFirebaseUser();
+      }
+    });
+
+    // FINAL TIMEOUT: Maximum failsafe - no matter what
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted) {
+        print(
+            "SplashScreen: Maximum time reached (8s), forcing navigation to login screen");
+        _isAnimating = false;
+        _loadingProgress = 1.0;
+
+        // Just go to login screen, most reliable option
+        if (mounted) {
+          print("SplashScreen: EMERGENCY navigation to login screen");
+          context.go(AppRouter.login);
+        }
+      }
+    });
+  }
+
+  // Helper method to force navigation based on current Firebase user state
+  void _forceNavigateBasedOnFirebaseUser() {
+    try {
+      // Get Firebase user state directly
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      final isLoggedIn = firebaseUser != null && !firebaseUser.isAnonymous;
+
+      print("SplashScreen: Force navigation with isLoggedIn=$isLoggedIn");
+
+      // Force navigation to appropriate screen
+      if (!isLoggedIn) {
+        if (mounted) context.go(AppRouter.login);
+      } else {
+        if (mounted) context.go(AppRouter.home);
+      }
+    } catch (e) {
+      print("SplashScreen: Error during force navigation: $e");
+      // If all else fails, go to login
+      if (mounted) {
+        context.go(AppRouter.login);
+      }
+    }
   }
 
   @override

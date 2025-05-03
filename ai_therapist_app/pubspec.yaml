@@ -33,7 +33,7 @@ dependencies:
   firebase_messaging: ^15.2.5
   firebase_analytics: ^11.4.5
   google_sign_in: ^6.1.4
-  # firebase_app_check: ^0.3.2+5 # Keep this commented out as it may be causing issues
+  firebase_app_check: ^0.3.2+5 # Enable App Check for better security
 
   # Local storage
   shared_preferences: ^2.2.1
