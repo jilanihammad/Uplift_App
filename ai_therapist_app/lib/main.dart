@@ -52,7 +52,7 @@ import 'dart:developer';
 import 'dart:isolate';
 
 import 'package:ai_therapist_app/config/api.dart';
-// import 'package:firebase_app_check/firebase_app_check.dart'; // Keep this commented out as it may be causing issues
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:ai_therapist_app/data/repositories/auth_repository.dart';
 import 'package:ai_therapist_app/data/repositories/user_repository.dart';
@@ -157,7 +157,25 @@ Future<void> main() async {
     AppConfig().logConfig();
     logger.info('[Main] AppConfig initialized with environment variables.');
 
-    // 2. Initialize Firebase using the synchronized method
+    // CRITICAL CHANGE: DISABLE FIREBASE APP CHECK COMPLETELY
+    try {
+      // Initialize Firebase Core without App Check
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      print("[Main] Firebase Core initialized directly - APP CHECK DISABLED");
+
+      // IMPORTANT: Log that App Check is intentionally disabled
+      print(
+          "[Main] Firebase App Check is INTENTIONALLY DISABLED to fix authentication issues");
+
+      // Do NOT initialize App Check at all
+    } catch (e) {
+      print("[Main] Error during Firebase initialization: $e");
+      print("[Main] Continuing with app initialization...");
+    }
+
+    // 2. Now initialize Firebase using the synchronized method
     final firebaseApp = await ensureFirebaseInitialized();
     if (firebaseApp != null) {
       logger.info(
@@ -693,7 +711,7 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
   }
 }
 
-// Add a helper method for Firebase services initialization
+// Add helper method for Firebase services initialization
 Future<void> _initializeFirebaseServices() async {
   try {
     // Wait briefly to prevent startup slowdown from multiple async operations
@@ -704,6 +722,11 @@ Future<void> _initializeFirebaseServices() async {
         'Initializing FirebaseService with existing Firebase instance...');
 
     final firebaseService = serviceLocator<FirebaseService>();
+
+    // Add explicit log that we're disabling App Check
+    logger.info(
+        '[Main] IMPORTANT: App Check is DISABLED in this build to avoid authentication issues');
+
     await firebaseService.init();
 
     logger.info('[Main] FirebaseService initialized successfully');

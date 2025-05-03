@@ -37,25 +37,48 @@ class AppDatabase {
   Future<Database> get database async {
     if (_database != null) return _database!;
 
-    // Prevent concurrent initialization
+    // CRITICAL: Wait for up to 500ms to see if database becomes available
+    // This should help avoid database locked errors
+    for (int i = 0; i < 5; i++) {
+      if (_database != null) return _database!;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
+    // Prevent concurrent initialization with better timeout handling
     if (_isInitializing) {
-      // Wait until initialization is complete
+      debugPrint(
+          'WARNING: Database initialization already in progress, waiting...');
+      // Wait until initialization is complete or timeout
       int attempts = 0;
       while (_database == null && attempts < 20) {
         await Future.delayed(const Duration(milliseconds: 100));
         attempts++;
+        if (attempts % 5 == 0) {
+          debugPrint(
+              'Still waiting for database initialization... ($attempts/20)');
+        }
       }
 
-      if (_database != null) return _database!;
-      throw Exception('Database initialization timeout');
+      if (_database != null) {
+        debugPrint('Database initialization completed while waiting');
+        return _database!;
+      }
+
+      debugPrint(
+          'ERROR: Database initialization timed out after ${attempts * 100}ms');
+      // Don't throw an exception - instead create a new instance
+      _isInitializing = false;
     }
 
     // Initialize database
     _isInitializing = true;
     try {
+      debugPrint('Initializing database...');
       _database = await _initDatabase();
+      debugPrint('Database initialization completed successfully');
       return _database!;
     } catch (e, stackTrace) {
+      debugPrint('ERROR initializing database: $e');
       _onError(e, stackTrace);
       _isInitializing = false;
       rethrow;

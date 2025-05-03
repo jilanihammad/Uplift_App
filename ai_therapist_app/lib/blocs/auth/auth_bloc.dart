@@ -5,6 +5,7 @@ import 'package:ai_therapist_app/services/onboarding_service.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:bloc/bloc.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide PhoneCodeSent;
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthService _authService;
@@ -115,10 +116,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       await _authService.verifyPhoneNumber(
         phoneNumber: event.phoneNumber,
-        onVerificationCompleted: (credential) {
+        onVerificationCompleted: (PhoneAuthCredential credential) {
           add(PhoneCodeAutoRetrievalEvent(credential: credential));
         },
-        onVerificationFailed: (error) {
+        onVerificationFailed: (FirebaseAuthException error) {
           add(PhoneVerificationFailedEvent(message: error.toString()));
         },
         onCodeSent: (verificationId, resendToken) {

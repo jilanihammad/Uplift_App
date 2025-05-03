@@ -11,6 +11,7 @@ import 'package:ai_therapist_app/utils/firebase_init.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:ai_therapist_app/utils/logging_service.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 
 class FirebaseService {
   // Firebase instances - initialized lazily
@@ -45,8 +46,10 @@ class FirebaseService {
     try {
       _configService = serviceLocator<ConfigService>();
     } catch (e) {
-      logger.warning('ConfigService not available, using defaults',
-          tag: 'Firebase');
+      logger.warning(
+        'ConfigService not available, using defaults',
+        tag: 'Firebase',
+      );
     }
   }
 
@@ -56,21 +59,39 @@ class FirebaseService {
       logger.info('Starting initialization', tag: 'Firebase');
 
       // Ensure Firebase Core is initialized first using the synchronized approach
-      await ensureFirebaseInitialized();
+      final firebaseApp = await ensureFirebaseInitialized();
+
+      if (firebaseApp == null) {
+        logger.error('Firebase Core initialization failed', tag: 'Firebase');
+        _initialized = false;
+        return;
+      }
+
+      logger.info(
+        'Firebase Core initialized: ${firebaseApp.name}',
+        tag: 'Firebase',
+      );
+
+      // IMPORTANT: App Check is completely disabled in this version
+      logger.info(
+        'IMPORTANT: Firebase App Check is DISABLED to fix authentication issues',
+        tag: 'Firebase',
+      );
 
       // Try initializing each service separately with detailed logging
       try {
         _auth = FirebaseAuth.instance;
-        // Test auth with a quick anonymous auth attempt
-        try {
-          await _auth?.signInAnonymously();
-          _authAvailable = true;
-          logger.info('Auth initialized and working', tag: 'Firebase');
-        } catch (authError) {
-          logger.warning('Auth available but operation restricted',
-              error: authError, tag: 'Firebase');
-          _authAvailable = false;
+
+        // Verify user authentication state
+        final currentUser = _auth?.currentUser;
+        if (currentUser != null && currentUser.isAnonymous) {
+          // Sign out anonymous users to ensure proper auth flow
+          logger.info('Signing out anonymous user', tag: 'Firebase');
+          await _auth?.signOut();
         }
+
+        _authAvailable = true;
+        logger.info('Auth initialized and working', tag: 'Firebase');
       } catch (e) {
         logger.error('Auth initialization failed', error: e, tag: 'Firebase');
         _authAvailable = false;
@@ -84,8 +105,11 @@ class FirebaseService {
         try {
           databaseId = _configService.firebaseDatabaseId;
         } catch (e) {
-          logger.warning('Could not get database ID from config',
-              error: e, tag: 'Firebase');
+          logger.warning(
+            'Could not get database ID from config',
+            error: e,
+            tag: 'Firebase',
+          );
         }
 
         // Initialize Firestore with custom database ID
@@ -102,11 +126,16 @@ class FirebaseService {
           sslEnabled: true,
         );
 
-        logger.info('Firestore initialized with database: $databaseId',
-            tag: 'Firebase');
+        logger.info(
+          'Firestore initialized with database: $databaseId',
+          tag: 'Firebase',
+        );
       } catch (e) {
-        logger.error('Firestore initialization failed',
-            error: e, tag: 'Firebase');
+        logger.error(
+          'Firestore initialization failed',
+          error: e,
+          tag: 'Firebase',
+        );
         _firestoreAvailable = false;
       }
 
@@ -118,13 +147,19 @@ class FirebaseService {
           _storageAvailable = true;
           logger.info('Storage initialized', tag: 'Firebase');
         } catch (storageError) {
-          logger.warning('Storage available but operation failed',
-              error: storageError, tag: 'Firebase');
+          logger.warning(
+            'Storage available but operation failed',
+            error: storageError,
+            tag: 'Firebase',
+          );
           _storageAvailable = false;
         }
       } catch (e) {
-        logger.error('Storage initialization failed',
-            error: e, tag: 'Firebase');
+        logger.error(
+          'Storage initialization failed',
+          error: e,
+          tag: 'Firebase',
+        );
         _storageAvailable = false;
       }
 
@@ -133,16 +168,24 @@ class FirebaseService {
         try {
           String? token = await _messaging?.getToken();
           _messagingAvailable = token != null;
-          logger.info('Messaging initialized and token obtained',
-              tag: 'Firebase');
+          logger.info(
+            'Messaging initialized and token obtained',
+            tag: 'Firebase',
+          );
         } catch (messagingError) {
-          logger.warning('Messaging available but operation failed',
-              error: messagingError, tag: 'Firebase');
+          logger.warning(
+            'Messaging available but operation failed',
+            error: messagingError,
+            tag: 'Firebase',
+          );
           _messagingAvailable = false;
         }
       } catch (e) {
-        logger.error('Messaging initialization failed',
-            error: e, tag: 'Firebase');
+        logger.error(
+          'Messaging initialization failed',
+          error: e,
+          tag: 'Firebase',
+        );
         _messagingAvailable = false;
       }
 
@@ -151,8 +194,11 @@ class FirebaseService {
         _analyticsAvailable = true;
         logger.info('Analytics initialized', tag: 'Firebase');
       } catch (e) {
-        logger.error('Analytics initialization failed',
-            error: e, tag: 'Firebase');
+        logger.error(
+          'Analytics initialization failed',
+          error: e,
+          tag: 'Firebase',
+        );
         _analyticsAvailable = false;
       }
 
@@ -165,23 +211,33 @@ class FirebaseService {
 
       // Log initialization status summary
       logger.info('Firebase initialized with status:', tag: 'Firebase');
-      logger.info('- Auth: ${_authAvailable ? 'Available' : 'Unavailable'}',
-          tag: 'Firebase');
       logger.info(
-          '- Firestore: ${_firestoreAvailable ? 'Available' : 'Unavailable'}',
-          tag: 'Firebase');
+        '- Auth: ${_authAvailable ? 'Available' : 'Unavailable'}',
+        tag: 'Firebase',
+      );
       logger.info(
-          '- Storage: ${_storageAvailable ? 'Available' : 'Unavailable'}',
-          tag: 'Firebase');
+        '- Firestore: ${_firestoreAvailable ? 'Available' : 'Unavailable'}',
+        tag: 'Firebase',
+      );
       logger.info(
-          '- Messaging: ${_messagingAvailable ? 'Available' : 'Unavailable'}',
-          tag: 'Firebase');
+        '- Storage: ${_storageAvailable ? 'Available' : 'Unavailable'}',
+        tag: 'Firebase',
+      );
       logger.info(
-          '- Analytics: ${_analyticsAvailable ? 'Available' : 'Unavailable'}',
-          tag: 'Firebase');
+        '- Messaging: ${_messagingAvailable ? 'Available' : 'Unavailable'}',
+        tag: 'Firebase',
+      );
+      logger.info(
+        '- Analytics: ${_analyticsAvailable ? 'Available' : 'Unavailable'}',
+        tag: 'Firebase',
+      );
     } catch (e, stackTrace) {
-      logger.error('Error initializing FirebaseService',
-          error: e, stackTrace: stackTrace, tag: 'Firebase');
+      logger.error(
+        'Error initializing FirebaseService',
+        error: e,
+        stackTrace: stackTrace,
+        tag: 'Firebase',
+      );
       _initialized = false;
     }
   }
@@ -192,8 +248,10 @@ class FirebaseService {
 
     // Skip entire process if any condition isn't met
     if (!_initialized || !_messagingAvailable || _messaging == null) {
-      logger.warning('Skipping messaging initialization (not ready)',
-          tag: 'Firebase');
+      logger.warning(
+        'Skipping messaging initialization (not ready)',
+        tag: 'Firebase',
+      );
       return;
     }
 
@@ -208,8 +266,10 @@ class FirebaseService {
           sound: true,
         );
 
-        logger.debug('Permission status: ${settings.authorizationStatus}',
-            tag: 'Firebase');
+        logger.debug(
+          'Permission status: ${settings.authorizationStatus}',
+          tag: 'Firebase',
+        );
 
         // Only continue if authorized
         if (settings.authorizationStatus != AuthorizationStatus.authorized) {
@@ -238,12 +298,18 @@ class FirebaseService {
         FirebaseMessaging.onMessage.listen(
           (message) =>
               logger.debug('Received foreground message', tag: 'Firebase'),
-          onError: (e) =>
-              logger.error('Message listener error', error: e, tag: 'Firebase'),
+          onError: (e) => logger.error(
+            'Message listener error',
+            error: e,
+            tag: 'Firebase',
+          ),
         );
       } catch (e) {
-        logger.error('Error setting up message listener',
-            error: e, tag: 'Firebase');
+        logger.error(
+          'Error setting up message listener',
+          error: e,
+          tag: 'Firebase',
+        );
       }
     } catch (e) {
       logger.error('Error in initMessaging', error: e, tag: 'Firebase');
@@ -254,8 +320,10 @@ class FirebaseService {
 
   // Try to reconnect to Firebase services
   Future<void> tryReconnect() async {
-    logger.info('Attempting to reconnect to Firebase services...',
-        tag: 'Firebase');
+    logger.info(
+      'Attempting to reconnect to Firebase services...',
+      tag: 'Firebase',
+    );
     await init();
   }
 
@@ -263,17 +331,19 @@ class FirebaseService {
   Future<void> logEvent(String name, Map<String, dynamic> parameters) async {
     if (!_initialized || !_analyticsAvailable) {
       logger.warning(
-          'Skipping analytics event logging: Firebase not ready or analytics unavailable.',
-          tag: 'Firebase');
+        'Skipping analytics event logging: Firebase not ready or analytics unavailable.',
+        tag: 'Firebase',
+      );
       return;
     }
 
     try {
       // Filter out null values from parameters and cast to required type
-      final Map<String, Object> nonNullParams = Map.fromEntries(parameters
-          .entries
-          .where((entry) => entry.value != null)
-          .map((entry) => MapEntry(entry.key, entry.value as Object)));
+      final Map<String, Object> nonNullParams = Map.fromEntries(
+        parameters.entries
+            .where((entry) => entry.value != null)
+            .map((entry) => MapEntry(entry.key, entry.value as Object)),
+      );
 
       await _analytics?.logEvent(name: name, parameters: nonNullParams);
 

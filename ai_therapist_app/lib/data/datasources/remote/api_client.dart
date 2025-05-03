@@ -43,6 +43,15 @@ class ApiClient {
     return _prefs.getString('auth_token');
   }
 
+  // Method to update auth token - used when refreshing Firebase tokens
+  Future<void> updateAuthToken(String token) async {
+    await _initPrefs();
+    await _prefs.setString('auth_token', token);
+    if (kDebugMode) {
+      print('ApiClient: Updated auth token');
+    }
+  }
+
   // Retry mechanism for handling transient errors
   Future<http.Response> _retryRequest(
       Future<http.Response> Function() requestFunc) async {

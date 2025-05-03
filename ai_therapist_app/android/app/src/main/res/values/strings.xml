@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- IMPORTANT: You need to add your actual Web Client ID from Firebase Console here -->
+    <!-- Find this in Firebase Console > Project Settings > Authentication > Sign-in method > Google > Web SDK configuration -->
+    <string name="server_client_id">REPLACE_WITH_YOUR_WEB_CLIENT_ID_FROM_FIREBASE_CONSOLE</string>
+    
+    <!-- This is required for the Play Integrity provider for App Check -->
+    <string name="play_integrity_enabled">true</string>
+</resources> 

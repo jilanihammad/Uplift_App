@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:get_it/get_it.dart';
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // Import screen files with the correct paths
 import 'package:ai_therapist_app/screens/splash_screen.dart';
@@ -64,12 +65,16 @@ class AppRouter {
       try {
         final authService = serviceLocator<AuthService>();
 
+        // Check for anonymous Firebase auth
+        final firebaseUser = FirebaseAuth.instance.currentUser;
+        final isAnonymous = firebaseUser?.isAnonymous ?? false;
+
         // Check if user is logged in and onboarding status - note async/await
         final bool isLoggedIn = await authService.isLoggedIn;
         final bool hasCompletedSignup = await authService.hasCompletedSignup;
 
         print(
-            "ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, path: ${state.matchedLocation}");
+            "ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, isAnonymous: $isAnonymous, path: ${state.matchedLocation}");
 
         final bool isGoingToAuth = state.matchedLocation == login ||
             state.matchedLocation == register ||
@@ -81,6 +86,13 @@ class AppRouter {
         if (isGoingToSplash) {
           print("ROUTER DEBUG: At splash screen, no redirection needed");
           return null;
+        }
+
+        // Handle anonymous auth - treat as not logged in
+        if (isAnonymous && !isGoingToAuth) {
+          print(
+              "ROUTER DEBUG: User is using anonymous auth, redirecting to login");
+          return login;
         }
 
         // If not logged in and not going to auth screens, redirect to login
