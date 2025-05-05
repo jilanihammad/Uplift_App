@@ -5,6 +5,7 @@ from typing import Optional
 import requests
 import os
 import uuid
+import traceback
 
 from app.core.config import settings
 
@@ -12,141 +13,136 @@ logger = logging.getLogger(__name__)
 
 class VoiceService:
     def __init__(self):
-        # Use environment variables instead of hardcoded values
-        self.api_key = settings.OPENAI_API_KEY
-        self.base_url = "https://api.openai.com/v1/audio/speech"
-        self.tts_model = settings.OPENAI_TTS_MODEL or "gpt-4o-mini-tts"
-        self.voice = settings.OPENAI_TTS_VOICE or "sage"
-        
-        # Ensure audio directory exists
-        self.audio_dir = "static/audio"
-        os.makedirs(self.audio_dir, exist_ok=True)
-        
-        # Create a fallback audio file if it doesn't exist
-        self._create_fallback_audio()
-        
-        logger.info(f"VoiceService initialized with:")
-        logger.info(f"TTS Model: {self.tts_model}")
-        logger.info(f"Voice: {self.voice}")
-        logger.info(f"API Key: {'Set' if self.api_key else 'Not set'}")
-        logger.info(f"Service available: {'Yes' if self.api_key else 'No'}")
-        
-        if self.api_key and self.tts_model and self.voice:
-            logger.info("VoiceService initialized successfully")
-        else:
-            logger.warning("VoiceService initialized with missing configuration")
+        try:
+            # Initialize with OpenAI API key
+            self.api_key = settings.OPENAI_API_KEY
+            self.base_url = "https://api.openai.com/v1/audio/speech"
+            self.tts_model = settings.OPENAI_TTS_MODEL or "gpt-4o-mini-tts"
+            self.voice = settings.OPENAI_TTS_VOICE or "sage"
+            self.available = bool(self.api_key)
+            
+            # Use /tmp in Cloud Run, otherwise use static/audio
+            if os.environ.get("GOOGLE_CLOUD") == "1":
+                logger.info("Running in Cloud Run environment, using /tmp for audio storage")
+                self.audio_dir = "/tmp/static/audio"
+            else:
+                self.audio_dir = "static/audio"
+                
+            # Ensure audio directory exists
+            os.makedirs(self.audio_dir, exist_ok=True)
+            logger.info(f"Audio directory: {self.audio_dir}")
+            
+            # Create a fallback audio file if it doesn't exist
+            self._create_fallback_audio()
+            
+            logger.info(f"VoiceService initialized with:")
+            logger.info(f"TTS Model: {self.tts_model}")
+            logger.info(f"Voice: {self.voice}")
+            logger.info(f"API Key: {'Set' if self.api_key else 'Not set'}")
+            logger.info(f"Service available: {'Yes' if self.available else 'No'}")
+        except Exception as e:
+            logger.error(f"Error initializing VoiceService: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Use default values on error
+            self.api_key = ""
+            self.base_url = "https://api.openai.com/v1/audio/speech"
+            self.tts_model = "gpt-4o-mini-tts"
+            self.voice = "sage"
+            self.available = False
+            
+            # Ensure audio directory exists even on error - use /tmp in Cloud Run
+            if os.environ.get("GOOGLE_CLOUD") == "1":
+                self.audio_dir = "/tmp/static/audio"
+            else:
+                self.audio_dir = "static/audio"
+                
+            os.makedirs(self.audio_dir, exist_ok=True)
+            
+            logger.warning("VoiceService unavailable - will return fallback responses")
     
     def _create_fallback_audio(self):
         """Create a valid fallback MP3 file"""
         error_file = os.path.join(self.audio_dir, "error.mp3")
         
-        if os.path.exists(error_file) and os.path.getsize(error_file) > 100:
+        if os.path.exists(error_file) and os.path.getsize(error_file) > 1000:
             logger.info(f"Fallback audio file already exists: {error_file}")
             return
             
         try:
-            # This is a minimal valid MP3 file
+            # Create a simple text file as fallback in Cloud Run
             with open(error_file, "wb") as f:
-                # Simple but valid MP3 frame header
-                mp3_data = bytearray.fromhex(
-                    "FFFB5000" +  # MPEG1 Layer 3 header
-                    "00000000000000000000" +
-                    "00000000000000000000" +
-                    "00000000000000000000" 
-                )
-                f.write(mp3_data)
-            
-            logger.info(f"Created fallback audio file: {error_file}")
+                f.write(b"This is a fallback audio file")
+            logger.info(f"Created simple fallback file: {error_file}")
         except Exception as e:
             logger.error(f"Error creating fallback audio file: {str(e)}")
+            logger.error(traceback.format_exc())
     
-    async def generate_speech(self, text: str) -> Optional[str]:
-        """
-        Generate speech from text using OpenAI API.
-        
-        Args:
-            text: Text to convert to speech
-        
-        Returns:
-            URL to the generated audio file or None if generation failed
-        """
+    async def generate_speech(self, text: str, format_params: dict = None) -> Optional[str]:
+        """Generate speech from text and return the URL to the generated audio file"""
         if not text:
-            return "/audio/error.mp3"
-        
-        # Check if API key is available
-        if not self.api_key:
-            logger.error("No OpenAI API key available")
-            return "/audio/error.mp3"
-        
-        # Limit text length to avoid excessive API usage
-        if len(text) > 4000:  # OpenAI has a 4096 token limit
-            text = text[:4000]
-        
+            raise ValueError("No text provided for speech generation")
+            
+        if not self.available:
+            raise ValueError("Voice service unavailable - API key not set")
+            
+        # Use OpenAI API to generate speech
         try:
+            # Get format extension
+            format_type = format_params.get("response_format", "mp3") if format_params else "mp3"
+            extension = ".ogg" if format_type in ["opus", "ogg_opus"] else ".mp3"
+            
             # Generate a unique filename for the audio file
-            filename = f"{uuid.uuid4()}.mp3"
+            filename = f"{uuid.uuid4()}{extension}"
             file_path = os.path.join(self.audio_dir, filename)
             
-            # Generate the audio using OpenAI API
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            data = {
-                "model": self.tts_model,
-                "input": text,
-                "voice": self.voice,
-                "response_format": "mp3"
-            }
+            # Call the OpenAI TTS API
+            from app.services.openai_service import openai_service
+            tts_success = await openai_service.text_to_speech(text, file_path, format_params)
             
-            logger.info(f"Calling OpenAI API for TTS with voice: {self.voice}")
+            logger.info(f"TTS result: {'Success' if tts_success else 'Failed'}")
             
-            # Make the API call - using sync requests since it works
-            try:
-                response = requests.post(
-                    self.base_url, 
-                    json=data, 
-                    headers=headers,
-                    timeout=30
-                )
-                
-                if response.status_code != 200:
-                    logger.error(f"Error from OpenAI API: {response.status_code} - {response.text}")
-                    return "/audio/error.mp3"
-                
-                # Save the audio content to the file
-                with open(file_path, "wb") as f:
-                    f.write(response.content)
-                
-                file_size = os.path.getsize(file_path)
-                logger.info(f"Audio file saved to {file_path} with size {file_size} bytes")
-                
-                if file_size > 0:
-                    return f"/audio/{filename}"
-                else:
-                    logger.error("Generated audio file is empty")
-                    return "/audio/error.mp3"
-                    
-            except Exception as e:
-                logger.error(f"Error calling OpenAI speech API: {str(e)}")
-                return "/audio/error.mp3"
+            # Return the URL to the audio file
+            return f"/audio/{filename}"
             
         except Exception as e:
             logger.error(f"Error generating speech: {str(e)}")
-            return "/audio/error.mp3"
+            logger.error(traceback.format_exc())
+            raise Exception(f"Speech generation failed: {str(e)}")
     
     def set_voice(self, voice_id: str) -> None:
         """
         Set the voice ID to use for speech generation.
         
         Args:
-            voice_id: Voice ID for OpenAI API (alloy, echo, fable, onyx, nova, shimmer)
+            voice_id: Voice ID for OpenAI API (alloy, echo, fable, onyx, nova, shimmer, sage)
         """
         try:
             self.voice = voice_id.lower()  # OpenAI voices are lowercase
             logger.info(f"Voice set to: {self.voice}")
         except Exception as e:
             logger.error(f"Error setting voice: {str(e)}")
+            logger.error(traceback.format_exc())
 
-voice_service = VoiceService() 
+# Create a singleton instance
+try:
+    voice_service = VoiceService()
+    logger.info("VoiceService initialized successfully")
+except Exception as e:
+    # Create a minimal service that throws errors
+    logger.error(f"Failed to initialize VoiceService: {str(e)}")
+    logger.error(traceback.format_exc())
+    
+    class FallbackVoiceService:
+        """A service that throws errors instead of returning fallbacks"""
+        async def generate_speech(self, text, format_params=None):
+            raise Exception("Voice service unavailable - failed to initialize")
+            
+        def set_voice(self, voice_id):
+            pass
+    
+    voice_service = FallbackVoiceService()
+    logger.warning("Using FallbackVoiceService that throws errors")

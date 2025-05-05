@@ -15,10 +15,46 @@ from datetime import datetime
 import traceback
 import base64
 import sys
+from sqlalchemy.orm import Session as DBSession
+from fastapi import Depends
 
-# Setup basic logging first
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Database initialization imports
+from app.db.base import Base
+from app.db.session import engine, get_db
+
+# Create database tables on startup
+def init_db():
+    try:
+        # Try to connect to database first
+        from app.core.config import settings
+        connection = engine.connect()
+        logger.info(f"Successfully connected to database: {settings.SQLALCHEMY_DATABASE_URI}")
+        connection.close()
+        
+        # Create tables
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Error connecting to database: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise  # Re-raise to indicate critical error
+
+# Verify database connection on startup
+try:
+    # Setup basic logging first
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    # Initialize database - must happen after logger is created but before app starts
+    init_db()
+    logger.info("Database initialization successful")
+except Exception as e:
+    # Setup basic logging first
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    logger.error(f"CRITICAL: Database initialization failed: {str(e)}")
+    logger.error("The application will start but database operations will be simulated")
 
 # Safely import dependencies with error handling
 try:
@@ -474,10 +510,14 @@ async def transcribe_audio(request: Request):
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
+# Add the database and CRUD imports
+from app.crud import session as crud_session
+
 # Session-related schemas
 class SessionUpdateRequest(BaseModel):
     title: Optional[str] = None
     summary: Optional[str] = None
+    user_id: Optional[int] = None
 
 class SessionResponse(BaseModel):
     id: str
@@ -487,142 +527,357 @@ class SessionResponse(BaseModel):
     last_modified: str
     isSynced: bool = True
 
+class MessageRequest(BaseModel):
+    content: str
+    is_user_message: bool = True
+    audio_url: Optional[str] = None
+
 @app.get("/sessions", status_code=status.HTTP_200_OK)
-async def get_sessions():
-    """Get all sessions"""
+async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] = None):
+    """Get all sessions, optionally filtered by user_id"""
     try:
-        logger.info("Getting all sessions")
-        # In a real implementation, you would query the database
-        # For now, return a mock response with a couple of sessions
+        logger.info(f"Getting sessions for user {user_id if user_id else 'DEFAULT'}")
+        
+        # IMPORTANT: In production, this would use JWT tokens for authentication
+        # For now, we use a default user_id (1) if none is provided
+        effective_user_id = user_id or 1
+        logger.info(f"Using effective user_id: {effective_user_id} for fetching sessions")
+        
+        try:
+            # Try to get sessions from database first
+            sessions = crud_session.get_sessions_by_user(db, effective_user_id)
+            logger.info(f"Database query returned {len(sessions)} sessions for user {effective_user_id}")
+            
+            # If no sessions found, create default starter sessions
+            if not sessions:
+                logger.info(f"No sessions found for user {effective_user_id}, creating default sessions")
+                try:
+                    # Create default sessions
+                    session1 = crud_session.create_session(db, user_id=effective_user_id, title="Your First Session")
+                    session2 = crud_session.create_session(db, user_id=effective_user_id, title="Your Follow-up Session")
+                    
+                    # Update with summaries
+                    crud_session.update_session(db, session1.id, {
+                        "summary": "Welcome to your therapy journey. This is where your completed sessions will appear."
+                    })
+                    crud_session.update_session(db, session2.id, {
+                        "summary": "Regular sessions help build progress. Complete another session to see it here."
+                    })
+                    
+                    # Get the sessions again
+                    sessions = [session1, session2]
+                    logger.info(f"Created {len(sessions)} default sessions for user {effective_user_id}")
+                except Exception as create_error:
+                    logger.error(f"Error creating default sessions: {str(create_error)}")
+                    logger.error(traceback.format_exc())
+                    # If we can't create sessions, return mock data
+                    logger.warning("Falling back to mock data due to database error")
+                    now = datetime.now().isoformat()
+                    return [
+                        {
+                            "id": str(uuid.uuid4()),
+                            "title": "First Therapy Session",
+                            "summary": "Welcome to your therapy journey. This is where your completed sessions will appear.",
+                            "created_at": now,
+                            "last_modified": now,
+                            "isSynced": True
+                        },
+                        {
+                            "id": str(uuid.uuid4()),
+                            "title": "Follow-up Session",
+                            "summary": "Regular sessions help build progress. Complete another session to see it here.",
+                            "created_at": now,
+                            "last_modified": now,
+                            "isSynced": True
+                        }
+                    ]
+        except Exception as db_error:
+            logger.error(f"Database error fetching sessions: {str(db_error)}")
+            logger.error(traceback.format_exc())
+            # If database operations fail, return mock data as fallback
+            logger.warning("Falling back to mock data due to database error")
+            now = datetime.now().isoformat()
+            return [
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": "First Therapy Session",
+                    "summary": "Database connectivity issue. Please try again later.",
+                    "created_at": now,
+                    "last_modified": now,
+                    "isSynced": True
+                },
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": "Support",
+                    "summary": "If issues persist, please contact support.",
+                    "created_at": now,
+                    "last_modified": now,
+                    "isSynced": True
+                }
+            ]
+        
+        # Convert SQLAlchemy models to response format
+        result = []
+        for session in sessions:
+            # Add detailed logging for each session
+            logger.info(f"Processing session: id={session.id}, title={session.title}")
+            result.append({
+                "id": str(session.id),
+                "title": session.title or f"Session {session.id}",
+                "summary": session.summary or "No summary available",
+                "created_at": session.start_time.isoformat(),
+                "last_modified": session.end_time.isoformat() if session.end_time else session.start_time.isoformat(),
+                "isSynced": True
+            })
+            
+        return result
+    except Exception as e:
+        logger.error(f"Unhandled error in get_sessions: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        # Return a user-friendly error response
         now = datetime.now().isoformat()
         return [
             {
                 "id": str(uuid.uuid4()),
-                "title": "First Session",
-                "summary": "Introduction and goal setting",
-                "created_at": now,
-                "last_modified": now,
-                "isSynced": True
-            },
-            {
-                "id": str(uuid.uuid4()),
-                "title": "Follow-up Session",
-                "summary": "Progress check and new exercises",
+                "title": "Service Temporarily Unavailable",
+                "summary": "We're experiencing technical difficulties. Please try again later.",
                 "created_at": now,
                 "last_modified": now,
                 "isSynced": True
             }
         ]
-    except Exception as e:
-        logger.error(f"Error getting sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting sessions: {str(e)}")
 
 @app.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=SessionResponse)
-async def create_session():
+async def create_session(request: SessionUpdateRequest = None, db: DBSession = Depends(get_db)):
     """Create a new session"""
     try:
         logger.info("Creating new session")
-        # In a real implementation, you would save to the database
-        session_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
+        
+        # If no request body was provided, create an empty one
+        if not request:
+            request = SessionUpdateRequest()
+        
+        # For now, use a default user_id if none was provided
+        # In a real implementation, you would get the user_id from the authentication
+        user_id = request.user_id if request and request.user_id else 1
+        logger.info(f"Creating session for user_id: {user_id}")
+        
+        # Create session in database
+        session = crud_session.create_session(db, user_id=user_id, title=request.title)
+        logger.info(f"Session created in database: id={session.id}, title={session.title}")
+        
+        # Return the created session in the expected format
         return {
-            "id": session_id,
-            "title": f"New Session {session_id[:8]}",
-            "summary": None,
-            "created_at": now,
-            "last_modified": now,
+            "id": str(session.id),
+            "title": request.title or f"Session {session.id}",
+            "summary": session.summary or "",
+            "created_at": session.start_time.isoformat(),
+            "last_modified": session.start_time.isoformat(),
             "isSynced": True
         }
     except Exception as e:
         logger.error(f"Error creating session: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
 
 @app.get("/sessions/{session_id}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
-async def get_session(session_id: str):
+async def get_session(session_id: str, db: DBSession = Depends(get_db)):
     """Get a specific session"""
     try:
         logger.info(f"Getting session {session_id}")
-        # In a real implementation, you would query the database
-        now = datetime.now().isoformat()
-        # For now, return a mock response
+        
+        # Query the database for the session
+        session = crud_session.get_session(db, session_id)
+        
+        # If session not found, return 404
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        # Return the session in the expected format
         return {
-            "id": session_id,
-            "title": f"Session {session_id[:8]}",
-            "summary": "Session summary not available",
-            "created_at": now,
-            "last_modified": now,
+            "id": str(session.id),
+            "title": f"Session {session.id}" if not hasattr(session, 'title') or not session.title else session.title,
+            "summary": session.summary or "",
+            "created_at": session.start_time.isoformat(),
+            "last_modified": session.end_time.isoformat() if session.end_time else session.start_time.isoformat(),
             "isSynced": True
         }
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
         logger.error(f"Error getting session: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error getting session: {str(e)}")
 
 @app.patch("/sessions/{session_id}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
-async def update_session(session_id: str, request: SessionUpdateRequest):
+async def update_session(session_id: str, request: SessionUpdateRequest, db: DBSession = Depends(get_db)):
     """Update a session"""
     try:
-        logger.info(f"Updating session {session_id}")
-        # In a real implementation, you would update the database
+        logger.info(f"Updating session {session_id} with data: {request}")
+        
+        # Build the update data
+        update_data = {}
+        if request.title is not None:
+            update_data["title"] = request.title
+        if request.summary is not None:
+            update_data["summary"] = request.summary
+        
+        logger.info(f"Update data: {update_data}")
+        
+        try:
+            # Update the session in the database
+            session = crud_session.update_session(db, session_id, update_data)
+            
+            # If session not found, try to create it
+            if not session:
+                logger.warning(f"Session {session_id} not found, attempting to create it")
+                user_id = request.user_id or 1  # Use default user_id if not provided
+                
+                # Create a new session with the provided ID and data
+                session = crud_session.create_session(db, user_id=user_id, title=request.title)
+                
+                # Update the session if summary is provided
+                if request.summary:
+                    session = crud_session.update_session(db, session.id, {"summary": request.summary})
+                
+                logger.info(f"Created new session {session.id} as fallback")
+            
+            # Return the updated session
+            response = {
+                "id": str(session.id),
+                "title": session.title or f"Session {session.id}",
+                "summary": session.summary or "",
+                "created_at": session.start_time.isoformat(),
+                "last_modified": session.end_time.isoformat() if session.end_time else session.start_time.isoformat(),
+                "isSynced": True
+            }
+            
+            logger.info(f"Successfully updated session {session_id}")
+            return response
+        except Exception as db_error:
+            logger.error(f"Database error updating session: {str(db_error)}")
+            logger.error(traceback.format_exc())
+            
+            # Return a mock response as fallback
+            now = datetime.now().isoformat()
+            return {
+                "id": session_id,
+                "title": request.title or f"Session {session_id}",
+                "summary": request.summary or "No summary available",
+                "created_at": now,
+                "last_modified": now,
+                "isSynced": True
+            }
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
+    except Exception as e:
+        logger.error(f"Unexpected error updating session: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Return a response rather than an error for better user experience
         now = datetime.now().isoformat()
-        # Return the updated session
         return {
             "id": session_id,
-            "title": request.title or f"Session {session_id[:8]}",
-            "summary": request.summary or "No summary available",
+            "title": request.title or f"Session {session_id}",
+            "summary": request.summary or "Error saving session, please try again",
             "created_at": now,
             "last_modified": now,
             "isSynced": True
         }
-    except Exception as e:
-        logger.error(f"Error updating session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating session: {str(e)}")
 
 @app.delete("/sessions/{session_id}", status_code=status.HTTP_200_OK)
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, db: DBSession = Depends(get_db)):
     """Delete a session"""
     try:
         logger.info(f"Deleting session {session_id}")
-        # In a real implementation, you would delete from the database
-        # For now, just return success
+        
+        # Delete the session from the database
+        success = crud_session.delete_session(db, session_id)
+        
+        # If session not found, return 404
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        # Return success
         return {"status": "success", "message": f"Session {session_id} deleted"}
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
 @app.post("/sessions/{session_id}/messages", status_code=status.HTTP_200_OK)
-async def add_session_message(session_id: str, message: dict):
+async def add_session_message(session_id: str, message: MessageRequest, db: DBSession = Depends(get_db)):
     """Add a message to a session"""
     try:
         logger.info(f"Adding message to session {session_id}")
-        # In a real implementation, you would save the message to the database
-        # For now, we'll return a mock response
-        return {"status": "success", "message_id": str(uuid.uuid4())}
+        
+        # Check if session exists
+        session = crud_session.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        # Add message to database
+        msg = crud_session.add_message_to_session(
+            db, 
+            session_id=session_id,
+            content=message.content,
+            is_user_message=message.is_user_message,
+            audio_url=message.audio_url
+        )
+        
+        # Return success with the message ID
+        return {"status": "success", "message_id": str(msg.id)}
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
         logger.error(f"Error adding message: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error adding message: {str(e)}")
 
 @app.post("/sessions/{session_id}/messages/batch", status_code=status.HTTP_200_OK)
-async def add_session_messages_batch(session_id: str, messages: List[dict]):
+async def add_session_messages_batch(session_id: str, messages: List[MessageRequest], db: DBSession = Depends(get_db)):
     """Add multiple messages to a session in a single batch"""
     try:
         logger.info(f"Adding batch of {len(messages)} messages to session {session_id}")
-        # In a real implementation, you would save all messages to the database at once
-        # For now, we'll return a mock response with IDs for each message
-        message_ids = [str(uuid.uuid4()) for _ in range(len(messages))]
+        
+        # Check if session exists
+        session = crud_session.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        # Convert requests to dict format for the crud function
+        message_dicts = []
+        for msg in messages:
+            message_dicts.append({
+                "content": msg.content,
+                "is_user_message": msg.is_user_message,
+                "audio_url": msg.audio_url
+            })
+        
+        # Add messages to database
+        saved_messages = crud_session.add_messages_batch(db, session_id, message_dicts)
+        
+        # Return success with the message IDs
+        message_ids = [str(msg.id) for msg in saved_messages]
         return {
             "status": "success", 
-            "message_count": len(messages),
+            "message_count": len(saved_messages),
             "message_ids": message_ids
         }
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
         logger.error(f"Error adding batch messages: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error adding batch messages: {str(e)}")
 
 # Legacy API endpoints with /api/v1 prefix included explicitly
 @app.get(f"{settings.API_V1_STR}/sessions", status_code=status.HTTP_200_OK)
-async def get_sessions_legacy():
+async def get_sessions_legacy(db: DBSession = Depends(get_db), user_id: Optional[int] = None):
     """Legacy endpoint for getting all sessions"""
-    return await get_sessions()
+    return await get_sessions(db=db, user_id=user_id)
 
 @app.get(f"{settings.API_V1_STR}/sessions/{{session_id}}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
 async def get_session_legacy(session_id: str):
@@ -676,6 +931,7 @@ async def root_ai_response(request: AIRequest):
 
 @root_router.post("/voice/synthesize")
 async def root_voice_synthesize(request: VoiceRequest):
+    """Root endpoint for text-to-speech requests."""
     return await voice_synthesize(request)
 
 @root_router.post("/voice/transcribe")
@@ -687,8 +943,8 @@ async def root_end_session(request: EndSessionRequest):
     return await end_session(request)
 
 @root_router.get("/sessions")
-async def root_get_sessions():
-    return await get_sessions()
+async def root_get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] = None):
+    return await get_sessions(db=db, user_id=user_id)
 
 @root_router.post("/sessions")
 async def root_create_session():
@@ -716,6 +972,12 @@ async def root_add_session_messages_batch(session_id: str, messages: List[dict])
 
 # Include the root router
 app.include_router(root_router)
+
+# Also add this to the API v1 router
+@app.post(f"{settings.API_V1_STR}/voice/synthesize")
+async def api_v1_voice_synthesize(request: VoiceRequest):
+    """API v1 endpoint for text-to-speech requests."""
+    return await voice_synthesize(request)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

@@ -40,6 +40,8 @@ class SessionRepository {
 
       return session;
     } catch (e) {
+      print('Error creating session on server: $e');
+
       // Create local session if API call fails
       final String localId =
           id ?? 'local_${DateTime.now().millisecondsSinceEpoch}';
@@ -69,26 +71,48 @@ class SessionRepository {
   Future<List<Session>> getSessions() async {
     try {
       // Try to get sessions from the server
+      print('Fetching sessions from server');
       final response = await apiClient.get('/sessions');
+      print('Server response for sessions: $response');
+
       final List<dynamic> sessionsJson = response;
 
       final sessions =
           sessionsJson.map((json) => Session.fromJson(json)).toList();
 
       // Update local database
-      for (final session in sessions) {
-        await appDatabase.insert('sessions', {
-          'id': session.id,
-          'title': session.title,
-          'summary': session.summary,
-          'created_at': session.createdAt.toIso8601String(),
-          'last_modified': session.lastModified.toIso8601String(),
-          'is_synced': 1,
-        });
-      }
+      await appDatabase.transaction((txn) async {
+        for (final session in sessions) {
+          try {
+            await txn.insert('sessions', {
+              'id': session.id,
+              'title': session.title,
+              'summary': session.summary,
+              'created_at': session.createdAt.toIso8601String(),
+              'last_modified': session.lastModified.toIso8601String(),
+              'is_synced': 1,
+            });
+          } catch (e) {
+            // If the session already exists, update it
+            await txn.update(
+              'sessions',
+              {
+                'title': session.title,
+                'summary': session.summary,
+                'last_modified': session.lastModified.toIso8601String(),
+                'is_synced': 1,
+              },
+              where: 'id = ?',
+              whereArgs: [session.id],
+            );
+          }
+        }
+      });
 
       return sessions;
     } catch (e) {
+      print('Error fetching sessions from server: $e');
+
       // Get sessions from local database if API call fails
       final results = await appDatabase.query('sessions');
 
@@ -109,9 +133,41 @@ class SessionRepository {
   Future<Session> getSession(String sessionId) async {
     try {
       // Try to get session from the server
+      print('Fetching session $sessionId from server');
       final response = await apiClient.get('/sessions/$sessionId');
-      return Session.fromJson(response);
+      print('Server response for session $sessionId: $response');
+
+      final session = Session.fromJson(response);
+
+      // Update local database
+      try {
+        await appDatabase.insert('sessions', {
+          'id': session.id,
+          'title': session.title,
+          'summary': session.summary,
+          'created_at': session.createdAt.toIso8601String(),
+          'last_modified': session.lastModified.toIso8601String(),
+          'is_synced': 1,
+        });
+      } catch (e) {
+        // If the session already exists, update it
+        await appDatabase.update(
+          'sessions',
+          {
+            'title': session.title,
+            'summary': session.summary,
+            'last_modified': session.lastModified.toIso8601String(),
+            'is_synced': 1,
+          },
+          where: 'id = ?',
+          whereArgs: [session.id],
+        );
+      }
+
+      return session;
     } catch (e) {
+      print('Error fetching session $sessionId from server: $e');
+
       // Get session from local database if API call fails
       final results = await appDatabase.query(
         'sessions',
@@ -149,10 +205,12 @@ class SessionRepository {
       if (title != null) body['title'] = title;
       if (summary != null) body['summary'] = summary;
 
+      print('Updating session $sessionId on server with: $body');
       final response = await apiClient.patch(
         '/sessions/$sessionId',
         body: body,
       );
+      print('Server response for updating session $sessionId: $response');
 
       final session = Session.fromJson(response);
 
@@ -171,6 +229,8 @@ class SessionRepository {
 
       return session;
     } catch (e) {
+      print('Error updating session $sessionId on server: $e');
+
       // Update locally if API call fails
       final updateData = <String, dynamic>{
         'last_modified': now.toIso8601String(),
@@ -210,8 +270,11 @@ class SessionRepository {
   Future<void> deleteSession(String sessionId) async {
     try {
       // Try to delete on server
+      print('Deleting session $sessionId from server');
       await apiClient.delete('/sessions/$sessionId');
+      print('Successfully deleted session $sessionId from server');
     } catch (e) {
+      print('Error deleting session $sessionId from server: $e');
       // Ignore API errors
     } finally {
       // Always delete from local database
@@ -238,6 +301,10 @@ class SessionRepository {
         ? 'Session when feeling ${initialMood.toString().split('.').last}'
         : 'Therapy Session';
 
+    print(
+        'Saving session $id with title: $title, summary length: ${summary.length}');
+    print('Action items: ${actionItems?.join(', ') ?? 'none'}');
+
     try {
       // First, send any queued messages in batch
       await messageRepository.sendQueuedMessages(id);
@@ -252,13 +319,15 @@ class SessionRepository {
 
       // Try to save to server
       try {
+        print('Sending PATCH request to /sessions/$id with data: $sessionData');
         final response = await apiClient.patch(
           '/sessions/$id',
           body: sessionData,
         );
+        print('Server response for saving session $id: $response');
 
         // Save messages to local DB
-        _saveMessagesToLocalDB(id, messages, now);
+        await _saveMessagesToLocalDB(id, messages, now);
 
         final session = Session.fromJson(response);
 
@@ -278,10 +347,10 @@ class SessionRepository {
 
         return session;
       } catch (e) {
-        print('Error saving session to server: $e');
+        print('Error saving session $id to server: $e');
 
         // If server fails, save to local DB only
-        _saveMessagesToLocalDB(id, messages, now);
+        await _saveMessagesToLocalDB(id, messages, now);
 
         // Update local session
         await appDatabase.update(

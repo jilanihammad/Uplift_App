@@ -1198,9 +1198,48 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _startVoiceInput() async {
     if (_isRecording) {
       // Stop recording and process
+      if (kDebugMode) {
+        print('💬 CHAT: Stopping recording');
+      }
+
+      setState(() {
+        _isProcessing = true; // Show loading while stopping recording
+      });
+
       final transcription = await _voiceService.stopRecording();
 
-      if (transcription.isNotEmpty) {
+      setState(() {
+        _isRecording = false;
+        _isProcessing = false;
+      });
+
+      // Check if the transcription is an error message (starts with "Error:")
+      if (transcription.startsWith("Error:")) {
+        // Show error message
+        if (mounted) {
+          if (kDebugMode) {
+            print('💬 CHAT ERROR: $transcription');
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(transcription),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Check if we got a real transcription (not empty and not a placeholder)
+      if (transcription.isNotEmpty &&
+          !transcription.contains("Tap to speak") &&
+          !transcription.contains("type your message")) {
+        if (kDebugMode) {
+          print('💬 CHAT: Got transcription: $transcription');
+        }
+
         setState(() {
           _isProcessing = true;
         });
@@ -1265,14 +1304,74 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             _isProcessing = false;
           });
 
+          if (kDebugMode) {
+            print('💬 CHAT ERROR: Error processing voice: $e');
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error processing voice: $e')),
+            SnackBar(
+              content: Text('Error processing voice: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else if (transcription.isNotEmpty) {
+        // Got a placeholder message, just show it to the user
+        if (mounted) {
+          if (kDebugMode) {
+            print('💬 CHAT: Got placeholder: $transcription');
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(transcription),
+              duration: const Duration(seconds: 2),
+            ),
           );
         }
       }
     } else {
       // Start recording
-      await _voiceService.startRecording();
+      if (kDebugMode) {
+        print('💬 CHAT: Starting recording');
+      }
+
+      setState(() {
+        _isProcessing = true; // Show loading while starting recording
+      });
+
+      try {
+        await _voiceService.startRecording();
+
+        // Only update state to recording if start was successful
+        setState(() {
+          _isRecording = true;
+          _isProcessing = false;
+        });
+
+        if (kDebugMode) {
+          print('💬 CHAT: Recording started successfully');
+        }
+      } catch (e) {
+        setState(() {
+          _isRecording = false;
+          _isProcessing = false;
+        });
+
+        if (kDebugMode) {
+          print('💬 CHAT ERROR: Failed to start recording: $e');
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error starting recording: $e'),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
   }
 

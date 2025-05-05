@@ -282,7 +282,7 @@ class ConfigService {
       if (envTranscriptionModelId.isNotEmpty) {
         _transcriptionModelId = envTranscriptionModelId;
       } else {
-        _transcriptionModelId = 'whisper-large-v3-turbo';
+        _transcriptionModelId = 'gpt-4o-mini-transcribe';
       }
 
       // Set Firebase configuration

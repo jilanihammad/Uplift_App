@@ -15,6 +15,10 @@ $TIMEOUT = "300s"
 $CONCURRENCY = 80
 $PORT = 8000  # Cloud Run will use this port
 
+# Add a timestamp to force rebuild without cache
+$TIMESTAMP = Get-Date -Format "yyyyMMddHHmmss"
+$BUILD_TAG = "$SERVICE_NAME-$TIMESTAMP"
+
 # Ask for the OpenAI API key
 Write-Host "Please enter your OpenAI API key (starts with 'sk-'): " -ForegroundColor Yellow -NoNewline
 $openai_api_key = Read-Host
@@ -38,6 +42,10 @@ try {
     exit 1
 }
 
+# Install aiofiles locally first to verify it works
+Write-Host "Installing aiofiles locally to verify it works..." -ForegroundColor Yellow
+pip install aiofiles
+
 # Create a temporary deployment directory
 $TEMP_DIR = "deploy_temp"
 if (Test-Path $TEMP_DIR) {
@@ -46,14 +54,32 @@ if (Test-Path $TEMP_DIR) {
 New-Item -ItemType Directory -Path $TEMP_DIR | Out-Null
 Write-Host "Created temporary deployment directory." -ForegroundColor Green
 
-# Copy necessary files to deployment directory
+# Copy necessary files to deployment directory - use correct paths to ai_therapist_backend
 Write-Host "Copying files to deployment directory..." -ForegroundColor Yellow
-Copy-Item -Path "app" -Destination "$TEMP_DIR\app" -Recurse
-Copy-Item -Path "alembic" -Destination "$TEMP_DIR\alembic" -Recurse
-Copy-Item -Path "alembic.ini" -Destination "$TEMP_DIR\alembic.ini"
-Copy-Item -Path "main.py" -Destination "$TEMP_DIR\main.py"
-Copy-Item -Path ".env" -Destination "$TEMP_DIR\.env"
-Copy-Item -Path "requirements.txt" -Destination "$TEMP_DIR\requirements.txt"
+Copy-Item -Path "ai_therapist_backend\app" -Destination "$TEMP_DIR\app" -Recurse
+Copy-Item -Path "ai_therapist_backend\alembic" -Destination "$TEMP_DIR\alembic" -Recurse
+Copy-Item -Path "ai_therapist_backend\alembic.ini" -Destination "$TEMP_DIR\alembic.ini"
+Copy-Item -Path "ai_therapist_backend\main.py" -Destination "$TEMP_DIR\main.py"
+Copy-Item -Path "ai_therapist_backend\requirements.txt" -Destination "$TEMP_DIR\requirements.txt"
+
+# Check if .env exists and copy it; if not, create a basic one
+$ENV_FILE_PATH = "ai_therapist_backend\.env"
+if (Test-Path $ENV_FILE_PATH) {
+    Write-Host "Copying existing .env file..." -ForegroundColor Green
+    Copy-Item -Path $ENV_FILE_PATH -Destination "$TEMP_DIR\.env"
+} else {
+    Write-Host "Creating default .env file for deployment..." -ForegroundColor Yellow
+    $envContent = @"
+# Environment configuration
+ENVIRONMENT=production
+GOOGLE_CLOUD=1
+DATABASE_URL=sqlite:///./app.db
+OPENAI_API_KEY=${openai_api_key}
+DEBUG=0
+"@
+    Set-Content -Path "$TEMP_DIR\.env" -Value $envContent
+    Write-Host "Created default .env file" -ForegroundColor Green
+}
 
 # Create Dockerfile
 Write-Host "Creating Dockerfile for deployment..." -ForegroundColor Yellow
@@ -62,17 +88,38 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Add build timestamp as an argument to force rebuild without cache
+ENV BUILD_TIMESTAMP=$TIMESTAMP
+
+# Install dependencies with --no-cache-dir to avoid cache issues
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Explicitly install aiofiles - critical for voice endpoints
+RUN pip install --no-cache-dir aiofiles
+
 # Copy application code
 COPY . .
+
+# Create audio directories with proper permissions
+RUN mkdir -p /app/static/audio /tmp/static/audio
+RUN chmod -R 777 /app/static /tmp/static
+
+# Create error file if needed
+RUN echo "Audio error" > /app/static/audio/error.mp3
+RUN echo "Audio error" > /tmp/static/audio/error.mp3
+RUN chmod 777 /app/static/audio/error.mp3 /tmp/static/audio/error.mp3
+
+# Create SQLite database directory with proper permissions
+RUN mkdir -p /app/data
+RUN touch /app/data/app.db
+RUN chmod 777 /app/data/app.db
 
 # Environment variables
 ENV PORT=8080
 ENV ENVIRONMENT=production
 ENV GOOGLE_CLOUD=1
+ENV DATABASE_URL=sqlite:///./data/app.db
 ENV OPENAI_API_KEY=$openai_api_key
 ENV OPENAI_LLM_MODEL=gpt-3.5-turbo
 ENV OPENAI_TTS_MODEL=gpt-4o-mini-tts
@@ -87,20 +134,36 @@ CMD uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 Set-Content -Path "$TEMP_DIR\Dockerfile" -Value $dockerFileContent
 
-# Deploy to Cloud Run
-Write-Host "Deploying to Google Cloud Run..." -ForegroundColor Yellow
-cd ..
+# Display the deployment directory contents for verification
+Write-Host "Deployment directory contents:" -ForegroundColor Yellow
+Get-ChildItem -Path $TEMP_DIR -Recurse | Select-Object -First 20
+
+# Deploy to Cloud Run with a unique tag to avoid cache issues
+Write-Host "Deploying to Google Cloud Run with a fresh build..." -ForegroundColor Yellow
+$deployCmd = @(
+    "gcloud builds submit $TEMP_DIR",
+    "--tag=gcr.io/$PROJECT_ID/$BUILD_TAG"
+)
+
+# Execute the build command
+Invoke-Expression ($deployCmd -join " ")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Building the container image failed." -ForegroundColor Red
+    exit 1
+}
+
+# Deploy the built image
 $deployCmd = @(
     "gcloud run deploy $SERVICE_NAME",
-    "--image=gcr.io/$PROJECT_ID/$SERVICE_NAME",
+    "--image=gcr.io/$PROJECT_ID/$BUILD_TAG",
     "--platform=managed",
     "--region=$REGION",
     "--min-instances=$MIN_INSTANCES",
     "--max-instances=$MAX_INSTANCES",
-    "--memory=$MEMORY",
-    "--cpu=$CPU",
+    "--memory=2Gi",
+    "--cpu=2",
     "--timeout=$TIMEOUT",
-    "--concurrency=$CONCURRENCY",
+    "--concurrency=80",
     "--allow-unauthenticated"
 )
 
@@ -109,4 +172,13 @@ Invoke-Expression ($deployCmd -join " ")
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error: Deployment to Cloud Run failed." -ForegroundColor Red
     exit 1
-} 
+}
+
+# Get the service URL
+Write-Host "Getting service URL..." -ForegroundColor Yellow
+$serviceUrl = gcloud run services describe $SERVICE_NAME --platform=managed --region=$REGION --format="value(status.url)"
+
+Write-Host "=================================================" -ForegroundColor Cyan
+Write-Host "Deployment Complete!" -ForegroundColor Green
+Write-Host "Service deployed successfully at: $serviceUrl" -ForegroundColor Green
+Write-Host "=================================================" -ForegroundColor Cyan 

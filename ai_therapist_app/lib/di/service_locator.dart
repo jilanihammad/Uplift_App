@@ -35,6 +35,7 @@ import '../services/memory_manager.dart';
 import '../services/message_processor.dart';
 import '../services/audio_generator.dart';
 import '../services/conversation_flow_manager.dart';
+import 'package:ai_therapist_app/utils/database_helper.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -97,8 +98,19 @@ Future<void> setupServiceLocator() async {
   try {
     debugPrint('Starting core service registration...');
 
+    // Register utilities first
+    serviceLocator.registerSingleton<DatabaseOperationManager>(
+        DatabaseOperationManager());
+    debugPrint(
+        'Registered DatabaseOperationManager to manage database operations');
+
+    // Register data sources
+    serviceLocator.registerSingleton<AppDatabase>(AppDatabase());
+    debugPrint('Registered AppDatabase');
+
     // ===== FIREBASE SERVICE (Base registration only) =====
-    // Note: Actual initialization happens in main.dart
+    // Skip registration if firebase_core is not available / imported
+    // This allows the app to run without Firebase during development
     if (!serviceLocator.isRegistered<FirebaseService>()) {
       serviceLocator.registerSingleton<FirebaseService>(FirebaseService());
       debugPrint('Registered FirebaseService (base instance)');
@@ -122,29 +134,12 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered and initialized PrefsManager');
     }
 
-    // Database services
-    if (!serviceLocator.isRegistered<AppDatabase>()) {
-      serviceLocator.registerLazySingleton<AppDatabase>(() => AppDatabase());
-      debugPrint('Registered AppDatabase');
-    }
-
     // Register DatabaseProvider that uses AppDatabase
     if (!serviceLocator.isRegistered<DatabaseProvider>()) {
       serviceLocator
           .registerLazySingleton<DatabaseProvider>(() => DatabaseProvider());
       debugPrint('Registered DatabaseProvider');
     }
-
-    // Register DatabaseHelper for backward compatibility
-    // This is needed until all references are migrated to DatabaseProvider
-    if (!serviceLocator.isRegistered<DatabaseHelper>()) {
-      serviceLocator
-          .registerLazySingleton<DatabaseHelper>(() => DatabaseHelper());
-      debugPrint('Registered DatabaseHelper (legacy adapter)');
-    }
-
-    // DatabaseHelper is being removed since its functionality
-    // is now consolidated into AppDatabase
 
     // ===== UTILITY SERVICES =====
     // These services have minimal dependencies and simple initialization
