@@ -29,7 +29,7 @@ import 'dart:io';
 enum RecordingState { ready, recording, stopped, paused, error }
 
 // Transcription models
-enum TranscriptionModel { whisper, deepgramAI, assembly }
+enum TranscriptionModel { gpt4oMini, deepgramAI, assembly }
 
 class VoiceService {
   // Singleton instance
@@ -204,6 +204,10 @@ class VoiceService {
       // Ensure stream controller is active
       _ensureStreamControllerIsActive();
 
+      if (kDebugMode) {
+        print('⏺️ VOICE DEBUG: startRecording called');
+      }
+
       if (_isWeb) {
         // Simulate recording in web mode
         _currentState = RecordingState.recording;
@@ -217,8 +221,30 @@ class VoiceService {
 
       // Check that microphone permission is granted
       final status = await Permission.microphone.request();
+      if (kDebugMode) {
+        print('⏺️ VOICE DEBUG: Microphone permission status: $status');
+      }
+
       if (status != PermissionStatus.granted) {
+        if (kDebugMode) {
+          print('❌ VOICE ERROR: Microphone permission denied: $status');
+        }
         throw Exception('Microphone permission not granted');
+      }
+
+      // Check recorder status before starting
+      bool isRecorderInitialized = _audioRecorder != null;
+      bool isCurrentlyRecording = false;
+      try {
+        isCurrentlyRecording = await _audioRecorder.isRecording();
+        if (kDebugMode) {
+          print(
+              '⏺️ VOICE DEBUG: AudioRecorder current state - Initialized: $isRecorderInitialized, Currently recording: $isCurrentlyRecording');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ VOICE ERROR: Failed to check recorder state: $e');
+        }
       }
 
       // Get temp directory to store the recording
@@ -227,29 +253,67 @@ class VoiceService {
           '${tempDir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
       if (kDebugMode) {
-        print('Will save recording to: $_recordingPath');
+        print('⏺️ VOICE DEBUG: Will save recording to: $_recordingPath');
+        print(
+            '⏺️ VOICE DEBUG: Temp directory exists: ${await Directory(tempDir.path).exists()}');
       }
 
       // Check if the recorder has been initialized
-      if (!await _audioRecorder.isRecording()) {
-        // Start recording
-        await _audioRecorder.start(
-          RecordConfig(
-            encoder:
-                AudioEncoder.aacLc, // We keep AAC for recording for quality
-            bitRate: 128000,
-            sampleRate: 44100,
-          ),
-          path: _recordingPath ??
-              '${(await getTemporaryDirectory()).path}/recording_fallback.m4a',
-        );
+      if (!isCurrentlyRecording) {
+        try {
+          if (kDebugMode) {
+            print(
+                '⏺️ VOICE DEBUG: Starting recording with config: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100');
+          }
 
-        // Update state
-        _currentState = RecordingState.recording;
-        _recordingStateController!.add(_currentState);
+          // Start recording
+          await _audioRecorder.start(
+            RecordConfig(
+              encoder: AudioEncoder.aacLc,
+              bitRate: 128000,
+              sampleRate: 44100,
+            ),
+            path: _recordingPath ??
+                '${(await getTemporaryDirectory()).path}/recording_fallback.m4a',
+          );
 
+          if (kDebugMode) {
+            print('⏺️ VOICE DEBUG: Recording started successfully');
+            print('⏺️ VOICE DEBUG: Verifying recording is in progress...');
+          }
+
+          // Verify recording started
+          bool recordingStarted = await _audioRecorder.isRecording();
+          if (kDebugMode) {
+            print('⏺️ VOICE DEBUG: Recording in progress: $recordingStarted');
+          }
+
+          if (!recordingStarted) {
+            if (kDebugMode) {
+              print(
+                  '❌ VOICE ERROR: Recorder reported successful start but isRecording() returned false');
+            }
+            throw Exception('Failed to start recording');
+          }
+
+          // Update state
+          _currentState = RecordingState.recording;
+          _recordingStateController!.add(_currentState);
+
+          if (kDebugMode) {
+            print(
+                '⏺️ VOICE DEBUG: Recording started with path: $_recordingPath');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print('❌ VOICE ERROR: Failed to start recording: $e');
+          }
+          throw Exception('Failed to start recording: $e');
+        }
+      } else {
         if (kDebugMode) {
-          print('Recording started with path: $_recordingPath');
+          print(
+              '⚠️ VOICE WARNING: Recorder is already recording, cannot start a new recording');
         }
       }
     } catch (e) {
@@ -261,12 +325,12 @@ class VoiceService {
         }
       } catch (streamError) {
         if (kDebugMode) {
-          print('Error sending state to stream: $streamError');
+          print('❌ VOICE ERROR: Error sending state to stream: $streamError');
         }
       }
 
       if (kDebugMode) {
-        print('Error starting recording: $e');
+        print('❌ VOICE ERROR: Error starting recording: $e');
       }
       if (!_isWeb) rethrow;
     }
@@ -275,20 +339,52 @@ class VoiceService {
   // Stop recording and get transcription using OpenAI API via backend
   Future<String> stopRecording() async {
     try {
+      if (kDebugMode) {
+        print('⏹️ VOICE DEBUG: stopRecording called');
+      }
+
       String recordedFilePath = '';
 
       // Stop recording and get the file path
-      if (!_isWeb && await _audioRecorder.isRecording()) {
+      if (!_isWeb) {
+        bool isRecording = false;
         try {
-          // Stop recording
-          recordedFilePath = await _audioRecorder.stop() ?? '';
-
+          isRecording = await _audioRecorder.isRecording();
           if (kDebugMode) {
-            print('Recording stopped, file saved at: $recordedFilePath');
+            print('⏹️ VOICE DEBUG: Is currently recording: $isRecording');
           }
         } catch (e) {
           if (kDebugMode) {
-            print('Error stopping recording: $e');
+            print('❌ VOICE ERROR: Error checking recording status: $e');
+          }
+        }
+
+        if (isRecording) {
+          try {
+            // Stop recording
+            if (kDebugMode) {
+              print('⏹️ VOICE DEBUG: Stopping recording...');
+            }
+
+            recordedFilePath = await _audioRecorder.stop() ?? '';
+
+            if (kDebugMode) {
+              print(
+                  '⏹️ VOICE DEBUG: Recording stopped, file saved at: $recordedFilePath');
+              if (recordedFilePath.isEmpty) {
+                print(
+                    '❌ VOICE ERROR: Recording stopped but returned empty file path');
+              }
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('❌ VOICE ERROR: Error stopping recording: $e');
+            }
+          }
+        } else {
+          if (kDebugMode) {
+            print(
+                '⚠️ VOICE WARNING: stopRecording called but recorder was not recording');
           }
         }
       }
@@ -298,7 +394,8 @@ class VoiceService {
       _recordingStateController!.add(_currentState);
 
       if (kDebugMode) {
-        print('Recording stopped (${_isWeb ? 'web mode' : 'native mode'})');
+        print(
+            '⏹️ VOICE DEBUG: Recording stopped (${_isWeb ? 'web mode' : 'native mode'})');
       }
 
       // If we have a recording, process it
@@ -306,110 +403,147 @@ class VoiceService {
         try {
           // Read the recorded audio file
           final io.File audioFile = io.File(recordedFilePath);
-          if (await audioFile.exists()) {
+          bool fileExists = await audioFile.exists();
+
+          if (kDebugMode) {
+            print('⏹️ VOICE DEBUG: Audio file exists: $fileExists');
+          }
+
+          if (fileExists) {
             final bytes = await audioFile.readAsBytes();
+
+            if (kDebugMode) {
+              print('⏹️ VOICE DEBUG: Audio file read successfully');
+            }
 
             if (bytes.isNotEmpty) {
               if (kDebugMode) {
-                print('Audio file size: ${bytes.length} bytes');
+                print('⏹️ VOICE DEBUG: Audio file size: ${bytes.length} bytes');
               }
 
-              final base64Audio = base64Encode(bytes);
+              // Ensure proper base64 encoding and padding
+              String base64Audio = base64Encode(bytes);
+
+              // Make sure base64 string is properly padded
+              while (base64Audio.length % 4 != 0) {
+                base64Audio += '=';
+              }
 
               if (kDebugMode) {
                 print(
-                    'Audio file encoded successfully, size: ${base64Audio.length} chars, sending to transcription API...');
+                    '⏹️ VOICE DEBUG: Audio file encoded successfully, size: ${base64Audio.length} chars');
+                print(
+                    '⏹️ VOICE DEBUG: First 50 chars of base64: ${base64Audio.substring(0, min(50, base64Audio.length))}...');
+                print(
+                    '⏹️ VOICE DEBUG: Last 10 chars of base64: ${base64Audio.substring(max(0, base64Audio.length - 10))}');
+                print(
+                    '⏹️ VOICE DEBUG: Using API URL: $_backendUrl for transcription');
+                print(
+                    '⏹️ VOICE DEBUG: Sending request to: $_backendUrl/voice/transcribe');
               }
 
               try {
                 // Make API call with the actual audio data
                 final startTime = DateTime.now();
+
+                // VERBOSE LOGGING FOR DEBUGGING
                 if (kDebugMode) {
-                  print('Using API URL: $_backendUrl for transcription');
-                  print('Sending request to: $_backendUrl/voice/transcribe');
+                  print('⏹️ VOICE DEBUG: API URL: $_backendUrl');
+                  print('⏹️ VOICE DEBUG: Endpoint: /voice/transcribe');
+                  print('⏹️ VOICE DEBUG: Audio format: m4a');
+                  print(
+                      '⏹️ VOICE DEBUG: Audio data length: ${base64Audio.length}');
+                }
+
+                if (kDebugMode) {
+                  print(
+                      '⏹️ VOICE DEBUG: Making API call to transcribe audio...');
                 }
 
                 final response =
                     await _apiClient.post('/voice/transcribe', body: {
                   'audio_data': base64Audio,
-                  'audio_format':
-                      'm4a', // Send as m4a format which is compatible with GROQ
+                  'audio_format': 'm4a', // Changed back to m4a format
                   'model':
-                      'distil-whisper-large-v3-en' // Use the GROQ-supported model
+                      'gpt-4o-mini-transcribe' // Update to use the correct model expected by the backend
                 });
 
                 final duration =
                     DateTime.now().difference(startTime).inMilliseconds;
                 if (kDebugMode) {
                   print(
-                      'Transcription API response in ${duration}ms: $response');
+                      '⏹️ VOICE DEBUG: Transcription API response in ${duration}ms: $response');
                 }
 
+                // Check API response format
                 if (response != null && response.containsKey('text')) {
-                  final transcribedText = response['text'];
+                  final transcription = response['text'] as String;
                   if (kDebugMode) {
-                    print('Transcription successful: $transcribedText');
+                    print(
+                        '⏹️ VOICE DEBUG: Transcription result: $transcription');
                   }
-
-                  // Check if we got a meaningful transcription or an error message
-                  if (transcribedText != null && transcribedText.isNotEmpty) {
+                  if (transcription.isNotEmpty) {
                     // Check if this is an error message from the backend transcription service
-                    if (transcribedText
+                    if (transcription
                             .toLowerCase()
                             .contains("error transcribing audio") ||
-                        transcribedText
+                        transcription
                             .toLowerCase()
                             .contains("error processing") ||
-                        transcribedText
+                        transcription
                             .toLowerCase()
                             .contains("couldn't understand") ||
-                        transcribedText
+                        transcription
                             .toLowerCase()
                             .contains("please try again")) {
                       if (kDebugMode) {
                         print(
-                            'Received error message from transcription service: $transcribedText');
+                            '⏹️ VOICE DEBUG: Received error message from transcription service: $transcription');
                       }
 
                       // Return an empty string to signal UI to focus text input instead of showing error
                       return "";
                     }
-
-                    // This appears to be a valid transcription
-                    return transcribedText;
+                    return transcription;
                   } else {
                     if (kDebugMode) {
-                      print('Received empty transcription: $transcribedText');
+                      print('⚠️ VOICE WARNING: Transcription was empty');
                     }
-                    // Fall through to user prompt
+                    return "";
                   }
                 } else {
                   if (kDebugMode) {
                     print(
-                        'Error: Invalid response format from transcription API: $response');
+                        '❌ VOICE ERROR: Invalid response format from transcription API: $response');
                   }
+                  // Return with error message to show in UI
+                  return "Error: Invalid response from transcription service";
                 }
               } catch (e) {
                 if (kDebugMode) {
-                  print('Error calling transcription API: $e');
+                  print('❌ VOICE ERROR: Error calling transcription API: $e');
                 }
+                // Return with error message to show in UI
+                return "Error: Unable to transcribe audio. Please try again.";
               }
             } else {
               if (kDebugMode) {
-                print('Error: Audio file is empty.');
+                print('❌ VOICE ERROR: Audio file is empty.');
               }
+              return "Error: Audio recording was empty. Please try again.";
             }
           } else {
             if (kDebugMode) {
               print(
-                  'Error: Audio file does not exist at path: $recordedFilePath');
+                  '❌ VOICE ERROR: Audio file does not exist at path: $recordedFilePath');
             }
+            return "Error: Could not find recorded audio file.";
           }
         } catch (e) {
           if (kDebugMode) {
-            print('Error processing audio file: $e');
+            print('❌ VOICE ERROR: Error processing audio file: $e');
           }
-          // Fall through to user prompt
+          return "Error: Problem processing audio. Please try again.";
         } finally {
           // Clean up the temporary recording file
           try {
@@ -417,28 +551,36 @@ class VoiceService {
             if (await file.exists()) {
               await file.delete();
               if (kDebugMode) {
-                print('Deleted temporary recording file');
+                print('⏹️ VOICE DEBUG: Deleted temporary recording file');
               }
             }
           } catch (e) {
             if (kDebugMode) {
-              print('Error cleaning up recording file: $e');
+              print('❌ VOICE ERROR: Error cleaning up recording file: $e');
             }
           }
         }
+      } else if (!_isWeb && recordedFilePath.isEmpty) {
+        if (kDebugMode) {
+          print('❌ VOICE ERROR: No recording file path returned from recorder');
+        }
+        return "Error: No audio was recorded. Please try again.";
       }
 
       // If we reach here, either there was no recording, or transcription failed
-      // Instead of using a hardcoded message, prompt the user to type their message
-      return ""; // Return empty string to signal UI to focus the text input field
+      if (kDebugMode) {
+        print(
+            '⚠️ VOICE WARNING: No valid recording found or transcription failed');
+      }
+      return "Tap to speak or type your message";
     } catch (e) {
       _currentState = RecordingState.error;
       _recordingStateController!.add(_currentState);
       if (kDebugMode) {
-        print('Error in stopRecording: $e');
+        print('❌ VOICE ERROR: Error in stopRecording: $e');
       }
-      // Return empty string to signal UI to focus text input
-      return "";
+      // Return error message to show in UI
+      return "Error: ${e.toString()}";
     }
   }
 
@@ -636,6 +778,9 @@ class VoiceService {
     try {
       // Check if this is a local TTS fallback path
       if (audioPath.startsWith('local_tts://')) {
+        if (kDebugMode) {
+          print('Detected local TTS fallback path, using text-to-speech');
+        }
         await _useTtsBackup();
         return;
       }
@@ -646,62 +791,75 @@ class VoiceService {
           print('Playing audio from URL: $audioPath');
         }
 
-        try {
-          // Check if the audio file exists by making a HEAD request
-          final response = await http.head(Uri.parse(audioPath));
+        // Try to play audio using just_audio directly without HEAD request
+        if (!_isWeb) {
+          try {
+            if (kDebugMode) {
+              print('Attempting to play audio with just_audio');
+            }
 
-          if (response.statusCode != 200) {
-            print(
-                'Audio file not found at URL: $audioPath, using text-to-speech fallback');
-            // Fallback to text-to-speech for the message content
+            final player = AudioPlayer();
+
+            // Set a reasonable timeout for connection
+            final completer = Completer<void>();
+
+            // Set up error handling for the audio source
+            player.playerStateStream.listen((state) {
+              if (state.processingState == ProcessingState.idle &&
+                  !completer.isCompleted) {
+                completer.completeError('Audio could not be loaded');
+              }
+            });
+
+            // Start loading the audio
+            await player.setUrl(audioPath);
+
+            if (kDebugMode) {
+              print('Audio ready to play, starting playback');
+            }
+
+            await player.play();
+
+            if (kDebugMode) {
+              print('Playback started, waiting for completion');
+            }
+
+            // Wait for the audio to finish
+            await player.processingStateStream.firstWhere(
+              (state) => state == ProcessingState.completed,
+            );
+
+            await player.dispose();
+
+            if (kDebugMode) {
+              print('Audio playback complete');
+            }
+            return;
+          } catch (audioError) {
+            if (kDebugMode) {
+              print('Just Audio error: $audioError, falling back to TTS');
+            }
+            // Fallback to text-to-speech
             await _useTtsBackup();
             return;
           }
+        }
 
-          // Try to play audio using just_audio
-          if (!_isWeb) {
-            try {
-              final player = AudioPlayer();
-              await player.setUrl(audioPath);
-              await player.play();
-              // Wait for the audio to finish
-              await player.processingStateStream.firstWhere(
-                (state) => state == ProcessingState.completed,
-              );
-              await player.dispose();
-
-              if (kDebugMode) {
-                print('Audio playback complete');
-              }
-              return;
-            } catch (audioError) {
-              if (kDebugMode) {
-                print(
-                    'Just Audio error: $audioError, falling back to simulated playback');
-              }
-              // Fallback to text-to-speech
-              await _useTtsBackup();
-              return;
-            }
-          }
-
-          // Fallback: simulate playback with a delay
-          await Future.delayed(const Duration(seconds: 2));
-
-          if (kDebugMode) {
-            print('Audio playback complete');
-          }
-        } catch (e) {
-          print('Error accessing audio URL: $e');
-          // Fallback to text-to-speech
-          await _useTtsBackup();
+        // Web platform
+        await Future.delayed(const Duration(seconds: 2));
+        if (kDebugMode) {
+          print('Audio playback complete (simulated for web)');
         }
       } else if (!_isWeb) {
         // It's a local file path, check if it exists (only on non-web platforms)
         final file = io.File(audioPath);
-        if (!await file.exists()) {
-          print(
-              'Audio file not found at $audioPath, using text-to-speech fallback');
+        bool fileExists = await file.exists();
+
+        if (!fileExists) {
+          if (kDebugMode) {
+            print(
+                'Audio file not found at $audioPath, using text-to-speech fallback');
+          }
           // Fallback to text-to-speech
           await _useTtsBackup();
           return;
@@ -728,8 +886,7 @@ class VoiceService {
           return;
         } catch (audioError) {
           if (kDebugMode) {
-            print(
-                'Just Audio error: $audioError, falling back to simulated playback');
+            print('Just Audio error: $audioError, falling back to TTS');
           }
           // Fallback to text-to-speech
           await _useTtsBackup();
@@ -744,7 +901,7 @@ class VoiceService {
         await Future.delayed(const Duration(seconds: 2));
 
         if (kDebugMode) {
-          print('Audio playback complete');
+          print('Audio playback complete (web simulation)');
         }
       }
     } catch (e) {
@@ -880,8 +1037,27 @@ class VoiceService {
         print('Speaking text: $textToSpeak');
       }
 
+      // Check if TTS engine is available - but don't wait for the result to start speaking
+      try {
+        flutterTts.getEngines.then((engines) {
+          if (kDebugMode && engines.isNotEmpty) {
+            print('Using TTS engine: ${engines.first}');
+          }
+        }).catchError((e) {
+          if (kDebugMode) {
+            print('Error getting TTS engines: $e');
+          }
+        });
+      } catch (e) {
+        // Ignore engine check errors
+      }
+
       // Speak the text
-      await flutterTts.speak(textToSpeak);
+      final result = await flutterTts.speak(textToSpeak);
+
+      if (kDebugMode) {
+        print('TTS speak result: $result');
+      }
 
       // Wait for speaking to complete
       await flutterTts.awaitSpeakCompletion(true);

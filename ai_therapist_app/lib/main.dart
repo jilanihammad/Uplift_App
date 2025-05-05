@@ -72,6 +72,9 @@ import 'package:ai_therapist_app/utils/logging_service.dart';
 // Import the new logging config
 import 'utils/logging_config.dart';
 
+// Import the new database helper
+import 'utils/database_helper.dart';
+
 // Global variables for crucial service references
 FirebaseApp? _firebaseApp;
 ConfigService? _configService;
@@ -231,6 +234,24 @@ Future<void> main() async {
         final appDatabase = serviceLocator<AppDatabase>();
         await appDatabase.database;
 
+        // Check and repair database health with our new utility
+        try {
+          if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
+            logger.debug('[Main] Checking database health...');
+            final dbManager = serviceLocator<DatabaseOperationManager>();
+            final isHealthy =
+                await dbManager.checkAndRepairDatabaseHealth(appDatabase);
+            if (isHealthy) {
+              logger.info('[Main] Database health check passed ✅');
+            } else {
+              logger.warning(
+                  '[Main] Database health check failed, attempted repair');
+            }
+          }
+        } catch (e) {
+          logger.warning('[Main] Database health check error: $e');
+        }
+
         // Verify database tables exist
         logger.debug('[Main] Verifying database tables...');
         final databaseProvider = serviceLocator<DatabaseProvider>();
@@ -264,6 +285,16 @@ Future<void> main() async {
         }
 
         logger.info('[Main] Database initialized successfully');
+
+        // Schedule database optimization for later (after app is visible)
+        if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
+          Future.delayed(Duration(seconds: 3), () {
+            final dbManager = serviceLocator<DatabaseOperationManager>();
+            dbManager.optimizeDatabase(appDatabase).then((_) {
+              logger.debug('[Main] Database optimization completed');
+            });
+          });
+        }
       } catch (e) {
         logger.error('[Main] ERROR initializing database', error: e);
       }
@@ -753,37 +784,64 @@ Future<void> _initializeConfigAndApi() async {
     // Register dependencies that require ConfigService and ApiClient
     await registerApiDependentServices(_configService!, _apiClient!);
 
-    // Initialize all the refactored components in the right order
-    logger.debug(
-        '[Main] Initializing refactored service components (using initializeIfNeeded)...');
-
-    // Initialize services using their singleton pattern and initializeIfNeeded method
+    // Initialize database operations manager first
     try {
-      logger.debug('[Main] Initializing MemoryService...');
-      final memoryService = serviceLocator<MemoryService>();
-      await memoryService.init();
-      logger.debug('[Main] MemoryService initialized ✓');
+      logger.debug('[Main] Getting DatabaseOperationManager...');
+      final dbOpManager = serviceLocator<DatabaseOperationManager>();
+      final appDatabase = serviceLocator<AppDatabase>();
+
+      // Check and repair database health
+      await dbOpManager.checkAndRepairDatabaseHealth(appDatabase);
+      logger.debug('[Main] Database health check complete');
+
+      // Small delay to allow any pending database operations to complete
+      await Future.delayed(const Duration(milliseconds: 200));
     } catch (e) {
-      logger.error('[Main] Error initializing MemoryService', error: e);
+      logger.error('[Main] Error checking database health', error: e);
     }
 
+    // Initialize all the refactored components in the right order
+    logger.debug(
+        '[Main] Initializing refactored service components sequentially...');
+
+    // Initialize services in a specific order to avoid conflicts
+    // 1. First initialize services that don't depend on the database
     try {
       logger.debug('[Main] Initializing VoiceService...');
       final voiceService = serviceLocator<VoiceService>();
       await voiceService.initialize();
       logger.debug('[Main] VoiceService initialized ✓');
+
+      // Small delay between service initializations
+      await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
       logger.error('[Main] Error initializing VoiceService', error: e);
     }
 
     try {
-      logger.debug('[Main] Initializing ConversationFlowManager...');
-      final conversationFlowManager = serviceLocator<ConversationFlowManager>();
-      await conversationFlowManager.init();
-      logger.debug('[Main] ConversationFlowManager initialized ✓');
+      logger.debug('[Main] Initializing AudioGenerator...');
+      final audioGenerator = serviceLocator<AudioGenerator>();
+      await audioGenerator.initialize();
+      logger.debug('[Main] AudioGenerator initialized ✓');
+
+      // Small delay between service initializations
+      await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
-      logger.error('[Main] Error initializing ConversationFlowManager',
-          error: e);
+      logger.error('[Main] Error initializing AudioGenerator', error: e);
+    }
+
+    // 2. Initialize database-dependent services
+    try {
+      logger.debug('[Main] Initializing MemoryService (database tables)...');
+      final memoryService = serviceLocator<MemoryService>();
+      await memoryService.init();
+      logger.debug('[Main] MemoryService initialized ✓');
+
+      // Important: Add a delay after MemoryService initialization
+      // to allow database operations to complete
+      await Future.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      logger.error('[Main] Error initializing MemoryService', error: e);
     }
 
     // Memory manager depends on memory service
@@ -792,17 +850,24 @@ Future<void> _initializeConfigAndApi() async {
       final memoryManager = serviceLocator<MemoryManager>();
       await memoryManager.init();
       logger.debug('[Main] MemoryManager initialized ✓');
+
+      // Small delay between service initializations
+      await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
       logger.error('[Main] Error initializing MemoryManager', error: e);
     }
 
     try {
-      logger.debug('[Main] Initializing AudioGenerator...');
-      final audioGenerator = serviceLocator<AudioGenerator>();
-      await audioGenerator.initialize();
-      logger.debug('[Main] AudioGenerator initialized ✓');
+      logger.debug('[Main] Initializing ConversationFlowManager...');
+      final conversationFlowManager = serviceLocator<ConversationFlowManager>();
+      await conversationFlowManager.init();
+      logger.debug('[Main] ConversationFlowManager initialized ✓');
+
+      // Small delay between service initializations
+      await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
-      logger.error('[Main] Error initializing AudioGenerator', error: e);
+      logger.error('[Main] Error initializing ConversationFlowManager',
+          error: e);
     }
 
     // Initialize the TherapyService last (depends on most other services)

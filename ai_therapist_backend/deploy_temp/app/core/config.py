@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "7860")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "ai_therapist")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "ai_therapist_new")
     SQLALCHEMY_DATABASE_URI: Optional[str] = None
 
     @field_validator("SQLALCHEMY_DATABASE_URI", mode="before")

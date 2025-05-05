@@ -9,6 +9,7 @@ import '../di/service_locator.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../di/initialization_tracker.dart';
 import '../utils/logging_service.dart';
+import '../utils/database_helper.dart';
 
 /// Service for managing memory in therapy conversations.
 /// Implements LangChain-like memory capabilities for maintaining context across conversations.
@@ -100,112 +101,48 @@ class MemoryService {
   /// Ensure all required tables exist in the database
   Future<void> _ensureTablesExist() async {
     try {
-      // Check if required tables exist
-      final convMemoriesExists =
-          await _databaseProvider.tableExists('conversation_memories');
-      final therapyInsightsExists =
-          await _databaseProvider.tableExists('therapy_insights');
-      final emotionalStatesExists =
-          await _databaseProvider.tableExists('emotional_states');
+      // Get DatabaseOperationManager to prevent database locks
+      final dbOpManager = serviceLocator<DatabaseOperationManager>();
+
+      // Check if required tables exist - this should be read-only
+      final convMemoriesExists = await dbOpManager.queueOperation<bool>(
+        () => _databaseProvider.tableExists('conversation_memories'),
+        name: 'check-conversation-memories-exists',
+        isReadOnly: true,
+      );
+
+      final therapyInsightsExists = await dbOpManager.queueOperation<bool>(
+        () => _databaseProvider.tableExists('therapy_insights'),
+        name: 'check-therapy-insights-exists',
+        isReadOnly: true,
+      );
+
+      final emotionalStatesExists = await dbOpManager.queueOperation<bool>(
+        () => _databaseProvider.tableExists('emotional_states'),
+        name: 'check-emotional-states-exists',
+        isReadOnly: true,
+      );
 
       logger.debug(
-          'Table check: conversation_memories=${convMemoriesExists}, therapy_insights=${therapyInsightsExists}, emotional_states=${emotionalStatesExists}');
+          'Table check: conversation_memories=[32m$convMemoriesExists[0m, therapy_insights=[32m$therapyInsightsExists[0m, emotional_states=[32m$emotionalStatesExists[0m');
 
-      // Create tables if they don't exist (this is a fallback, migration should handle this)
+      // If any table is missing, log and throw
       if (!convMemoriesExists ||
           !therapyInsightsExists ||
           !emotionalStatesExists) {
-        logger.warning('Some required tables are missing, creating them now');
-        await _createMissingTables(
-            convMemoriesExists, therapyInsightsExists, emotionalStatesExists);
+        final missing = [
+          if (!convMemoriesExists) 'conversation_memories',
+          if (!therapyInsightsExists) 'therapy_insights',
+          if (!emotionalStatesExists) 'emotional_states',
+        ];
+        logger.error(
+            'Missing required database tables: [31m${missing.join(', ')}[0m');
+        throw Exception(
+            'Missing required database tables: ${missing.join(', ')}');
       }
     } catch (e) {
-      logger.error('Error checking/creating tables', error: e);
-      throw Exception('Failed to initialize database tables: $e');
-    }
-  }
-
-  /// Create any missing tables required by the MemoryService
-  Future<void> _createMissingTables(bool convMemoriesExists,
-      bool therapyInsightsExists, bool emotionalStatesExists) async {
-    try {
-      await _databaseProvider.transaction((txn) async {
-        // Create conversation_memories table if needed
-        if (!convMemoriesExists) {
-          await txn.execute('''
-            CREATE TABLE conversation_memories (
-              id TEXT PRIMARY KEY,
-              user_message TEXT NOT NULL,
-              ai_response TEXT NOT NULL,
-              metadata TEXT,
-              timestamp TEXT NOT NULL
-            )
-          ''');
-          logger.debug('Created conversation_memories table');
-
-          // Try to copy data from conversations table if it exists
-          try {
-            final conversationsExists =
-                await _databaseProvider.tableExists('conversations');
-            if (conversationsExists) {
-              await txn.execute('''
-                INSERT INTO conversation_memories (id, user_message, ai_response, metadata, timestamp)
-                SELECT id, user_message, ai_response, metadata, timestamp FROM conversations
-              ''');
-              logger.debug(
-                  'Migrated existing conversations to conversation_memories');
-            }
-          } catch (e) {
-            logger
-                .warning('Could not migrate data from conversations table: $e');
-          }
-        }
-
-        // Create therapy_insights table if needed
-        if (!therapyInsightsExists) {
-          await txn.execute('''
-            CREATE TABLE therapy_insights (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              insight TEXT NOT NULL,
-              source TEXT NOT NULL,
-              timestamp TEXT NOT NULL
-            )
-          ''');
-          logger.debug('Created therapy_insights table');
-
-          // Try to copy data from insights table if it exists
-          try {
-            final insightsExists =
-                await _databaseProvider.tableExists('insights');
-            if (insightsExists) {
-              await txn.execute('''
-                INSERT INTO therapy_insights (id, insight, source, timestamp)
-                SELECT id, insight, source, timestamp FROM insights
-              ''');
-              logger.debug('Migrated existing insights to therapy_insights');
-            }
-          } catch (e) {
-            logger.warning('Could not migrate data from insights table: $e');
-          }
-        }
-
-        // Create emotional_states table if needed
-        if (!emotionalStatesExists) {
-          await txn.execute('''
-            CREATE TABLE emotional_states (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              emotion TEXT NOT NULL,
-              intensity REAL NOT NULL,
-              trigger TEXT,
-              timestamp TEXT NOT NULL
-            )
-          ''');
-          logger.debug('Created emotional_states table');
-        }
-      });
-    } catch (e) {
-      logger.error('Failed to create missing tables', error: e);
-      throw Exception('Could not create required database tables: $e');
+      logger.error('Error checking required tables', error: e);
+      throw Exception('Failed to verify required database tables: $e');
     }
   }
 

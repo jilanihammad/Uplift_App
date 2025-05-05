@@ -113,6 +113,19 @@ class AppDatabase {
             onDatabaseDowngradeDelete, // For development: delete and recreate on downgrade
         onOpen: (db) {
           debugPrint('Database opened successfully');
+          // Increase timeout limits to prevent "database locked" errors
+          db.execute(
+              'PRAGMA busy_timeout = 10000;'); // 10 second timeout (increased from 5s)
+          db.execute(
+              'PRAGMA journal_mode = WAL;'); // Write-Ahead Logging for better concurrency
+          db.execute(
+              'PRAGMA synchronous = NORMAL;'); // Slightly less durable but faster (default is FULL)
+          db.execute(
+              'PRAGMA cache_size = 10000;'); // Increase cache size for better performance
+          db.execute(
+              'PRAGMA foreign_keys = ON;'); // Ensure foreign key constraints are enforced
+          db.execute(
+              'PRAGMA temp_store = MEMORY;'); // Use memory for temporary storage instead of disk
         },
       );
     } catch (e, stackTrace) {
@@ -625,7 +638,29 @@ class AppDatabase {
   Future<T> transaction<T>(Future<T> Function(Transaction txn) action) async {
     try {
       final db = await database;
-      return await db.transaction(action);
+
+      // Add retry logic for transactions to handle database locks
+      int retries = 0;
+      const maxRetries = 3;
+      const retryDelay = Duration(milliseconds: 500);
+
+      while (true) {
+        try {
+          return await db.transaction(action);
+        } catch (e) {
+          // If this is a database locked error and we haven't exceeded max retries
+          if (e.toString().contains('database is locked') &&
+              retries < maxRetries) {
+            retries++;
+            debugPrint(
+                'Database locked, retrying transaction (attempt $retries/$maxRetries)...');
+            await Future.delayed(retryDelay);
+          } else {
+            // If it's not a lock error or we've exceeded retries, rethrow
+            rethrow;
+          }
+        }
+      }
     } catch (e, stackTrace) {
       debugPrint('Transaction error: $e');
       _onError(e, stackTrace);

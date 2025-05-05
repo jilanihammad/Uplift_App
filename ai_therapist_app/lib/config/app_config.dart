@@ -11,7 +11,7 @@ class AppConfig {
   // Backend URLs
   String get backendUrl =>
       dotenv.env['BACKEND_URL'] ??
-      'https://ai-therapist-backend-385290373302.us-central1.run.app';
+      'http://10.0.2.2:8081'; // Use 10.0.2.2 for Android emulator to access localhost
 
   String get apiBaseUrl => '$backendUrl/api/v1';
 
