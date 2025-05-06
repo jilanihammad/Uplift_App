@@ -6,10 +6,11 @@ import '../data/repositories/session_repository.dart';
 import '../data/datasources/local/app_database.dart';
 import '../di/service_locator.dart';
 import '../models/therapy_message.dart';
+import 'dart:convert';
 
 class SessionDetailsScreen extends StatefulWidget {
   final String sessionId;
-  
+
   const SessionDetailsScreen({
     Key? key,
     required this.sessionId,
@@ -24,31 +25,32 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   Session? _session;
   List<TherapyMessage> _messages = [];
   String? _errorMessage;
-  final SessionRepository _sessionRepository = serviceLocator<SessionRepository>();
-  
+  final SessionRepository _sessionRepository =
+      serviceLocator<SessionRepository>();
+
   @override
   void initState() {
     super.initState();
     _loadSession();
   }
-  
+
   Future<void> _loadSession() async {
     if (_isDisposed) return;
-    
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-    
+
     try {
       // Load session details
       final session = await _sessionRepository.getSession(widget.sessionId);
-      
+
       // Load session messages
       final messages = await _loadSessionMessages(widget.sessionId);
-      
+
       if (!mounted || _isDisposed) return;
-      
+
       setState(() {
         _session = session;
         _messages = messages;
@@ -56,16 +58,16 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       });
     } catch (e) {
       print('Error loading session details: $e');
-      
+
       if (!mounted || _isDisposed) return;
-      
+
       setState(() {
         _errorMessage = 'Could not load session details.';
         _isLoading = false;
       });
     }
   }
-  
+
   Future<List<TherapyMessage>> _loadSessionMessages(String sessionId) async {
     try {
       // This would typically be done through a MessageRepository
@@ -77,14 +79,16 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         whereArgs: [sessionId],
         orderBy: 'timestamp ASC',
       );
-      
-      return results.map((data) => TherapyMessage(
-        id: data['id'] as String,
-        content: data['content'] as String,
-        isUser: (data['is_user'] as int) == 1,
-        timestamp: DateTime.parse(data['timestamp'] as String),
-        audioUrl: data['audio_url'] as String?,
-      )).toList();
+
+      return results
+          .map((data) => TherapyMessage(
+                id: data['id'] as String,
+                content: data['content'] as String,
+                isUser: (data['is_user'] as int) == 1,
+                timestamp: DateTime.parse(data['timestamp'] as String),
+                audioUrl: data['audio_url'] as String?,
+              ))
+          .toList();
     } catch (e) {
       print('Error loading session messages: $e');
       return [];
@@ -97,45 +101,46 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       appBar: AppBar(
         title: const Text('Session Details'),
       ),
-      body: _isLoading 
+      body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null 
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline, size: 60, color: Colors.red),
-                    const SizedBox(height: 16),
-                    Text(
-                      _errorMessage!,
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _loadSession,
-                      child: const Text('Try Again'),
-                    ),
-                  ],
-                ),
-              )
-            : _session == null
-              ? const Center(child: Text('Session not found.'))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
+          : _errorMessage != null
+              ? Center(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildSessionHeader(),
-                      const Divider(height: 32),
-                      _buildSummarySection(),
+                      const Icon(Icons.error_outline,
+                          size: 60, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text(
+                        _errorMessage!,
+                        style: const TextStyle(fontSize: 16),
+                      ),
                       const SizedBox(height: 24),
-                      _buildConversationSection(),
+                      ElevatedButton(
+                        onPressed: _loadSession,
+                        child: const Text('Try Again'),
+                      ),
                     ],
                   ),
-                ),
+                )
+              : _session == null
+                  ? const Center(child: Text('Session not found.'))
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSessionHeader(),
+                          const Divider(height: 32),
+                          _buildSummarySection(),
+                          const SizedBox(height: 24),
+                          _buildConversationSection(),
+                        ],
+                      ),
+                    ),
     );
   }
-  
+
   Widget _buildSessionHeader() {
     return Card(
       child: Padding(
@@ -177,7 +182,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       ),
     );
   }
-  
+
   Widget _buildSummarySection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -199,99 +204,143 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       ],
     );
   }
-  
+
   Widget _buildConversationSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Conversation',
+          'Recommended Action Items',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
-        _messages.isEmpty
-          ? const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No messages found for this session.'),
-              ),
-            )
-          : ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                return _buildMessageBubble(message);
-              },
-            ),
+        _buildActionItems(),
       ],
     );
   }
-  
-  Widget _buildMessageBubble(TherapyMessage message) {
-    final isUser = message.isUser;
-    
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isUser) 
-            CircleAvatar(
-              backgroundColor: Theme.of(context).primaryColor,
-              child: const Icon(Icons.psychology, color: Colors.white),
-            ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isUser 
-                        ? Theme.of(context).primaryColor 
-                        : Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
-                      BoxShadow(
-                        offset: Offset(0, 2),
-                        blurRadius: 4,
-                        color: Color.fromRGBO(0, 0, 0, 0.1),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    message.content,
-                    style: TextStyle(
-                      color: isUser ? Colors.white : Colors.black87,
+
+  Widget _buildActionItems() {
+    // Try to extract action items from the summary
+    // The action items might be embedded in the summary text as JSON
+    List<String> actionItems = _extractActionItems();
+
+    if (actionItems.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('No action items found for this session.'),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: actionItems
+              .map((item) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.check_circle_outline,
+                            color: Colors.green),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            item,
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  DateFormat('h:mm a').format(message.timestamp),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (isUser) 
-            const CircleAvatar(
-              child: Icon(Icons.person),
-            ),
-        ],
+                  ))
+              .toList(),
+        ),
       ),
     );
+  }
+
+  List<String> _extractActionItems() {
+    if (_session == null || _session!.summary.isEmpty) {
+      return [];
+    }
+
+    final summary = _session!.summary;
+    List<String> actionItems = [];
+
+    try {
+      // First attempt: Try to parse the summary as JSON
+      try {
+        final summaryJson = jsonDecode(summary);
+        if (summaryJson is Map && summaryJson.containsKey('action_items')) {
+          final items = summaryJson['action_items'];
+          if (items is List) {
+            actionItems = items.map((item) => item.toString()).toList();
+          }
+        }
+      } catch (e) {
+        print('Summary is not in JSON format: $e');
+      }
+
+      // Second attempt: Look for action items in the text
+      if (actionItems.isEmpty) {
+        // Look for patterns like "Action items:" or "Recommended actions:"
+        final actionItemRegex = RegExp(
+            r'(action items:|recommended actions:|action steps:)(.+?)(?=\n\n|\n[A-Z]|$)',
+            caseSensitive: false,
+            dotAll: true);
+
+        final match = actionItemRegex.firstMatch(summary);
+        if (match != null && match.groupCount >= 2) {
+          final actionItemsText = match.group(2)?.trim() ?? '';
+
+          // Split by bullets or numbers
+          final bulletItems = actionItemsText.split(RegExp(r'\n\s*[-•*]\s*'));
+          final numberItems = actionItemsText.split(RegExp(r'\n\s*\d+\.\s*'));
+
+          if (bulletItems.length > 1) {
+            actionItems = bulletItems
+                .skip(1)
+                .map((item) => item.trim())
+                .where((item) => item.isNotEmpty)
+                .toList();
+          } else if (numberItems.length > 1) {
+            actionItems = numberItems
+                .skip(1)
+                .map((item) => item.trim())
+                .where((item) => item.isNotEmpty)
+                .toList();
+          }
+        }
+      }
+
+      // Third attempt: Use default action items if none found
+      if (actionItems.isEmpty) {
+        actionItems = [
+          'Practice mindfulness regularly',
+          'Reflect on the insights from your session',
+          'Apply the coping strategies discussed',
+          'Focus on your self-care routine'
+        ];
+      }
+    } catch (e) {
+      print('Error extracting action items: $e');
+      // Fallback action items
+      actionItems = [
+        'Practice mindfulness regularly',
+        'Reflect on the insights from your session',
+        'Apply the coping strategies discussed',
+        'Focus on your self-care routine'
+      ];
+    }
+
+    return actionItems;
   }
 
   @override
@@ -299,6 +348,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     _isDisposed = true;
     super.dispose();
   }
-  
+
   bool _isDisposed = false;
-} 
+}

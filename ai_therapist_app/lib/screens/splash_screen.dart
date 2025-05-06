@@ -52,17 +52,8 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 1500),
     )..repeat();
 
-    // EMERGENCY FIX: Skip all initialization and just go to login after a brief delay
-    print(
-        "SplashScreen: EMERGENCY MODE - Will go directly to login after delay");
-
-    // Show splash for 2 seconds then FORCE go to login
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        print("SplashScreen: EMERGENCY NAVIGATION to login");
-        context.go(AppRouter.login);
-      }
-    });
+    // Initialize app properly
+    _initializeAndNavigate();
   }
 
   @override
@@ -72,6 +63,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _initializeAndNavigate() async {
+    _startSplashTimeout(); // Ensure timeouts always run
     try {
       // First initialize the service locator if not already done
       setState(() {
@@ -82,6 +74,30 @@ class _SplashScreenState extends State<SplashScreen>
       // Ensure service locator is initialized
       if (!serviceLocator.isRegistered<AuthService>()) {
         await setupServiceLocator();
+      }
+
+      // Ensure ConfigService is initialized before using BackendService
+      if (serviceLocator.isRegistered<ConfigService>()) {
+        final configService = serviceLocator<ConfigService>();
+        await configService.init();
+        if (kDebugMode) {
+          print("SplashScreen: ConfigService initialized successfully");
+        }
+      } else {
+        if (kDebugMode) {
+          print("SplashScreen: Warning - ConfigService not registered");
+        }
+      }
+
+      // Ensure ApiClient is ready
+      if (serviceLocator.isRegistered<ApiClient>()) {
+        if (kDebugMode) {
+          print("SplashScreen: ApiClient is registered");
+        }
+      } else {
+        if (kDebugMode) {
+          print("SplashScreen: Warning - ApiClient not registered");
+        }
       }
 
       // Now safely get services from the locator
@@ -156,129 +172,50 @@ class _SplashScreenState extends State<SplashScreen>
         return; // Exit early to avoid further processing
       }
 
-      // Handle non-anonymous users
-      if (firebaseUser != null && !isAnonymous) {
-        print("SplashScreen: Logged in user detected: ${firebaseUser.uid}");
-
-        // Ensure we have a valid token for backend requests
-        try {
-          final idToken = await firebaseUser.getIdToken(true);
-          print("SplashScreen: Successfully refreshed ID token");
-
-          // Store the token for API requests if we have a valid token
-          if (idToken != null && serviceLocator.isRegistered<ApiClient>()) {
-            final apiClient = serviceLocator<ApiClient>();
-            apiClient.updateAuthToken(idToken);
-            print("SplashScreen: Updated API client with fresh token");
-          }
-        } catch (tokenError) {
-          print("SplashScreen: Error refreshing ID token: $tokenError");
-          // Continue anyway - we'll retry connections later
-        }
-      } else {
-        print("SplashScreen: No user logged in");
+      // Backend check with timeout
+      setState(() {
+        _statusMessage = "Checking backend connection...";
+        _loadingProgress = 0.3;
+      });
+      bool backendAvailable = false;
+      try {
+        backendAvailable = await _backendService
+            .isBackendAvailable()
+            .timeout(const Duration(seconds: 4));
+      } catch (e) {
+        print("SplashScreen: Backend check failed or timed out: $e");
+        backendAvailable = false;
       }
+      _backendAvailable = backendAvailable;
 
-      // Ensure ConfigService and ApiClient are properly initialized
-      if (!serviceLocator.isRegistered<ConfigService>() ||
-          !serviceLocator.isRegistered<ApiClient>()) {
-        if (kDebugMode) {
-          print(
-              "SplashScreen: Waiting for ConfigService and ApiClient to be initialized");
-        }
-
-        // Wait a moment to allow initialization to complete in main.dart
-        await Future.delayed(const Duration(milliseconds: 500));
-
-        if (!serviceLocator.isRegistered<ConfigService>() ||
-            !serviceLocator.isRegistered<ApiClient>()) {
-          if (kDebugMode) {
-            print(
-                "SplashScreen: ConfigService or ApiClient still not initialized, proceeding with caution");
-          }
-        }
-      }
-
-      // Make sure the refactored services are initialized
-      if (serviceLocator.isRegistered<MemoryManager>()) {
-        try {
-          final memoryManager = serviceLocator<MemoryManager>();
-          await memoryManager.initializeOnlyIfNeeded();
-          if (kDebugMode) {
-            print("SplashScreen: MemoryManager initialized lazily");
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            print("SplashScreen: Error initializing MemoryManager: $e");
-          }
-        }
-      }
-
-      if (serviceLocator.isRegistered<AudioGenerator>()) {
-        try {
-          final audioGenerator = serviceLocator<AudioGenerator>();
-          await audioGenerator.initializeOnlyIfNeeded();
-          if (kDebugMode) {
-            print("SplashScreen: AudioGenerator initialized lazily");
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            print("SplashScreen: Error initializing AudioGenerator: $e");
-          }
-        }
-      }
-
-      // Now get the BackendService
-      _backendService = serviceLocator<BackendService>();
+      // Continue with auth checks and navigation
+      final authData = await compute(_getAuthData, _authService);
+      final bool isLoggedIn = authData['isLoggedIn'] as bool;
+      final bool hasCompletedSignup = authData['hasCompletedSignup'] as bool;
 
       setState(() {
-        _serviceInitialized = true;
-        _statusMessage = "Services initialized";
-        _loadingProgress = 0.3;
+        _isAnimating = false;
+        _loadingProgress = 1.0;
       });
 
       if (kDebugMode) {
-        print("SplashScreen: Services initialized successfully");
+        print(
+            "SplashScreen: User isLoggedIn=$isLoggedIn, hasCompletedSignup=$hasCompletedSignup, backendAvailable=$_backendAvailable");
       }
-    } catch (e) {
-      setState(() {
-        _statusMessage = "Error initializing services: $e";
-        _loadingProgress = 0.3;
-      });
-      if (kDebugMode) {
-        print("SplashScreen: Error initializing services: $e");
+
+      // Ensure minimum showing time for splash screen (shorter duration)
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      if (!mounted) return;
+
+      // Navigate to appropriate screen - if backend is unavailable but user is logged in, still go to home
+      _navigateBasedOnAuth(isLoggedIn, hasCompletedSignup);
+    } catch (e, stack) {
+      print("SplashScreen: Initialization error: $e\n$stack");
+      if (mounted) {
+        context.go(AppRouter.login); // Fallback to login
       }
-      // Continue anyway to show the error UI
     }
-
-    // Schedule UI updates less frequently to reduce frame drops
-    _updateLoadingProgressLess();
-
-    // Perform backend check and auth status check in parallel using compute
-    await Future.wait([_checkBackendAvailability(), _checkAuthStatus()]);
-
-    // Check results and navigate using compute to avoid blocking main thread
-    final authData = await compute(_getAuthData, _authService);
-    final bool isLoggedIn = authData['isLoggedIn'] as bool;
-    final bool hasCompletedSignup = authData['hasCompletedSignup'] as bool;
-
-    setState(() {
-      _isAnimating = false;
-      _loadingProgress = 1.0;
-    });
-
-    if (kDebugMode) {
-      print(
-          "SplashScreen: User isLoggedIn=$isLoggedIn, hasCompletedSignup=$hasCompletedSignup, backendAvailable=$_backendAvailable");
-    }
-
-    // Ensure minimum showing time for splash screen (shorter duration)
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    if (!mounted) return;
-
-    // Navigate to appropriate screen - if backend is unavailable but user is logged in, still go to home
-    _navigateBasedOnAuth(isLoggedIn, hasCompletedSignup);
   }
 
   // Helper method to navigate based on auth status
@@ -361,6 +298,42 @@ class _SplashScreenState extends State<SplashScreen>
       setState(() {
         _backendAvailable = false;
         _statusMessage = "Offline mode activated";
+        _loadingProgress = 0.6;
+      });
+      return;
+    }
+
+    // Defensive check for required services before attempting backend check
+    if (!serviceLocator.isRegistered<ConfigService>() ||
+        !serviceLocator.isRegistered<ApiClient>()) {
+      if (kDebugMode) {
+        print(
+            "SplashScreen: Cannot check backend - required services not registered");
+      }
+
+      setState(() {
+        _backendAvailable = false;
+        _statusMessage = "Configuration incomplete. Using offline mode.";
+        _loadingProgress = 0.6;
+      });
+      return;
+    }
+
+    // Initialize BackendService explicitly before checking availability
+    try {
+      await _backendService.init();
+      if (kDebugMode) {
+        print("SplashScreen: BackendService initialized successfully");
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print("SplashScreen: Error initializing BackendService: $e");
+      }
+
+      setState(() {
+        _backendAvailable = false;
+        _statusMessage =
+            "Backend service initialization failed. Using offline mode.";
         _loadingProgress = 0.6;
       });
       return;
@@ -466,7 +439,18 @@ class _SplashScreenState extends State<SplashScreen>
 
   // Isolate function to check backend
   static Future<bool> _checkBackend(BackendService service) async {
-    return await service.isBackendAvailable();
+    try {
+      return await service.isBackendAvailable();
+    } catch (e) {
+      // More specific error handling
+      if (e.toString().contains('NotInitializedError')) {
+        print(
+            "SplashScreen: Backend check failed due to NotInitializedError - a required service dependency was not ready");
+      } else {
+        print("SplashScreen: Backend check failed with error: $e");
+      }
+      return false;
+    }
   }
 
   // Separate function to check auth status
@@ -718,7 +702,7 @@ class _SplashScreenState extends State<SplashScreen>
               ),
               const SizedBox(height: 24),
               Text(
-                _statusMessage,
+                kDebugMode ? _statusMessage : "Preparing your experience...",
                 style: const TextStyle(
                   fontSize: 14,
                   color: Colors.white,
@@ -734,42 +718,6 @@ class _SplashScreenState extends State<SplashScreen>
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               ),
-
-              // Debug buttons - only shown in debug mode
-              if (kDebugMode) ...[
-                const SizedBox(height: 40),
-                const Text(
-                  'Debug Options',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ElevatedButton(
-                      onPressed: _resetSignupStatus,
-                      child: const Text('Reset Signup'),
-                    ),
-                    const SizedBox(width: 16),
-                    ElevatedButton(
-                      onPressed: _completeSignup,
-                      child: const Text('Complete Signup'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: _checkBackendConnectivity,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber,
-                  ),
-                  child: const Text('Check Backend'),
-                ),
-              ],
             ],
           ),
         ),
