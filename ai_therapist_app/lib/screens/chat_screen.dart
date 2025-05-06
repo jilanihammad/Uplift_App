@@ -152,7 +152,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () => _confirmExit(context),
+      // Prevent back navigation from ending the session or popping the screen
+      onWillPop: () async {
+        // Optionally, show a message or just block back navigation during a session
+        if (_messages.isNotEmpty &&
+            !_showDurationSelector &&
+            !_showMoodSelector &&
+            !_isInitializing) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content:
+                    Text('Please use the End button to finish your session.')),
+          );
+          return false;
+        }
+        // Allow pop if no session is in progress
+        return true;
+      },
       child: Scaffold(
         appBar: AppBar(
           title: Row(
@@ -867,46 +883,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
   }
 
-  // Show a confirmation dialog when user tries to navigate away
-  Future<bool> _confirmExit(BuildContext context) async {
-    if (_messages.isEmpty) {
-      // No messages to save, allow exit without confirmation
-      _navigationService.showBottomNav(); // Show navigation bar on exit
-      return true;
-    }
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('End ongoing session?'),
-        content: const Text(
-            'Are you sure you want to end the current therapy session? Your progress will be saved.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              // End session and save before navigating
-              _endSession().then((_) {
-                Navigator.of(context).pop(true);
-              });
-            },
-            child: const Text('End and Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (result == true) {
-      _navigationService
-          .showBottomNav(); // Show navigation bar on exit with confirmation
-    }
-
-    return result ?? false;
-  }
-
   Future<void> _loadTherapistStyle() async {
     final preferencesService = serviceLocator<PreferencesService>();
     final userPreferences = preferencesService.preferences;
@@ -978,23 +954,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _showMoodSelector = true;
     });
 
-    // Create the session in the repository after user selects a duration
-    try {
-      final sessionRepository = serviceLocator<SessionRepository>();
-      final sessionTitle =
-          'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
-
-      sessionRepository.createSession(sessionTitle, id: _currentSessionId);
-
-      if (kDebugMode) {
-        print(
-            'Created new session with ID: $_currentSessionId after duration selection: $minutes minutes');
-      }
-    } catch (e) {
-      // Log the error but continue the session
-      if (kDebugMode) {
-        print('Error creating session in repository: $e');
-      }
+    // Do NOT create the session here. Only create/save in _endSession if there are actual messages.
+    if (kDebugMode) {
+      print(
+          'Duration selected: $minutes minutes. Session will be created only after actual interaction.');
     }
   }
 
@@ -1549,8 +1512,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           // Create the session if it doesn't exist
           final sessionTitle =
               'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
-          await sessionRepository.createSession(sessionTitle,
-              id: _currentSessionId);
+          final createdSession = await sessionRepository
+              .createSession(sessionTitle, id: _currentSessionId);
+          // Update _currentSessionId to backend's returned ID if it differs
+          if (createdSession.id != _currentSessionId) {
+            if (kDebugMode) {
+              print(
+                  'Updating _currentSessionId from $_currentSessionId to ${createdSession.id}');
+            }
+            _currentSessionId = createdSession.id;
+          }
         }
 
         // Now save the session with its summary and messages

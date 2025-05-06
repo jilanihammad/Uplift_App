@@ -8,6 +8,8 @@ import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/config/routes.dart';
+import 'package:ai_therapist_app/services/memory_manager.dart';
+import 'package:ai_therapist_app/services/audio_generator.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -27,6 +29,19 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _authService = serviceLocator<AuthService>();
+
+    // Defer heavy initializations to after navigation
+    Future.microtask(() async {
+      if (serviceLocator.isRegistered<MemoryManager>()) {
+        final memoryManager = serviceLocator<MemoryManager>();
+        await memoryManager.initializeOnlyIfNeeded();
+      }
+      if (serviceLocator.isRegistered<AudioGenerator>()) {
+        final audioGenerator = serviceLocator<AudioGenerator>();
+        await audioGenerator.initializeOnlyIfNeeded();
+      }
+      // Add any other heavy service initializations here
+    });
   }
 
   @override

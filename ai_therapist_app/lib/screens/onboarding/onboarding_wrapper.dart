@@ -12,6 +12,8 @@ import 'preferred_style_screen.dart';
 import 'mood_setup_screen.dart';
 import 'coping_strategies_screen.dart';
 import 'cbt_intro_screen.dart';
+import '../../services/memory_manager.dart';
+import '../../services/audio_generator.dart';
 
 class OnboardingWrapper extends StatefulWidget {
   const OnboardingWrapper({Key? key}) : super(key: key);
@@ -32,6 +34,19 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
 
     // Listen for step changes to detect completion
     _stepNotifier.addListener(_onStepChanged);
+
+    // Defer heavy initializations to after navigation
+    Future.microtask(() async {
+      if (GetIt.instance.isRegistered<MemoryManager>()) {
+        final memoryManager = GetIt.instance<MemoryManager>();
+        await memoryManager.initializeOnlyIfNeeded();
+      }
+      if (GetIt.instance.isRegistered<AudioGenerator>()) {
+        final audioGenerator = GetIt.instance<AudioGenerator>();
+        await audioGenerator.initializeOnlyIfNeeded();
+      }
+      // Add any other heavy service initializations here
+    });
   }
 
   @override

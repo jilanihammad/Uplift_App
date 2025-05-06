@@ -12,6 +12,8 @@ import 'package:ai_therapist_app/models/user_progress.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
+import 'package:ai_therapist_app/services/memory_manager.dart';
+import 'package:ai_therapist_app/services/audio_generator.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -39,6 +41,19 @@ class _HomeScreenState extends State<HomeScreen> {
     _progressService.progressChanged.addListener(_onProgressChanged);
 
     _loadUserData();
+
+    // Defer heavy initializations to after navigation
+    Future.microtask(() async {
+      if (serviceLocator.isRegistered<MemoryManager>()) {
+        final memoryManager = serviceLocator<MemoryManager>();
+        await memoryManager.initializeOnlyIfNeeded();
+      }
+      if (serviceLocator.isRegistered<AudioGenerator>()) {
+        final audioGenerator = serviceLocator<AudioGenerator>();
+        await audioGenerator.initializeOnlyIfNeeded();
+      }
+      // Add any other heavy service initializations here
+    });
   }
 
   void _onProgressChanged() {
@@ -122,27 +137,25 @@ class _HomeScreenState extends State<HomeScreen> {
               // Quick mood check
               _buildMoodCheckCard(),
 
-              const SizedBox(height: 24),
-
-              // Session actions
-              Center(
-                child: _buildActionCard(
-                  'View Past Sessions',
-                  Icons.history,
-                  Colors.purple.shade100,
-                  Colors.purple,
-                  () => context.go('/history'),
-                ),
-              ),
-
-              const SizedBox(height: 16),
+              // Remove the "View Past Sessions" section and spacing
+              // const SizedBox(height: 24),
+              // Center(
+              //   child: _buildActionCard(
+              //     'View Past Sessions',
+              //     Icons.history,
+              //     Colors.purple.shade100,
+              //     Colors.purple,
+              //     () => context.go('/history'),
+              //   ),
+              // ),
+              // const SizedBox(height: 16),
             ],
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.go('/chat'),
-        icon: const Icon(Icons.favorite_border),
+        icon: const Icon(Icons.favorite),
         label: const Text('Talk Now'),
       ),
     );
@@ -170,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -183,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         '$greeting, $userName!',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: Theme.of(context).primaryColor,
                         ),
@@ -196,21 +209,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 100,
                   errorBuilder: (context, error, stackTrace) {
                     return Icon(
-                      Icons.favorite,
+                      Icons.favorite_outline,
                       size: 80,
-                      color: Theme.of(context).primaryColor,
+                      color: Colors.pinkAccent,
                     );
                   },
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             ElevatedButton.icon(
-              icon: const Icon(Icons.favorite_border),
+              icon: const Icon(Icons.favorite),
               label: const Text('Start Session'),
               style: ElevatedButton.styleFrom(
                 padding:
-                    const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
                 minimumSize: const Size(0, 0),
               ),
               onPressed: () => context.go('/chat'),
@@ -229,48 +242,22 @@ class _HomeScreenState extends State<HomeScreen> {
     return Card(
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Expanded(
-                  child: const Text(
-                    'How are you feeling right now?',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_progress.currentStreak > 0)
-                      _buildStreakBadge(_progress.currentStreak),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.insert_chart_outlined),
-                      tooltip: 'View Mood History',
-                      onPressed: () => context.go(AppRouter.progress),
-                      constraints: const BoxConstraints(
-                        minWidth: 40,
-                        minHeight: 40,
-                      ),
-                      padding: EdgeInsets.zero,
-                    ),
-                  ],
-                ),
+                if (_progress.currentStreak > 0)
+                  _buildStreakBadge(_progress.currentStreak),
               ],
             ),
             if (hasReachedLimit)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                padding: const EdgeInsets.symmetric(vertical: 6.0),
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.amber.shade100,
                     borderRadius: BorderRadius.circular(8),
@@ -278,20 +265,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline, color: Colors.amber),
+                      const Icon(Icons.info_outline,
+                          color: Colors.amber, size: 16),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           "You've already logged your mood 3 times today. Today's logs: ${todayLogsCount}",
                           style: const TextStyle(
-                              color: Colors.amber, fontWeight: FontWeight.bold),
+                            color: Colors.amber,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -302,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildMoodOption(Mood.angry, '😠'),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Center(
               child: TextButton(
                 onPressed: hasReachedLimit
@@ -319,6 +310,11 @@ class _HomeScreenState extends State<HomeScreen> {
                               content: Text('Mood logged successfully')),
                         );
                       },
+                style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 0),
+                ),
                 child: const Text('Log My Mood'),
               ),
             ),
@@ -362,19 +358,19 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: isSelected
               ? Theme.of(context).primaryColor.withOpacity(0.1)
               : null,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           border: isSelected
               ? Border.all(color: Theme.of(context).primaryColor)
               : null,
         ),
         child: Text(
           emoji,
-          style: const TextStyle(fontSize: 24),
+          style: const TextStyle(fontSize: 22),
         ),
       ),
     );
@@ -667,7 +663,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Get consistency information from the progress service
-    final consistencyRate = _progressService.getConsistencyRate();
     final consistencyStatus = _progressService.getConsistencyStatus();
     final consistencyColor = _progressService.getConsistencyColor();
 
@@ -693,67 +688,76 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Consistency',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: [
+                      const Text(
+                        'Consistency',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Consistency badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: consistencyColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: consistencyColor),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(consistencyIcon,
+                                color: consistencyColor, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              consistencyStatus,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: consistencyColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.arrow_forward),
-                    onPressed: () => context.go(AppRouter.progress),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.bar_chart,
+                        size: 20,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.arrow_forward),
+                        onPressed: () => context.go(AppRouter.progress),
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
                   ),
                 ],
               ),
               const SizedBox(height: 16),
 
-              // Consistency badge
-              Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: consistencyColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: consistencyColor),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(consistencyIcon, color: consistencyColor),
-                      const SizedBox(width: 8),
-                      Text(
-                        consistencyStatus,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: consistencyColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-              Text(
-                'Based on your activity in the last 7 days (${(_progress.activeDaysLastWeek)} active days)',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 16),
+              // Stats row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _buildStatItem(
                     '${_progress.sessionsThisWeek}',
                     'Sessions',
-                    Icons.favorite_border,
+                    Icons.favorite,
                   ),
                   _buildStatItem(
                     '${_progress.moodLogsThisWeek}',

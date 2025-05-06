@@ -15,6 +15,7 @@ class BackendService {
   bool _isAvailable = false;
   DateTime? _lastChecked;
   final _cacheValidDuration = const Duration(minutes: 5);
+  bool _isInitialized = false;
 
   // Result caching for expensive operations
   final Map<String, dynamic> _responseCache = {};
@@ -28,9 +29,53 @@ class BackendService {
     'session': const Duration(seconds: 30),
   };
 
+  /// Initialize the backend service with proper configuration
+  Future<bool> init() async {
+    try {
+      // Check if ApiConfig has valid URLs
+      final baseUrl = ApiConfig.baseUrlWithoutPath;
+
+      if (baseUrl.isEmpty) {
+        if (kDebugMode) {
+          print(
+              'BackendService: ApiConfig.baseUrlWithoutPath is empty, cannot initialize');
+        }
+        _isInitialized = false;
+        return false;
+      }
+
+      // Mark as initialized
+      _isInitialized = true;
+
+      if (kDebugMode) {
+        print(
+            'BackendService: Successfully initialized with base URL: $baseUrl');
+      }
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('BackendService: Error during initialization: $e');
+      }
+      _isInitialized = false;
+      return false;
+    }
+  }
+
   /// Checks if the backend is available
   /// This will cache the result for 5 minutes to avoid excessive calls
   Future<bool> isBackendAvailable() async {
+    // Ensure service is initialized first
+    if (!_isInitialized) {
+      final initialized = await init();
+      if (!initialized) {
+        if (kDebugMode) {
+          print(
+              'BackendService: Cannot check availability - service not initialized');
+        }
+        return false;
+      }
+    }
+
     // Use cached result if available and recent
     if (_lastChecked != null &&
         DateTime.now().difference(_lastChecked!) < _cacheValidDuration) {

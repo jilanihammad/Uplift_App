@@ -55,7 +55,7 @@ class AppRouter {
   // Create and configure the router
   static final GoRouter router = GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: splash,
+    initialLocation: home,
     debugLogDiagnostics: true,
     redirect: (BuildContext context, GoRouterState state) async {
       print(
@@ -82,10 +82,11 @@ class AppRouter {
         final bool isGoingToOnboarding = state.matchedLocation == onboarding;
         final bool isGoingToSplash = state.matchedLocation == splash;
 
-        // If at splash, don't redirect yet
+        // If at splash, always redirect to home (unless onboarding/auth needed)
         if (isGoingToSplash) {
-          print("ROUTER DEBUG: At splash screen, no redirection needed");
-          return null;
+          if (!isLoggedIn) return login;
+          if (isLoggedIn && !hasCompletedSignup) return onboarding;
+          return home;
         }
 
         // Handle anonymous auth - treat as not logged in
