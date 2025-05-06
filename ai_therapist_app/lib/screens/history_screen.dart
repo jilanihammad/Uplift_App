@@ -18,7 +18,8 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   bool _isLoading = true;
   List<Session> _sessions = [];
-  final SessionRepository _sessionRepository = serviceLocator<SessionRepository>();
+  final SessionRepository _sessionRepository =
+      serviceLocator<SessionRepository>();
   String? _errorMessage;
   bool _isDisposed = false;
 
@@ -37,27 +38,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _loadSessions() async {
     if (_isDisposed) return; // Don't load if already disposed
-    
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-    
+
     try {
       // Load real sessions from repository
       final loadedSessions = await _sessionRepository.getSessions();
-      
+
       if (!mounted || _isDisposed) return; // Check mounted state
-      
+
       setState(() {
-        _sessions = loadedSessions;
+        // Sort sessions with newest first (by createdAt date)
+        _sessions = loadedSessions
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
         _isLoading = false;
       });
     } catch (e) {
       print('Error loading sessions: $e');
-      
+
       if (!mounted || _isDisposed) return; // Check mounted state
-      
+
       setState(() {
         _errorMessage = 'Failed to load sessions: $e';
         _isLoading = false;
@@ -99,7 +102,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.history, size: 80, color: Colors.grey),
+                            const Icon(Icons.history,
+                                size: 80, color: Colors.grey),
                             const SizedBox(height: 16),
                             const Text(
                               'No Session History',
@@ -109,7 +113,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            const Text('Your therapy sessions will appear here'),
+                            const Text(
+                                'Your therapy sessions will appear here'),
                             const SizedBox(height: 24),
                             ElevatedButton.icon(
                               onPressed: () {

@@ -3,6 +3,7 @@ import '../datasources/remote/api_client.dart';
 import '../datasources/local/app_database.dart';
 import '../../domain/entities/session.dart';
 import '../../data/repositories/message_repository.dart';
+import 'package:flutter/foundation.dart';
 
 class SessionRepository {
   final ApiClient apiClient;
@@ -15,6 +16,39 @@ class SessionRepository {
 
   // Create a new session
   Future<Session> createSession(String title, {String? id}) async {
+    // Check if session with this ID already exists locally
+    if (id != null) {
+      try {
+        final results = await appDatabase.query(
+          'sessions',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+
+        if (results.isNotEmpty) {
+          if (kDebugMode) {
+            print(
+                'Session with ID $id already exists, returning existing session');
+          }
+
+          final data = results.first;
+          return Session(
+            id: data['id'] as String,
+            title: data['title'] as String,
+            summary: data['summary'] as String,
+            createdAt: DateTime.parse(data['created_at'] as String),
+            lastModified: DateTime.parse(data['last_modified'] as String),
+            isSynced: (data['is_synced'] as int) == 1,
+          );
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error checking for existing session: $e');
+        }
+        // Continue to create session
+      }
+    }
+
     // Try to create session on the server
     try {
       final response = await apiClient.post(
