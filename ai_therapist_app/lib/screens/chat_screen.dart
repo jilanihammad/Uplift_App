@@ -950,26 +950,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _startSessionTimer();
       });
     } else {
-      // Start new session
+      // Generate a UUID for the session but don't create it yet
+      // We'll create the session only after the user selects a duration
       _currentSessionId = const Uuid().v4();
 
-      // Create the session in the repository to ensure it exists
-      try {
-        final sessionRepository = serviceLocator<SessionRepository>();
-        final sessionTitle =
-            'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
-
-        await sessionRepository.createSession(sessionTitle,
-            id: _currentSessionId);
-
-        if (kDebugMode) {
-          print('Created new session with ID: $_currentSessionId');
-        }
-      } catch (e) {
-        // Log the error but continue the session
-        if (kDebugMode) {
-          print('Error creating session in repository: $e');
-        }
+      if (kDebugMode) {
+        print(
+            'Generated session ID: $_currentSessionId (will be created after duration selection)');
       }
 
       // For new sessions, we show the duration selector first, then mood selector
@@ -990,6 +977,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _showDurationSelector = false;
       _showMoodSelector = true;
     });
+
+    // Create the session in the repository after user selects a duration
+    try {
+      final sessionRepository = serviceLocator<SessionRepository>();
+      final sessionTitle =
+          'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+
+      sessionRepository.createSession(sessionTitle, id: _currentSessionId);
+
+      if (kDebugMode) {
+        print(
+            'Created new session with ID: $_currentSessionId after duration selection: $minutes minutes');
+      }
+    } catch (e) {
+      // Log the error but continue the session
+      if (kDebugMode) {
+        print('Error creating session in repository: $e');
+      }
+    }
   }
 
   void _handleMoodSelection(Mood selectedMood) {
@@ -1412,6 +1418,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return;
     }
 
+    // Don't generate a summary if the session didn't actually start
+    // (no messages or still in setup screens)
+    if (_messages.isEmpty || _showDurationSelector || _showMoodSelector) {
+      if (kDebugMode) {
+        print(
+            'Session not properly started, skipping session summary generation');
+      }
+
+      // Show the bottom navigation bar and return to previous screen
+      _navigationService.showBottomNav();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+
     // Show confirmation dialog
     final result = await showDialog<bool>(
       context: context,
@@ -1501,6 +1523,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       // Save the session to the repository
       try {
+        // Additional validation to ensure we have a valid session to save
+        if (_currentSessionId.isEmpty ||
+            _showDurationSelector ||
+            _showMoodSelector) {
+          if (kDebugMode) {
+            print('Invalid session state, skipping save: ' +
+                'sessionId=${_currentSessionId.isEmpty}, ' +
+                'showDurationSelector=$_showDurationSelector, ' +
+                'showMoodSelector=$_showMoodSelector');
+          }
+          throw Exception('Cannot save incomplete session');
+        }
+
         final sessionRepository = serviceLocator<SessionRepository>();
         final messageRepository = serviceLocator<MessageRepository>();
 
