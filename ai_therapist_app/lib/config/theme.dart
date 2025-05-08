@@ -9,6 +9,13 @@ class AppTheme {
   static const Color primaryDarkColor =
       Color(0xFF0C7BBF); // Darker Twitter blue
 
+  // CalDiet colors
+  static const Color caldietPrimaryColor = Colors.black;
+  static const Color caldietAccentBlue = Color(0xFF4285F4);
+  static const Color caldietBackgroundGray = Color(0xFFF8F8F8);
+  static const Color caldietTextPrimary = Color(0xFF333333);
+  static const Color caldietTextSecondary = Color(0xFF757575);
+
   // Button colors - brighter blue similar to Twitter blue in dark mode
   static const Color buttonColor = Color(0xFF38B6FF);
   static const Color buttonLightColor = Color(0xFF7DCFFF);
@@ -52,56 +59,64 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: const ColorScheme.light(
-        primary: primaryColor,
-        secondary: secondaryColor,
-        surface: surfaceColor,
-        background: backgroundColor,
+        primary: caldietPrimaryColor,
+        secondary: caldietAccentBlue,
+        surface: Colors.white,
+        background: caldietBackgroundGray,
         error: errorColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
-        onSurface: textPrimaryColor,
-        onBackground: textPrimaryColor,
+        onSurface: caldietTextPrimary,
+        onBackground: caldietTextPrimary,
         onError: Colors.white,
       ),
-      primaryColor: primaryColor,
-      scaffoldBackgroundColor: backgroundColor,
+      primaryColor: caldietPrimaryColor,
+      scaffoldBackgroundColor: caldietBackgroundGray,
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        selectedItemColor: primaryColor,
-        unselectedItemColor: textSecondaryColor,
+        selectedItemColor: caldietPrimaryColor,
+        unselectedItemColor: caldietTextSecondary,
         backgroundColor: Colors.white,
         type: BottomNavigationBarType.fixed,
-        elevation: 8,
+        elevation: 1, // Lower elevation for cleaner look
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.white,
-        foregroundColor: textPrimaryColor,
+        backgroundColor: Colors.transparent,
+        foregroundColor: caldietTextPrimary,
         elevation: 0,
       ),
       cardTheme: CardTheme(
-        color: cardColor,
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        color: Colors.white,
+        elevation: 1, // Lower elevation for cleaner look
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)), // More rounded corners
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: buttonColor,
+          backgroundColor: caldietPrimaryColor,
           foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(24),
           ),
+          elevation: 2,
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: buttonColor,
+          foregroundColor: caldietAccentBlue,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: buttonColor,
-          side: BorderSide(color: buttonColor),
+          foregroundColor: caldietAccentBlue,
+          side: BorderSide(color: caldietAccentBlue),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(24),
           ),
         ),
       ),
@@ -118,7 +133,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: primaryColor, width: 2),
+          borderSide: const BorderSide(color: caldietAccentBlue, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -129,55 +144,55 @@ class AppTheme {
       ),
       textTheme: const TextTheme(
         displayLarge:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         displayMedium:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         displaySmall:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         headlineLarge:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         headlineMedium:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         headlineSmall:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         titleLarge:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         titleMedium:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
         titleSmall:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
-        bodyLarge: TextStyle(color: textPrimaryColor),
-        bodyMedium: TextStyle(color: textPrimaryColor),
-        bodySmall: TextStyle(color: textSecondaryColor),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
+        bodyLarge: TextStyle(color: caldietTextPrimary),
+        bodyMedium: TextStyle(color: caldietTextPrimary),
+        bodySmall: TextStyle(color: caldietTextSecondary),
         labelLarge:
-            TextStyle(color: textPrimaryColor, fontWeight: FontWeight.w600),
-        labelMedium: TextStyle(color: textPrimaryColor),
-        labelSmall: TextStyle(color: textSecondaryColor),
+            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
+        labelMedium: TextStyle(color: caldietTextPrimary),
+        labelSmall: TextStyle(color: caldietTextSecondary),
       ),
       fontFamily: 'Poppins',
       dividerTheme: const DividerThemeData(
-        color: Color(0xFFE9ECEF),
+        color: Color(0xFFEEEEEE), // Lighter divider for CalDiet style
         space: 1,
         thickness: 1,
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: textPrimaryColor.withOpacity(0.9),
+          color: caldietTextPrimary.withOpacity(0.9),
           borderRadius: BorderRadius.circular(4),
         ),
         textStyle: const TextStyle(color: Colors.white),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: textPrimaryColor,
+        backgroundColor: caldietTextPrimary,
         contentTextStyle: const TextStyle(color: Colors.white),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
       ),
       dialogTheme: DialogTheme(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: Colors.white,
         titleTextStyle: const TextStyle(
-          color: textPrimaryColor,
+          color: caldietTextPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w600,
           fontFamily: 'Poppins',
@@ -225,22 +240,29 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: buttonColor,
           foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(24),
           ),
+          elevation: 2,
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: buttonColor,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: buttonColor,
           side: BorderSide(color: buttonColor),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(24),
           ),
         ),
       ),

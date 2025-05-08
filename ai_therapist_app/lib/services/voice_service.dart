@@ -77,6 +77,19 @@ class VoiceService {
 
   bool _isInitialized = false;
 
+  // Stream controllers for audio playback states
+  final StreamController<bool> _audioPlaybackController =
+      StreamController<bool>.broadcast();
+  Stream<bool> get audioPlaybackStream => _audioPlaybackController.stream;
+
+  // Stream specifically for TTS speaking state - we keep this for API compatibility
+  final StreamController<bool> _ttsSpeakingStateController =
+      StreamController<bool>.broadcast();
+  Stream<bool> get isTtsActuallySpeaking => _ttsSpeakingStateController.stream;
+
+  // TTS instance to reuse
+  FlutterTts? _flutterTts;
+
   // Factory constructor to enforce singleton pattern
   factory VoiceService({required ApiClient apiClient}) {
     // Return existing instance if already created
@@ -97,8 +110,21 @@ class VoiceService {
       : _apiClient = apiClient {
     _audioRecorder = AudioRecorder();
     _ensureStreamControllerIsActive();
+    _initTts();
     if (kDebugMode) {
       print('VoiceService initialized with constructor injection');
+    }
+  }
+
+  // Initialize TTS engine
+  Future<void> _initTts() async {
+    _flutterTts = FlutterTts();
+    await _flutterTts!.setLanguage("en-US");
+    await _flutterTts!.setPitch(1.0);
+    await _flutterTts!.setSpeechRate(0.5);
+
+    if (kDebugMode) {
+      print('🎙️ TTS: TTS engine initialized');
     }
   }
 
@@ -775,142 +801,91 @@ class VoiceService {
 
   // Play an audio file
   Future<void> playAudio(String audioPath) async {
+    // This stream is for general audio, not necessarily TTS.
+    // TTS speaking state is handled by `isTtsActuallySpeaking` stream.
+    _audioPlaybackController.add(true);
+
     try {
-      // Check if this is a local TTS fallback path
+      if (kDebugMode) {
+        print('🔊 VoiceService: Beginning audio playback of $audioPath');
+      }
+
       if (audioPath.startsWith('local_tts://')) {
         if (kDebugMode) {
-          print('Detected local TTS fallback path, using text-to-speech');
+          print(
+              '🔊 VoiceService: Detected local TTS fallback path, using text-to-speech');
         }
+        // _useTtsBackup will manage the _ttsSpeakingStateController
         await _useTtsBackup();
+        _audioPlaybackController
+            .add(false); // Signal general audio playback ended
         return;
       }
 
-      // Check if the path is a URL or a local file path
       if (audioPath.startsWith('http')) {
         if (kDebugMode) {
-          print('Playing audio from URL: $audioPath');
+          print('🔊 VoiceService: Playing audio from URL: $audioPath');
         }
-
-        // Try to play audio using just_audio directly without HEAD request
         if (!_isWeb) {
+          final player = AudioPlayer();
           try {
-            if (kDebugMode) {
-              print('Attempting to play audio with just_audio');
-            }
-
-            final player = AudioPlayer();
-
-            // Set a reasonable timeout for connection
-            final completer = Completer<void>();
-
-            // Set up error handling for the audio source
+            await player.setUrl(audioPath);
             player.playerStateStream.listen((state) {
-              if (state.processingState == ProcessingState.idle &&
-                  !completer.isCompleted) {
-                completer.completeError('Audio could not be loaded');
+              if (state.processingState == ProcessingState.completed) {
+                _audioPlaybackController.add(false);
+                player.dispose();
               }
             });
-
-            // Start loading the audio
-            await player.setUrl(audioPath);
-
-            if (kDebugMode) {
-              print('Audio ready to play, starting playback');
-            }
-
             await player.play();
-
-            if (kDebugMode) {
-              print('Playback started, waiting for completion');
-            }
-
-            // Wait for the audio to finish
-            await player.processingStateStream.firstWhere(
-              (state) => state == ProcessingState.completed,
-            );
-
-            await player.dispose();
-
-            if (kDebugMode) {
-              print('Audio playback complete');
-            }
-            return;
-          } catch (audioError) {
-            if (kDebugMode) {
-              print('Just Audio error: $audioError, falling back to TTS');
-            }
-            // Fallback to text-to-speech
-            await _useTtsBackup();
-            return;
+          } catch (e) {
+            if (kDebugMode) print('🔊 VoiceService: Error playing URL: $e');
+            _audioPlaybackController.add(false);
+            await _useTtsBackup(); // Fallback to TTS if URL play fails
           }
-        }
-
-        // Web platform
-        await Future.delayed(const Duration(seconds: 2));
-        if (kDebugMode) {
-          print('Audio playback complete (simulated for web)');
+        } else {
+          // Web playback simulation
+          await Future.delayed(const Duration(seconds: 2));
+          _audioPlaybackController.add(false);
         }
       } else if (!_isWeb) {
-        // It's a local file path, check if it exists (only on non-web platforms)
         final file = io.File(audioPath);
-        bool fileExists = await file.exists();
-
-        if (!fileExists) {
-          if (kDebugMode) {
-            print(
-                'Audio file not found at $audioPath, using text-to-speech fallback');
-          }
-          // Fallback to text-to-speech
-          await _useTtsBackup();
-          return;
-        }
-
-        if (kDebugMode) {
-          print('Playing local audio file at $audioPath');
-        }
-
-        // Try to play audio using just_audio
-        try {
+        if (await file.exists()) {
+          if (kDebugMode)
+            print('🔊 VoiceService: Playing local audio file: $audioPath');
           final player = AudioPlayer();
-          await player.setFilePath(audioPath);
-          await player.play();
-          // Wait for the audio to finish
-          await player.processingStateStream.firstWhere(
-            (state) => state == ProcessingState.completed,
-          );
-          await player.dispose();
-
-          if (kDebugMode) {
-            print('Audio playback complete');
+          try {
+            await player.setFilePath(audioPath);
+            player.playerStateStream.listen((state) {
+              if (state.processingState == ProcessingState.completed) {
+                _audioPlaybackController.add(false);
+                player.dispose();
+              }
+            });
+            await player.play();
+          } catch (e) {
+            if (kDebugMode)
+              print('🔊 VoiceService: Error playing local file: $e');
+            _audioPlaybackController.add(false);
+            await _useTtsBackup(); // Fallback to TTS
           }
-          return;
-        } catch (audioError) {
-          if (kDebugMode) {
-            print('Just Audio error: $audioError, falling back to TTS');
-          }
-          // Fallback to text-to-speech
+        } else {
+          if (kDebugMode)
+            print('🔊 VoiceService: File not found $audioPath, using TTS');
+          _audioPlaybackController.add(false);
           await _useTtsBackup();
-          return;
         }
       } else {
-        // Web platform - simulate playback
-        if (kDebugMode) {
-          print('Web platform: playing audio from $audioPath');
-        }
-
-        await Future.delayed(const Duration(seconds: 2));
-
-        if (kDebugMode) {
-          print('Audio playback complete (web simulation)');
-        }
+        // Web, non-HTTP path - likely an error or needs TTS
+        if (kDebugMode)
+          print(
+              '🔊 VoiceService: Unhandled audio path on web: $audioPath, using TTS');
+        _audioPlaybackController.add(false);
+        await _useTtsBackup();
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error playing audio: $e');
-      }
-      // Fallback to text-to-speech
-      await _useTtsBackup();
-      if (!_isWeb) rethrow;
+      if (kDebugMode) print('🔊 VoiceService: Error in playAudio: $e');
+      _audioPlaybackController.add(false);
+      await _useTtsBackup(); // Fallback to TTS on any error
     }
   }
 
@@ -921,9 +896,13 @@ class VoiceService {
         print('Stopping any ongoing audio playback');
       }
 
+      // Signal that audio playback has stopped to listeners
+      _audioPlaybackController.add(false);
+
       // Stop Flutter TTS if it's speaking
-      final FlutterTts flutterTts = FlutterTts();
-      await flutterTts.stop();
+      if (_flutterTts != null) {
+        await _flutterTts!.stop();
+      }
 
       // Stop any ongoing audio player
       if (!_isWeb) {
@@ -945,6 +924,11 @@ class VoiceService {
       if (kDebugMode) {
         print('Error stopping audio: $e');
       }
+
+      // Ensure we signal playback stopped even on error
+      try {
+        _audioPlaybackController.add(false);
+      } catch (_) {}
     }
   }
 
@@ -978,99 +962,43 @@ class VoiceService {
   // Fallback to text-to-speech when audio file is not available
   Future<void> _useTtsBackup() async {
     if (kDebugMode) {
-      print('Using text-to-speech fallback');
+      print('🎙️ TTS: Using text-to-speech fallback');
     }
 
     try {
-      // Use actual Flutter TTS
-      final FlutterTts flutterTts = FlutterTts();
+      // Make sure TTS is initialized
+      if (_flutterTts == null) {
+        await _initTts();
+      }
 
-      // Get the text to speak - start with default error message
       String textToSpeak =
-          "I'm sorry, there was an issue with the audio playback.";
+          "I'm sorry, I couldn't play the audio right now."; // Default error
 
       try {
-        // Try to get the saved text from SharedPreferences
         final prefs = await SharedPreferences.getInstance();
         final savedText = prefs.getString('last_tts_text');
-
         if (savedText != null && savedText.isNotEmpty) {
           textToSpeak = savedText;
-          if (kDebugMode) {
-            print('Using saved text for TTS: $textToSpeak');
-          }
-        } else if (_conversationContext.isNotEmpty) {
-          // Fallback to conversation context if SharedPreferences doesn't have the text
-          for (int i = _conversationContext.length - 1; i >= 0; i--) {
-            if (_conversationContext[i]['speaker_id'] == _aiSpeakerId) {
-              textToSpeak = _conversationContext[i]['text'];
-              if (kDebugMode) {
-                print('Using conversation context text for TTS: $textToSpeak');
-              }
-              break;
-            }
-          }
         }
       } catch (e) {
         if (kDebugMode) {
-          print(
-              'Error retrieving saved text: $e, falling back to conversation context');
-        }
-
-        // Fallback to conversation context
-        if (_conversationContext.isNotEmpty) {
-          for (int i = _conversationContext.length - 1; i >= 0; i--) {
-            if (_conversationContext[i]['speaker_id'] == _aiSpeakerId) {
-              textToSpeak = _conversationContext[i]['text'];
-              break;
-            }
-          }
+          print('🎙️ TTS: Error retrieving saved text for TTS: $e');
         }
       }
-
-      // Configure TTS
-      await flutterTts.setLanguage("en-US");
-      await flutterTts.setPitch(1.0);
-      await flutterTts.setSpeechRate(0.5); // Slightly slower for better clarity
 
       if (kDebugMode) {
-        print('Speaking text: $textToSpeak');
-      }
-
-      // Check if TTS engine is available - but don't wait for the result to start speaking
-      try {
-        flutterTts.getEngines.then((engines) {
-          if (kDebugMode && engines.isNotEmpty) {
-            print('Using TTS engine: ${engines.first}');
-          }
-        }).catchError((e) {
-          if (kDebugMode) {
-            print('Error getting TTS engines: $e');
-          }
-        });
-      } catch (e) {
-        // Ignore engine check errors
+        print('🎙️ TTS: Preparing to speak: "$textToSpeak"');
       }
 
       // Speak the text
-      final result = await flutterTts.speak(textToSpeak);
+      await _flutterTts!.speak(textToSpeak);
 
       if (kDebugMode) {
-        print('TTS speak result: $result');
-      }
-
-      // Wait for speaking to complete
-      await flutterTts.awaitSpeakCompletion(true);
-
-      if (kDebugMode) {
-        print('Text-to-speech playback complete');
+        print('🎙️ TTS: speak() called');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error using Flutter TTS: $e');
-        // Fallback to just a delay if TTS fails
-        await Future.delayed(const Duration(seconds: 1));
-        print('Simulated text-to-speech playback complete');
+        print('🎙️ TTS: Error in _useTtsBackup: $e');
       }
     }
   }
@@ -1168,16 +1096,50 @@ class VoiceService {
     }
   }
 
+  // New method to check if audio is currently playing
+  Future<bool> isPlaying() async {
+    try {
+      // Create a temporary player to check status
+      final player = AudioPlayer();
+
+      // Check if the player is playing
+      final isPlaying = player.playing;
+
+      // Dispose the temporary player
+      await player.dispose();
+
+      return isPlaying;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error checking audio playback state: $e');
+      }
+      return false;
+    }
+  }
+
   // Cleanup resources
   void dispose() {
     try {
+      // Stop any ongoing TTS
+      if (_flutterTts != null) {
+        _flutterTts!.stop();
+      }
+
       if (_recordingStateController != null &&
           !_recordingStateController!.isClosed) {
         _recordingStateController!.close();
       }
+
+      if (!_audioPlaybackController.isClosed) {
+        _audioPlaybackController.close();
+      }
+
+      if (!_ttsSpeakingStateController.isClosed) {
+        _ttsSpeakingStateController.close();
+      }
     } catch (e) {
       if (kDebugMode) {
-        print('Error closing stream controller: $e');
+        print('Error closing stream controllers: $e');
       }
     }
 
@@ -1198,5 +1160,26 @@ class VoiceService {
         }
       }
     }
+  }
+
+  // Public method to speak text directly using TTS
+  Future<void> speakWithTts(String text) async {
+    if (kDebugMode) {
+      print(
+          '🎙️ TTS: Speaking directly with TTS: "${text.substring(0, min(50, text.length))}..."');
+    }
+
+    // Save the text for fallback
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_tts_text', text);
+    } catch (e) {
+      if (kDebugMode) {
+        print('🎙️ TTS: Error saving text for TTS: $e');
+      }
+    }
+
+    // Use the internal TTS backup method
+    await _useTtsBackup();
   }
 }
