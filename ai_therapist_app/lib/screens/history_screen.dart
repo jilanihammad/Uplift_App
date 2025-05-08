@@ -23,10 +23,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String? _errorMessage;
   bool _isDisposed = false;
 
+  // Calendar state
+  late DateTime _selectedDate;
+  late List<DateTime> _weekDates;
+  List<Session> _filteredSessions = [];
+
   @override
   void initState() {
     super.initState();
+    _selectedDate = DateTime.now();
+    _generateWeekDates();
     _loadSessions();
+  }
+
+  void _generateWeekDates() {
+    // Get the current date
+    final now = DateTime.now();
+
+    // Calculate days from the start of the week (considering Sunday as first day)
+    final DateTime startOfWeek =
+        DateTime(now.year, now.month, now.day - now.weekday % 7);
+
+    // Generate 7 days starting from the start of the week
+    _weekDates = List.generate(7, (index) {
+      return startOfWeek.add(Duration(days: index));
+    });
+  }
+
+  void _filterSessionsByDate() {
+    // Filter sessions for the selected date
+    final startOfDay =
+        DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    _filteredSessions = _sessions.where((session) {
+      return session.createdAt.isAfter(startOfDay) &&
+          session.createdAt.isBefore(endOfDay);
+    }).toList();
   }
 
   @override
@@ -55,6 +88,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _sessions = loadedSessions
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
         _isLoading = false;
+
+        // Filter sessions for selected date
+        _filterSessionsByDate();
       });
     } catch (e) {
       print('Error loading sessions: $e');
@@ -66,6 +102,129 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _selectDate(DateTime date) {
+    setState(() {
+      _selectedDate = date;
+      _filterSessionsByDate();
+    });
+  }
+
+  // Calendar day widget
+  Widget _buildDayWidget(DateTime date) {
+    final isSelected = date.year == _selectedDate.year &&
+        date.month == _selectedDate.month &&
+        date.day == _selectedDate.day;
+
+    final isToday = date.year == DateTime.now().year &&
+        date.month == DateTime.now().month &&
+        date.day == DateTime.now().day;
+
+    // Get the day name and day number
+    final dayName =
+        DateFormat('EEE').format(date).substring(0, 3); // Sun, Mon, Tue, etc.
+    final dayNumber = date.day.toString();
+
+    // Check if the day has any sessions
+    final hasSessionsOnDay = _sessions.any((session) {
+      return session.createdAt.year == date.year &&
+          session.createdAt.month == date.month &&
+          session.createdAt.day == date.day;
+    });
+
+    return GestureDetector(
+      onTap: () => _selectDate(date),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        width: 40,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              dayName,
+              style: TextStyle(
+                fontSize: 12,
+                color: isSelected
+                    ? Colors.black
+                    : isToday
+                        ? Colors.black
+                        : Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected
+                    ? Colors.black
+                    : hasSessionsOnDay
+                        ? Colors.grey.shade200
+                        : Colors.transparent,
+                border: isToday && !isSelected
+                    ? Border.all(color: Colors.black, width: 1)
+                    : null,
+              ),
+              child: Center(
+                child: Text(
+                  dayNumber,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: isSelected
+                        ? Colors.white
+                        : isToday
+                            ? Colors.black
+                            : Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Calendar widget
+  Widget _buildCalendar() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 2,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 8.0),
+            child: Text(
+              DateFormat('MMMM yyyy').format(_selectedDate),
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: _weekDates.map((date) => _buildDayWidget(date)).toList(),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -83,6 +242,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
       body: Column(
         children: [
+          // Calendar widget
+          _buildCalendar(),
+
           if (_errorMessage != null)
             Container(
               color: Colors.amber.shade100,
@@ -94,10 +256,34 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 textAlign: TextAlign.center,
               ),
             ),
+
+          // Sessions heading
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Sessions on ${DateFormat('MMM d').format(_selectedDate)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '${_filteredSessions.length} sessions',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _sessions.isEmpty
+                : _filteredSessions.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -105,16 +291,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             const Icon(Icons.history,
                                 size: 80, color: Colors.grey),
                             const SizedBox(height: 16),
-                            const Text(
-                              'No Session History',
-                              style: TextStyle(
+                            Text(
+                              'No Sessions on ${DateFormat('MMM d').format(_selectedDate)}',
+                              style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                                'Your therapy sessions will appear here'),
+                                'Select another date or start a new session'),
                             const SizedBox(height: 24),
                             ElevatedButton.icon(
                               onPressed: () {
@@ -127,9 +313,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ),
                       )
                     : ListView.builder(
-                        itemCount: _sessions.length,
+                        itemCount: _filteredSessions.length,
                         itemBuilder: (context, index) {
-                          final session = _sessions[index];
+                          final session = _filteredSessions[index];
                           return SessionHistoryTile(session: session);
                         },
                       ),
@@ -149,7 +335,7 @@ class SessionHistoryTile extends StatelessWidget {
   }) : super(key: key);
 
   String _formatDate(DateTime date) {
-    return DateFormat('MMM d, yyyy - h:mm a').format(date);
+    return DateFormat('h:mm a').format(date);
   }
 
   @override

@@ -157,6 +157,10 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => context.go('/chat'),
         icon: const Icon(Icons.favorite),
         label: const Text('Talk Now'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+        ),
+        elevation: 4,
       ),
     );
   }
@@ -223,8 +227,10 @@ class _HomeScreenState extends State<HomeScreen> {
               label: const Text('Start Session'),
               style: ElevatedButton.styleFrom(
                 padding:
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                minimumSize: const Size(0, 0),
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
               ),
               onPressed: () => context.go('/chat'),
             ),
@@ -312,8 +318,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                 style: TextButton.styleFrom(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  minimumSize: const Size(0, 0),
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  backgroundColor:
+                      Theme.of(context).primaryColor.withOpacity(0.1),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
                 ),
                 child: const Text('Log My Mood'),
               ),
@@ -358,19 +368,31 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isSelected
               ? Theme.of(context).primaryColor.withOpacity(0.1)
-              : null,
-          borderRadius: BorderRadius.circular(14),
-          border: isSelected
-              ? Border.all(color: Theme.of(context).primaryColor)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: isSelected
+                ? Theme.of(context).primaryColor
+                : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Theme.of(context).primaryColor.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ]
               : null,
         ),
         child: Text(
           emoji,
-          style: const TextStyle(fontSize: 22),
+          style: const TextStyle(fontSize: 24),
         ),
       ),
     );
@@ -456,6 +478,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 OutlinedButton.icon(
                   icon: const Icon(Icons.edit_calendar),
                   label: const Text('Reschedule'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
                   onPressed: () {
                     // Show reschedule page
                     _showRescheduleDialog();
@@ -464,6 +493,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.notifications),
                   label: const Text('Remind Me'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
                   onPressed: () {
                     // Set up a reminder
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -779,17 +815,39 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildStatItem(String value, String label, IconData icon) {
+    // Define the soft colors for each icon
+    Color iconColor;
+    Color bgColor;
+
+    if (icon == Icons.favorite) {
+      // Soft pink for heart icon
+      iconColor = const Color(0xFFFF80AB);
+      bgColor = const Color(0xFFFFEBEE);
+    } else if (icon == Icons.mood) {
+      // Soft green for smiley icon
+      iconColor = const Color(0xFF66BB6A);
+      bgColor = const Color(0xFFE8F5E9);
+    } else if (icon == Icons.local_fire_department) {
+      // Soft orange for fire icon
+      iconColor = const Color(0xFFFF9800);
+      bgColor = const Color(0xFFFFF3E0);
+    } else {
+      // Default colors for any other icons
+      iconColor = Theme.of(context).primaryColor;
+      bgColor = Theme.of(context).primaryColor.withOpacity(0.1);
+    }
+
     return Column(
       children: [
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
+            color: bgColor,
             shape: BoxShape.circle,
           ),
           child: Icon(
             icon,
-            color: Theme.of(context).primaryColor,
+            color: iconColor,
           ),
         ),
         const SizedBox(height: 8),

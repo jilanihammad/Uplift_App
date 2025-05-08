@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lottie/lottie.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../di/service_locator.dart';
 import '../services/voice_service.dart';
@@ -51,16 +54,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isMicMuted = false;
   bool _isSpeakerMuted = false;
   bool _isTyping = false;
-  bool _isTtsSpeaking = false;
 
   // Voice recording variables
   late AnimationController _micAnimationController;
   late Animation<double> _micAnimation;
-  late AnimationController _rotationAnimationController;
-  late Animation<double> _rotationAnimation;
   final VoiceService _voiceService = serviceLocator<VoiceService>();
   bool _isRecording = false;
   StreamSubscription<RecordingState>? _recordingStateSubscription;
+  StreamSubscription<bool>? _ttsSubscription;
 
   // Session duration
   int _sessionDurationMinutes = 15; // Default is 15 minutes
@@ -91,18 +92,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       CurvedAnimation(
         parent: _micAnimationController,
         curve: Curves.easeInOut,
-      ),
-    );
-
-    // Set up rotation animation for the speaking circle
-    _rotationAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    );
-    _rotationAnimation = Tween(begin: 0.0, end: 2.0 * 3.14159).animate(
-      CurvedAnimation(
-        parent: _rotationAnimationController,
-        curve: Curves.linear,
       ),
     );
 
@@ -140,8 +129,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _messageController.dispose();
     _scrollController.dispose();
     _recordingStateSubscription?.cancel();
+    _ttsSubscription?.cancel();
     _micAnimationController.dispose();
-    _rotationAnimationController.dispose();
     _voiceService.dispose();
     _sessionTimer?.cancel(); // Cancel the timer when disposing
     _navigationService
@@ -441,61 +430,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Circle for voice visualization
-                  AnimatedBuilder(
-                    animation: _rotationAnimationController,
-                    builder: (context, child) {
-                      return Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: _isTtsSpeaking
-                              ? SweepGradient(
-                                  center: Alignment.center,
-                                  startAngle: 0.0,
-                                  endAngle: 2 * 3.14159,
-                                  colors: [
-                                    Theme.of(context).primaryColor,
-                                    Theme.of(context)
-                                        .primaryColor
-                                        .withOpacity(0.7),
-                                    Theme.of(context)
-                                        .primaryColor
-                                        .withOpacity(0.5),
-                                    Theme.of(context)
-                                        .primaryColor
-                                        .withOpacity(0.3),
-                                    Theme.of(context).primaryColor,
-                                  ],
-                                  stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
-                                  transform: GradientRotation(
-                                      _rotationAnimation.value),
-                                )
-                              : null,
-                          color: _isTtsSpeaking
-                              ? null
-                              : Theme.of(context)
-                                  .disabledColor
-                                  .withOpacity(0.3),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            _isTtsSpeaking ? Icons.volume_up : Icons.mic,
-                            size: 48,
-                            color: Colors.white,
+                  // Circle for voice visualization with animation
+                  Container(
+                    width: 120,
+                    height: 120,
+                    child: _isRecording
+                        ? Lottie.asset(
+                            'assets/animations/Microphone Animation.json',
+                            width: 120,
+                            height: 120,
+                            fit: BoxFit.contain,
+                          )
+                        : Lottie.asset(
+                            'assets/animations/Session Animation.json',
+                            width: 120,
+                            height: 120,
+                            fit: BoxFit.contain,
                           ),
-                        ),
-                      );
-                    },
                   ),
                   const SizedBox(height: 32),
                   Text(
-                    _isTtsSpeaking
-                        ? "Maya is speaking..."
-                        : _isRecording
-                            ? "Listening to you..."
-                            : "Tap the mic button to speak",
+                    _isRecording
+                        ? "Listening to you..."
+                        : 'Press "Talk" to speak',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
@@ -582,9 +539,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
                         if (_isSpeakerMuted) {
                           _voiceService.stopAudio();
-                          setState(() {
-                            _isTtsSpeaking = false;
-                          });
                         }
                       },
                       color: _isSpeakerMuted ? Colors.grey : null,
@@ -678,10 +632,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ScaleTransition(
                       scale: _micAnimation,
                       child: IconButton(
-                        icon: Icon(
-                          _isRecording ? Icons.stop : Icons.mic,
-                          color: _isRecording ? Colors.red : null,
-                        ),
+                        icon: _isRecording
+                            ? Lottie.asset(
+                                'assets/animations/Microphone Animation.json',
+                                width: 24,
+                                height: 24,
+                                fit: BoxFit.contain,
+                              )
+                            : Icon(Icons.mic),
+                        color: _isRecording ? Colors.red : null,
                         onPressed: _startVoiceInput,
                       ),
                     ),
@@ -861,6 +820,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           _stopPulseMicAnimation();
         }
       });
+
+      // We don't need to listen to TTS events anymore since we always show the speaking animation
+      // But keep the subscription to avoid nulls
+      _ttsSubscription = _voiceService.audioPlaybackStream.listen((_) {});
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not initialize microphone: $e')),
@@ -918,8 +881,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       await Future.delayed(const Duration(seconds: 1));
 
       setState(() {
-        _addAIMessage(
-            'Welcome back to our session! How have you been since we last talked?');
         _isProcessing = false;
 
         // Start the session timer for continuing sessions too
@@ -998,6 +959,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     // Wait briefly to ensure UI is updated
     Future.microtask(() {
+      // Add the AI message
       _addAIMessage(welcomeMessage);
     });
   }
@@ -1054,6 +1016,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     try {
       if (_isVoiceMode) {
         // Voice mode - get response with streaming audio for faster playback
+        // We don't need to manually set _isTtsSpeaking anymore
         final response =
             await _therapyService.processUserMessageWithStreamingAudio(message);
 
@@ -1067,12 +1030,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
         setState(() {
           _messages.add(aiMessage);
-          _isProcessing = false;
+          _isProcessing =
+              false; // Set to false here, animation will start via stream
         });
 
         _scrollToBottom();
 
-        // No need to manually play audio here as streaming method handles playback
+        // Audio playback status is now managed through the _ttsSubscription stream
       } else {
         // Text mode - get response without audio to save API calls
         final response = await _therapyService.processUserMessage(message);
@@ -1119,10 +1083,28 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       if (_isVoiceMode) {
+        if (kDebugMode) {
+          print('💬 CHAT: Processing AI message in voice mode');
+        }
+
+        // Save the text for TTS fallback
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_tts_text', text);
+
+        // Set processing to false to show the animation
+        setState(() {
+          _isProcessing = false;
+        });
+
         // Use audio generator with streaming for faster response
         final audioGenerator = serviceLocator<AudioGenerator>();
 
-        // Generate audio and stream it directly
+        if (kDebugMode) {
+          print(
+              '💬 CHAT: Generating audio for AI message: ${text.substring(0, min(30, text.length))}...');
+        }
+
+        // Generate audio
         final audioPath = await audioGenerator.generateAndStreamAudio(text);
 
         // Update the message with the audio URL
@@ -1130,10 +1112,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         if (indexOfMessage != -1) {
           setState(() {
             _messages[indexOfMessage] = message.copyWith(audioUrl: audioPath);
-            _isProcessing = false;
           });
 
-          // Audio is already playing due to streaming
+          if (kDebugMode) {
+            print('💬 CHAT: Audio generated: $audioPath');
+          }
         }
       } else {
         // In text mode, we don't generate audio
@@ -1143,7 +1126,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error generating audio for welcome message: $e');
+        print('💬 CHAT ERROR: Error generating audio for welcome message: $e');
       }
       setState(() {
         _isProcessing = false;
@@ -1230,6 +1213,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
           if (_isVoiceMode) {
             // In voice mode, get AI response with streaming audio for faster playback
+            // We don't need to manually set _isTtsSpeaking anymore
             final response = await _therapyService
                 .processUserMessageWithStreamingAudio(transcription);
 
@@ -1243,12 +1227,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
             setState(() {
               _messages.add(aiMessage);
-              _isProcessing = false;
+              _isProcessing =
+                  false; // Set to false here, animation will start via stream
             });
 
             _scrollToBottom();
 
-            // No need to manually play audio here as streaming method handles playback
+            // Audio playback status is now managed through the _ttsSubscription stream
           } else {
             // Text mode - get response without audio to save API calls
             final response =
@@ -1345,30 +1330,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _playAudio(String audioPath, {bool inVoiceMode = false}) async {
-    if (inVoiceMode) {
-      _updateSpeakingAnimation(true);
-    } else {
-      setState(() {
-        _isRecording = true;
-      });
+    // This method is primarily for playing back user-recorded or non-TTS audio.
+    // TTS audio playback and its animation are now handled by isTtsActuallySpeaking stream.
+    setState(() {
+      _isRecording = false;
+      _isProcessing = false;
+    });
+
+    if (kDebugMode) {
+      print(
+          '💬 CHAT: Starting general audio playback for path: $audioPath (not TTS)');
     }
 
     try {
+      // Play audio - if it's TTS, VoiceService will handle the speaking state.
+      // For other audio, we don't show the "Maya is speaking" animation.
       await _voiceService.playAudio(audioPath);
     } catch (e) {
+      if (kDebugMode) {
+        print('💬 CHAT ERROR: Error playing general audio: $e');
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error playing audio: $e')),
       );
-    } finally {
-      if (mounted) {
-        if (inVoiceMode) {
-          _updateSpeakingAnimation(false);
-        } else {
-          setState(() {
-            _isRecording = false;
-          });
-        }
-      }
     }
   }
 
@@ -1605,21 +1589,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     setState(() {
       _isVoiceMode = !_isVoiceMode;
-      _isTtsSpeaking = false;
     });
-  }
-
-  // Method to control TTS speaking animation
-  void _updateSpeakingAnimation(bool isSpeaking) {
-    setState(() {
-      _isTtsSpeaking = isSpeaking;
-    });
-
-    if (isSpeaking) {
-      _rotationAnimationController.repeat();
-    } else {
-      _rotationAnimationController.stop();
-    }
   }
 }
 
@@ -1657,10 +1627,10 @@ class ChatMessage extends StatelessWidget {
                 color: isUser
                     ? Theme.of(context).primaryColor
                     : Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
                   BoxShadow(
-                    offset: const Offset(0, 2),
+                    offset: Offset(0, 2),
                     blurRadius: 4,
                     color: Color.fromRGBO(0, 0, 0, 0.1),
                   ),
