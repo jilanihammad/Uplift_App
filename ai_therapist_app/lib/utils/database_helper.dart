@@ -162,11 +162,11 @@ class DatabaseOperationManager {
 
         if (mode != 'wal') {
           debugPrint('Enabling WAL mode for better concurrency');
-          await db.execute('PRAGMA journal_mode = WAL;');
+          await db.rawQuery('PRAGMA journal_mode = WAL;');
         }
 
         // Increase busy timeout
-        await db.execute('PRAGMA busy_timeout = 5000;');
+        await db.rawQuery('PRAGMA busy_timeout = 5000;');
 
         debugPrint('Database health check passed, database is healthy');
         return true;

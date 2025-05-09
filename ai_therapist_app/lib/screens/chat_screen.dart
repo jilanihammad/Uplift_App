@@ -24,6 +24,7 @@ import '../data/repositories/session_repository.dart';
 import '../services/navigation_service.dart';
 import '../services/audio_generator.dart';
 import '../data/repositories/message_repository.dart';
+import '../data/datasources/remote/api_client.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -58,7 +59,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // Voice recording variables
   late AnimationController _micAnimationController;
   late Animation<double> _micAnimation;
-  final VoiceService _voiceService = serviceLocator<VoiceService>();
+  late VoiceService _voiceService;
   bool _isRecording = false;
   StreamSubscription<RecordingState>? _recordingStateSubscription;
   StreamSubscription<bool>? _ttsSubscription;
@@ -101,7 +102,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // Load therapist style
     _loadTherapistStyle();
 
-    // Initialize voice service
+    // Initialize voice service instance and setup
+    _voiceService = serviceLocator<VoiceService>();
     _initializeVoiceService();
 
     // Initialize session after the build is complete
@@ -808,10 +810,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _initializeVoiceService() async {
+    // Dispose old subscriptions before creating new ones
+    await _recordingStateSubscription?.cancel();
+    await _ttsSubscription?.cancel();
+    _recordingStateSubscription = null;
+    _ttsSubscription = null;
     try {
       await _voiceService.initialize();
-
-      // Listen to recording state changes
       _recordingStateSubscription =
           _voiceService.recordingState.listen((state) {
         if (state == RecordingState.recording) {
@@ -820,9 +825,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           _stopPulseMicAnimation();
         }
       });
-
-      // We don't need to listen to TTS events anymore since we always show the speaking animation
-      // But keep the subscription to avoid nulls
       _ttsSubscription = _voiceService.audioPlaybackStream.listen((_) {});
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1148,6 +1150,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _startVoiceInput() async {
+    if (!_voiceService.isInitialized) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Microphone not ready. Please try again or end the session.')),
+      );
+      return;
+    }
     if (_isRecording) {
       // Stop recording and process
       if (kDebugMode) {
@@ -1372,7 +1382,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         print(
             'Session not properly started, skipping session summary generation');
       }
-
       // Show the bottom navigation bar and return to previous screen
       _navigationService.showBottomNav();
       if (mounted) {
@@ -1402,17 +1411,52 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     if (result != true) return;
 
-    // Set flags to prevent multiple attempts
     setState(() {
       _isEndingSession = true;
       _isProcessing = true;
     });
 
-    // Show the bottom navigation bar again when ending the session
     _navigationService.showBottomNav();
 
-    // Stop any ongoing audio playback immediately
+    // Stop and dispose audio/TTS resources robustly
+    if (kDebugMode)
+      print('🛑 Ending session: stopping and disposing VoiceService');
     await _voiceService.stopAudio();
+    _voiceService.dispose();
+
+    // Unregister and re-register VoiceService and AudioGenerator for a fresh instance
+    if (kDebugMode)
+      print(
+          '🗑️ Unregistering VoiceService and AudioGenerator from service locator');
+    if (serviceLocator.isRegistered<VoiceService>()) {
+      serviceLocator.unregister<VoiceService>();
+    }
+    if (serviceLocator.isRegistered<AudioGenerator>()) {
+      serviceLocator.unregister<AudioGenerator>();
+    }
+    if (kDebugMode) print('🔄 Registering new VoiceService and AudioGenerator');
+    serviceLocator.registerLazySingleton<VoiceService>(() {
+      final service = VoiceService(apiClient: serviceLocator<ApiClient>());
+      service.initializeOnlyIfNeeded();
+      return service;
+    });
+    serviceLocator.registerLazySingleton<AudioGenerator>(() {
+      final generator = AudioGenerator(
+        voiceService: serviceLocator<VoiceService>(),
+        apiClient: serviceLocator<ApiClient>(),
+      );
+      generator.initializeOnlyIfNeeded();
+      return generator;
+    });
+    // Update local reference to the new VoiceService
+    if (kDebugMode) print('🔄 Updating local _voiceService reference');
+    final newVoiceService = serviceLocator<VoiceService>();
+    _voiceService = newVoiceService;
+
+    // Re-initialize VoiceService for next session
+    if (kDebugMode) print('🔄 Re-initializing VoiceService for next session');
+    await _voiceService.initializeOnlyIfNeeded();
+    await _initializeVoiceService(); // <-- Ensure subscriptions and mic are set up for the new instance
 
     // Show a modal progress indicator
     if (mounted) {
@@ -1436,7 +1480,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (kDebugMode) {
         print('Ending session with ID: $_currentSessionId');
       }
-
       // Log current mood
       if (_initialMood != null) {
         await _progressService.logMood(_initialMood!);
@@ -1533,7 +1576,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         Navigator.of(context).pop();
       }
 
-      // Reset state flags
       setState(() {
         _isEndingSession = false;
         _isProcessing = false;
@@ -1541,8 +1583,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       // Navigate to summary screen using GoRouter
       if (!mounted) return;
-
-      // Replace current screen with summary - prevents going back to chat screen
       context.pushReplacement('/session_summary', extra: {
         'sessionId': _currentSessionId,
         'summary': summary,

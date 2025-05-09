@@ -84,11 +84,6 @@ class FirebaseService {
 
         // Verify user authentication state
         final currentUser = _auth?.currentUser;
-        if (currentUser != null && currentUser.isAnonymous) {
-          // Sign out anonymous users to ensure proper auth flow
-          logger.info('Signing out anonymous user', tag: 'Firebase');
-          await _auth?.signOut();
-        }
 
         _authAvailable = true;
         logger.info('Auth initialized and working', tag: 'Firebase');

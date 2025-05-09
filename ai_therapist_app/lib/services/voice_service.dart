@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:record/record.dart';
 import '../config/app_config.dart'; // Import AppConfig
 import 'dart:io';
+import 'package:audio_session/audio_session.dart';
 
 // Recording states
 enum RecordingState { ready, recording, stopped, paused, error }
@@ -801,14 +802,35 @@ class VoiceService {
 
   // Play an audio file
   Future<void> playAudio(String audioPath) async {
-    // This stream is for general audio, not necessarily TTS.
-    // TTS speaking state is handled by `isTtsActuallySpeaking` stream.
     _audioPlaybackController.add(true);
 
     try {
       if (kDebugMode) {
         print('🔊 VoiceService: Beginning audio playback of $audioPath');
       }
+
+      // Request audio focus before playback
+      final session = await AudioSession.instance;
+      final focusGranted = await session.setActive(true);
+      if (!focusGranted) {
+        if (kDebugMode)
+          print('🔊 VoiceService: Audio session activation NOT granted');
+        _audioPlaybackController.add(false);
+        return;
+      } else {
+        if (kDebugMode) print('🔊 VoiceService: Audio session activated');
+      }
+
+      session.becomingNoisyEventStream.listen((_) {
+        if (kDebugMode)
+          print(
+              '🔊 VoiceService: Audio becoming noisy (e.g. headphones unplugged)');
+        stopAudio();
+      });
+      session.interruptionEventStream.listen((event) {
+        if (kDebugMode) print('🔊 VoiceService: Audio interruption: $event');
+        if (event.begin) stopAudio();
+      });
 
       if (audioPath.startsWith('local_tts://')) {
         if (kDebugMode) {
@@ -1120,6 +1142,7 @@ class VoiceService {
   // Cleanup resources
   void dispose() {
     try {
+      if (kDebugMode) print('VoiceService: Disposing resources');
       // Stop any ongoing TTS
       if (_flutterTts != null) {
         _flutterTts!.stop();

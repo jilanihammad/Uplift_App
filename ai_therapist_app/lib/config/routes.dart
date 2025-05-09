@@ -65,16 +65,12 @@ class AppRouter {
       try {
         final authService = serviceLocator<AuthService>();
 
-        // Check for anonymous Firebase auth
-        final firebaseUser = FirebaseAuth.instance.currentUser;
-        final isAnonymous = firebaseUser?.isAnonymous ?? false;
-
         // Check if user is logged in and onboarding status - note async/await
         final bool isLoggedIn = await authService.isLoggedIn;
         final bool hasCompletedSignup = await authService.hasCompletedSignup;
 
         print(
-            "ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, isAnonymous: $isAnonymous, path: ${state.matchedLocation}");
+            "ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, path: ${state.matchedLocation}");
 
         final bool isGoingToAuth = state.matchedLocation == login ||
             state.matchedLocation == register ||
@@ -84,21 +80,22 @@ class AppRouter {
 
         // If at splash, always redirect to home (unless onboarding/auth needed)
         if (isGoingToSplash) {
-          if (!isLoggedIn) return login;
-          if (isLoggedIn && !hasCompletedSignup) return onboarding;
+          if (!isLoggedIn) {
+            if (state.matchedLocation == login) return null;
+            return login;
+          }
+          if (isLoggedIn && !hasCompletedSignup) {
+            if (state.matchedLocation == onboarding) return null;
+            return onboarding;
+          }
+          if (state.matchedLocation == home) return null;
           return home;
-        }
-
-        // Handle anonymous auth - treat as not logged in
-        if (isAnonymous && !isGoingToAuth) {
-          print(
-              "ROUTER DEBUG: User is using anonymous auth, redirecting to login");
-          return login;
         }
 
         // If not logged in and not going to auth screens, redirect to login
         if (!isLoggedIn && !isGoingToAuth && !isGoingToOnboarding) {
           print("ROUTER DEBUG: User not logged in, redirecting to login");
+          if (state.matchedLocation == login) return null;
           return login;
         }
 
@@ -107,6 +104,7 @@ class AppRouter {
         if (isLoggedIn && !hasCompletedSignup && !isGoingToOnboarding) {
           print(
               "ROUTER DEBUG: User is logged in but hasn't completed signup, redirecting to onboarding");
+          if (state.matchedLocation == onboarding) return null;
           return onboarding;
         }
 
@@ -114,6 +112,7 @@ class AppRouter {
         if (isLoggedIn && hasCompletedSignup && isGoingToOnboarding) {
           print(
               "ROUTER DEBUG: User already completed signup, redirecting from onboarding to home");
+          if (state.matchedLocation == home) return null;
           return home;
         }
 
@@ -122,6 +121,7 @@ class AppRouter {
           final redirectTo = hasCompletedSignup ? home : onboarding;
           print(
               "ROUTER DEBUG: User is logged in and going to auth screen, redirecting to $redirectTo");
+          if (state.matchedLocation == redirectTo) return null;
           return redirectTo;
         }
 
