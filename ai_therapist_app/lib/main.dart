@@ -167,12 +167,8 @@ Future<void> main() async {
         options: DefaultFirebaseOptions.currentPlatform,
       );
       print("[Main] Firebase Core initialized directly - APP CHECK DISABLED");
-
-      // IMPORTANT: Log that App Check is intentionally disabled
       print(
           "[Main] Firebase App Check is INTENTIONALLY DISABLED to fix authentication issues");
-
-      // Do NOT initialize App Check at all
     } catch (e) {
       print("[Main] Error during Firebase initialization: $e");
       print("[Main] Continuing with app initialization...");
@@ -218,144 +214,20 @@ Future<void> main() async {
       logger.error('[Main] ERROR during service locator setup', error: e);
     }
 
-    // 7. Initialize other services
-    logger.info('[Main] Initializing app services...');
+    // 7. Initialize database connection only (defer table checks/optimizations)
+    logger.info('[Main] Initializing app database connection...');
     try {
-      // First check connectivity - this is quick
-      logger.debug('[Main] Checking network connectivity...');
-      final connectivityChecker = ConnectivityChecker();
-      final isConnected = await connectivityChecker.isOffline() == false;
-      logger.info(
-          '[Main] Network is ${isConnected ? "available ✅" : "unavailable ⚠️"}');
-
-      // Initialize database - required for basic functionality
-      try {
-        logger.debug('[Main] Initializing database...');
-        final appDatabase = serviceLocator<AppDatabase>();
-        await appDatabase.database;
-
-        // Check and repair database health with our new utility
-        try {
-          if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
-            logger.debug('[Main] Checking database health...');
-            final dbManager = serviceLocator<DatabaseOperationManager>();
-            final isHealthy =
-                await dbManager.checkAndRepairDatabaseHealth(appDatabase);
-            if (isHealthy) {
-              logger.info('[Main] Database health check passed ✅');
-            } else {
-              logger.warning(
-                  '[Main] Database health check failed, attempted repair');
-            }
-          }
-        } catch (e) {
-          logger.warning('[Main] Database health check error: $e');
-        }
-
-        // Verify database tables exist
-        logger.debug('[Main] Verifying database tables...');
-        final databaseProvider = serviceLocator<DatabaseProvider>();
-
-        // Check required tables, especially the ones introduced in migration v3
-        final requiredTables = [
-          'sessions',
-          'messages',
-          'conversation_memories',
-          'therapy_insights',
-          'emotional_states'
-        ];
-
-        final missingTables = <String>[];
-
-        for (final table in requiredTables) {
-          final exists = await databaseProvider.tableExists(table);
-          if (!exists) {
-            missingTables.add(table);
-            logger.warning('[Main] Table $table not found in database');
-          }
-        }
-
-        if (missingTables.isEmpty) {
-          logger.info(
-              '[Main] All required database tables verified successfully ✅');
-        } else {
-          logger.warning('[Main] Missing tables: ${missingTables.join(', ')}');
-          logger.warning(
-              '[Main] Will attempt to create missing tables during service initialization');
-        }
-
-        logger.info('[Main] Database initialized successfully');
-
-        // Schedule database optimization for later (after app is visible)
-        if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
-          Future.delayed(Duration(seconds: 3), () {
-            final dbManager = serviceLocator<DatabaseOperationManager>();
-            dbManager.optimizeDatabase(appDatabase).then((_) {
-              logger.debug('[Main] Database optimization completed');
-            });
-          });
-        }
-      } catch (e) {
-        logger.error('[Main] ERROR initializing database', error: e);
-      }
-
-      // Additional Firebase check for Firestore Native mode - only if connected
-      if (isConnected) {
-        try {
-          logger.debug('[Main] Verifying Firestore setup...');
-          final firestoreHelper = FirestoreHelper();
-
-          // Only perform Firestore collection verification in debug mode
-          // Collections are created on-demand in Firestore, so this check is unnecessary in production
-          if (kDebugMode) {
-            final isFirestoreReady = await safeOperation(
-                  () => firestoreHelper.verifyFirestoreSetup(
-                    requiredCollections: ['users', 'sessions', 'messages'],
-                  ),
-                  timeoutSeconds: 3, // Reduced timeout
-                  operationName: 'Firestore verification',
-                ) ??
-                false;
-
-            if (isFirestoreReady) {
-              logger.info('[Main] Firestore setup verified successfully ✅');
-            } else {
-              logger.info(
-                  '[Main] Some Firestore collections not found yet - they will be created on demand');
-            }
-          } else {
-            // In release mode, just check basic Firebase connectivity without collection verification
-            final isFirebaseConnected = await safeOperation(
-                  () => firestoreHelper.checkFirebaseConnection(),
-                  timeoutSeconds: 2,
-                  operationName: 'Firebase connectivity check',
-                ) ??
-                false;
-
-            if (isFirebaseConnected) {
-              logger.info('[Main] Firebase connectivity verified ✅');
-            }
-          }
-        } catch (e) {
-          logger.error('[Main] Error checking Firebase', error: e);
-        }
-      }
-
-      // Initialize Firebase services if GetIt is available
-      await _initializeFirebaseServices();
-
-      // Initialize ConfigService and ApiClient with better error handling
-      await _initializeConfigAndApi();
-
-      // Initialize notification permissions if needed - safely
-      await _requestNotificationPermissions();
-
-      logger.info('[Main] App services initialized successfully.');
+      final appDatabase = serviceLocator<AppDatabase>();
+      await appDatabase.database;
+      logger.info('[Main] Database connection established.');
     } catch (e) {
-      logger.error('[Main] ERROR initializing services', error: e);
+      logger.error('[Main] ERROR initializing database connection', error: e);
     }
 
-    // Add explicit UI startup logging
+    // 8. Initialize theme and auth (needed for first screen)
+    // (ThemeService and AuthService are registered in service locator)
+
+    // 9. Start the UI as soon as possible
     logger.info('[Main] Starting app UI...');
     try {
       logger.debug('[Main] Running app in same zone.');
@@ -371,6 +243,11 @@ Future<void> main() async {
         ),
       ));
     }
+
+    // 10. Defer heavy service initializations and notification permissions until after UI is visible
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await initializeHeavyServices();
+    });
   }, (error, stack) {
     logger.error('[Main] UNCAUGHT ERROR in app',
         error: error, stackTrace: stack);
@@ -884,5 +761,85 @@ Future<void> _initializeConfigAndApi() async {
   } catch (e) {
     logger.error('[Main] Error initializing config and API',
         error: e, stackTrace: StackTrace.current);
+  }
+}
+
+// New: Heavy service initializations and notification permissions
+Future<void> initializeHeavyServices() async {
+  logger.info('[Main] Initializing heavy services in background...');
+  try {
+    // Table checks and health/repair
+    try {
+      final appDatabase = serviceLocator<AppDatabase>();
+      if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
+        logger.debug('[Main] Checking database health...');
+        final dbManager = serviceLocator<DatabaseOperationManager>();
+        final isHealthy =
+            await dbManager.checkAndRepairDatabaseHealth(appDatabase);
+        if (isHealthy) {
+          logger.info('[Main] Database health check passed ✅');
+        } else {
+          logger
+              .warning('[Main] Database health check failed, attempted repair');
+        }
+      }
+      // Table existence checks
+      logger.debug('[Main] Verifying database tables...');
+      final databaseProvider = serviceLocator<DatabaseProvider>();
+      final requiredTables = [
+        'sessions',
+        'messages',
+        'conversation_memories',
+        'therapy_insights',
+        'emotional_states'
+      ];
+      final missingTables = <String>[];
+      for (final table in requiredTables) {
+        final exists = await databaseProvider.tableExists(table);
+        if (!exists) {
+          missingTables.add(table);
+          logger.warning('[Main] Table $table not found in database');
+        }
+      }
+      if (missingTables.isEmpty) {
+        logger.info(
+            '[Main] All required database tables verified successfully ✅');
+      } else {
+        logger.warning('[Main] Missing tables: ${missingTables.join(', ')}');
+        logger.warning(
+            '[Main] Will attempt to create missing tables during service initialization');
+      }
+      // Schedule database optimization for later (after app is visible)
+      if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
+        Future.delayed(Duration(seconds: 3), () {
+          final dbManager = serviceLocator<DatabaseOperationManager>();
+          dbManager.optimizeDatabase(appDatabase).then((_) {
+            logger.debug('[Main] Database optimization completed');
+          });
+        });
+      }
+    } catch (e) {
+      logger.error('[Main] ERROR in deferred database checks', error: e);
+    }
+
+    // Initialize heavy services sequentially (as before)
+    try {
+      await _initializeFirebaseServices();
+      await _initializeConfigAndApi();
+    } catch (e) {
+      logger.error('[Main] ERROR initializing heavy services', error: e);
+    }
+
+    // Request notification permissions (deferred)
+    try {
+      await _requestNotificationPermissions();
+    } catch (e) {
+      logger.error('[Main] ERROR requesting notification permissions',
+          error: e);
+    }
+
+    logger.info('[Main] Heavy services initialized in background.');
+  } catch (e) {
+    logger.error('[Main] ERROR in initializeHeavyServices', error: e);
   }
 }
