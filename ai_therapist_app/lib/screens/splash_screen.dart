@@ -151,26 +151,7 @@ class _SplashScreenState extends State<SplashScreen>
 
       // Check Firebase user status
       final firebaseUser = FirebaseAuth.instance.currentUser;
-      final isAnonymous = firebaseUser?.isAnonymous ?? false;
-
-      // If a user exists but is anonymous, we need to sign them out
-      if (isAnonymous) {
-        print("SplashScreen: Detected anonymous auth, will redirect to login");
-        try {
-          // Sign out the anonymous user first
-          await FirebaseAuth.instance.signOut();
-          print("SplashScreen: Anonymous user logged out successfully");
-        } catch (e) {
-          print("SplashScreen: Error logging out anonymous user: $e");
-        }
-
-        // Navigate to login after showing splash screen
-        await Future.delayed(const Duration(milliseconds: 1500));
-        if (mounted) {
-          context.go(AppRouter.login);
-        }
-        return; // Exit early to avoid further processing
-      }
+      final isLoggedIn = firebaseUser != null;
 
       // Backend check with timeout
       setState(() {
@@ -190,7 +171,6 @@ class _SplashScreenState extends State<SplashScreen>
 
       // Continue with auth checks and navigation
       final authData = await compute(_getAuthData, _authService);
-      final bool isLoggedIn = authData['isLoggedIn'] as bool;
       final bool hasCompletedSignup = authData['hasCompletedSignup'] as bool;
 
       setState(() {
@@ -220,13 +200,8 @@ class _SplashScreenState extends State<SplashScreen>
 
   // Helper method to navigate based on auth status
   void _navigateBasedOnAuth(bool isLoggedIn, bool hasCompletedSignup) {
-    // Always check for Firebase anonymous auth as well
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    final isAnonymous = firebaseUser?.isAnonymous ?? false;
-
-    // Add additional check for session validation at splash
-    bool canProceedToHome = isLoggedIn && hasCompletedSignup && !isAnonymous;
-    bool needsOnboarding = isLoggedIn && !hasCompletedSignup && !isAnonymous;
+    bool canProceedToHome = isLoggedIn && hasCompletedSignup;
+    bool needsOnboarding = isLoggedIn && !hasCompletedSignup;
 
     // Check backend connection and determine if we need a recovery path
     bool forceLoginFlow = false;
@@ -244,14 +219,14 @@ class _SplashScreenState extends State<SplashScreen>
       print(
           "SplashScreen: Navigation decision - canProceedToHome=$canProceedToHome, needsOnboarding=$needsOnboarding");
       print(
-          "SplashScreen: Auth state details - isLoggedIn=$isLoggedIn, hasCompletedSignup=$hasCompletedSignup, isAnonymous=$isAnonymous, backendAvailable=$_backendAvailable");
+          "SplashScreen: Auth state details - isLoggedIn=$isLoggedIn, hasCompletedSignup=$hasCompletedSignup, backendAvailable=$_backendAvailable");
     }
 
     // Final navigation decision
     if (!canProceedToHome && !needsOnboarding || forceLoginFlow) {
       if (kDebugMode) {
         print(
-            "SplashScreen: Navigating to login screen (isLoggedIn=$isLoggedIn, isAnonymous=$isAnonymous)");
+            "SplashScreen: Navigating to login screen (isLoggedIn=$isLoggedIn)");
       }
       if (mounted) {
         context.go(AppRouter.login);
@@ -634,13 +609,9 @@ class _SplashScreenState extends State<SplashScreen>
   // Helper method to force navigation based on current Firebase user state
   void _forceNavigateBasedOnFirebaseUser() {
     try {
-      // Get Firebase user state directly
       final firebaseUser = FirebaseAuth.instance.currentUser;
-      final isLoggedIn = firebaseUser != null && !firebaseUser.isAnonymous;
-
+      final isLoggedIn = firebaseUser != null;
       print("SplashScreen: Force navigation with isLoggedIn=$isLoggedIn");
-
-      // Force navigation to appropriate screen
       if (!isLoggedIn) {
         if (mounted) context.go(AppRouter.login);
       } else {

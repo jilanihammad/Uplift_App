@@ -75,6 +75,9 @@ import 'utils/logging_config.dart';
 // Import the new database helper
 import 'utils/database_helper.dart';
 
+// Import the new database health checker
+import 'utils/database_health_checker.dart';
+
 // Global variables for crucial service references
 FirebaseApp? _firebaseApp;
 ConfigService? _configService;
@@ -247,6 +250,13 @@ Future<void> main() async {
     // 10. Defer heavy service initializations and notification permissions until after UI is visible
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await initializeHeavyServices();
+    });
+
+    // After UI is visible, run DB health check in background
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final dbProvider = DatabaseProvider();
+      final dbHealthChecker = DatabaseHealthChecker(dbProvider);
+      await dbHealthChecker.runHealthCheck();
     });
   }, (error, stack) {
     logger.error('[Main] UNCAUGHT ERROR in app',

@@ -68,7 +68,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
         final user = FirebaseAuth.instance.currentUser;
         setState(() {
           _authStatus = user != null
-              ? 'Auth is working correctly. User: ${user.isAnonymous ? "Anonymous" : user.email ?? user.uid}'
+              ? 'Auth is working correctly. User: ${user.email ?? user.uid}'
               : 'Auth is working but no user is signed in';
         });
       } catch (e) {
@@ -260,7 +260,6 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
             const SizedBox(height: 16),
             const Text('Common Issues:'),
             const SizedBox(height: 8),
-            const Text('• Auth: Enable Anonymous auth in Firebase Console'),
             const Text('• Firestore: Check security rules and connectivity'),
             const Text('• Messaging: Ensure FCM setup is complete'),
           ],

@@ -56,18 +56,6 @@ class AuthService {
     // Check if we're using Firebase Auth
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser != null) {
-      // If the user is anonymous, consider them not logged in
-      if (firebaseUser.isAnonymous) {
-        // Sign out anonymous users as they shouldn't be considered logged in
-        try {
-          await FirebaseAuth.instance.signOut();
-          print("AuthService: Signed out anonymous user");
-        } catch (e) {
-          print("AuthService: Error signing out anonymous user: $e");
-        }
-        return false;
-      }
-
       // Verify the token is still valid
       try {
         // Force token refresh to ensure it's valid
@@ -714,22 +702,17 @@ class AuthService {
         return false;
       }
 
-      if (firebaseUser.isAnonymous) {
-        print(
-          "AuthService: Anonymous user found during session verification, signing out",
-        );
-        await FirebaseAuth.instance.signOut();
+      // Optionally, check token validity
+      try {
+        await firebaseUser.getIdToken(true);
+        return true;
+      } catch (e) {
+        print("AuthService: Error refreshing token during verification: $e");
+        await logout();
         return false;
       }
-
-      // Force token refresh
-      await firebaseUser.getIdToken(true);
-      print("AuthService: Session verified successfully");
-      return true;
     } catch (e) {
-      print("AuthService: Session verification failed: $e");
-      // Clear any invalid sessions
-      await logout();
+      print("AuthService: Error during session verification: $e");
       return false;
     }
   }

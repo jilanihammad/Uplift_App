@@ -360,12 +360,9 @@ class SessionRepository {
         );
         print('Server response for saving session $id: $response');
 
-        // Save messages to local DB
-        await _saveMessagesToLocalDB(id, messages, now);
-
         final session = Session.fromJson(response);
 
-        // Update local database
+        // Update local database with the session FIRST
         await appDatabase.update(
           'sessions',
           {
@@ -378,6 +375,19 @@ class SessionRepository {
           where: 'id = ?',
           whereArgs: [id],
         );
+
+        // Wait for session to exist in local DB before saving messages (retry up to 5 times)
+        int retries = 0;
+        while (retries < 5) {
+          final results = await appDatabase
+              .query('sessions', where: 'id = ?', whereArgs: [id]);
+          if (results.isNotEmpty) break;
+          await Future.delayed(const Duration(milliseconds: 100));
+          retries++;
+        }
+
+        // Now save messages to local DB
+        await _saveMessagesToLocalDB(id, messages, now);
 
         return session;
       } catch (e) {
