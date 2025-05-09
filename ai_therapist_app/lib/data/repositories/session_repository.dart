@@ -362,52 +362,71 @@ class SessionRepository {
 
         final session = Session.fromJson(response);
 
-        // Update local database with the session FIRST
-        await appDatabase.update(
-          'sessions',
-          {
-            'id': session.id,
-            'title': session.title,
-            'summary': session.summary ?? '',
-            'last_modified': session.lastModified.toIso8601String(),
-            'is_synced': 1,
-          },
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        // Use a transaction for atomic local save
+        await appDatabase.transaction((txn) async {
+          // Update local database with the session FIRST
+          int updated = await txn.update(
+            'sessions',
+            {
+              'id': session.id,
+              'title': session.title,
+              'summary': session.summary ?? '',
+              'last_modified': session.lastModified.toIso8601String(),
+              'is_synced': 1,
+            },
+            where: 'id = ?',
+            whereArgs: [id],
+          );
 
-        // Wait for session to exist in local DB before saving messages (retry up to 5 times)
-        int retries = 0;
-        while (retries < 5) {
-          final results = await appDatabase
-              .query('sessions', where: 'id = ?', whereArgs: [id]);
-          if (results.isNotEmpty) break;
-          await Future.delayed(const Duration(milliseconds: 100));
-          retries++;
-        }
+          // If no rows were updated, insert the session row
+          if (updated == 0) {
+            await txn.insert('sessions', {
+              'id': session.id,
+              'title': session.title,
+              'summary': session.summary ?? '',
+              'created_at': session.createdAt.toIso8601String(),
+              'last_modified': session.lastModified.toIso8601String(),
+              'is_synced': 1,
+            });
+          }
 
-        // Now save messages to local DB
-        await _saveMessagesToLocalDB(id, messages, now);
+          // Save messages to local DB within the same transaction
+          await _saveMessagesToLocalDBTxn(txn, id, messages, now);
+        });
 
         return session;
       } catch (e) {
         print('Error saving session $id to server: $e');
 
-        // If server fails, save to local DB only
-        await _saveMessagesToLocalDB(id, messages, now);
+        // If server fails, save to local DB only (transactional)
+        await appDatabase.transaction((txn) async {
+          // Try to update local session
+          int updated = await txn.update(
+            'sessions',
+            {
+              'title': title,
+              'summary': summary,
+              'last_modified': now.toIso8601String(),
+              'is_synced': 0,
+            },
+            where: 'id = ?',
+            whereArgs: [id],
+          );
 
-        // Update local session
-        await appDatabase.update(
-          'sessions',
-          {
-            'title': title,
-            'summary': summary,
-            'last_modified': now.toIso8601String(),
-            'is_synced': 0,
-          },
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+          // If no rows were updated, insert the session row
+          if (updated == 0) {
+            await txn.insert('sessions', {
+              'id': id,
+              'title': title,
+              'summary': summary,
+              'created_at': now.toIso8601String(),
+              'last_modified': now.toIso8601String(),
+              'is_synced': 0,
+            });
+          }
+
+          await _saveMessagesToLocalDBTxn(txn, id, messages, now);
+        });
 
         // Get updated session from local database
         final results = await appDatabase.query(
@@ -436,13 +455,13 @@ class SessionRepository {
     }
   }
 
-  // Helper method to save messages to local DB
-  Future<void> _saveMessagesToLocalDB(
-      String sessionId, List<dynamic> messages, DateTime timestamp) async {
+  // Helper method to save messages to local DB using a transaction
+  Future<void> _saveMessagesToLocalDBTxn(dynamic txn, String sessionId,
+      List<dynamic> messages, DateTime timestamp) async {
     for (final message in messages) {
       try {
         if (message is Map<String, dynamic>) {
-          await appDatabase.insert('messages', {
+          await txn.insert('messages', {
             'id': message['id'] ??
                 'msg_${timestamp.millisecondsSinceEpoch}_${messages.indexOf(message)}',
             'session_id': sessionId,
@@ -453,7 +472,8 @@ class SessionRepository {
           });
         }
       } catch (e) {
-        print('Error saving message to local DB: $e');
+        print('Error saving message to local DB in transaction: $e');
+        rethrow; // Fail the transaction if any message insert fails
       }
     }
   }
