@@ -534,13 +534,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           _isSpeakerMuted ? Icons.volume_off : Icons.volume_up,
                       tooltip:
                           _isSpeakerMuted ? 'Unmute Speaker' : 'Mute Speaker',
-                      onPressed: () {
+                      onPressed: () async {
                         setState(() {
                           _isSpeakerMuted = !_isSpeakerMuted;
                         });
-
                         if (_isSpeakerMuted) {
-                          _voiceService.stopAudio();
+                          await _voiceService
+                              .stopAudio(); // Ensure all audio and TTS stop immediately
                         }
                       },
                       color: _isSpeakerMuted ? Colors.grey : null,
@@ -1018,7 +1018,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     try {
       if (_isVoiceMode) {
         // Voice mode - get response with streaming audio for faster playback
-        // We don't need to manually set _isTtsSpeaking anymore
         final response =
             await _therapyService.processUserMessageWithStreamingAudio(message);
 
@@ -1032,13 +1031,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
         setState(() {
           _messages.add(aiMessage);
-          _isProcessing =
-              false; // Set to false here, animation will start via stream
+          _isProcessing = false;
         });
 
         _scrollToBottom();
 
-        // Audio playback status is now managed through the _ttsSubscription stream
+        // Only play audio if not muted
+        if (!_isSpeakerMuted && aiMessage.audioUrl != null) {
+          final audioGenerator = serviceLocator<AudioGenerator>();
+          await audioGenerator.playAudio(aiMessage.audioUrl!);
+        }
       } else {
         // Text mode - get response without audio to save API calls
         final response = await _therapyService.processUserMessage(message);
@@ -1085,37 +1087,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       if (_isVoiceMode) {
+        if (_isSpeakerMuted) {
+          setState(() {
+            _isProcessing = false;
+          });
+          return; // Do not play audio if muted
+        }
         if (kDebugMode) {
           print('💬 CHAT: Processing AI message in voice mode');
         }
-
         // Save the text for TTS fallback
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('last_tts_text', text);
-
-        // Set processing to false to show the animation
         setState(() {
           _isProcessing = false;
         });
-
         // Use audio generator with streaming for faster response
         final audioGenerator = serviceLocator<AudioGenerator>();
-
         if (kDebugMode) {
           print(
-              '💬 CHAT: Generating audio for AI message: ${text.substring(0, min(30, text.length))}...');
+              '💬 CHAT: Generating audio for AI message: [1m${text.substring(0, min(30, text.length))}...[0m');
         }
-
         // Generate audio
         final audioPath = await audioGenerator.generateAndStreamAudio(text);
-
         // Update the message with the audio URL
         final indexOfMessage = _messages.indexWhere((m) => m.id == message.id);
         if (indexOfMessage != -1) {
           setState(() {
             _messages[indexOfMessage] = message.copyWith(audioUrl: audioPath);
           });
-
           if (kDebugMode) {
             print('💬 CHAT: Audio generated: $audioPath');
           }

@@ -32,12 +32,7 @@ class SessionSummaryScreen extends StatelessWidget {
         title: const Text('Session Summary'),
         automaticallyImplyLeading: false,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: () {
-              // Share summary functionality
-            },
-          ),
+          // Removed share button as requested
         ],
       ),
       body: SingleChildScrollView(
@@ -45,46 +40,7 @@ class SessionSummaryScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Session details
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Session Details',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildDetailRow(Icons.calendar_today, 'Date',
-                        DateFormat.yMMMd().format(now)),
-                    _buildDetailRow(Icons.access_time, 'Duration',
-                        _formatDuration(sessionDuration)),
-                    _buildDetailRow(
-                        Icons.chat, 'Messages', messages.length.toString()),
-                    if (initialMood != null)
-                      _buildDetailRow(Icons.mood, 'Initial Mood',
-                          _formatMood(initialMood!)),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
             // Session summary
-            const Text(
-              'Session Summary',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
             const SizedBox(height: 8),
             Card(
               elevation: 2,

@@ -2,6 +2,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/material.dart';
 
 /// A simulated notification service that logs notifications instead of showing them
 /// This is a temporary implementation until we resolve the flutter_local_notifications compatibility issue
@@ -11,14 +13,48 @@ class NotificationService {
 
   NotificationService._internal();
 
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+  bool _initialized = false;
+
   // Store scheduled notifications for simulation
   final List<Map<String, dynamic>> _scheduledNotifications = [];
 
   Future<void> init() async {
-    // Initialize timezone data
+    if (_initialized) return;
+    // Timezone setup
     tz_data.initializeTimeZones();
-    
-    debugPrint('🔔 NotificationService initialized (simulated)');
+
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    final DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+    _initialized = true;
+  }
+
+  Future<void> requestPermissions() async {
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
   }
 
   // Show immediate notification
@@ -29,7 +65,8 @@ class NotificationService {
     String? payload,
   }) async {
     // Log instead of showing
-    debugPrint('🔔 NOTIFICATION: ID=$id, TITLE=$title, BODY=$body, PAYLOAD=$payload');
+    debugPrint(
+        '🔔 NOTIFICATION: ID=$id, TITLE=$title, BODY=$body, PAYLOAD=$payload');
   }
 
   // Schedule notification for future time
@@ -37,27 +74,30 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
-    required DateTime scheduledTime,
-    String? payload,
+    required DateTime scheduledDateTime,
   }) async {
-    // Don't schedule if time is in the past
-    if (scheduledTime.isBefore(DateTime.now())) {
-      debugPrint('⚠️ Cannot schedule notification in the past: $scheduledTime');
-      return;
-    }
-
-    // Store in our simulated list
-    _scheduledNotifications.add({
-      'id': id,
-      'title': title,
-      'body': body,
-      'scheduledTime': scheduledTime,
-      'payload': payload,
-    });
-
-    debugPrint('🔔 SCHEDULED: ID=$id, TITLE=$title, TIME=${scheduledTime.toIso8601String()}');
+    await init();
+    await requestPermissions();
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      id,
+      title,
+      body,
+      tz.TZDateTime.from(scheduledDateTime, tz.local),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'session_reminder_channel',
+          'Session Reminders',
+          channelDescription: 'Reminders for scheduled therapy sessions',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.dateAndTime,
+    );
   }
-  
+
   // Schedule a daily repeating notification at specific time
   Future<void> scheduleDailyNotification({
     required int id,
@@ -76,12 +116,12 @@ class NotificationService {
       hour,
       minute,
     );
-    
+
     // If time has passed for today, schedule for tomorrow
     final actualScheduleTime = scheduledTime.isBefore(now)
         ? scheduledTime.add(const Duration(days: 1))
         : scheduledTime;
-    
+
     // Store with repeat info
     _scheduledNotifications.add({
       'id': id,
@@ -99,7 +139,8 @@ class NotificationService {
 
   // Cancel a specific notification
   Future<void> cancelNotification(int id) async {
-    _scheduledNotifications.removeWhere((notification) => notification['id'] == id);
+    _scheduledNotifications
+        .removeWhere((notification) => notification['id'] == id);
     debugPrint('🔔 Cancelled notification with ID=$id');
   }
 
@@ -112,5 +153,9 @@ class NotificationService {
   // Get all scheduled notifications (for UI display)
   List<Map<String, dynamic>> getScheduledNotifications() {
     return List.from(_scheduledNotifications);
+  }
+
+  Future<void> cancelAll() async {
+    await flutterLocalNotificationsPlugin.cancelAll();
   }
 }

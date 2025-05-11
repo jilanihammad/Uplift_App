@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:get_it/get_it.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 
 // Import screen files with the correct paths
 import 'package:ai_therapist_app/screens/splash_screen.dart';
@@ -306,21 +307,58 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: widget.child,
-      bottomNavigationBar: _isBottomNavVisible
-          ? BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              currentIndex: _calculateSelectedIndex(context),
-              onTap: (index) => _onItemTapped(index, context),
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-                BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chat'),
-                BottomNavigationBarItem(
-                    icon: Icon(Icons.history), label: 'History'),
+    return WillPopScope(
+      onWillPop: () async {
+        final int currentIndex = _calculateSelectedIndex(context);
+        if (currentIndex == 0) {
+          // On Home tab, show exit dialog
+          final shouldExit = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Exit App'),
+              content: const Text('Are you sure you want to exit the app?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Exit'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                ),
               ],
-            )
-          : null,
+            ),
+          );
+          if (shouldExit == true) {
+            SystemNavigator.pop();
+            return true;
+          }
+          return false;
+        } else {
+          // Not on Home tab, switch to Home
+          _onItemTapped(0, context);
+          return false;
+        }
+      },
+      child: Scaffold(
+        body: widget.child,
+        bottomNavigationBar: _isBottomNavVisible
+            ? BottomNavigationBar(
+                type: BottomNavigationBarType.fixed,
+                currentIndex: _calculateSelectedIndex(context),
+                onTap: (index) => _onItemTapped(index, context),
+                items: const [
+                  BottomNavigationBarItem(
+                      icon: Icon(Icons.home), label: 'Home'),
+                  BottomNavigationBarItem(
+                      icon: Icon(Icons.chat), label: 'Chat'),
+                  BottomNavigationBarItem(
+                      icon: Icon(Icons.history), label: 'History'),
+                ],
+              )
+            : null,
+      ),
     );
   }
 
