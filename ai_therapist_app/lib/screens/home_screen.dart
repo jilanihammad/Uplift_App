@@ -14,6 +14,8 @@ import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:ai_therapist_app/services/memory_manager.dart';
 import 'package:ai_therapist_app/services/audio_generator.dart';
+import 'package:flutter/services.dart';
+import 'package:ai_therapist_app/services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -85,82 +87,118 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Image.asset(
-          'assets/images/hs_logo.png',
-          height: 40,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          errorBuilder: (context, error, stackTrace) {
-            // Fallback to uplift_logo.png if hs_logo.png doesn't exist
-            return Image.asset(
-              'assets/images/uplift_logo.png',
-              height: 60,
-              fit: BoxFit.contain,
-            );
-          },
-        ),
-        centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.go('/profile'),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadUserData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Greeting card
-              _buildGreetingCard(),
-
-              const SizedBox(height: 24),
-
-              // Next session card moved up to position #2
-              if (_nextSessionDate != null) _buildNextSessionCard(),
-
-              const SizedBox(height: 24),
-
-              // Progress tracking
-              _buildProgressCard(),
-
-              const SizedBox(height: 24),
-
-              // Quick mood check
-              _buildMoodCheckCard(),
-
-              // Remove the "View Past Sessions" section and spacing
-              // const SizedBox(height: 24),
-              // Center(
-              //   child: _buildActionCard(
-              //     'View Past Sessions',
-              //     Icons.history,
-              //     Colors.purple.shade100,
-              //     Colors.purple,
-              //     () => context.go('/history'),
-              //   ),
-              // ),
-              // const SizedBox(height: 16),
+    return WillPopScope(
+      onWillPop: () async {
+        // If already on home, show exit confirmation
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit App'),
+            content: const Text('Are you sure you want to exit the app?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Exit'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              ),
             ],
           ),
+        );
+        if (shouldExit == true) {
+          // End all initializations and exit the app
+          // Use SystemNavigator.pop() for Android
+          // Optionally, clean up services here if needed
+          Future.delayed(const Duration(milliseconds: 100), () {
+            // Add any cleanup logic here if needed
+          });
+          // Import 'package:flutter/services.dart' at the top
+          SystemNavigator.pop();
+          return true;
+        }
+        // Don't exit
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Image.asset(
+            'assets/images/hs_logo.png',
+            height: 40,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (context, error, stackTrace) {
+              // Fallback to uplift_logo.png if hs_logo.png doesn't exist
+              return Image.asset(
+                'assets/images/uplift_logo.png',
+                height: 60,
+                fit: BoxFit.contain,
+              );
+            },
+          ),
+          centerTitle: false,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => context.go('/profile'),
+            ),
+          ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/chat'),
-        icon: const Icon(Icons.favorite),
-        label: const Text('Talk Now'),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
+        body: RefreshIndicator(
+          onRefresh: _loadUserData,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Greeting card
+                _buildGreetingCard(),
+
+                const SizedBox(height: 24),
+
+                // Next session card moved up to position #2
+                if (_nextSessionDate != null) _buildNextSessionCard(),
+
+                const SizedBox(height: 24),
+
+                // Progress tracking
+                _buildProgressCard(),
+
+                const SizedBox(height: 24),
+
+                // Quick mood check
+                _buildMoodCheckCard(),
+
+                // Remove the "View Past Sessions" section and spacing
+                // const SizedBox(height: 24),
+                // Center(
+                //   child: _buildActionCard(
+                //     'View Past Sessions',
+                //     Icons.history,
+                //     Colors.purple.shade100,
+                //     Colors.purple,
+                //     () => context.go('/history'),
+                //   ),
+                // ),
+                // const SizedBox(height: 16),
+              ],
+            ),
+          ),
         ),
-        elevation: 4,
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => context.go('/chat'),
+          icon: const Icon(Icons.favorite),
+          label: const Text('Talk Now'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(30),
+          ),
+          elevation: 4,
+        ),
       ),
     );
   }
@@ -500,11 +538,38 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(24),
                     ),
                   ),
-                  onPressed: () {
-                    // Set up a reminder
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Reminder set')),
-                    );
+                  onPressed: () async {
+                    print('Remind Me button pressed');
+                    if (_nextSessionDate == null) {
+                      print('No session scheduled to remind!');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('No session scheduled to remind!')),
+                      );
+                      return;
+                    }
+                    try {
+                      print(
+                          'Scheduling notification for: \\${_nextSessionDate}');
+                      await NotificationService().scheduleNotification(
+                        id: 1001, // Use a fixed or unique ID
+                        title: 'Therapy Session Reminder',
+                        body: 'You have a therapy session scheduled now.',
+                        scheduledDateTime: _nextSessionDate!,
+                      );
+                      print('Notification scheduled successfully');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Reminder set!')),
+                      );
+                    } catch (e, stack) {
+                      print('Error scheduling notification: \\${e.toString()}');
+                      print(stack);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                                'Failed to set reminder: \\${e.toString()}')),
+                      );
+                    }
                   },
                 ),
               ],

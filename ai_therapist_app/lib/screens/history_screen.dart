@@ -316,7 +316,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         itemCount: _filteredSessions.length,
                         itemBuilder: (context, index) {
                           final session = _filteredSessions[index];
-                          return SessionHistoryTile(session: session);
+                          return SessionHistoryTile(
+                            session: session,
+                            onRename: (newTitle) async {
+                              await _renameSession(session, newTitle);
+                            },
+                            onDelete: () async {
+                              await _deleteSession(session);
+                            },
+                          );
                         },
                       ),
           ),
@@ -324,18 +332,93 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
     );
   }
+
+  Future<void> _renameSession(Session session, String newTitle) async {
+    try {
+      await _sessionRepository.updateSession(session.id, title: newTitle);
+      await _loadSessions();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to rename session: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteSession(Session session) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Session'),
+        content: const Text(
+            'Are you sure you want to delete this session? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      try {
+        await _sessionRepository.deleteSession(session.id);
+        await _loadSessions();
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete session: $e')),
+        );
+      }
+    }
+  }
 }
 
 class SessionHistoryTile extends StatelessWidget {
   final Session session;
+  final Future<void> Function(String newTitle)? onRename;
+  final Future<void> Function()? onDelete;
 
   const SessionHistoryTile({
     Key? key,
     required this.session,
+    this.onRename,
+    this.onDelete,
   }) : super(key: key);
 
   String _formatDate(DateTime date) {
     return DateFormat('h:mm a').format(date);
+  }
+
+  void _showRenameDialog(BuildContext context) async {
+    final controller = TextEditingController(text: session.title);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Session'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Session Title'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty && result != session.title) {
+      await onRename?.call(result);
+    }
   }
 
   @override
@@ -359,12 +442,24 @@ class SessionHistoryTile extends StatelessWidget {
             Text(session.summary),
           ],
         ),
-        trailing: IconButton(
-          icon: const Icon(Icons.arrow_forward_ios),
-          onPressed: () {
-            // Navigate to session details using GoRouter
-            context.push('/sessions/${session.id}');
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) async {
+            if (value == 'rename') {
+              _showRenameDialog(context);
+            } else if (value == 'delete') {
+              if (onDelete != null) await onDelete!();
+            }
           },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'rename',
+              child: Text('Rename'),
+            ),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Text('Delete'),
+            ),
+          ],
         ),
         onTap: () {
           // Navigate to session details using GoRouter
