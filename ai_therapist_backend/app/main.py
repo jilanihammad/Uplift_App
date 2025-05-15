@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, Request, status, HTTPException, APIRouter
+from fastapi import FastAPI, Request, status, HTTPException, APIRouter, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
@@ -510,6 +510,17 @@ async def transcribe_audio(request: Request):
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
+@app.post("/voice/transcribe_file")
+async def transcribe_file(file: UploadFile = File(...)):
+    import tempfile, os
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    temp.write(await file.read())
+    temp.close()
+    from app.services.openai_service import openai_service
+    transcription = await openai_service.transcribe_audio(temp.name)
+    os.remove(temp.name)
+    return {"text": transcription}
+
 # Add the database and CRUD imports
 from app.crud import session as crud_session
 
@@ -978,6 +989,10 @@ app.include_router(root_router)
 async def api_v1_voice_synthesize(request: VoiceRequest):
     """API v1 endpoint for text-to-speech requests."""
     return await voice_synthesize(request)
+
+# Include the voice router
+from app.api.endpoints import voice
+app.include_router(voice.router, prefix="/voice", tags=["voice"])
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

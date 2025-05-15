@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 import logging
 import traceback
+import json
+from datetime import datetime
 
 from app.services.ai_service import ai_service
 from app.services.groq_service import groq_service
@@ -116,4 +118,49 @@ async def test_openai_key():
         return JSONResponse(result)
     except Exception as e:
         logger.error(f"Error testing API keys: {str(e)}")
-        return JSONResponse({"error": str(e), "traceback": str(traceback.format_exc())}, status_code=500) 
+        return JSONResponse({"error": str(e), "traceback": str(traceback.format_exc())}, status_code=500)
+
+@router.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket):
+    await websocket.accept()
+    sequence = 1
+    try:
+        data = await websocket.receive_text()
+        try:
+            payload = json.loads(data)
+        except Exception:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "detail": "Invalid JSON input",
+                "timestamp": datetime.utcnow().isoformat() + 'Z'
+            }))
+            return
+        message = payload.get("message", "")
+        history = payload.get("history", [])
+        session_id = payload.get("session_id")
+        # Optionally, you can use session_id for context management
+        from app.services.groq_service import groq_service
+        async for chunk in groq_service.stream_chat_completion(
+            message=message,
+            context=history
+        ):
+            await websocket.send_text(json.dumps({
+                "type": "chunk",
+                "content": chunk,
+                "sequence": sequence,
+                "timestamp": datetime.utcnow().isoformat() + 'Z'
+            }))
+            sequence += 1
+        await websocket.send_text(json.dumps({
+            "type": "done",
+            "sequence": sequence,
+            "timestamp": datetime.utcnow().isoformat() + 'Z'
+        }))
+    except Exception as e:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "detail": str(e),
+            "timestamp": datetime.utcnow().isoformat() + 'Z'
+        }))
+    except WebSocketDisconnect:
+        logger.info("WebSocket chat disconnected") 

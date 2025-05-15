@@ -1,0 +1,44 @@
+name: vad
+description: "VAD is a cross-platform Voice Activity Detection system, allowing Flutter applications to seamlessly handle various VAD events using Silero VAD v4/v5 models."
+version: 0.0.5
+repository: https://github.com/keyur2maru/vad
+
+environment:
+  sdk: ^3.2.3
+  flutter: ">=1.17.0"
+
+platforms:
+  android:
+  ios:
+  web:
+
+dependencies:
+  flutter:
+    sdk: flutter
+  onnxruntime: ^1.4.1
+  permission_handler: ^11.4.0
+  record: ^5.2.1
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  assets:
+    - packages/vad/assets/silero_vad_legacy.onnx
+    - packages/vad/assets/silero_vad_v5.onnx
+    - packages/vad/assets/bundle.min.js
+    - packages/vad/assets/vad.worklet.bundle.min.js
+    - packages/vad/assets/vad_web.js
+    - packages/vad/assets/ort.js
+    - packages/vad/assets/ort-wasm-simd.wasm
+    - packages/vad/assets/ort-wasm-simd-threaded.wasm
+
+topics:
+  - vad
+  - voice-activity-detection
+  - vad-flutter
+  - vad-dart
+  - silero-vad

@@ -215,5 +215,84 @@ class GroqService:
                 "error": str(e)
             }
 
+    async def stream_chat_completion(self, 
+                                   message: str,
+                                   system_prompt: str = "",
+                                   model: str = None,
+                                   temperature: float = 0.7,
+                                   max_tokens: int = 1000,
+                                   context: List[Dict[str, str]] = None,
+                                   user_info: Optional[Dict[str, Any]] = None):
+        """
+        Stream chat completion from Groq's API (yields content chunks as they arrive)
+        """
+        if not self.available:
+            logger.warning("Groq service unavailable - API key or model not set")
+            raise Exception("Groq service unavailable - API key or model not set")
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            else:
+                default_prompt = """
+                You are an AI therapist designed to provide supportive and empathetic conversations to users seeking mental health support. Your primary role is to listen actively to the user. Encourage them to share their thoughts and feelings by asking open-ended questions and providing space for them to express themselves. Show empathy by acknowledging and validating the user's emotions. Use phrases like 'That sounds really tough' or 'I can understand why you feel that way.' Adapt your responses based on the user's input. If they seem to need more support, offer comforting words. If they want to explore solutions, gently guide them towards that. Be prepared to discuss a wide range of mental health topics, including but not limited to depression, anxiety, stress, loneliness, and relationship issues.
+                
+                Guidelines:
+                - Respond with empathy and genuine concern
+                - Speak less and listen more
+                - When the patient is crying, let them cry without interrupting them, be kind and patient
+                - Ask thoughtful, open-ended questions to deepen understanding
+                - Offer reflections and gentle observations
+                - Suggest practical strategies when appropriate
+                - Maintain professional boundaries
+                - Encourage self-care and healthy habits
+                - Never give medical advice or replace professional mental health care
+                """
+                messages.append({"role": "system", "content": default_prompt})
+            if context:
+                for msg in context:
+                    role = "user" if msg.get("isUser", False) else "assistant"
+                    messages.append({"role": role, "content": msg.get("content", "")})
+            messages.append({"role": "user", "content": message})
+            model_to_use = model or self.chat_model
+            payload = {
+                "model": model_to_use,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True
+            }
+            logger.info(f"Streaming request to Groq API with model: {model_to_use}")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async with client.stream("POST", self.chat_completions_url, headers=headers, json=payload) as response:
+                    if response.status_code != 200:
+                        logger.error(f"Error from Groq API (stream): {response.status_code} - {await response.aread()}")
+                        raise Exception(f"Error from Groq API (stream): {response.status_code}")
+                    async for line in response.aiter_lines():
+                        if not line or not line.strip():
+                            continue
+                        if line.startswith("data: "):
+                            data = line[len("data: "):]
+                            if data.strip() == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data)
+                                # Extract the content delta
+                                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                content = delta.get("content")
+                                if content:
+                                    yield content
+                            except Exception as e:
+                                logger.warning(f"Error parsing Groq stream chunk: {e}")
+                                continue
+        except Exception as e:
+            logger.error(f"Error streaming response with Groq: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Error streaming response with Groq: {str(e)}")
+
 # Create a singleton instance
 groq_service = GroqService() 
