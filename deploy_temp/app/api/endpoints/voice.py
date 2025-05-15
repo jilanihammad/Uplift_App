@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request, Form, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request, Form, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from typing import Optional
 import logging
@@ -7,6 +7,7 @@ import json
 import os
 import aiofiles
 import time
+import tempfile
 
 from app.services.voice_service import voice_service
 from app.services.transcription_service import transcription_service
@@ -146,4 +147,34 @@ async def text_to_speech(text: str = Form(...), format: str = Form(None), bitrat
     except Exception as e:
         logger.error(f"Error in TTS endpoint: {str(e)}")
         logger.exception("TTS error details:")
-        raise HTTPException(status_code=500, detail=f"Failed to convert text to speech: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to convert text to speech: {str(e)}")
+
+@router.post("/voice/transcribe_file")
+async def transcribe_file(file: UploadFile = File(...)):
+    try:
+        # Save the uploaded file to a temp location
+        temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        temp.write(await file.read())
+        temp.close()
+
+        # Call your transcription service (update as needed)
+        transcription = await openai_service.transcribe_audio(temp.name)
+
+        # Clean up temp file
+        os.remove(temp.name)
+
+        return {"text": transcription}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.websocket("/ws/tts")
+async def websocket_tts(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # TODO: Implement TTS streaming logic here
+            # For now, echo the received message
+            await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        logger.info("WebSocket TTS disconnected") 
