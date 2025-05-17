@@ -35,6 +35,6 @@ add correct environment variables to backend after this deployment
 backend URL newest: https://ai-therapist-backend-385290373302.us-central1.run.app
 backend URL new: https://new---ai-therapist-backend-fuukqlcsha-uc.a.run.app
 
-
-
+GitHub upload command for streaming branch:
+git add . ; git commit -m "Fix chat and voice" ; git push origin streaming
 

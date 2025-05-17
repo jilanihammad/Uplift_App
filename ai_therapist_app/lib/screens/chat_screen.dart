@@ -1018,6 +1018,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           history: [],
           sessionId: _currentSessionId,
         ));
+    // Play welcome message as audio in voice mode
+    if (_isVoiceMode) {
+      // Use the backend to generate TTS audio for the welcome message
+      _therapyService
+          .processUserMessageWithStreamingAudio(welcomeMessage)
+          .then((response) {
+        final audioUrl = response?['audioUrl'];
+        if (audioUrl != null && audioUrl.isNotEmpty) {
+          _playAudio(audioUrl);
+        }
+      });
+    }
   }
 
   // Start the session countdown timer
