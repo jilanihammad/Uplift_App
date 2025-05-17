@@ -1202,9 +1202,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 response['audioUrl'].toString().isNotEmpty) {
               await _voiceService.playAudio(response['audioUrl']);
               debugPrint('🔊 Played backend audio for AI reply (voice mode)');
-            } else {
-              debugPrint(
-                  '⚠️ No backend audioUrl provided for AI reply (voice mode). No TTS will be played.');
             }
             // No longer add AI reply to chat here; ChatBloc handles it after streaming
             debugPrint(
