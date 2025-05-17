@@ -4,6 +4,7 @@ import logging
 import traceback
 import json
 from datetime import datetime
+import uuid
 
 from app.services.ai_service import ai_service
 from app.services.groq_service import groq_service
@@ -14,6 +15,9 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# In-memory session store: {session_id: {"history": [...], "created_at": ...}}
+session_store = {}
 
 @router.post("/generate", response_class=JSONResponse)
 async def generate_response(request: Request):
@@ -123,44 +127,69 @@ async def test_openai_key():
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
+    session_id = None
+    session = None
+    new_session = False
     sequence = 1
     try:
-        data = await websocket.receive_text()
-        try:
-            payload = json.loads(data)
-        except Exception:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+            except Exception:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "detail": "Invalid JSON input",
+                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                }))
+                continue
+            message = payload.get("message", "")
+            history = payload.get("history")
+            incoming_session_id = payload.get("session_id")
+            # Session management
+            if incoming_session_id and incoming_session_id in session_store:
+                session_id = incoming_session_id
+                session = session_store[session_id]
+                if history is None:
+                    history = session["history"]
+            else:
+                # Generate new session_id and session
+                session_id = str(uuid.uuid4())
+                session = {"history": [], "created_at": datetime.utcnow().isoformat() + 'Z'}
+                session_store[session_id] = session
+                new_session = True
+                if history is None:
+                    history = []
+            # Append current user message to session history
+            session["history"].append({"isUser": True, "content": message})
+            from app.services.groq_service import groq_service
+            async for chunk in groq_service.stream_chat_completion(
+                message=message,
+                context=history
+            ):
+                response = {
+                    "type": "chunk",
+                    "content": chunk,
+                    "sequence": sequence,
+                    "timestamp": datetime.utcnow().isoformat() + 'Z',
+                    "session_id": session_id
+                }
+                await websocket.send_text(json.dumps(response))
+                sequence += 1
             await websocket.send_text(json.dumps({
-                "type": "error",
-                "detail": "Invalid JSON input",
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
-            }))
-            return
-        message = payload.get("message", "")
-        history = payload.get("history", [])
-        session_id = payload.get("session_id")
-        # Optionally, you can use session_id for context management
-        from app.services.groq_service import groq_service
-        async for chunk in groq_service.stream_chat_completion(
-            message=message,
-            context=history
-        ):
-            await websocket.send_text(json.dumps({
-                "type": "chunk",
-                "content": chunk,
+                "type": "done",
                 "sequence": sequence,
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
+                "timestamp": datetime.utcnow().isoformat() + 'Z',
+                "session_id": session_id
             }))
             sequence += 1
-        await websocket.send_text(json.dumps({
-            "type": "done",
-            "sequence": sequence,
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
-        }))
+    except WebSocketDisconnect:
+        logger.info("WebSocket chat disconnected")
     except Exception as e:
         await websocket.send_text(json.dumps({
             "type": "error",
             "detail": str(e),
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
+            "timestamp": datetime.utcnow().isoformat() + 'Z',
+            "session_id": session_id
         }))
-    except WebSocketDisconnect:
-        logger.info("WebSocket chat disconnected") 
+        await websocket.close() 

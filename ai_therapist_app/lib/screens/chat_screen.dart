@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../blocs/chat_bloc.dart';
 
 import '../di/service_locator.dart';
 import '../services/voice_service.dart';
@@ -41,7 +43,6 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<TherapyMessage> _messages = [];
   bool _isProcessing = false;
   bool _showMoodSelector = false;
   bool _showDurationSelector = false;
@@ -83,7 +84,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-
+    debugPrint('[ChatScreen] initState called');
     // Set up microphone animation
     _micAnimationController = AnimationController(
       vsync: this,
@@ -108,10 +109,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     // Initialize session after the build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      print('[ChatScreen] PostFrameCallback: calling _initSession');
       _initSession().then((_) {
         setState(() {
           _isInitializing = false;
         });
+        print('[ChatScreen] _initSession complete, _isInitializing=false');
       });
     });
   }
@@ -127,6 +130,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    debugPrint('[ChatScreen] dispose called');
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.dispose();
@@ -134,19 +138,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _ttsSubscription?.cancel();
     _micAnimationController.dispose();
     _voiceService.dispose();
-    _sessionTimer?.cancel(); // Cancel the timer when disposing
-    _navigationService
-        .showBottomNav(); // Make sure bottom navigation is visible when screen is disposed
+    _sessionTimer?.cancel();
+    _navigationService.showBottomNav();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('[ChatScreen] build called');
     return WillPopScope(
-      // Prevent back navigation from ending the session or popping the screen
       onWillPop: () async {
-        // Optionally, show a message or just block back navigation during a session
-        if (_messages.isNotEmpty &&
+        print('[ChatScreen] onWillPop called');
+        final blocState = context.read<ChatBloc>().state;
+        final hasMessages =
+            blocState is ChatLoaded && blocState.messages.isNotEmpty;
+        if (hasMessages &&
             !_showDurationSelector &&
             !_showMoodSelector &&
             !_isInitializing) {
@@ -157,7 +163,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           );
           return false;
         }
-        // Allow pop if no session is in progress
         return true;
       },
       child: Scaffold(
@@ -177,7 +182,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ],
           ),
           actions: [
-            // Countdown timer - only show when in session
             if (!_showDurationSelector &&
                 !_showMoodSelector &&
                 !_isInitializing)
@@ -206,7 +210,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ],
                 ),
               ),
-            // Only show End button when in actual chat (not during setup screens)
             if (!_showDurationSelector &&
                 !_showMoodSelector &&
                 !_isInitializing)
@@ -422,6 +425,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildVoiceChatView() {
+    // Do not display text bubbles in voice mode
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: Column(
@@ -464,9 +468,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-
           if (_isProcessing) const LinearProgressIndicator(),
-
           // Bottom control buttons
           Container(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -590,29 +592,73 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  // Helper to extract messages from any ChatState
+  List<TherapyMessage> _extractMessages(ChatState state) {
+    if (state is ChatLoaded) return state.messages;
+    if (state is ChatCompletedState) return state.messages;
+    if (state is ChatErrorState) return state.messages;
+    if (state is ChatLoading) {
+      // Try to get messages from previous state if possible
+      // (In practice, this may not always work, but we try)
+      // In this context, just return an empty list
+      return [];
+    }
+    return [];
+  }
+
   Widget _buildTextChatView() {
+    debugPrint('[ChatScreen] _buildTextChatView called');
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: Column(
         children: [
-          // Main chat area
           Expanded(
-            child: _messages.isEmpty && _isProcessing
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    controller: _scrollController,
-                    reverse: true,
-                    padding: const EdgeInsets.all(10),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final message = _messages[_messages.length - 1 - index];
-                      return _buildMessageItem(message);
-                    },
-                  ),
+            child: BlocBuilder<ChatBloc, ChatState>(
+              builder: (context, state) {
+                // Reset _isProcessing after Maya's reply (text or voice)
+                if (_isProcessing &&
+                    (state is ChatLoaded || state is ChatCompletedState)) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      setState(() {
+                        _isProcessing = false;
+                      });
+                    }
+                  });
+                }
+                List<TherapyMessage> messages = _extractMessages(state);
+                // Always scroll to bottom when new messages arrive
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scrollController.hasClients) {
+                    _scrollController.animateTo(
+                      _scrollController.position.maxScrollExtent,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  }
+                });
+                debugPrint(
+                    '[ChatScreen] BlocBuilder: state=\x1B[33m${state.runtimeType}\x1B[0m, messages.length=${messages.length}');
+                for (int i = 0; i < messages.length; i++) {
+                  debugPrint(
+                      '[ChatScreen]   message[$i]: [${messages[i].isUser ? 'user' : 'assistant'}] ${messages[i].content}');
+                }
+                if (state is ChatLoading) {
+                  debugPrint('[ChatScreen] No messages yet, but processing...');
+                }
+                return ListView.builder(
+                  controller: _scrollController,
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    debugPrint(
+                        '[ChatScreen] ListView.builder item $index: [${messages[index].isUser ? 'user' : 'assistant'}] ${messages[index].content}');
+                    return _buildMessageItem(messages[index]);
+                  },
+                );
+              },
+            ),
           ),
-
           if (_isProcessing) const LinearProgressIndicator(),
-
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
@@ -643,7 +689,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               )
                             : Icon(Icons.mic),
                         color: _isRecording ? Colors.red : null,
-                        onPressed: _startVoiceInput,
+                        onPressed: () {
+                          print('[ChatScreen] Mic button pressed');
+                          _startVoiceInput();
+                        },
                       ),
                     ),
                     Expanded(
@@ -659,7 +708,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ),
                         maxLines: null,
                         textCapitalization: TextCapitalization.sentences,
-                        onSubmitted: (_) => _sendMessage(),
+                        onSubmitted: (_) {
+                          print('[ChatScreen] TextField onSubmitted');
+                          _sendMessage();
+                        },
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -672,18 +724,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       onPressed: _isProcessing
                           ? null
                           : _isTyping
-                              ? _sendMessage
-                              : _toggleChatMode,
+                              ? () {
+                                  print('[ChatScreen] Send button pressed');
+                                  _sendMessage();
+                                }
+                              : () {
+                                  print(
+                                      '[ChatScreen] Switch to voice mode button pressed');
+                                  _toggleChatMode();
+                                },
                     ),
                   ],
                 ),
-
-                // Add Switch to voice mode button
                 if (!_isTyping)
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: InkWell(
-                      onTap: _toggleChatMode,
+                      onTap: () {
+                        print(
+                            '[ChatScreen] Switch to Voice Mode (bottom) tapped');
+                        _toggleChatMode();
+                      },
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -697,7 +758,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Voice waves icon
                             Icon(
                               Icons.graphic_eq,
                               color: Theme.of(context).primaryColor,
@@ -908,62 +968,56 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _handleDurationSelection(int minutes) {
-    // Hide the bottom navigation bar when user selects a duration
-    _navigationService.hideBottomNav();
-
     setState(() {
       _sessionDurationMinutes = minutes;
       _showDurationSelector = false;
       _showMoodSelector = true;
+      debugPrint('Duration selected: $minutes min, showing mood selector');
     });
-
-    // Do NOT create the session here. Only create/save in _endSession if there are actual messages.
-    if (kDebugMode) {
-      print(
-          'Duration selected: $minutes minutes. Session will be created only after actual interaction.');
-    }
   }
 
   void _handleMoodSelection(Mood selectedMood) {
-    // First update state for UI
     setState(() {
       _initialMood = selectedMood;
       _showMoodSelector = false;
-      _isProcessing = true; // Show loading indicator
-      // Ensure we start in voice mode
-      _isVoiceMode = true;
-
-      // Start the session timer
-      _startSessionTimer();
+      _isInitializing = false;
+      debugPrint('Mood selected: $selectedMood, session is now active');
     });
+    _addInitialAIMessage(selectedMood);
+  }
 
-    // Add initial AI message based on mood
+  void _addInitialAIMessage(Mood mood) {
     String welcomeMessage;
-    if (selectedMood == Mood.happy) {
-      welcomeMessage =
-          "I'm glad to hear you're feeling positive today! What would you like to talk about?";
-    } else if (selectedMood == Mood.sad) {
-      welcomeMessage =
-          "I'm sorry to hear you're feeling down. Would you like to talk about what's troubling you?";
-    } else if (selectedMood == Mood.anxious) {
-      welcomeMessage =
-          "I notice you're feeling anxious. Let's explore what's causing these feelings and find ways to help you feel more at ease.";
-    } else if (selectedMood == Mood.angry) {
-      welcomeMessage =
-          "I can see you're feeling frustrated or angry. It's good to acknowledge these emotions. Would you like to talk about what triggered these feelings?";
-    } else if (selectedMood == Mood.stressed) {
-      welcomeMessage =
-          "It sounds like you're under stress. Let's talk about what's happening and explore some coping strategies that might help.";
-    } else {
-      welcomeMessage =
-          "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
+    switch (mood) {
+      case Mood.happy:
+        welcomeMessage =
+            "I'm glad to hear you're feeling positive today! What would you like to talk about?";
+        break;
+      case Mood.sad:
+        welcomeMessage =
+            "I'm sorry to hear you're feeling down. Would you like to talk about what's troubling you?";
+        break;
+      case Mood.anxious:
+        welcomeMessage =
+            "I notice you're feeling anxious. Let's explore what's causing these feelings and find ways to help you feel more at ease.";
+        break;
+      case Mood.angry:
+        welcomeMessage =
+            "I can see you're feeling frustrated or angry. It's good to acknowledge these emotions. Would you like to talk about what triggered these feelings?";
+        break;
+      case Mood.stressed:
+        welcomeMessage =
+            "It sounds like you're under stress. Let's talk about what's happening and explore some coping strategies that might help.";
+        break;
+      default:
+        welcomeMessage =
+            "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
     }
-
-    // Wait briefly to ensure UI is updated
-    Future.microtask(() {
-      // Add the AI message
-      _addAIMessage(welcomeMessage);
-    });
+    context.read<ChatBloc>().add(StartChat(
+          initialMessage: welcomeMessage,
+          history: [],
+          sessionId: _currentSessionId,
+        ));
   }
 
   // Start the session countdown timer
@@ -994,146 +1048,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _sendMessage() async {
+    debugPrint('[ChatScreen] Send button pressed');
     if (_messageController.text.trim().isEmpty) return;
-
     final message = _messageController.text;
     _messageController.clear();
-
-    final userMessage = TherapyMessage(
-      id: const Uuid().v4(),
-      content: message,
-      isUser: true,
-      timestamp: DateTime.now(),
-    );
-
     setState(() {
-      _messages.add(userMessage);
       _isProcessing = true;
       _isTyping = false;
     });
-
     _scrollToBottom();
-
-    // Get AI response using therapy service
-    try {
-      if (_isVoiceMode) {
-        // Voice mode - get response with streaming audio for faster playback
-        final response =
-            await _therapyService.processUserMessageWithStreamingAudio(message);
-
-        final aiMessage = TherapyMessage(
-          id: const Uuid().v4(),
-          content: response['text'],
-          isUser: false,
-          timestamp: DateTime.now(),
-          audioUrl: response['audioPath'],
-        );
-
-        setState(() {
-          _messages.add(aiMessage);
-          _isProcessing = false;
-        });
-
-        _scrollToBottom();
-
-        // Only play audio if not muted
-        if (!_isSpeakerMuted && aiMessage.audioUrl != null) {
-          final audioGenerator = serviceLocator<AudioGenerator>();
-          await audioGenerator.playAudio(aiMessage.audioUrl!);
-        }
-      } else {
-        // Text mode - get response without audio to save API calls
-        final response = await _therapyService.processUserMessage(message);
-
-        final aiMessage = TherapyMessage(
-          id: const Uuid().v4(),
-          content: response,
-          isUser: false,
-          timestamp: DateTime.now(),
-        );
-
-        setState(() {
-          _messages.add(aiMessage);
-          _isProcessing = false;
-        });
-
-        _scrollToBottom();
-      }
-    } catch (e) {
-      setState(() {
-        _isProcessing = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    }
-  }
-
-  Future<void> _addAIMessage(String text) async {
-    final message = TherapyMessage(
-      id: const Uuid().v4(),
-      content: text,
-      isUser: false,
-      timestamp: DateTime.now(),
-    );
-
-    setState(() {
-      _messages.add(message);
-      _isProcessing = true;
-    });
-
-    _scrollToBottom();
-
-    try {
-      if (_isVoiceMode) {
-        if (_isSpeakerMuted) {
-          setState(() {
-            _isProcessing = false;
-          });
-          return; // Do not play audio if muted
-        }
-        if (kDebugMode) {
-          print('💬 CHAT: Processing AI message in voice mode');
-        }
-        // Save the text for TTS fallback
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('last_tts_text', text);
-        setState(() {
-          _isProcessing = false;
-        });
-        // Use audio generator with streaming for faster response
-        final audioGenerator = serviceLocator<AudioGenerator>();
-        if (kDebugMode) {
-          print(
-              '💬 CHAT: Generating audio for AI message: [1m${text.substring(0, min(30, text.length))}...[0m');
-        }
-        // Generate audio
-        final audioPath = await audioGenerator.generateAndStreamAudio(text);
-        // Update the message with the audio URL
-        final indexOfMessage = _messages.indexWhere((m) => m.id == message.id);
-        if (indexOfMessage != -1) {
-          setState(() {
-            _messages[indexOfMessage] = message.copyWith(audioUrl: audioPath);
-          });
-          if (kDebugMode) {
-            print('💬 CHAT: Audio generated: $audioPath');
-          }
-        }
-      } else {
-        // In text mode, we don't generate audio
-        setState(() {
-          _isProcessing = false;
-        });
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('💬 CHAT ERROR: Error generating audio for welcome message: $e');
-      }
-      setState(() {
-        _isProcessing = false;
-      });
-    }
+    // Get conversation history (excluding the current user message)
+    final currentState = context.read<ChatBloc>().state;
+    final history = currentState is ChatLoaded
+        ? currentState.messages
+            .map((m) => {
+                  'role': m.isUser ? 'user' : 'assistant',
+                  'content': m.content,
+                })
+            .toList() as List<Map<String, dynamic>>
+        : <Map<String, dynamic>>[];
+    debugPrint('[ChatScreen] _sendMessage called');
+    debugPrint('[ChatScreen] _sendMessage: message="$message"');
+    debugPrint('[ChatScreen] _sendMessage: history.length=${history.length}');
+    context.read<ChatBloc>().add(SendUserMessage(
+          message: message,
+          history: history,
+          sessionId: _currentSessionId,
+        ));
+    debugPrint(
+        '[ChatScreen] _sendMessage: Sent SendUserMessage event to ChatBloc');
   }
 
   void _scrollToBottom() {
@@ -1141,7 +1084,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          0,
+          _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
@@ -1201,77 +1144,98 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         if (kDebugMode) {
           print('💬 CHAT: Got transcription: $transcription');
         }
-
         setState(() {
           _isProcessing = true;
         });
-
+        // Get conversation history (excluding the current user message)
+        final currentState = context.read<ChatBloc>().state;
+        final history = currentState is ChatLoaded
+            ? currentState.messages
+                .map((m) => {
+                      'role': m.isUser ? 'user' : 'assistant',
+                      'content': m.content,
+                    })
+                .toList()
+            : <Map<String, String>>[];
+        debugPrint('📜 Passing history to ChatBloc/therapyService: $history');
         try {
-          // Add user message
-          final userMessage = TherapyMessage(
-            id: const Uuid().v4(),
-            content: transcription,
-            isUser: true,
-            timestamp: DateTime.now(),
-          );
-
-          setState(() {
-            _messages.add(userMessage);
-          });
-
+          // Add user message by dispatching to BLoC
+          context.read<ChatBloc>().add(SendUserMessage(
+                message: transcription,
+                history: history,
+                sessionId: _currentSessionId,
+              ));
           _scrollToBottom();
-
           if (_isVoiceMode) {
             // In voice mode, get AI response with streaming audio for faster playback
-            // We don't need to manually set _isTtsSpeaking anymore
             final response = await _therapyService
                 .processUserMessageWithStreamingAudio(transcription);
-
-            final aiMessage = TherapyMessage(
-              id: const Uuid().v4(),
-              content: response['text'],
-              isUser: false,
-              timestamp: DateTime.now(),
-              audioUrl: response['audioPath'],
-            );
-
-            setState(() {
-              _messages.add(aiMessage);
-              _isProcessing =
-                  false; // Set to false here, animation will start via stream
-            });
-
-            _scrollToBottom();
-
-            // Audio playback status is now managed through the _ttsSubscription stream
+            if (response == null ||
+                response['text'] == null ||
+                response['text'].toString().trim().isEmpty) {
+              debugPrint(
+                  '⚠️ Empty AI reply received (voice mode, voice input)');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('No response from therapist')),
+              );
+              setState(() {
+                _isProcessing = false;
+              });
+              return;
+            }
+            if (kDebugMode)
+              print('🟩 Received AI reply (voice mode): ${response['text']}');
+            // Play backend audio if available, otherwise do NOT use fallback TTS
+            if (response['audioUrl'] != null &&
+                response['audioUrl'].toString().isNotEmpty) {
+              await _voiceService.playAudio(response['audioUrl']);
+              debugPrint('🔊 Played backend audio for AI reply (voice mode)');
+            } else {
+              debugPrint(
+                  '⚠️ No backend audioUrl provided for AI reply (voice mode). No TTS will be played.');
+            }
+            // No longer add AI reply to chat here; ChatBloc handles it after streaming
+            debugPrint(
+                '🟩 AI reply will be added to chat by ChatBloc (voice mode, voice input)');
           } else {
             // Text mode - get response without audio to save API calls
             final response =
                 await _therapyService.processUserMessage(transcription);
-
-            final aiMessage = TherapyMessage(
-              id: const Uuid().v4(),
-              content: response,
-              isUser: false,
-              timestamp: DateTime.now(),
-            );
-
+            if (response == null || response.trim().isEmpty) {
+              debugPrint('⚠️ Empty AI reply received (text mode, voice input)');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('No response from therapist')),
+              );
+              setState(() {
+                _isProcessing = false;
+              });
+              return;
+            }
+            // No longer add AI reply to chat here; ChatBloc handles it after streaming
+            debugPrint(
+                '🟩 AI reply will be added to chat by ChatBloc (text mode, voice input)');
+            // Add AI message by dispatching to BLoC (use NewMessageReceived, not StartChat)
+            //   context.read<ChatBloc>().add(NewMessageReceived(
+            //       TherapyMessage(
+            //       id: DateTime.now().microsecondsSinceEpoch.toString(),
+            //     content: response,
+            //    isUser: false,
+            //    timestamp: DateTime.now(),
+            //    audioUrl: null,
+            //  ),
+            //));
             setState(() {
-              _messages.add(aiMessage);
               _isProcessing = false;
             });
-
             _scrollToBottom();
           }
         } catch (e) {
           setState(() {
             _isProcessing = false;
           });
-
           if (kDebugMode) {
             print('💬 CHAT ERROR: Error processing voice: $e');
           }
-
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Error processing voice: $e'),
@@ -1377,14 +1341,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     // Don't generate a summary if the session didn't actually start
     // (no messages or still in setup screens)
-    if (_messages.isEmpty || _showDurationSelector || _showMoodSelector) {
+    final blocState = context.read<ChatBloc>().state;
+    List<TherapyMessage> messages = [];
+    if (blocState is ChatLoaded) {
+      messages = blocState.messages;
+    } else if (blocState is ChatCompletedState) {
+      messages = blocState.messages;
+    } else if (blocState is ChatErrorState) {
+      messages = blocState.messages;
+    }
+    if (messages.isEmpty || _showDurationSelector || _showMoodSelector) {
       if (kDebugMode) {
         print(
             'Session not properly started, skipping session summary generation');
       }
       // Show the bottom navigation bar and return to previous screen
       _navigationService.showBottomNav();
-      if (mounted) {
+      if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
       return;
@@ -1489,7 +1462,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
 
       // Prepare messages for the session summary
-      final messageList = _messages.map((m) => m.toJson()).toList();
+      final messageList = messages.map((m) => m.toJson()).toList();
 
       if (kDebugMode) {
         print('Ending therapy session with ${messageList.length} messages');
@@ -1554,7 +1527,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         // Now save the session with its summary and messages
         await sessionRepository.saveSession(
           id: _currentSessionId,
-          messages: _messages.map((m) => m.toJson()).toList(),
+          messages: messages.map((m) => m.toJson()).toList(),
           summary: summary,
           actionItems: actionItems.cast<String>(),
           initialMood: _initialMood,
@@ -1588,7 +1561,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         'summary': summary,
         'actionItems': actionItems.cast<String>(),
         'insights': insights.cast<String>(),
-        'messages': _messages,
+        'messages': messages,
         'initialMood': _initialMood,
       });
     } catch (e) {
@@ -1626,10 +1599,32 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _toggleChatMode() {
     // Stop any ongoing audio before switching modes
     _voiceService.stopAudio();
-
     setState(() {
       _isVoiceMode = !_isVoiceMode;
+      _messageController.clear();
+      _isProcessing = false;
+      _isTyping = false;
     });
+    debugPrint('🔄 Switched to ${_isVoiceMode ? 'voice' : 'text'} mode');
+  }
+
+  void _switchToTextMode() {
+    debugPrint('🔄 Switched to text mode');
+    setState(() {
+      _isVoiceMode = false;
+    });
+  }
+
+  void _switchToVoiceMode() {
+    debugPrint('🔄 Switched to voice mode');
+    setState(() {
+      _isVoiceMode = true;
+    });
+  }
+
+  void _navigateAway() {
+    debugPrint('[ChatScreen] Navigating away from chat screen');
+    Navigator.of(context).pop();
   }
 }
 

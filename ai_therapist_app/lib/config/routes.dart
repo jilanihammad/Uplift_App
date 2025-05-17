@@ -5,6 +5,9 @@ import 'package:get_it/get_it.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ai_therapist_app/blocs/chat_bloc.dart';
+import 'package:ai_therapist_app/services/groq_service.dart';
 
 // Import screen files with the correct paths
 import 'package:ai_therapist_app/screens/splash_screen.dart';
@@ -196,6 +199,7 @@ class AppRouter {
       ),
 
       // Main app shell with bottom navigation
+      // NOTE: BlocProvider<ChatBloc> should be provided at the app root (see main.dart)
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) {

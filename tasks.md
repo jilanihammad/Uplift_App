@@ -16,7 +16,7 @@
 
 ## 4. Implement Streaming Audio Changes (WebSocket)
 - [x] Design WebSocket message format for chat completion
-- [ ] Implement backend WebSocket streaming logic for /ws/chat using Groq's streaming API
+- [x] Implement backend WebSocket streaming logic for /ws/chat using Groq's streaming API
 - [ ] Test with wscat to confirm incremental JSON messages
 - [ ] Document the message format for streaming chat completion
 - [ ] Update Flutter frontend to handle streamed JSON messages
@@ -40,6 +40,32 @@
 - [ ] Confirm all endpoints (old and new) work as expected
 - [ ] Review logs for errors or warnings
 - [ ] Document any issues or follow-ups needed
+
+---
+
+## Flutter Integration: Streaming Chat Completion
+- [ ] Add WebSocket client logic to Flutter app for /ws/chat
+- [ ] Send initial JSON message with message, history, and session_id
+- [ ] Parse and handle incoming 'chunk' messages (append to chat UI)
+- [ ] Handle 'done' and 'error' message types
+- [ ] Display streamed response in real time in the chat UI
+- [ ] Handle reconnection and error states gracefully
+- [ ] Test on device (SM S938U1) for real-time streaming experience
+
+---
+
+## Flutter Integration: BLoC/WebSocket Streaming Chat (Detailed)
+- [x] Refactor chat logic into a ChatBloc to manage WebSocket stream and chat state
+- [x] Replace mock GroqService with actual WebSocket service (connects to backend /ws/chat)
+- [ ] Implement a ChatMessage model (with sender, timestamp, content, etc.)
+- [ ] Update ChatBloc to use ChatMessage model instead of String
+- [ ] Pass real sessionId from session management logic
+- [ ] Add robust error handling and reconnection logic in ChatBloc
+- [ ] Integrate ChatBloc with chat screen using BlocProvider and BlocBuilder
+- [ ] Update chat UI to display sender, timestamps, and streaming indicators
+- [ ] Add text input and send button for user messages
+- [ ] Test on device (SM S938U1) for real-time streaming, reconnection, and error handling
+- [ ] Iterate and refine based on user feedback and production testing
 
 ---
 
@@ -84,4 +110,9 @@
 - `sequence`: Ensures correct order of streamed chunks.
 - `timestamp`: When the message was sent (ISO 8601 format).
 
-*Check off each box as you complete the step to track progress and ensure nothing is missed!* 
+*Check off each box as you complete the step to track progress and ensure nothing is missed!*
+
+---
+
+## Future Improvement
+- [ ] After all core features are implemented and tested, explore upgrading session management from in-memory to a persistent store (e.g., Redis or database) for production reliability and scalability. 
