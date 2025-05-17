@@ -250,7 +250,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     debugPrint('[ChatBloc] _onChatCompleted called');
     emit(ChatCompletedState(List<TherapyMessage>.from(_currentMessages)));
     debugPrint(
-        '[ChatBloc] Emitted ChatCompletedState with ${_currentMessages.length} messages');
+        '[ChatBloc] Emitted ChatCompletedState with [33m${_currentMessages.length}[0m messages');
+    // Immediately transition back to ChatLoaded to allow further user input
+    emit(ChatLoaded(List<TherapyMessage>.from(_currentMessages)));
+    debugPrint('[ChatBloc] Emitted ChatLoaded after ChatCompletedState');
   }
 
   Future<void> _onChatError(ChatError event, Emitter<ChatState> emit) async {

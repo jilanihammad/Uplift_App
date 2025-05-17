@@ -91,6 +91,8 @@ class VoiceService {
   // TTS instance to reuse
   FlutterTts? _flutterTts;
 
+  AudioPlayer? _currentPlayer; // Central reference for current player
+
   // Factory constructor to enforce singleton pattern
   factory VoiceService({required ApiClient apiClient}) {
     // Return existing instance if already created
@@ -809,6 +811,10 @@ class VoiceService {
         print('🔊 VoiceService: Beginning audio playback of $audioPath');
       }
 
+      // Dispose previous player if exists
+      await _currentPlayer?.dispose();
+      _currentPlayer = null;
+
       // Request audio focus before playback
       final session = await AudioSession.instance;
       final focusGranted = await session.setActive(true);
@@ -849,20 +855,23 @@ class VoiceService {
           print('🔊 VoiceService: Playing audio from URL: $audioPath');
         }
         if (!_isWeb) {
-          final player = AudioPlayer();
+          _currentPlayer = AudioPlayer();
           try {
-            await player.setUrl(audioPath);
-            player.playerStateStream.listen((state) {
+            await _currentPlayer!.setUrl(audioPath);
+            _currentPlayer!.playerStateStream.listen((state) async {
               if (state.processingState == ProcessingState.completed) {
                 _audioPlaybackController.add(false);
-                player.dispose();
+                await _currentPlayer?.dispose();
+                _currentPlayer = null;
               }
             });
-            await player.play();
+            await _currentPlayer!.play();
           } catch (e) {
             if (kDebugMode) print('🔊 VoiceService: Error playing URL: $e');
             _audioPlaybackController.add(false);
             await _useTtsBackup(); // Fallback to TTS if URL play fails
+            await _currentPlayer?.dispose();
+            _currentPlayer = null;
           }
         } else {
           // Web playback simulation
@@ -874,21 +883,24 @@ class VoiceService {
         if (await file.exists()) {
           if (kDebugMode)
             print('🔊 VoiceService: Playing local audio file: $audioPath');
-          final player = AudioPlayer();
+          _currentPlayer = AudioPlayer();
           try {
-            await player.setFilePath(audioPath);
-            player.playerStateStream.listen((state) {
+            await _currentPlayer!.setFilePath(audioPath);
+            _currentPlayer!.playerStateStream.listen((state) async {
               if (state.processingState == ProcessingState.completed) {
                 _audioPlaybackController.add(false);
-                player.dispose();
+                await _currentPlayer?.dispose();
+                _currentPlayer = null;
               }
             });
-            await player.play();
+            await _currentPlayer!.play();
           } catch (e) {
             if (kDebugMode)
               print('🔊 VoiceService: Error playing local file: $e');
             _audioPlaybackController.add(false);
             await _useTtsBackup(); // Fallback to TTS
+            await _currentPlayer?.dispose();
+            _currentPlayer = null;
           }
         } else {
           if (kDebugMode)
@@ -908,6 +920,8 @@ class VoiceService {
       if (kDebugMode) print('🔊 VoiceService: Error in playAudio: $e');
       _audioPlaybackController.add(false);
       await _useTtsBackup(); // Fallback to TTS on any error
+      await _currentPlayer?.dispose();
+      _currentPlayer = null;
     }
   }
 
@@ -926,17 +940,11 @@ class VoiceService {
         await _flutterTts!.stop();
       }
 
-      // Stop any ongoing audio player
-      if (!_isWeb) {
-        try {
-          final player = AudioPlayer();
-          await player.stop();
-          await player.dispose();
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error stopping audio player: $e');
-          }
-        }
+      // Stop and dispose current player
+      if (_currentPlayer != null) {
+        await _currentPlayer!.stop();
+        await _currentPlayer!.dispose();
+        _currentPlayer = null;
       }
 
       if (kDebugMode) {
@@ -1164,6 +1172,12 @@ class VoiceService {
       if (kDebugMode) {
         print('Error closing stream controllers: $e');
       }
+    }
+
+    // Dispose current player
+    if (_currentPlayer != null) {
+      _currentPlayer!.dispose();
+      _currentPlayer = null;
     }
 
     _audioRecorder.dispose();
