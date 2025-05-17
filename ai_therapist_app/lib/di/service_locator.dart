@@ -36,6 +36,7 @@ import '../services/message_processor.dart';
 import '../services/audio_generator.dart';
 import '../services/conversation_flow_manager.dart';
 import 'package:ai_therapist_app/utils/database_helper.dart';
+import '../services/groq_service.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -303,6 +304,12 @@ Future<void> setupServiceLocator() async {
       serviceLocator
           .registerLazySingleton<NavigationService>(() => NavigationService());
       debugPrint('Registered NavigationService');
+    }
+
+    // Register GroqService
+    if (!serviceLocator.isRegistered<GroqService>()) {
+      serviceLocator.registerLazySingleton<GroqService>(() => GroqService());
+      debugPrint('Registered GroqService');
     }
 
     // Mark core services as registered

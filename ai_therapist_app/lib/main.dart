@@ -44,6 +44,8 @@ import 'package:ai_therapist_app/screens/profile_screen.dart';
 import 'package:ai_therapist_app/screens/onboarding/onboarding_wrapper.dart';
 import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
+import 'package:ai_therapist_app/blocs/chat_bloc.dart'; //new addition
+import 'package:ai_therapist_app/services/groq_service.dart'; //new addition
 import 'debug_api.dart';
 import 'debug_firebase.dart'; // Import for debugging only
 import 'dart:async';
@@ -143,6 +145,7 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
 }
 
 Future<void> main() async {
+  debugPrint('[main.dart] App starting...');
   // Set zone error fatal to false to avoid Flutter zone binding errors
   BindingBase.debugZoneErrorsAreFatal = false;
 
@@ -150,39 +153,45 @@ Future<void> main() async {
 
   // Run the entire app in a single guarded zone to avoid zone mismatches
   runZonedGuarded(() async {
+    debugPrint('[main.dart] Entered runZonedGuarded');
     // 0. Initialize LoggingService first - enables proper logging for the rest of initialization
     _initializeLogging();
+    debugPrint('[main.dart] Logging initialized');
 
     // 1. Ensure Flutter bindings are initialized first - inside the same zone as runApp
     final binding = WidgetsFlutterBinding.ensureInitialized();
+    debugPrint('[main.dart] Flutter bindings initialized');
     logger.info(
         '[Main] Flutter bindings initialized in the same zone as runApp.');
 
     // 1.5. Initialize AppConfig to load environment variables
     await AppConfig.initialize();
     AppConfig().logConfig();
+    debugPrint('[main.dart] AppConfig initialized');
     logger.info('[Main] AppConfig initialized with environment variables.');
 
     // CRITICAL CHANGE: DISABLE FIREBASE APP CHECK COMPLETELY
     try {
-      // Initialize Firebase Core without App Check
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-      print("[Main] Firebase Core initialized directly - APP CHECK DISABLED");
-      print(
-          "[Main] Firebase App Check is INTENTIONALLY DISABLED to fix authentication issues");
+      debugPrint(
+          "[main.dart] Firebase Core initialized directly - APP CHECK DISABLED");
+      debugPrint(
+          "[main.dart] Firebase App Check is INTENTIONALLY DISABLED to fix authentication issues");
     } catch (e) {
-      print("[Main] Error during Firebase initialization: $e");
-      print("[Main] Continuing with app initialization...");
+      debugPrint("[main.dart] Error during Firebase initialization: $e");
+      debugPrint("[main.dart] Continuing with app initialization...");
     }
 
     // 2. Now initialize Firebase using the synchronized method
     final firebaseApp = await ensureFirebaseInitialized();
     if (firebaseApp != null) {
+      debugPrint('[main.dart] Firebase initialized successfully');
       logger.info(
           '[Main] Firebase initialized successfully: ${firebaseApp.name}');
     } else {
+      debugPrint('[main.dart] Could not initialize Firebase');
       logger.warning(
           '[Main] Could not initialize Firebase, some features may be limited');
     }
@@ -191,10 +200,12 @@ Future<void> main() async {
     if (isFirebaseInitialized()) {
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
+      debugPrint('[main.dart] Background messaging handler registered.');
       logger.info('[Main] Background messaging handler registered.');
     }
 
     // 4. Setup error handling
+    debugPrint('[main.dart] Setting up error handlers.');
     logger.info('[Main] Setting up error handlers.');
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
@@ -205,25 +216,32 @@ Future<void> main() async {
     // 5. Setup Bloc observer for debugging
     if (kDebugMode) {
       Bloc.observer = SimpleBlocObserver();
+      debugPrint('[main.dart] Set up Bloc observer for debugging.');
       logger.debug('[Main] Set up Bloc observer for debugging.');
     }
 
     // 6. Initialize service locator (GetIt)
+    debugPrint('[main.dart] Setting up service locator...');
     logger.info('[Main] Setting up service locator...');
     try {
       await setupServiceLocator();
+      debugPrint('[main.dart] Service locator setup complete.');
       logger.info('[Main] Service locator setup complete.');
     } catch (e) {
+      debugPrint('[main.dart] ERROR during service locator setup: $e');
       logger.error('[Main] ERROR during service locator setup', error: e);
     }
 
     // 7. Initialize database connection only (defer table checks/optimizations)
+    debugPrint('[main.dart] Initializing app database connection...');
     logger.info('[Main] Initializing app database connection...');
     try {
       final appDatabase = serviceLocator<AppDatabase>();
       await appDatabase.database;
+      debugPrint('[main.dart] Database connection established.');
       logger.info('[Main] Database connection established.');
     } catch (e) {
+      debugPrint('[main.dart] ERROR initializing database connection: $e');
       logger.error('[Main] ERROR initializing database connection', error: e);
     }
 
@@ -231,14 +249,17 @@ Future<void> main() async {
     // (ThemeService and AuthService are registered in service locator)
 
     // 9. Start the UI as soon as possible
+    debugPrint('[main.dart] Starting app UI...');
     logger.info('[Main] Starting app UI...');
     try {
+      debugPrint('[main.dart] Running app...');
       logger.debug('[Main] Running app in same zone.');
       runApp(const AiTherapistApp());
+      debugPrint('[main.dart] App should now be visible!');
       logger.info('[Main] App should now be visible!');
     } catch (e) {
+      debugPrint('[main.dart] Critical error in final app startup: $e');
       logger.error('[Main] Critical error in final app startup', error: e);
-      // Last resort fallback - try to show a minimal error UI
       runApp(MaterialApp(
         home: Scaffold(
           appBar: AppBar(title: const Text('Error')),
@@ -249,18 +270,21 @@ Future<void> main() async {
 
     // 10. Defer heavy service initializations and notification permissions until after UI is visible
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      debugPrint('[main.dart] PostFrameCallback: initializeHeavyServices');
       await initializeHeavyServices();
     });
 
     // After UI is visible, run DB health check in background
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      debugPrint('[main.dart] PostFrameCallback: DB health check');
       final dbProvider = DatabaseProvider();
       final dbHealthChecker = DatabaseHealthChecker(dbProvider);
       await dbHealthChecker.runHealthCheck();
     });
   }, (error, stack) {
-    logger.error('[Main] UNCAUGHT ERROR in app',
-        error: error, stackTrace: stack);
+    debugPrint('[main.dart] Uncaught error in runZonedGuarded: $error');
+    debugPrint('[main.dart] Stack trace: $stack');
+    logger.error('[Main] Uncaught error in runZonedGuarded');
     _handleGlobalError(error, stack);
   });
 }
@@ -281,14 +305,14 @@ void _initializeLogging() {
       'Debug logging is ${loggingConfig.isDebugEnabled ? 'enabled' : 'disabled'}');
 
   if (kDebugMode) {
-    print('=== LoggingService initialized ===');
-    print(
+    debugPrint('=== LoggingService initialized ===');
+    debugPrint(
         '- Log level: ${loggingConfig.currentLogLevel.toString().split('.').last.toUpperCase()}');
-    print(
+    debugPrint(
         '- Debug logs: ${loggingConfig.isDebugEnabled ? 'ENABLED' : 'DISABLED'}');
-    print('- Analytics logging: ${kDebugMode ? 'ENABLED' : 'DISABLED'}');
-    print('- Crashlytics: ${!kDebugMode ? 'ENABLED' : 'DISABLED'}');
-    print('==============================');
+    debugPrint('- Analytics logging: ${kDebugMode ? 'ENABLED' : 'DISABLED'}');
+    debugPrint('- Crashlytics: ${!kDebugMode ? 'ENABLED' : 'DISABLED'}');
+    debugPrint('==============================');
   }
 }
 
@@ -356,22 +380,20 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
   @override
   void initState() {
     super.initState();
-
+    debugPrint('[main.dart] AiTherapistApp initState');
     try {
-      // Check if ThemeService is registered
       if (serviceLocator.isRegistered<ThemeService>()) {
         _themeService = serviceLocator<ThemeService>();
         _initTheme();
       } else {
-        // Fallback if service is not registered
         debugPrint(
-            '[AiTherapistApp] WARNING: ThemeService not registered, using default theme');
-        _themeService = ThemeService(); // Create a local instance as fallback
+            '[main.dart] WARNING: ThemeService not registered, using default theme');
+        _themeService = ThemeService();
         _initTheme();
       }
     } catch (e) {
-      debugPrint('[AiTherapistApp] Error initializing theme: $e');
-      _themeService = ThemeService(); // Create a local instance as fallback
+      debugPrint('[main.dart] Error initializing theme: $e');
+      _themeService = ThemeService();
     }
   }
 
@@ -380,77 +402,71 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       await _themeService.init();
       if (mounted) setState(() {});
     } catch (e) {
-      debugPrint('[AiTherapistApp] Error in _initTheme: $e');
-      // Continue with default theme
+      debugPrint('[main.dart] Error in _initTheme: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Wrap with ErrorBoundary to catch errors in the widget tree
+    debugPrint('[main.dart] AiTherapistApp build');
     return ErrorBoundary(
       child: ChangeNotifierProvider.value(
         value: _themeService,
         child: Consumer<ThemeService>(
           builder: (context, themeService, _) {
-            return BlocProvider(
-              create: (context) {
-                // Safely access AuthService
-                try {
-                  if (serviceLocator.isRegistered<AuthService>()) {
-                    final authBloc = AuthBloc(
-                      authService: serviceLocator<AuthService>(),
-                      onboardingService: serviceLocator<OnboardingService>(),
-                    )..add(CheckAuthStatusEvent());
-
-                    // Register the AuthBloc in the service locator if not already registered
-                    if (!serviceLocator.isRegistered<AuthBloc>()) {
-                      serviceLocator.registerSingleton<AuthBloc>(authBloc);
-                      logger.debug(
-                          '[AiTherapistApp] AuthBloc registered in service locator');
-                    }
-
-                    return authBloc;
-                  } else {
+            return MultiBlocProvider(
+              providers: [
+                BlocProvider<AuthBloc>(
+                  create: (context) {
                     debugPrint(
-                        '[AiTherapistApp] WARNING: AuthService not registered, using empty AuthBloc');
-                    // Return an AuthBloc without calling CheckAuthStatusEvent to prevent errors
-                    final authBloc = AuthBloc(
-                      authService:
-                          AuthService(), // Create a local instance as fallback
-                      onboardingService:
-                          OnboardingService(), // Create a local instance as fallback
-                    );
-
-                    // Register the minimal AuthBloc in the service locator
-                    if (!serviceLocator.isRegistered<AuthBloc>()) {
-                      serviceLocator.registerSingleton<AuthBloc>(authBloc);
-                      logger.debug(
-                          '[AiTherapistApp] Minimal AuthBloc registered in service locator');
+                        '[main.dart] Creating AuthBloc in MultiBlocProvider');
+                    try {
+                      if (serviceLocator.isRegistered<AuthService>()) {
+                        final authBloc = AuthBloc(
+                          authService: serviceLocator<AuthService>(),
+                          onboardingService:
+                              serviceLocator<OnboardingService>(),
+                        )..add(CheckAuthStatusEvent());
+                        debugPrint(
+                            '[main.dart] AuthBloc registered in service locator');
+                        return authBloc;
+                      } else {
+                        debugPrint(
+                            '[main.dart] WARNING: AuthService not registered, using empty AuthBloc');
+                        final authBloc = AuthBloc(
+                          authService: AuthService(),
+                          onboardingService: OnboardingService(),
+                        );
+                        if (!serviceLocator.isRegistered<AuthBloc>()) {
+                          serviceLocator.registerSingleton<AuthBloc>(authBloc);
+                          logger.debug(
+                              '[AiTherapistApp] Minimal AuthBloc registered in service locator');
+                        }
+                        return authBloc;
+                      }
+                    } catch (e) {
+                      debugPrint('[main.dart] Error creating AuthBloc: $e');
+                      final authBloc = AuthBloc(
+                        authService: AuthService(),
+                        onboardingService: OnboardingService(),
+                      );
+                      if (!serviceLocator.isRegistered<AuthBloc>()) {
+                        serviceLocator.registerSingleton<AuthBloc>(authBloc);
+                        logger.debug(
+                            '[AiTherapistApp] Fallback AuthBloc registered in service locator');
+                      }
+                      return authBloc;
                     }
-
-                    return authBloc;
-                  }
-                } catch (e) {
-                  debugPrint('[AiTherapistApp] Error creating AuthBloc: $e');
-                  // Return a minimal AuthBloc that won't crash the app
-                  final authBloc = AuthBloc(
-                    authService:
-                        AuthService(), // Create a local instance as fallback
-                    onboardingService:
-                        OnboardingService(), // Create a local instance as fallback
-                  );
-
-                  // Register the fallback AuthBloc in the service locator
-                  if (!serviceLocator.isRegistered<AuthBloc>()) {
-                    serviceLocator.registerSingleton<AuthBloc>(authBloc);
-                    logger.debug(
-                        '[AiTherapistApp] Fallback AuthBloc registered in service locator');
-                  }
-
-                  return authBloc;
-                }
-              },
+                  },
+                ),
+                BlocProvider<ChatBloc>(
+                  create: (context) {
+                    debugPrint(
+                        '[main.dart] Creating ChatBloc in MultiBlocProvider');
+                    return ChatBloc(groqService: serviceLocator<GroqService>());
+                  },
+                ),
+              ],
               child: MaterialApp.router(
                 title: 'AI Therapist',
                 theme: AppTheme.lightTheme,
@@ -476,7 +492,7 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
 
   @override
   void dispose() {
-    // Cleanup resources when the app is closed
+    debugPrint('[main.dart] AiTherapistApp dispose');
     _cleanupResources();
     super.dispose();
   }
@@ -606,9 +622,9 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
     ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
       // Log the error
       if (kDebugMode) {
-        print('Error caught by ErrorBoundary:');
-        print(errorDetails.exception);
-        print(errorDetails.stack);
+        debugPrint('Error caught by ErrorBoundary:');
+        debugPrint(errorDetails.exception.toString());
+        debugPrint(errorDetails.stack?.toString());
       }
 
       // Update state to show error UI
