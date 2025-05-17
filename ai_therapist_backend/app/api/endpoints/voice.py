@@ -173,8 +173,41 @@ async def websocket_tts(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            # TODO: Implement TTS streaming logic here
-            # For now, echo the received message
-            await websocket.send_text(f"Echo: {data}")
+            try:
+                payload = json.loads(data)
+                text = payload.get("text")
+                voice = payload.get("voice", "sage")
+                params = payload.get("params", {})  # Optional: format, bitrate, etc.
+
+                if not text:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "detail": "No text provided"
+                    }))
+                    continue
+
+                # Start streaming TTS audio
+                sequence = 1
+                async for audio_chunk in voice_service.stream_speech(text, {"voice": voice, **params}):
+                    # audio_chunk: bytes
+                    b64_chunk = base64.b64encode(audio_chunk).decode("utf-8")
+                    await websocket.send_text(json.dumps({
+                        "type": "audio_chunk",
+                        "data": b64_chunk,
+                        "sequence": sequence
+                    }))
+                    sequence += 1
+
+                # Send done message
+                await websocket.send_text(json.dumps({
+                    "type": "done",
+                    "sequence": sequence
+                }))
+
+            except Exception as e:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "detail": str(e)
+                }))
     except WebSocketDisconnect:
         logger.info("WebSocket TTS disconnected") 

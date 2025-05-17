@@ -239,8 +239,7 @@ class AudioGenerator {
 
       // Generate audio using voice service
       final generationStopwatch = Stopwatch()..start();
-      final audioPath =
-          await _voiceService.generateAudio(text, isAiSpeaking: isAiSpeaking);
+      final audioPath = await _voiceService.generateAudio(text);
       generationStopwatch.stop();
       _performanceMetrics['generate_audio'] =
           generationStopwatch.elapsedMilliseconds;

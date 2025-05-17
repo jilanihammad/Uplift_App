@@ -108,15 +108,16 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       final response = _llmTestResult.replaceFirst('LLM Response:\n', '');
 
       // Generate audio from the LLM response
-      final audioPath =
-          await _voiceService.generateAudio(response, isAiSpeaking: true);
+      final audioPath = await _voiceService.generateAudio(response);
 
       setState(() {
         _ttsTestResult = 'Audio generated successfully: $audioPath';
       });
 
       // Play the audio
-      await _voiceService.playAudio(audioPath);
+      if (audioPath != null) {
+        await _voiceService.playAudio(audioPath);
+      }
 
       setState(() {
         _isTestingTTS = false;

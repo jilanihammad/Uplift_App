@@ -14,7 +14,6 @@ import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:path/path.dart' as path;
 import 'package:ai_therapist_app/config/api.dart';
 import 'package:ai_therapist_app/data/models/log_entry.dart';
@@ -25,6 +24,7 @@ import 'package:record/record.dart';
 import '../config/app_config.dart'; // Import AppConfig
 import 'dart:io';
 import 'package:audio_session/audio_session.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 // Recording states
 enum RecordingState { ready, recording, stopped, paused, error }
@@ -88,10 +88,9 @@ class VoiceService {
       StreamController<bool>.broadcast();
   Stream<bool> get isTtsActuallySpeaking => _ttsSpeakingStateController.stream;
 
-  // TTS instance to reuse
-  FlutterTts? _flutterTts;
-
   AudioPlayer? _currentPlayer; // Central reference for current player
+
+  bool isAiSpeaking = false;
 
   // Factory constructor to enforce singleton pattern
   factory VoiceService({required ApiClient apiClient}) {
@@ -113,21 +112,8 @@ class VoiceService {
       : _apiClient = apiClient {
     _audioRecorder = AudioRecorder();
     _ensureStreamControllerIsActive();
-    _initTts();
     if (kDebugMode) {
       print('VoiceService initialized with constructor injection');
-    }
-  }
-
-  // Initialize TTS engine
-  Future<void> _initTts() async {
-    _flutterTts = FlutterTts();
-    await _flutterTts!.setLanguage("en-US");
-    await _flutterTts!.setPitch(1.0);
-    await _flutterTts!.setSpeechRate(0.5);
-
-    if (kDebugMode) {
-      print('🎙️ TTS: TTS engine initialized');
     }
   }
 
@@ -613,192 +599,132 @@ class VoiceService {
     }
   }
 
-  // Generate audio using Groq API via backend
-  Future<String> generateAudio(String text, {bool isAiSpeaking = true}) async {
+  /// Stream TTS audio from backend and play it
+  Future<String?> streamAndPlayTTS({
+    required String text,
+    String voice = 'sage',
+    String responseFormat = 'opus',
+    void Function(double progress)? onProgress,
+    void Function()? onDone,
+    void Function(String error)? onError,
+  }) async {
+    isAiSpeaking = true;
+    if (kDebugMode) print('isAiSpeaking set to true (streamAndPlayTTS)');
+    String? filePath;
     try {
-      if (kDebugMode) {
-        print('Generating audio for text: $text');
-      }
+      final wsUrl =
+          'wss://ai-therapist-backend-385290373302.us-central1.run.app/voice/ws/tts';
+      final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      final List<int> audioBuffer = [];
+      StreamSubscription? subscription;
+      AudioPlayer player = AudioPlayer();
+      bool playbackStarted = false;
 
-      // Add this utterance to the conversation context
-      _conversationContext.add({
+      final request = jsonEncode({
         'text': text,
-        'speaker_id': isAiSpeaking ? _aiSpeakerId : _userSpeakerId,
+        'voice': voice,
+        'params': {'response_format': responseFormat},
       });
 
-      // We'll only keep the last 10 utterances to avoid context length issues
-      if (_conversationContext.length > 10) {
-        _conversationContext =
-            _conversationContext.sublist(_conversationContext.length - 10);
-      }
+      final completer = Completer<String?>();
 
-      // Store the text for TTS fallback right away
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('last_tts_text', text);
-        if (kDebugMode) {
-          print('Stored text for TTS fallback: $text');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error storing text for TTS fallback: $e');
-        }
-        // Continue anyway, we still have the conversation context as backup
-      }
-
-      try {
-        // Make API call to the backend for text-to-speech using Groq API
-        // Include additional debugging for network requests
-        if (kDebugMode) {
-          print('Using API URL: $_backendUrl');
-          print('Sending request to: $_backendUrl/voice/synthesize');
-          print(
-              'Request body: {"text": "${text.substring(0, min(30, text.length))}...", "voice": "${isAiSpeaking ? 'sage' : 'onyx'}"}');
-        }
-
-        final startTime = DateTime.now();
-        final response = await _apiClient.post('/voice/synthesize', body: {
-          'text': text,
-          'voice': isAiSpeaking
-              ? 'sage'
-              : 'onyx', // Updated to use valid OpenAI TTS voices
-          'format': 'ogg_opus', // More efficient than mp3
-          'bitrate': '24k', // Lower than default (64k), still good quality
-          'mono': true, // Single channel saves ~50% bandwidth
-        });
-
-        final duration = DateTime.now().difference(startTime).inMilliseconds;
-        if (kDebugMode) {
-          print(
-              'Response received in ${duration}ms with status code: ${response != null ? "200" : "null"}');
-          print('Response content: $response');
-        }
-
-        if (response != null) {
-          // The backend returns a URL to the generated audio file
-          final audioUrl = response['url'];
-
-          if (kDebugMode) {
-            print('Raw audio URL from response: $audioUrl');
-          }
-
-          if (audioUrl == null || audioUrl.toString().isEmpty) {
-            if (kDebugMode) {
-              print(
-                  'Error: Received null or empty audio URL from backend. Using local TTS.');
+      subscription = channel.stream.listen((event) async {
+        try {
+          final data = jsonDecode(event);
+          if (data['type'] == 'audio_chunk') {
+            final chunk = base64Decode(data['data']);
+            audioBuffer.addAll(chunk);
+            // Optionally, call onProgress
+          } else if (data['type'] == 'done') {
+            // Write buffer to temp file
+            try {
+              final tempDir = await getTemporaryDirectory();
+              final ext = responseFormat == 'opus' ? 'ogg' : 'mp3';
+              filePath =
+                  '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.$ext';
+              final file = io.File(filePath!);
+              await file.writeAsBytes(audioBuffer);
+              if (kDebugMode) {
+                final fileSize = await file.length();
+                print('TTS audio written to $filePath (size: $fileSize bytes)');
+              }
+              await player.setFilePath(filePath!);
+              await player.play();
+              onDone?.call();
+              // Clean up temp file after playback
+              player.playerStateStream.listen((state) async {
+                if (state.processingState == ProcessingState.completed) {
+                  try {
+                    if (await file.exists()) await file.delete();
+                    if (kDebugMode) print('Deleted temp TTS file: $filePath');
+                  } catch (_) {}
+                }
+              });
+              completer.complete(filePath);
+            } catch (e) {
+              onError?.call('Playback error: $e');
+              completer.complete(null);
             }
-
-            // Fall back to local TTS immediately
-            // Generate a fake URL to trigger the fallback mechanism in playAudio
-            String localFallbackPath =
-                'local_tts://${DateTime.now().millisecondsSinceEpoch}';
-            _lastGeneratedAudioPath = localFallbackPath;
-
-            return localFallbackPath;
+            await subscription?.cancel();
+            await channel.sink.close();
+          } else if (data['type'] == 'error') {
+            onError?.call(data['detail'] ?? 'Unknown error');
+            completer.complete(null);
+            await subscription?.cancel();
+            await channel.sink.close();
           }
-
-          // Construct the full URL - ensure we're handling null correctly
-          String fullAudioUrl;
-          if (audioUrl.startsWith('http')) {
-            fullAudioUrl = audioUrl;
-          } else if (audioUrl.startsWith('/')) {
-            // Use the backend URL from AppConfig instead of hardcoded value
-            fullAudioUrl = '${AppConfig().backendUrl}$audioUrl';
-          } else {
-            // Use the backend URL from AppConfig instead of hardcoded value
-            fullAudioUrl = '${AppConfig().backendUrl}/$audioUrl';
-          }
-
-          if (kDebugMode) {
-            print('Successfully generated audio, URL: $fullAudioUrl');
-          }
-
-          _lastGeneratedAudioPath = fullAudioUrl;
-          return fullAudioUrl;
-        } else {
-          if (kDebugMode) {
-            print(
-                'Error: Received null response from backend. Using local TTS.');
-          }
-
-          // Generate a fake URL to trigger the fallback mechanism in playAudio
-          String localFallbackPath =
-              'local_tts://${DateTime.now().millisecondsSinceEpoch}';
-          _lastGeneratedAudioPath = localFallbackPath;
-
-          return localFallbackPath;
+        } catch (e) {
+          onError?.call('Failed to process TTS stream: $e');
+          completer.complete(null);
+          await subscription?.cancel();
+          await channel.sink.close();
         }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error in speech synthesis API call: $e. Using local TTS.');
-        }
+      }, onError: (err) async {
+        onError?.call('WebSocket error: $err');
+        completer.complete(null);
+        await subscription?.cancel();
+        await channel.sink.close();
+      }, onDone: () async {
+        await subscription?.cancel();
+        await channel.sink.close();
+      });
 
-        // Generate a fake URL to trigger the fallback mechanism in playAudio
-        String localFallbackPath =
-            'local_tts://${DateTime.now().millisecondsSinceEpoch}';
-        _lastGeneratedAudioPath = localFallbackPath;
-
-        return localFallbackPath;
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error generating audio: $e. Using local TTS.');
-      }
-
-      // Generate a fake URL to trigger the fallback mechanism in playAudio
-      String localFallbackPath =
-          'local_tts://${DateTime.now().millisecondsSinceEpoch}';
-      _lastGeneratedAudioPath = localFallbackPath;
-
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('last_tts_text', text);
-      } catch (_) {
-        // Ignore error, we'll use conversation context
-      }
-
-      return localFallbackPath;
+      // Send the TTS request
+      channel.sink.add(request);
+      return await completer.future;
+    } finally {
+      isAiSpeaking = false;
+      if (kDebugMode) print('isAiSpeaking set to false (streamAndPlayTTS)');
     }
   }
 
-  // Use TTS backup and save to a specific file
-  Future<void> _useTtsBackupToFile(String text, String filePath) async {
+  // Refactor generateAudio to use WebSocket streaming with automatic mp3 fallback
+  Future<String?> generateAudio(String text,
+      {String voice = 'sage', String responseFormat = 'opus'}) async {
+    isAiSpeaking = true;
+    if (kDebugMode) print('isAiSpeaking set to true');
     try {
-      // Get the text from last TTS message
-      String textToSpeak = text;
-      try {
-        if (textToSpeak.isEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          textToSpeak = prefs.getString('last_tts_text') ?? '';
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error retrieving TTS text: $e');
-        }
-      }
-
-      // Use FlutterTts as a fallback
-      final flutterTts = FlutterTts();
-      await flutterTts.setLanguage('en-US');
-      await flutterTts.setSpeechRate(0.5);
-      await flutterTts.setPitch(1.0);
-
-      // Save the synthesized speech to a file
-      Directory directory = Directory(path.dirname(filePath));
-      if (!directory.existsSync()) {
-        directory.createSync(recursive: true);
-      }
-
-      await flutterTts.synthesizeToFile(textToSpeak, filePath);
-      _lastGeneratedAudioPath = filePath;
-
-      if (kDebugMode) {
-        print('TTS fallback used and saved to file: $filePath');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error in TTS fallback: $e');
-      }
+      bool triedMp3 = responseFormat == 'mp3';
+      String? filePath;
+      filePath = await streamAndPlayTTS(
+        text: text,
+        voice: voice,
+        responseFormat: responseFormat,
+        onError: (err) async {
+          if (kDebugMode) print('TTS streaming error ($responseFormat): $err');
+          if (!triedMp3 && responseFormat == 'opus') {
+            if (kDebugMode)
+              print('Retrying TTS streaming with mp3 fallback...');
+            String? fallbackFilePath =
+                await generateAudio(text, voice: voice, responseFormat: 'mp3');
+            filePath = fallbackFilePath;
+          }
+        },
+      );
+      return filePath;
+    } finally {
+      isAiSpeaking = false;
+      if (kDebugMode) print('isAiSpeaking set to false');
     }
   }
 
@@ -935,11 +861,6 @@ class VoiceService {
       // Signal that audio playback has stopped to listeners
       _audioPlaybackController.add(false);
 
-      // Stop Flutter TTS if it's speaking
-      if (_flutterTts != null) {
-        await _flutterTts!.stop();
-      }
-
       // Stop and dispose current player
       if (_currentPlayer != null) {
         await _currentPlayer!.stop();
@@ -997,8 +918,8 @@ class VoiceService {
 
     try {
       // Make sure TTS is initialized
-      if (_flutterTts == null) {
-        await _initTts();
+      if (_currentPlayer == null) {
+        _currentPlayer = AudioPlayer();
       }
 
       String textToSpeak =
@@ -1021,7 +942,18 @@ class VoiceService {
       }
 
       // Speak the text
-      await _flutterTts!.speak(textToSpeak);
+      await _currentPlayer!.setAudioSource(
+        ProgressiveAudioSource(
+          Uri.parse(textToSpeak),
+          // Lower buffer size helps start playback faster
+          headers: {
+            'Range': 'bytes=0-'
+          }, // Request range to enable progressive playback
+        ),
+        preload: false, // Don't preload the entire audio file
+      );
+
+      await _currentPlayer!.play();
 
       if (kDebugMode) {
         print('🎙️ TTS: speak() called');
@@ -1151,10 +1083,6 @@ class VoiceService {
   void dispose() {
     try {
       if (kDebugMode) print('VoiceService: Disposing resources');
-      // Stop any ongoing TTS
-      if (_flutterTts != null) {
-        _flutterTts!.stop();
-      }
 
       if (_recordingStateController != null &&
           !_recordingStateController!.isClosed) {
@@ -1197,26 +1125,5 @@ class VoiceService {
         }
       }
     }
-  }
-
-  // Public method to speak text directly using TTS
-  Future<void> speakWithTts(String text) async {
-    if (kDebugMode) {
-      print(
-          '🎙️ TTS: Speaking directly with TTS: "${text.substring(0, min(50, text.length))}..."');
-    }
-
-    // Save the text for fallback
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('last_tts_text', text);
-    } catch (e) {
-      if (kDebugMode) {
-        print('🎙️ TTS: Error saving text for TTS: $e');
-      }
-    }
-
-    // Use the internal TTS backup method
-    await _useTtsBackup();
   }
 }
