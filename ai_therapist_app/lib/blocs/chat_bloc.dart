@@ -110,7 +110,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   // StartChat: only for session/sessionId initialization or initial AI welcome
   Future<void> _onStartChat(StartChat event, Emitter<ChatState> emit) async {
     debugPrint(
-        '[ChatBloc] _onStartChat called with history: ${event.history.length}, sessionId: ${event.sessionId}');
+        '[ChatBloc] _onStartChat called with history: [36m${event.history.length}[0m, sessionId: [36m${event.sessionId}[0m');
     emit(ChatLoading());
     debugPrint('[ChatBloc] Emitted ChatLoading (StartChat)');
     await _subscription?.cancel();
@@ -123,10 +123,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final aiMsg = TherapyMessage(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         content: event.initialMessage!,
-        isUser: false,
+        isUser: false, // Initial message is always from AI
         timestamp: DateTime.now(),
         audioUrl: null,
       );
+      debugPrint(
+          '[ChatBloc][DEBUG] Creating initial AI message: isUser=false, content="${aiMsg.content}"');
       _currentMessages.add(aiMsg);
       debugPrint('[ChatBloc] Added initial AI message: ${aiMsg.content}');
     }
@@ -143,7 +145,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Future<void> _onSendUserMessage(
       SendUserMessage event, Emitter<ChatState> emit) async {
     debugPrint(
-        '[ChatBloc] _onSendUserMessage called with message: [32m${event.message}[0m');
+        '[ChatBloc] _onSendUserMessage called with message: \x1B[32m${event.message}\x1B[0m');
     emit(ChatLoading());
     debugPrint('[ChatBloc] Emitted ChatLoading (SendUserMessage)');
     await _subscription?.cancel();
@@ -160,10 +162,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final userMsg = TherapyMessage(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       content: event.message,
-      isUser: true,
+      isUser: true, // User message is always isUser=true
       timestamp: DateTime.now(),
       audioUrl: null,
     );
+    debugPrint(
+        '[ChatBloc][DEBUG] Creating user message: isUser=true, content="${userMsg.content}"');
     _currentMessages.add(userMsg);
     debugPrint(
         '[ChatBloc] Added user message to buffer. Buffer now has ${_currentMessages.length} messages:');
@@ -181,7 +185,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       sessionId: event.sessionId,
     )
         .listen((data) async {
-      debugPrint('[ChatBloc] [STREAM] Received data: $data');
       if (data['type'] == 'chunk') {
         final content = data['content']?.toString() ?? '';
         add(NewMessageChunkReceived(content: content));
@@ -222,10 +225,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         final aiMsg = TherapyMessage(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           content: fullContent,
-          isUser: false,
+          isUser: false, // AI message is always isUser=false
           timestamp: DateTime.now(),
           audioUrl: null,
         );
+        debugPrint(
+            '[ChatBloc][DEBUG] Creating AI message: isUser=false, content="${aiMsg.content}"');
         _currentMessages.add(aiMsg);
         debugPrint(
             '[ChatBloc] [CHUNK] Added AI reply to buffer. Buffer now has ${_currentMessages.length} messages:');

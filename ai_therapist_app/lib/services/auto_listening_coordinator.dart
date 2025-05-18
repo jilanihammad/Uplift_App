@@ -2,10 +2,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'audio_player_manager.dart';
-import 'base_voice_service.dart';
+import 'base_voice_service.dart' as base_voice;
 import 'recording_manager.dart';
-import 'tts_manager.dart';
 import 'vad_manager.dart';
+import 'voice_service.dart';
 
 /// Coordinates automatic voice detection and recording
 ///
@@ -15,7 +15,7 @@ class AutoListeningCoordinator {
   // Core components
   final AudioPlayerManager _audioPlayerManager;
   final RecordingManager _recordingManager;
-  final TTSManager _ttsManager;
+  final VoiceService _voiceService;
   final VADManager _vadManager;
 
   // Stream controllers
@@ -51,11 +51,11 @@ class AutoListeningCoordinator {
   AutoListeningCoordinator({
     required AudioPlayerManager audioPlayerManager,
     required RecordingManager recordingManager,
-    required TTSManager ttsManager,
+    required VoiceService voiceService,
     required VADManager vadManager,
   })  : _audioPlayerManager = audioPlayerManager,
         _recordingManager = recordingManager,
-        _ttsManager = ttsManager,
+        _voiceService = voiceService,
         _vadManager = vadManager {
     _setupListeners();
   }
@@ -64,87 +64,119 @@ class AutoListeningCoordinator {
   void _setupListeners() {
     // Listen for audio playback state changes
     _audioPlayerManager.isPlayingStream.listen((isPlaying) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [AUDIO] isPlayingStream emitted: $isPlaying | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+      }
       if (_autoModeEnabled) {
         if (!isPlaying) {
-          // Maya finished speaking, start listening for user speech
           if (kDebugMode) {
             print(
-                '🤖 Auto mode: Audio playback ended, will start listening after delay');
+                '[AutoListeningCoordinator] [AUDIO] Playback ended, will check TTS state before listening. isAiSpeaking=${_voiceService.isAiSpeaking}');
           }
-
           // Only start listening if TTS is also not speaking
-          // This helps ensure we don't have race conditions
-          if (!_ttsManager.isCurrentlySpeaking) {
+          if (!_voiceService.isAiSpeaking) {
+            if (kDebugMode)
+              print(
+                  '[AutoListeningCoordinator] [AUDIO] TTS is not speaking, calling _startListeningAfterDelay()');
             _startListeningAfterDelay();
           } else if (kDebugMode) {
             print(
-                '🤖 Auto mode: Not starting listening yet because TTS is still marked as speaking');
+                '[AutoListeningCoordinator] [AUDIO] Not starting listening yet because TTS is still marked as speaking');
           }
         } else {
-          // Maya is speaking, make sure we're not listening/recording
           if (kDebugMode) {
-            print('🤖 Auto mode: Audio playing, stopping listening/recording');
+            print(
+                '[AutoListeningCoordinator] [AUDIO] Audio playing, stopping listening/recording');
           }
           _stopListeningAndRecording();
           _updateState(AutoListeningState.aiSpeaking);
         }
+      } else if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [AUDIO] Ignored isPlayingStream event because autoMode is disabled');
       }
     });
 
     // Listen for TTS state changes
-    _ttsManager.ttsStateStream.listen((isSpeaking) {
+    _voiceService.isTtsActuallySpeaking.listen((isSpeaking) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [TTS] isTtsActuallySpeaking emitted: $isSpeaking | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+      }
       if (_autoModeEnabled) {
         if (isSpeaking) {
           if (kDebugMode) {
             print(
-                '🤖 Auto mode: TTS is speaking, stopping listening/recording');
+                '[AutoListeningCoordinator] [TTS] TTS is speaking, forcing state to aiSpeaking and stopping listening/recording (Step 1: Prevent Self-Listening)');
           }
-          _stopListeningAndRecording();
+          // Force state to aiSpeaking every time TTS starts
           _updateState(AutoListeningState.aiSpeaking);
+          _stopListeningAndRecording();
         } else if (_currentState == AutoListeningState.aiSpeaking) {
           if (kDebugMode) {
             print(
-                '🤖 Auto mode: TTS stopped speaking, will start listening after delay');
+                '[AutoListeningCoordinator] [TTS] TTS stopped speaking, immediately starting listening (Step 2: Event-driven VAD)');
           }
-
-          // Force a short delay to ensure everything is settled
-          Future.delayed(const Duration(milliseconds: 300), () {
-            _startListeningAfterDelay();
-          });
+          _startListeningAfterDelay();
+        } else if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [TTS] TTS stopped speaking but currentState=$_currentState, not starting listening');
         }
+      } else if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [TTS] Ignored TTS state change because autoMode is disabled');
       }
     });
 
     // Listen for VAD speech start events
     _vadManager.onSpeechStart.listen((_) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [VAD] onSpeechStart emitted | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+      }
       if (_autoModeEnabled && _currentState == AutoListeningState.listening) {
         if (kDebugMode) {
-          print('🤖 Auto mode: VAD detected speech start');
+          print(
+              '[AutoListeningCoordinator] [VAD] VAD detected speech start, cancelling speech end timer and starting recording');
         }
         _cancelSpeechEndTimer();
-
-        // Start recording when speech is detected
         _startRecording();
+      } else if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [VAD] Ignored onSpeechStart event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
       }
     });
 
     // Listen for VAD speech end events
     _vadManager.onSpeechEnd.listen((_) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] onSpeechEnd event received | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+        print(StackTrace.current);
+      }
       if (_autoModeEnabled &&
           _currentState == AutoListeningState.userSpeaking) {
         if (kDebugMode) {
-          print('🤖 Auto mode: VAD detected speech end, starting end timer');
+          print(
+              '[AutoListeningCoordinator][DEBUG] Calling _startSpeechEndTimer() after onSpeechEnd');
         }
-        // Debounce the speech end event to avoid cutting off speech too early
         _startSpeechEndTimer();
+      } else if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] Ignored onSpeechEnd event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
       }
     });
 
     // Listen for recording state changes
     _recordingManager.recordingStateStream.listen((state) {
-      if (state == RecordingState.recording) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [RECORDING] recordingStateStream emitted: $state | currentState=$_currentState');
+      }
+      if (state == base_voice.RecordingState.recording) {
         _updateState(AutoListeningState.userSpeaking);
-      } else if (state == RecordingState.stopped &&
+      } else if (state == base_voice.RecordingState.stopped &&
           _currentState == AutoListeningState.userSpeaking) {
         _updateState(AutoListeningState.processing);
       }
@@ -153,40 +185,52 @@ class AutoListeningCoordinator {
     // Error handling
     _vadManager.onError.listen((error) {
       _errorController.add('VAD error: $error');
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [VAD] ERROR: $error');
+      }
     });
   }
 
   // Start VAD listening after a short delay
   void _startListeningAfterDelay() {
-    // Short delay to allow for audio playback to fully complete
     if (kDebugMode) {
-      print('🤖 Auto mode: Scheduling listening to start after delay');
+      print(
+          '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay called | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
     }
-
-    // Use a more robust approach to ensure listening starts
-    Future.delayed(const Duration(milliseconds: 1000), () {
+    // Short delay to allow for audio playback to fully complete
+    Future.delayed(const Duration(milliseconds: 0), () async {
       if (_autoModeEnabled) {
         if (kDebugMode) {
-          print('🤖 Auto mode: Delay completed, now starting listening');
-          print('🤖 Auto mode: Current state: $_currentState');
+          print(
+              '[AutoListeningCoordinator] [VAD] Delay completed, now starting listening (VAD should be active) | currentState=$_currentState');
         }
-
         // Force the state to idle first to ensure clean transition
         if (_currentState == AutoListeningState.aiSpeaking) {
           _updateState(AutoListeningState.idle);
         }
-
         // Start listening for VAD input
         _updateState(AutoListeningState.listeningForVoice);
-
-        _vadManager.startListening();
-
+        await _vadManager.startListening();
         if (kDebugMode) {
-          print('🤖 Auto mode: VAD listening has started');
+          print(
+              '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
+        }
+        // Start the actual recording pipeline as well
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [RECORDING] Calling voiceService.startRecording() after VAD start');
+        }
+        try {
+          await _voiceService.startRecording();
+        } catch (e) {
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator] [RECORDING] Error starting recording: $e');
+          }
         }
       } else if (kDebugMode) {
         print(
-            '🤖 Auto mode: Auto mode disabled during delay, not starting listening');
+            '[AutoListeningCoordinator] [VAD] Auto mode disabled during delay, not starting listening');
       }
     });
   }
@@ -237,28 +281,70 @@ class AutoListeningCoordinator {
 
   // Start timer to wait for speech to actually end
   void _startSpeechEndTimer() {
-    _cancelSpeechEndTimer();
+    _cancelSpeechEndTimer(reason: 'Starting new timer');
 
+    if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting 2s timer. Current state: $_currentState');
+      print(StackTrace.current);
+    }
     // Wait for silence to be detected for X seconds before stopping recording
     _speechEndDebounceTimer = Timer(const Duration(seconds: 2), () {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired. Current state: $_currentState');
+        print(StackTrace.current);
+      }
+      // Only stop recording if still in userSpeaking state
       if (_currentState == AutoListeningState.userSpeaking) {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording()');
+        }
         _stopRecording();
+      } else {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired but state is $_currentState, not stopping recording');
+        }
       }
     });
   }
 
   // Cancel the speech end timer
-  void _cancelSpeechEndTimer() {
-    _speechEndDebounceTimer?.cancel();
-    _speechEndDebounceTimer = null;
+  void _cancelSpeechEndTimer({String reason = 'unknown'}) {
+    if (_speechEndDebounceTimer != null && _speechEndDebounceTimer!.isActive) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] _cancelSpeechEndTimer: Cancelling timer. Reason: $reason | Current state: $_currentState');
+        print(StackTrace.current);
+      }
+      _speechEndDebounceTimer?.cancel();
+    }
   }
 
   // Stop recording and process the audio
   Future<void> _stopRecording() async {
+    if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator][DEBUG] _stopRecording called. Current state: [36m$_currentState[0m');
+      print(StackTrace.current);
+    }
     if (_currentState == AutoListeningState.userSpeaking) {
       try {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
+        }
         final audioPath = await _recordingManager.stopRecording();
 
+        // Emit RecordingState.stopped to VoiceService's stream controller
+        _voiceService.emitRecordingState(RecordingState.stopped);
+
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator][DEBUG] _stopRecording: stopRecording() returned path: $audioPath');
+        }
         if (audioPath.isNotEmpty) {
           // Notify listeners that recording has completed
           if (onRecordingCompleteCallback != null) {
@@ -269,11 +355,21 @@ class AutoListeningCoordinator {
             print('🎤 AutoListening: Stopped recording, file at: $audioPath');
           }
         }
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _updateState(processing)');
+        }
+        _updateState(AutoListeningState.processing);
       } catch (e) {
         _errorController.add('Failed to stop recording: $e');
         if (kDebugMode) {
           print('❌ AutoListening stop recording error: $e');
         }
+      }
+    } else {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] _stopRecording called but not in userSpeaking state, skipping.');
       }
     }
   }
@@ -286,19 +382,27 @@ class AutoListeningCoordinator {
 
       // Stop VAD
       await _vadManager.stopListening();
+      if (kDebugMode) {
+        print('🎤 [Step 1] AutoListening: VAD stopped (mic muted during TTS)');
+      }
 
       // Stop recording if currently recording
       if (_currentState == AutoListeningState.userSpeaking) {
         await _stopRecording();
+        if (kDebugMode) {
+          print(
+              '🎤 [Step 1] AutoListening: Recording stopped (mic muted during TTS)');
+        }
       }
 
       if (kDebugMode) {
-        print('🎤 AutoListening: Stopped listening and recording');
+        print(
+            '🎤 [Step 1] AutoListening: Stopped listening and recording (mic fully muted during TTS)');
       }
     } catch (e) {
       _errorController.add('Error stopping listening/recording: $e');
       if (kDebugMode) {
-        print('❌ AutoListening stop error: $e');
+        print('❌ [Step 1] AutoListening stop error: $e');
       }
     }
   }
@@ -308,17 +412,25 @@ class AutoListeningCoordinator {
     if (!_autoModeEnabled) {
       _autoModeEnabled = true;
       _autoModeEnabledController.add(true);
-
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [MODE] enableAutoMode called, autoModeEnabled set to true');
+      }
       // If AI is not currently speaking, start listening
       if (!_audioPlayerManager.isPlaying) {
+        if (kDebugMode)
+          print(
+              '[AutoListeningCoordinator] [MODE] Not playing audio, calling _startListening()');
         await _startListening();
       } else {
+        if (kDebugMode)
+          print(
+              '[AutoListeningCoordinator] [MODE] Audio is playing, setting state to aiSpeaking');
         _updateState(AutoListeningState.aiSpeaking);
       }
-
-      if (kDebugMode) {
-        print('🔄 AutoListening: Automatic mode enabled');
-      }
+    } else if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator] [MODE] enableAutoMode called, but autoModeEnabled already true');
     }
   }
 
@@ -327,25 +439,28 @@ class AutoListeningCoordinator {
     if (_autoModeEnabled) {
       _autoModeEnabled = false;
       _autoModeEnabledController.add(false);
-
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [MODE] disableAutoMode called, autoModeEnabled set to false');
+      }
       // Stop listening and recording
       await _stopListeningAndRecording();
       _updateState(AutoListeningState.idle);
-
-      if (kDebugMode) {
-        print('🔄 AutoListening: Automatic mode disabled');
-      }
+    } else if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator] [MODE] disableAutoMode called, but autoModeEnabled already false');
     }
   }
 
   // Update the current state and notify listeners
-  void _updateState(AutoListeningState state) {
-    _currentState = state;
-    _stateController.add(state);
-
+  void _updateState(AutoListeningState newState) {
     if (kDebugMode) {
-      print('🔄 AutoListening: State changed to $state');
+      print(
+          '[AutoListeningCoordinator][DEBUG] _updateState: State changing from $_currentState to $newState');
+      print(StackTrace.current);
     }
+    _currentState = newState;
+    _stateController.add(_currentState);
   }
 
   // Clean up resources
