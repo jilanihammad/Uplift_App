@@ -145,7 +145,8 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
 }
 
 Future<void> main() async {
-  debugPrint('[main.dart] App starting...');
+  WidgetsFlutterBinding.ensureInitialized();
+  if (kDebugMode) print('[Main] App initialization starting...');
   // Set zone error fatal to false to avoid Flutter zone binding errors
   BindingBase.debugZoneErrorsAreFatal = false;
 
@@ -287,6 +288,7 @@ Future<void> main() async {
     logger.error('[Main] Uncaught error in runZonedGuarded');
     _handleGlobalError(error, stack);
   });
+  if (kDebugMode) print('[Main] App initialization complete. Running app...');
 }
 
 // Initialize the logging service

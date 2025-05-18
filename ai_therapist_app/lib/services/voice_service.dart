@@ -25,6 +25,10 @@ import '../config/app_config.dart'; // Import AppConfig
 import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'auto_listening_coordinator.dart';
+import 'vad_manager.dart';
+import 'audio_player_manager.dart';
+import 'recording_manager.dart';
 
 // Recording states
 enum RecordingState { ready, recording, stopped, paused, error }
@@ -92,6 +96,37 @@ class VoiceService {
 
   bool isAiSpeaking = false;
 
+  // Add coordinator and VAD manager
+  late final VADManager _vadManager;
+  late final AutoListeningCoordinator _autoListeningCoordinator;
+  late final AudioPlayerManager _audioPlayerManager;
+  late final RecordingManager _recordingManager;
+
+  // Expose coordinator's streams
+  Stream<AutoListeningState> get autoListeningStateStream =>
+      _autoListeningCoordinator.stateStream;
+  Stream<bool> get autoListeningModeEnabledStream =>
+      _autoListeningCoordinator.autoModeEnabledStream;
+  AutoListeningCoordinator get autoListeningCoordinator =>
+      _autoListeningCoordinator;
+
+  // Passthrough methods for auto mode control
+  Future<void> enableAutoMode() async {
+    if (kDebugMode) print('[VoiceService] enableAutoMode() called');
+    await _autoListeningCoordinator.enableAutoMode();
+    if (kDebugMode)
+      print(
+          '[VoiceService] enableAutoMode() completed. autoModeEnabled=${_autoListeningCoordinator.autoModeEnabled}');
+  }
+
+  Future<void> disableAutoMode() async {
+    if (kDebugMode) print('[VoiceService] disableAutoMode() called');
+    await _autoListeningCoordinator.disableAutoMode();
+    if (kDebugMode)
+      print(
+          '[VoiceService] disableAutoMode() completed. autoModeEnabled=${_autoListeningCoordinator.autoModeEnabled}');
+  }
+
   // Factory constructor to enforce singleton pattern
   factory VoiceService({required ApiClient apiClient}) {
     // Return existing instance if already created
@@ -112,8 +147,19 @@ class VoiceService {
       : _apiClient = apiClient {
     _audioRecorder = AudioRecorder();
     _ensureStreamControllerIsActive();
+    _audioPlayerManager = AudioPlayerManager();
+    _recordingManager = RecordingManager();
+    _vadManager = VADManager();
+    _autoListeningCoordinator = AutoListeningCoordinator(
+      audioPlayerManager: _audioPlayerManager,
+      recordingManager: _recordingManager,
+      voiceService: this,
+      vadManager: _vadManager,
+    );
     if (kDebugMode) {
       print('VoiceService initialized with constructor injection');
+      print(
+          '[VoiceService] AutoListeningCoordinator initialized. Forcing auto mode enabled.');
     }
   }
 
@@ -609,7 +655,10 @@ class VoiceService {
     void Function(String error)? onError,
   }) async {
     isAiSpeaking = true;
-    if (kDebugMode) print('isAiSpeaking set to true (streamAndPlayTTS)');
+    if (kDebugMode)
+      print('[VoiceService] [TTS] isAiSpeaking set to true (streamAndPlayTTS)');
+    _ttsSpeakingStateController.add(true);
+    if (kDebugMode) print('[VoiceService] [TTS] TTS state stream set to true');
     String? filePath;
     try {
       final wsUrl =
@@ -651,6 +700,9 @@ class VoiceService {
               await player.setFilePath(filePath!);
               await player.play();
               onDone?.call();
+              if (kDebugMode)
+                print(
+                    '[VoiceService] [TTS] TTS stream done, about to play audio');
               // Clean up temp file after playback
               player.playerStateStream.listen((state) async {
                 if (state.processingState == ProcessingState.completed) {
@@ -668,23 +720,30 @@ class VoiceService {
             await subscription?.cancel();
             await channel.sink.close();
           } else if (data['type'] == 'error') {
+            if (kDebugMode)
+              print(
+                  '[VoiceService] [TTS] TTS stream error: ${data['detail'] ?? 'Unknown error'}');
             onError?.call(data['detail'] ?? 'Unknown error');
             completer.complete(null);
             await subscription?.cancel();
             await channel.sink.close();
           }
         } catch (e) {
+          if (kDebugMode)
+            print('[VoiceService] [TTS] Failed to process TTS stream: $e');
           onError?.call('Failed to process TTS stream: $e');
           completer.complete(null);
           await subscription?.cancel();
           await channel.sink.close();
         }
       }, onError: (err) async {
+        if (kDebugMode) print('[VoiceService] [TTS] WebSocket error: $err');
         onError?.call('WebSocket error: $err');
         completer.complete(null);
         await subscription?.cancel();
         await channel.sink.close();
       }, onDone: () async {
+        if (kDebugMode) print('[VoiceService] [TTS] WebSocket stream closed');
         await subscription?.cancel();
         await channel.sink.close();
       });
@@ -694,7 +753,12 @@ class VoiceService {
       return await completer.future;
     } finally {
       isAiSpeaking = false;
-      if (kDebugMode) print('isAiSpeaking set to false (streamAndPlayTTS)');
+      if (kDebugMode)
+        print(
+            '[VoiceService] [TTS] isAiSpeaking set to false (streamAndPlayTTS)');
+      _ttsSpeakingStateController.add(false);
+      if (kDebugMode)
+        print('[VoiceService] [TTS] TTS state stream set to false');
     }
   }
 
@@ -702,7 +766,12 @@ class VoiceService {
   Future<String?> generateAudio(String text,
       {String voice = 'sage', String responseFormat = 'opus'}) async {
     isAiSpeaking = true;
-    if (kDebugMode) print('isAiSpeaking set to true');
+    if (kDebugMode)
+      print('[VoiceService] [TTS] isAiSpeaking set to true (generateAudio)');
+    _ttsSpeakingStateController.add(true);
+    if (kDebugMode)
+      print(
+          '[VoiceService] [TTS] TTS state stream set to true (generateAudio)');
     try {
       bool triedMp3 = responseFormat == 'mp3';
       String? filePath;
@@ -711,7 +780,9 @@ class VoiceService {
         voice: voice,
         responseFormat: responseFormat,
         onError: (err) async {
-          if (kDebugMode) print('TTS streaming error ($responseFormat): $err');
+          if (kDebugMode)
+            print(
+                '[VoiceService] [TTS] TTS streaming error ($responseFormat): $err');
           if (!triedMp3 && responseFormat == 'opus') {
             if (kDebugMode)
               print('Retrying TTS streaming with mp3 fallback...');
@@ -724,7 +795,12 @@ class VoiceService {
       return filePath;
     } finally {
       isAiSpeaking = false;
-      if (kDebugMode) print('isAiSpeaking set to false');
+      if (kDebugMode)
+        print('[VoiceService] [TTS] isAiSpeaking set to false (generateAudio)');
+      _ttsSpeakingStateController.add(false);
+      if (kDebugMode)
+        print(
+            '[VoiceService] [TTS] TTS state stream set to false (generateAudio)');
     }
   }
 
@@ -1125,5 +1201,11 @@ class VoiceService {
         }
       }
     }
+  }
+
+  // Public method to emit a recording state
+  void emitRecordingState(RecordingState state) {
+    _ensureStreamControllerIsActive();
+    _recordingStateController?.add(state);
   }
 }

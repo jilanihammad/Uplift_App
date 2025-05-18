@@ -212,9 +212,9 @@ logger.info(f"Using static files path: {static_files_path}")
 # Serve static files (for audio)
 try:
     app.mount("/audio", StaticFiles(directory=static_files_path), name="audio")
-    logger.info("Successfully mounted static files directory")
+    logger.info(f"[API] Successfully mounted static files directory: {static_files_path}")
 except Exception as e:
-    logger.error(f"Error mounting static files: {str(e)}")
+    logger.error(f"[API] Error mounting static files: {str(e)}")
     logger.error(traceback.format_exc())
 
 @app.get("/")
@@ -352,48 +352,49 @@ async def end_session(request: EndSessionRequest):
 
 @app.post("/voice/synthesize")
 async def voice_synthesize(request: VoiceRequest):
-    """Handle text-to-speech requests using OpenAI voice model."""
     try:
-        logger.info("Received TTS request: %s", request.text[:30] + "..." if len(request.text) > 30 else request.text)
-        
+        logger.info(f"[API] /voice/synthesize called. Text: '{request.text[:100]}' Voice: {request.voice} Model: {request.model}")
         if not request.text:
+            logger.warning("[API] No text provided for TTS")
             raise HTTPException(status_code=400, detail="No text provided for TTS")
-        
-        # Import voice_service here to avoid circular imports
         try:
             from app.services.voice_service import voice_service
-            logger.info("Voice service imported successfully")
+            logger.info("[API] Voice service imported successfully")
         except Exception as import_error:
-            logger.error(f"Failed to import voice_service: {str(import_error)}")
+            logger.error(f"[API] Failed to import voice_service: {str(import_error)}")
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=f"Voice service import error: {str(import_error)}")
-        
-        # Set the requested voice if provided
         if request.voice:
             try:
+                logger.info(f"[API] Setting voice to: {request.voice}")
                 voice_service.set_voice(request.voice)
             except Exception as voice_error:
-                logger.error(f"Error setting voice: {str(voice_error)}")
+                logger.error(f"[API] Error setting voice: {str(voice_error)}")
+                logger.error(traceback.format_exc())
                 raise HTTPException(status_code=500, detail=f"Error setting voice: {str(voice_error)}")
-        
-        # Generate speech using the OpenAI API via voice_service
         try:
             audio_url = await voice_service.generate_speech(request.text)
+            logger.info(f"[API] generate_speech returned audio_url: {audio_url}")
             if not audio_url:
+                logger.error("[API] Failed to generate audio - empty URL returned")
                 raise HTTPException(status_code=500, detail="Failed to generate audio - empty URL returned")
-                
-            logger.info(f"Audio generated successfully at: {audio_url}")
+            # Check if file exists on disk
+            file_path = os.path.join(voice_service.audio_dir, audio_url.split('/')[-1])
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                logger.info(f"[API] Audio file exists at: {file_path} ({file_size} bytes)")
+            else:
+                logger.error(f"[API] Audio file missing at: {file_path}")
+            logger.info(f"[API] Returning audio_url to client: {audio_url}")
             return {"url": audio_url}
-            
         except Exception as speech_error:
-            logger.error(f"Error generating speech: {str(speech_error)}")
+            logger.error(f"[API] Error generating speech: {str(speech_error)}")
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=f"Error generating speech: {str(speech_error)}")
-    
     except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        raise
     except Exception as e:
-        logger.error(f"Error in voice_synthesize endpoint: {str(e)}")
+        logger.error(f"[API] Error in voice_synthesize endpoint: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
 

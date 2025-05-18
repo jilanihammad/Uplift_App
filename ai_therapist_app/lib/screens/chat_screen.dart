@@ -27,6 +27,7 @@ import '../services/navigation_service.dart';
 import '../services/audio_generator.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
+import '../services/auto_listening_coordinator.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -81,6 +82,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // Declare a variable to track if session is being ended
   bool _isEndingSession = false;
 
+  // Add a variable to track VAD state
+  bool _isVADActive = false;
+  StreamSubscription<bool>? _vadSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -107,6 +112,32 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _voiceService = serviceLocator<VoiceService>();
     _initializeVoiceService();
 
+    // Listen to VAD/auto-listening state
+    _vadSubscription =
+        _voiceService.autoListeningModeEnabledStream.listen((enabled) {
+      setState(() {
+        _isVADActive = enabled;
+      });
+      debugPrint(
+          '[ChatScreen][DEBUG] VAD state changed: _isVADActive=$_isVADActive');
+    });
+
+    // Listen to recording state for animation
+    _voiceService.recordingState.listen((state) {
+      setState(() {
+        _isRecording = (state == RecordingState.recording);
+      });
+    });
+
+    // Wire up VAD/auto-listening completion to trigger Maya's response
+    _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
+        (audioPath) async {
+      if (_isRecording) {
+        // Simulate pressing the stop button: process the voice input
+        await _startVoiceInput();
+      }
+    };
+
     // Initialize session after the build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
       print('[ChatScreen] PostFrameCallback: calling _initSession');
@@ -131,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     debugPrint('[ChatScreen] dispose called');
+    _vadSubscription?.cancel();
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.dispose();
@@ -679,21 +711,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   children: [
                     ScaleTransition(
                       scale: _micAnimation,
-                      child: IconButton(
-                        icon: _isRecording
-                            ? Lottie.asset(
-                                'assets/animations/Microphone Animation.json',
-                                width: 24,
-                                height: 24,
-                                fit: BoxFit.contain,
-                              )
-                            : Icon(Icons.mic),
-                        color: _isRecording ? Colors.red : null,
-                        onPressed: () {
-                          print('[ChatScreen] Mic button pressed');
-                          _startVoiceInput();
-                        },
-                      ),
+                      child: _buildMicButton(),
                     ),
                     Expanded(
                       child: TextField(
@@ -1013,22 +1031,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         welcomeMessage =
             "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
     }
-    context.read<ChatBloc>().add(StartChat(
-          initialMessage: welcomeMessage,
-          history: [],
-          sessionId: _currentSessionId,
-        ));
+    // Step 1: Only add the welcome message as an assistant message and play it via TTS
+    // Do NOT send it to the LLM or dispatch a user message event
+    final chatBloc = context.read<ChatBloc>();
+    final aiWelcomeMsg = TherapyMessage(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      content: welcomeMessage,
+      isUser: false,
+      timestamp: DateTime.now(),
+      audioUrl: null,
+    );
+    // Add the assistant message to the chat state
+    if (chatBloc.state is ChatLoaded) {
+      final currentMessages =
+          List<TherapyMessage>.from((chatBloc.state as ChatLoaded).messages);
+      currentMessages.add(aiWelcomeMsg);
+      chatBloc.emit(ChatLoaded(currentMessages));
+    } else {
+      chatBloc.emit(ChatLoaded([aiWelcomeMsg]));
+    }
     // Play welcome message as audio in voice mode
     if (_isVoiceMode) {
-      // Use the backend to generate TTS audio for the welcome message
-      _therapyService
-          .processUserMessageWithStreamingAudio(welcomeMessage)
-          .then((response) {
-        final audioUrl = response?['audioUrl'];
-        if (audioUrl != null && audioUrl.isNotEmpty) {
-          _playAudio(audioUrl);
-        }
-      });
+      _voiceService.streamAndPlayTTS(
+        text: welcomeMessage,
+        onDone: _startListeningAfterTTS,
+      );
     }
   }
 
@@ -1101,6 +1128,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           curve: Curves.easeOut,
         );
       }
+    });
+  }
+
+  // Helper: After TTS completes, re-enable VAD and start recording
+  Future<void> _startListeningAfterTTS() async {
+    await _voiceService.autoListeningCoordinator.enableAutoMode();
+    await _voiceService.startRecording();
+    setState(() {
+      _isRecording = true;
     });
   }
 
@@ -1196,12 +1232,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               return;
             }
             if (kDebugMode)
-              print('🟩 Received AI reply (voice mode): ${response['text']}');
-            // Play backend audio if available, otherwise do NOT use fallback TTS
+              print(
+                  '🟩 Received AI reply (voice mode): [32m${response['text']}[0m');
+            // Play backend audio if available, otherwise use fallback TTS
             if (response['audioUrl'] != null &&
                 response['audioUrl'].toString().isNotEmpty) {
               await _voiceService.playAudio(response['audioUrl']);
+              await _startListeningAfterTTS(); // <-- restart VAD/recording after audio playback
               debugPrint('🔊 Played backend audio for AI reply (voice mode)');
+            } else if (response['text'] != null &&
+                response['text'].toString().isNotEmpty) {
+              // Fallback: Use TTS to speak the text if no audioUrl is provided
+              await _voiceService.streamAndPlayTTS(
+                text: response['text'],
+                onDone:
+                    _startListeningAfterTTS, // <-- restart VAD/recording after TTS fallback
+              );
+              debugPrint('🔊 Played fallback TTS for AI reply (voice mode)');
             }
             // No longer add AI reply to chat here; ChatBloc handles it after streaming
             debugPrint(
@@ -1403,7 +1450,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // Stop and dispose audio/TTS resources robustly
     if (kDebugMode)
       print('🛑 Ending session: stopping and disposing VoiceService');
+    await _voiceService.autoListeningCoordinator.disableAutoMode();
+    await _voiceService.stopRecording();
     await _voiceService.stopAudio();
+    _stopPulseMicAnimation();
+    setState(() {
+      _isVADActive = false;
+      _isRecording = false;
+    });
     _voiceService.dispose();
 
     // Unregister and re-register VoiceService and AudioGenerator for a fresh instance
@@ -1634,6 +1688,47 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _navigateAway() {
     debugPrint('[ChatScreen] Navigating away from chat screen');
     Navigator.of(context).pop();
+  }
+
+  Widget _buildMicButton() {
+    // Determine mic state
+    if (!_isVADActive) {
+      // VAD is off: show idle/off mic
+      return IconButton(
+        icon: Icon(Icons.mic_off, color: Colors.grey),
+        onPressed: null,
+      );
+    } else if (_isRecording) {
+      // Recording: show active/recording mic
+      return ScaleTransition(
+        scale: _micAnimation,
+        child: IconButton(
+          icon: Lottie.asset(
+            'assets/animations/Microphone Animation.json',
+            width: 24,
+            height: 24,
+            fit: BoxFit.contain,
+          ),
+          color: Colors.red,
+          onPressed: () {
+            print('[ChatScreen] Mic button pressed (recording)');
+            _startVoiceInput();
+          },
+        ),
+      );
+    } else {
+      // VAD is on, not recording: show listening/pulse mic
+      return ScaleTransition(
+        scale: _micAnimation,
+        child: IconButton(
+          icon: Icon(Icons.mic, color: Colors.blue),
+          onPressed: () {
+            print('[ChatScreen] Mic button pressed (listening)');
+            _startVoiceInput();
+          },
+        ),
+      );
+    }
   }
 }
 

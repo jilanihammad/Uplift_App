@@ -31,7 +31,7 @@ class VoiceService:
                 
             # Ensure audio directory exists
             os.makedirs(self.audio_dir, exist_ok=True)
-            logger.info(f"Audio directory: {self.audio_dir}")
+            logger.info(f"[TTS] Audio directory: {self.audio_dir}")
             
             # Create a fallback audio file if it doesn't exist
             self._create_fallback_audio()
@@ -41,6 +41,7 @@ class VoiceService:
             logger.info(f"Voice: {self.voice}")
             logger.info(f"API Key: {'Set' if self.api_key else 'Not set'}")
             logger.info(f"Service available: {'Yes' if self.available else 'No'}")
+            logger.info(f"[TTS] Environment: {'Cloud Run' if os.environ.get('GOOGLE_CLOUD') == '1' else 'Local'}")
         except Exception as e:
             logger.error(f"Error initializing VoiceService: {str(e)}")
             logger.error(traceback.format_exc())
@@ -65,26 +66,28 @@ class VoiceService:
     def _create_fallback_audio(self):
         """Create a valid fallback MP3 file"""
         error_file = os.path.join(self.audio_dir, "error.mp3")
-        
+        logger.info(f"[TTS] Checking for fallback audio at: {error_file}")
         if os.path.exists(error_file) and os.path.getsize(error_file) > 1000:
-            logger.info(f"Fallback audio file already exists: {error_file}")
+            logger.info(f"[TTS] Fallback audio file already exists: {error_file}")
             return
             
         try:
             # Create a simple text file as fallback in Cloud Run
             with open(error_file, "wb") as f:
                 f.write(b"This is a fallback audio file")
-            logger.info(f"Created simple fallback file: {error_file}")
+            logger.info(f"[TTS] Created simple fallback file: {error_file}")
         except Exception as e:
-            logger.error(f"Error creating fallback audio file: {str(e)}")
+            logger.error(f"[TTS] Error creating fallback audio file: {str(e)}")
             logger.error(traceback.format_exc())
     
     async def generate_speech(self, text: str, format_params: dict = None) -> Optional[str]:
         """Generate speech from text and return the URL to the generated audio file"""
+        logger.info(f"[TTS] generate_speech called. Text: '{text[:100]}'... Params: {format_params}")
         if not text:
+            logger.error("[TTS] No text provided for speech generation")
             raise ValueError("No text provided for speech generation")
-            
         if not self.available:
+            logger.error("[TTS] Voice service unavailable - API key not set")
             raise ValueError("Voice service unavailable - API key not set")
             
         # Use OpenAI API to generate speech
@@ -96,6 +99,7 @@ class VoiceService:
             # Generate a unique filename for the audio file
             filename = f"{uuid.uuid4()}{extension}"
             file_path = os.path.join(self.audio_dir, filename)
+            logger.info(f"[TTS] Will save audio to: {file_path}")
             
             # Ensure the directory exists
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -104,13 +108,20 @@ class VoiceService:
             from app.services.openai_service import openai_service
             tts_success = await openai_service.text_to_speech(text, file_path, format_params)
             
-            logger.info(f"TTS result: {'Success' if tts_success else 'Failed'}")
+            logger.info(f"[TTS] TTS result: {'Success' if tts_success else 'Failed'} for file: {file_path}")
+            
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                logger.info(f"[TTS] Audio file saved: {file_path} ({file_size} bytes)")
+            else:
+                logger.error(f"[TTS] Audio file not found after supposed save: {file_path}")
             
             # Return the URL to the audio file
+            logger.info(f"[TTS] Returning audio URL to client: /audio/{filename}")
             return f"/audio/{filename}"
             
         except Exception as e:
-            logger.error(f"Error generating speech: {str(e)}")
+            logger.error(f"[TTS] Error generating speech: {str(e)}")
             logger.error(traceback.format_exc())
             raise Exception(f"Speech generation failed: {str(e)}")
     
@@ -122,10 +133,11 @@ class VoiceService:
             voice_id: Voice ID for OpenAI API (alloy, echo, fable, onyx, nova, shimmer, sage)
         """
         try:
+            logger.info(f"[TTS] set_voice called with: {voice_id}")
             self.voice = voice_id.lower()  # OpenAI voices are lowercase
-            logger.info(f"Voice set to: {self.voice}")
+            logger.info(f"[TTS] Voice set to: {self.voice}")
         except Exception as e:
-            logger.error(f"Error setting voice: {str(e)}")
+            logger.error(f"[TTS] Error setting voice: {str(e)}")
             logger.error(traceback.format_exc())
 
     async def stream_speech(self, text: str, params: dict = None):
@@ -133,9 +145,12 @@ class VoiceService:
         Stream speech audio chunks as they are generated by the OpenAI TTS engine.
         Yields: bytes (audio chunk)
         """
+        logger.info(f"[TTS] stream_speech called. Text: '{text[:100]}'... Params: {params}")
         if not text:
+            logger.error("[TTS] No text provided for speech streaming")
             raise ValueError("No text provided for speech streaming")
         if not self.available:
+            logger.error("[TTS] Voice service unavailable - API key not set")
             raise ValueError("Voice service unavailable - API key not set")
 
         # Prepare request parameters
@@ -153,20 +168,23 @@ class VoiceService:
             "response_format": response_format,
             "stream": True
         }
+        logger.info(f"[TTS] Streaming request payload: {payload}")
 
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=payload) as resp:
+                    logger.info(f"[TTS] Streaming response status: {resp.status}")
                     if resp.status != 200:
                         error_text = await resp.text()
-                        logger.error(f"TTS streaming failed: {resp.status} {error_text}")
+                        logger.error(f"[TTS] Streaming failed: {resp.status} {error_text}")
                         raise Exception(f"TTS streaming failed: {resp.status} {error_text}")
 
                     async for chunk in resp.content.iter_chunked(4096):
                         if chunk:
+                            logger.info(f"[TTS] Streaming audio chunk of size: {len(chunk)} bytes")
                             yield chunk
         except Exception as e:
-            logger.error(f"Error in stream_speech: {str(e)}")
+            logger.error(f"[TTS] Error in stream_speech: {str(e)}")
             logger.error(traceback.format_exc())
             raise
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import '../services/voice_service.dart';
 import '../services/auto_listening_coordinator.dart';
-import '../services/new_voice_service.dart';
 
 /// Widget for toggling between automatic and manual recording modes
 class AutoListeningToggle extends StatefulWidget {
@@ -35,6 +35,9 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
     widget.voiceService.autoListeningStateStream.listen((state) {
       setState(() {
         _currentState = state;
+        if (kDebugMode) {
+          print('[AutoListeningToggle] State changed: $_currentState');
+        }
       });
     });
 
@@ -42,7 +45,7 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
     Future.microtask(() async {
       await widget.voiceService.enableAutoMode();
       setState(() {
-        _isAutoModeEnabled = widget.voiceService.isAutoModeEnabled;
+        _isAutoModeEnabled = true; // Always true in auto mode for now
       });
 
       if (kDebugMode) {
@@ -103,8 +106,19 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
 
   Widget _buildStateIndicator() {
     if (!_isAutoModeEnabled) {
+      if (kDebugMode)
+        print(
+            '[AutoListeningToggle] State indicator hidden: auto mode disabled');
       return const SizedBox.shrink();
     }
+
+    // Show indicator for both listeningForVoice and listening
+    final showListening =
+        _currentState == AutoListeningState.listeningForVoice ||
+            _currentState == AutoListeningState.listening;
+    if (kDebugMode)
+      print(
+          '[AutoListeningToggle] State indicator: $_currentState (showListening=$showListening)');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

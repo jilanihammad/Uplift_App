@@ -98,11 +98,15 @@ class VADManager {
 
   // Start listening for voice activity
   Future<bool> startListening() async {
+    if (kDebugMode)
+      print(
+          '[VADManager] startListening() called. _isInitialized=$_isInitialized, _isListening=$_isListening');
     if (!_isInitialized) {
       await initialize();
     }
 
     if (_isListening) {
+      if (kDebugMode) print('[VADManager] Already listening, returning true');
       if (kDebugMode) {
         print('🎙️ VAD is already listening');
       }
@@ -110,11 +114,14 @@ class VADManager {
     }
 
     try {
+      if (kDebugMode)
+        print('[VADManager] Requesting temp dir for monitor file');
       // Create a temporary file path for monitoring
       final Directory tempDir = await getTemporaryDirectory();
       final String monitorFilePath =
           '${tempDir.path}/vad_monitor_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
+      if (kDebugMode) print('[VADManager] Starting recorder for VAD');
       // Start recording with monitoring mode
       await _recorder.start(
         RecordConfig(
@@ -126,6 +133,8 @@ class VADManager {
         path: monitorFilePath, // This file will be overwritten each time
       );
 
+      if (kDebugMode)
+        print('[VADManager] Recorder started, starting amplitude polling');
       // Start polling amplitude
       _startAmplitudePolling();
 
@@ -136,12 +145,14 @@ class VADManager {
 
       if (kDebugMode) {
         print('🎙️ VAD: Started listening for voice activity');
+        print('[VADManager] VAD is now listening for voice activity');
       }
       return true;
     } catch (e) {
       _errorController.add('Error starting VAD: $e');
       if (kDebugMode) {
         print('❌ VAD start error: $e');
+        print('[VADManager] ERROR in startListening: $e');
       }
       return false;
     }
@@ -265,6 +276,11 @@ class VADManager {
   // Stop speech detection
   void _stopSpeechDetection() {
     if (_isSpeechDetected) {
+      if (kDebugMode) {
+        print(
+            '[VADManager][DEBUG] _stopSpeechDetection: Emitting onSpeechEnd. _isSpeechDetected=$_isSpeechDetected');
+        print(StackTrace.current);
+      }
       _silenceTimer?.cancel();
       _silenceTimer = null;
       _isSpeechDetected = false;
