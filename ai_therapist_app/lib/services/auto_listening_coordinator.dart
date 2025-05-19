@@ -104,28 +104,40 @@ class AutoListeningCoordinator {
         print(
             '[AutoListeningCoordinator] [TTS] isTtsActuallySpeaking emitted: $isSpeaking | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
-      if (_autoModeEnabled) {
-        if (isSpeaking) {
+      if (!_autoModeEnabled) {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [TTS] Ignored TTS state change because autoMode is disabled');
+        }
+        return;
+      }
+
+      if (isSpeaking) {
+        // TTS started speaking
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [TTS] TTS is speaking, forcing state to aiSpeaking and stopping listening/recording (Step 1: Prevent Self-Listening)');
+        }
+        // Force state to aiSpeaking every time TTS starts
+        _updateState(AutoListeningState.aiSpeaking);
+        _stopListeningAndRecording();
+      } else {
+        // TTS stopped speaking
+        if (_currentState == AutoListeningState.aiSpeaking ||
+            _currentState == AutoListeningState.idle ||
+            _currentState == AutoListeningState.listeningForVoice) {
           if (kDebugMode) {
             print(
-                '[AutoListeningCoordinator] [TTS] TTS is speaking, forcing state to aiSpeaking and stopping listening/recording (Step 1: Prevent Self-Listening)');
-          }
-          // Force state to aiSpeaking every time TTS starts
-          _updateState(AutoListeningState.aiSpeaking);
-          _stopListeningAndRecording();
-        } else if (_currentState == AutoListeningState.aiSpeaking) {
-          if (kDebugMode) {
-            print(
-                '[AutoListeningCoordinator] [TTS] TTS stopped speaking, immediately starting listening (Step 2: Event-driven VAD)');
+                '[AutoListeningCoordinator] [TTS] TTS stopped speaking. Current state $_currentState is suitable for restarting listening. Calling _startListeningAfterDelay().');
           }
           _startListeningAfterDelay();
-        } else if (kDebugMode) {
-          print(
-              '[AutoListeningCoordinator] [TTS] TTS stopped speaking but currentState=$_currentState, not starting listening');
+        } else {
+          // This case would include userSpeaking, processing
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator] [TTS] TTS stopped speaking, but current state is $_currentState. Not automatically restarting listening via this path.');
+          }
         }
-      } else if (kDebugMode) {
-        print(
-            '[AutoListeningCoordinator] [TTS] Ignored TTS state change because autoMode is disabled');
       }
     });
 
@@ -337,9 +349,6 @@ class AutoListeningCoordinator {
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
         }
         final audioPath = await _recordingManager.stopRecording();
-
-        // Emit RecordingState.stopped to VoiceService's stream controller
-        _voiceService.emitRecordingState(RecordingState.stopped);
 
         if (kDebugMode) {
           print(

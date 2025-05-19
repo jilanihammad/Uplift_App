@@ -15,7 +15,7 @@ class VADManager {
   static VADManager? _instance;
 
   // Audio recorder for capturing audio levels
-  final AudioRecorder _recorder = AudioRecorder();
+  AudioRecorder _recorder = AudioRecorder();
 
   // Timer for polling amplitude
   Timer? _amplitudeTimer;
@@ -114,6 +114,9 @@ class VADManager {
     }
 
     try {
+      _recorder = AudioRecorder();
+      if (kDebugMode) print('[VADManager] New AudioRecorder instance created.');
+
       if (kDebugMode)
         print('[VADManager] Requesting temp dir for monitor file');
       // Create a temporary file path for monitoring
@@ -304,30 +307,46 @@ class VADManager {
 
   // Stop listening for voice activity
   Future<void> stopListening() async {
-    if (!_isListening) return;
+    if (kDebugMode) print('[VADManager] stopListening() called.');
+    if (!_isListening) {
+      if (kDebugMode) print('[VADManager] Not listening, nothing to stop.');
+      return;
+    }
+
+    _isListening = false;
+    _isSpeechDetected = false;
+    _consecutiveLoudFrames = 0;
+    _consecutiveQuietFrames = 0;
+
+    _amplitudeTimer?.cancel();
+    _silenceTimer?.cancel();
+    _speechStartDebounceTimer?.cancel();
+    _speechEndDebounceTimer?.cancel();
 
     try {
-      // Stop amplitude polling
-      _amplitudeTimer?.cancel();
-      _amplitudeTimer = null;
-
-      // Cancel any pending debounce timers
-      _cancelDebounceTimers();
-
-      // Stop recording
-      await _recorder.stop();
-
-      _isListening = false;
-      _isSpeechDetected = false;
-
-      if (kDebugMode) {
-        print('🎙️ VAD: Stopped listening for voice activity');
+      if (await _recorder.isRecording()) {
+        await _recorder.stop();
+        await _recorder.dispose();
+        if (kDebugMode) {
+          print('🎙️ VAD: Recorder stopped and disposed.');
+        }
+      } else {
+        // If not recording, still dispose it to be safe for next start
+        await _recorder.dispose();
+        if (kDebugMode) {
+          print(
+              '🎙️ VAD: Recorder was not recording, but disposed for safety.');
+        }
       }
     } catch (e) {
-      _errorController.add('Error stopping VAD: $e');
+      _errorController.add('Error stopping/disposing VAD recorder: $e');
       if (kDebugMode) {
-        print('❌ VAD stop error: $e');
+        print('❌ VAD recorder stop/dispose error: $e');
       }
+    }
+
+    if (kDebugMode) {
+      print('🎙️ VAD: Stopped listening for voice activity');
     }
   }
 

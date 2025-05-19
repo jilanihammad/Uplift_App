@@ -188,22 +188,42 @@ class TherapyService {
   // Process a user message and generate a therapist response with streaming audio
   // This will start playing audio as soon as possible while it's still downloading
   Future<Map<String, dynamic>> processUserMessageWithStreamingAudio(
-      String userMessage) async {
+    String userMessage,
+    List<Map<String, String>> history, {
+    required Future<void> Function() onTTSPlaybackComplete,
+    required void Function(String) onTTSError,
+  }) async {
     try {
       // Measure performance
       final stopwatch = Stopwatch()..start();
 
       // Get text response
-      final textResponse = await processUserMessage(userMessage);
+      final textResponse =
+          await processUserMessage(userMessage, history: history);
       final textProcessingTime = stopwatch.elapsedMilliseconds;
       log.i('Text processing took ${textProcessingTime}ms');
+
+      if (textResponse.trim().isEmpty) {
+        log.w('Empty text response from processUserMessage');
+        onTTSError("AI response was empty.");
+        return {
+          'text': null,
+          'audioPath': null,
+        };
+      }
 
       // Generate audio and play it with streaming for faster response
       String? audioPath;
       try {
-        audioPath = await _audioGenerator.generateAndStreamAudio(textResponse);
+        audioPath = await _audioGenerator.generateAndStreamAudio(
+          textResponse,
+          onDone: onTTSPlaybackComplete,
+          onError: onTTSError,
+        );
       } catch (e) {
         log.w('Warning: Could not generate/stream audio', e);
+        onTTSError('Failed to generate/stream audio: ${e.toString()}');
+        // audioPath will remain null
       }
 
       stopwatch.stop();
@@ -217,7 +237,7 @@ class TherapyService {
       };
     } catch (e) {
       log.e('Error processing user message with streaming audio', e);
-
+      onTTSError('Error processing message: ${e.toString()}');
       return {
         'text':
             "I'm sorry, I'm having trouble processing that right now. Could you try expressing that differently?",
@@ -269,7 +289,8 @@ class TherapyService {
   }
 
   // Process a user message and get AI response
-  Future<String> processUserMessage(String userMessage) async {
+  Future<String> processUserMessage(String userMessage,
+      {List<Map<String, String>>? history}) async {
     try {
       // Check if the message is empty
       if (userMessage.trim().isEmpty) {

@@ -99,6 +99,8 @@ class AudioPlayerManager {
       return;
     }
 
+    final Completer<void> completer = Completer<void>();
+
     try {
       final file = File(audioPath);
       if (!await file.exists()) {
@@ -118,12 +120,27 @@ class AudioPlayerManager {
       // Load and play the audio
       await _audioPlayer.setFilePath(audioPath);
       await _audioPlayer.play();
+
+      // Listen for completion
+      StreamSubscription? subscription;
+      subscription = _audioPlayer.processingStateStream.listen((state) {
+        if (state == ProcessingState.completed) {
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
+          subscription?.cancel();
+        }
+      });
     } catch (e) {
       _errorController.add('Error playing audio: $e');
       if (kDebugMode) {
         print('❌ Audio playback error: $e');
       }
+      if (!completer.isCompleted) {
+        completer.completeError(e);
+      }
     }
+    return completer.future;
   }
 
   // Stop playing audio
