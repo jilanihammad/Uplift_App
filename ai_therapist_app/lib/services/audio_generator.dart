@@ -398,59 +398,66 @@ class AudioGenerator {
   }
 
   /// Generate and play audio with streaming (faster startup)
-  Future<String?> generateAndStreamAudio(String text) async {
+  Future<String?> generateAndStreamAudio(
+    String text, {
+    void Function()? onDone,
+    void Function(String error)? onError,
+  }) async {
     final stopwatch = Stopwatch()..start();
 
     // Check if audio is in cache first
     if (_audioCache.containsKey(text)) {
-      log.i(
-          'Using cached audio for text: "${text.substring(0, min(20, text.length))}..."');
       final cachedAudioPath = _audioCache[text]!;
+      log.i(
+          'Using cached audio for text: "${text.substring(0, min(20, text.length))}..." Path: $cachedAudioPath');
 
-      // Start playback and measure time
       final playStopwatch = Stopwatch()..start();
-      await _voiceService.playAudio(cachedAudioPath);
+      // Use the new VoiceService method to play cached audio with callbacks
+      await _voiceService.playAudioWithCallbacks(cachedAudioPath,
+          onDone: onDone, onError: onError);
       playStopwatch.stop();
 
-      log.i('Playing cached audio took ${playStopwatch.elapsedMilliseconds}ms');
-      _performanceMetrics['play_cached_audio'] =
+      log.i(
+          'Playing cached audio with callbacks took ${playStopwatch.elapsedMilliseconds}ms');
+      _performanceMetrics['play_cached_audio_with_callbacks'] =
           playStopwatch.elapsedMilliseconds;
 
       stopwatch.stop();
-      _performanceMetrics['total_cached'] = stopwatch.elapsedMilliseconds;
+      _performanceMetrics['total_cached_with_callbacks'] =
+          stopwatch.elapsedMilliseconds;
       return cachedAudioPath;
     }
 
-    // Not in cache, generate new audio
+    // Not in cache, generate new audio using VoiceService.generateAudio, which handles TTS and callbacks
+    log.i(
+        'Audio not cached for: "${text.substring(0, min(20, text.length))}...". Generating anew via VoiceService.generateAudio.');
     final genStopwatch = Stopwatch()..start();
-    final audioPath = await generateAudio(text);
+    String? audioPath;
+    try {
+      audioPath = await _voiceService.generateAudio(text,
+          onDone: onDone, onError: onError);
+    } catch (e) {
+      log.e('Error calling _voiceService.generateAudio: $e');
+      onError?.call('Failed during TTS generation: ${e.toString()}');
+      // audioPath will remain null
+    }
     genStopwatch.stop();
-    _performanceMetrics['generate_audio'] = genStopwatch.elapsedMilliseconds;
+    _performanceMetrics['generate_audio_via_voice_service'] =
+        genStopwatch.elapsedMilliseconds;
 
     if (audioPath != null) {
       // Cache the result
       _audioCache[text] = audioPath;
-
-      // Play the audio with streaming if it's a URL
-      final playStopwatch = Stopwatch()..start();
-      if (audioPath.startsWith('http')) {
-        // Use streaming for remote URLs
-        await _voiceService.playStreamingAudio(audioPath);
-      } else {
-        // Use regular playback for local files
-        await _voiceService.playAudio(audioPath);
-      }
-      playStopwatch.stop();
-      _performanceMetrics['play_streaming_audio'] =
-          playStopwatch.elapsedMilliseconds;
-      log.i(
-          'Played audio using streaming in ${playStopwatch.elapsedMilliseconds}ms');
+      log.i('Audio generated and cached: $audioPath');
+    } else {
+      log.w('Failed to generate audio path via VoiceService.generateAudio.');
     }
 
     stopwatch.stop();
-    _performanceMetrics['total_streaming'] = stopwatch.elapsedMilliseconds;
+    _performanceMetrics['total_generate_and_play_with_callbacks'] =
+        stopwatch.elapsedMilliseconds;
     log.i(
-        'Total TTS process with streaming took ${stopwatch.elapsedMilliseconds}ms');
+        'Total TTS process (generate/play with callbacks) took ${stopwatch.elapsedMilliseconds}ms. Path: $audioPath');
 
     return audioPath;
   }
