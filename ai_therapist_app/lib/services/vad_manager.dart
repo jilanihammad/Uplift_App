@@ -33,8 +33,7 @@ class VADManager {
   final int _consecutiveQuietFramesRequired = 10; // Faster speech end detection
 
   // Silence timeouts (ms)
-  final int _maxSilenceDuration =
-      1500; // Stop recording after this much silence
+  final int _maxSilenceDuration = 700; // Stop recording after this much silence
 
   // State tracking
   bool _isInitialized = false;

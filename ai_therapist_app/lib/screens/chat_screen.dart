@@ -58,7 +58,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isVoiceMode = true; // Default to voice mode
   bool _isMicMuted = false;
   bool _isSpeakerMuted = false;
-  bool _isTyping = false;
 
   // Voice recording variables
   late AnimationController _micAnimationController;
@@ -102,9 +101,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _micAnimation = Tween(begin: 1.0, end: 1.3).animate(
       CurvedAnimation(parent: _micAnimationController, curve: Curves.easeInOut),
     );
-
-    // Listen for text input to change button state
-    _messageController.addListener(_onTextChanged);
 
     // Load therapist style
     _loadTherapistStyle();
@@ -170,21 +166,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
   }
 
-  void _onTextChanged() {
-    final isCurrentlyTyping = _messageController.text.isNotEmpty;
-    if (_isTyping != isCurrentlyTyping) {
-      setState(() {
-        _isTyping = isCurrentlyTyping;
-      });
-    }
-  }
-
   @override
   void dispose() {
     debugPrint('[ChatScreen] dispose called');
     WakelockPlus.disable(); // Allow screen to sleep after session
     _vadSubscription?.cancel();
-    _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.dispose();
     _ttsSubscription?.cancel();
@@ -764,71 +750,81 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      icon: _isTyping
-                          ? const Icon(Icons.send)
-                          : const Icon(Icons.graphic_eq),
-                      tooltip:
-                          _isTyping ? 'Send message' : 'Switch to voice mode',
-                      onPressed: _isProcessing.value
-                          ? null
-                          : _isTyping
-                              ? () {
-                                  print('[ChatScreen] Send button pressed');
-                                  _sendMessage();
-                                }
-                              : () {
-                                  print(
-                                    '[ChatScreen] Switch to voice mode button pressed',
-                                  );
-                                  _toggleChatMode();
-                                },
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _messageController,
+                      builder: (context, value, _) {
+                        final isTyping = value.text.isNotEmpty;
+                        return IconButton(
+                          icon: isTyping
+                              ? const Icon(Icons.send)
+                              : const Icon(Icons.graphic_eq),
+                          tooltip: isTyping
+                              ? 'Send message'
+                              : 'Switch to voice mode',
+                          onPressed: _isProcessing.value
+                              ? null
+                              : isTyping
+                                  ? () {
+                                      print('[ChatScreen] Send button pressed');
+                                      _sendMessage();
+                                    }
+                                  : () {
+                                      print(
+                                          '[ChatScreen] Switch to voice mode button pressed');
+                                      _toggleChatMode();
+                                    },
+                        );
+                      },
                     ),
                   ],
                 ),
-                if (!_isTyping)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: InkWell(
-                      onTap: () {
-                        print(
-                          '[ChatScreen] Switch to Voice Mode (bottom) tapped',
-                        );
-                        _toggleChatMode();
-                      },
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).primaryColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.graphic_eq,
-                              color: Theme.of(context).primaryColor,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Switch to Voice Mode',
-                              style: TextStyle(
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _messageController,
+                  builder: (context, value, _) {
+                    final isTyping = value.text.isNotEmpty;
+                    if (isTyping) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: InkWell(
+                        onTap: () {
+                          print(
+                              '[ChatScreen] Switch to Voice Mode (bottom) tapped');
+                          _toggleChatMode();
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color:
+                                Theme.of(context).primaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.graphic_eq,
                                 color: Theme.of(context).primaryColor,
-                                fontWeight: FontWeight.bold,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Text(
+                                'Switch to Voice Mode',
+                                style: TextStyle(
+                                  color: Theme.of(context).primaryColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -1220,7 +1216,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final message = _messageController.text;
     _messageController.clear();
     _isProcessing.value = true;
-    _isTyping = false;
     _scrollToBottom();
     // Get conversation history (excluding the current user message)
     final currentState = context.read<ChatBloc>().state;
@@ -1925,7 +1920,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _isVoiceMode = !_isVoiceMode;
       _messageController.clear();
       _isProcessing.value = false;
-      _isTyping = false;
     });
     debugPrint('🔄 Switched to ${_isVoiceMode ? 'voice' : 'text'} mode');
   }
