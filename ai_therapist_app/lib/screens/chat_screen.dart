@@ -36,6 +36,7 @@ import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_bubble.dart';
+import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -408,40 +409,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: Column(
         children: [
           Expanded(
-            child: BlocBuilder<ChatBloc, ChatState>(
-              builder: (context, state) {
-                // Reset _isProcessing after Maya's reply (text or voice)
-                if (_isProcessing.value &&
-                    (state is ChatLoaded || state is ChatCompletedState)) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      _isProcessing.value = false;
-                    }
-                  });
-                }
-                List<TherapyMessage> messages = _extractMessages(state);
-                // Remove scroll-to-bottom logic from here
-                debugPrint(
-                  '[ChatScreen] BlocBuilder: state=\x1B[33m[33m${state.runtimeType}\x1B[0m, messages.length=${messages.length}',
-                );
-                for (int i = 0; i < messages.length; i++) {
-                  debugPrint(
-                    '[ChatScreen]   message[[33m$i[0m]: [${messages[i].isUser ? 'user' : 'assistant'}] ${messages[i].content}',
-                  );
-                }
-                if (state is ChatLoading) {
-                  debugPrint('[ChatScreen] No messages yet, but processing...');
-                }
-                return ListView.builder(
-                  controller: _scrollController,
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    debugPrint(
-                      '[ChatScreen] ListView.builder item $index: [${messages[index].isUser ? 'user' : 'assistant'}] ${messages[index].content}',
-                    );
-                    return _buildMessageItem(messages[index]);
-                  },
-                );
+            child: ChatMessageList(
+              scrollController: _scrollController,
+              onNewMessage: (count) {
+                _previousMessageCount = count;
               },
             ),
           ),
