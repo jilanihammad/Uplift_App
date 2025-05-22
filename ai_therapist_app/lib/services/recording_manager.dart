@@ -34,6 +34,9 @@ class RecordingManager {
   String? _lastRecordedPath;
   String? get lastRecordedPath => _lastRecordedPath;
 
+  // Add start time tracking
+  DateTime? _recordingStartTime;
+
   // Constructor
   RecordingManager();
 
@@ -98,6 +101,7 @@ class RecordingManager {
       );
 
       _lastRecordedPath = filePath;
+      _recordingStartTime = DateTime.now(); // Track start time
       _updateState(RecordingState.recording);
 
       if (kDebugMode) {
@@ -135,6 +139,7 @@ class RecordingManager {
 
       _lastRecordedPath = path;
       _updateState(RecordingState.stopped);
+      _recordingStartTime = null; // Reset start time
 
       if (kDebugMode) {
         print('⏹️ Recording stopped, file saved at: $_lastRecordedPath');
@@ -155,6 +160,12 @@ class RecordingManager {
   void _updateState(RecordingState state) {
     _currentState = state;
     _recordingStateController.add(state);
+  }
+
+  // Add elapsed getter
+  Duration get elapsed {
+    if (_recordingStartTime == null) return Duration.zero;
+    return DateTime.now().difference(_recordingStartTime!);
   }
 
   // Clean up resources

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:rxdart/rxdart.dart';
 
 /// Manages voice activity detection (VAD) functionality
 ///
@@ -24,7 +25,7 @@ class VADManager {
   final double _speechStartThreshold =
       -25.0; // dB (higher means more sensitive)
   final double _speechEndThreshold =
-      -35.0; // dB (higher means less likely to end)
+      -45.0; // dB (higher means less likely to end)
 
   // Processing options
   final int _consecutiveLoudFramesRequired =
@@ -58,10 +59,18 @@ class VADManager {
   final StreamController<String> _errorController =
       StreamController<String>.broadcast();
 
+  // Amplitude stream controller for visualization
+  final StreamController<double> _amplitudeController =
+      StreamController<double>.broadcast();
+
   // Streams for external components to listen to
   Stream<void> get onSpeechStart => _speechStartController.stream;
   Stream<void> get onSpeechEnd => _speechEndController.stream;
   Stream<String> get onError => _errorController.stream;
+
+  // Public debounced amplitude stream for UI visualization
+  Stream<double> get amplitudeStream => _amplitudeController.stream
+      .throttleTime(const Duration(milliseconds: 120));
 
   // Factory constructor
   factory VADManager() {
@@ -173,6 +182,9 @@ class VADManager {
         // Get average amplitude in decibels (dB)
         final amplitude = await _recorder.getAmplitude();
         final double level = amplitude.current ?? -60.0;
+
+        // Emit amplitude for visualization
+        _amplitudeController.add(level);
 
         // Process the amplitude
         _processAmplitude(level);
@@ -363,6 +375,7 @@ class VADManager {
       await _speechStartController.close();
       await _speechEndController.close();
       await _errorController.close();
+      await _amplitudeController.close();
 
       if (kDebugMode) {
         print('🎙️ VAD manager disposed');
