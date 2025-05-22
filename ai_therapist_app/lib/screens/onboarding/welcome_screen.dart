@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/onboarding_service.dart';
 import 'package:get_it/get_it.dart';
+import '../widgets/welcome_feature_card.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -56,7 +57,7 @@ class WelcomeScreen extends StatelessWidget {
                 const SizedBox(height: 40),
                 // Encouraging message
                 Text(
-                  'You’re taking a positive step towards self-improvement. We’re here to support you.',
+                  "You're taking a positive step towards self-improvement. We're here to support you.",
                   style: TextStyle(
                     fontSize: 14,
                     fontStyle: FontStyle.italic,
@@ -80,7 +81,7 @@ class WelcomeScreen extends StatelessWidget {
                     elevation: 3,
                   ),
                   child: const Text(
-                    'Let’s Begin',
+                    "Let's Begin",
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -108,7 +109,8 @@ class WelcomeScreen extends StatelessWidget {
       {
         'icon': Icons.chat_bubble_outline,
         'title': 'Thoughtful Conversations',
-        'description': 'Engage in natural, supportive chats using proven techniques.',
+        'description':
+            'Engage in natural, supportive chats using proven techniques.',
       },
       {
         'icon': Icons.track_changes,
@@ -118,58 +120,10 @@ class WelcomeScreen extends StatelessWidget {
     ];
 
     return features.map((feature) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 24.0),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                blurRadius: 5,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                feature['icon'] as IconData,
-                color: const Color(0xFF4285F4), // Google Blue
-                size: 30,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      feature['title'] as String,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87, // Dark for readability
-                        fontFamily: 'Roboto',
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      feature['description'] as String,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.black54,
-                        fontFamily: 'Roboto',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+      return WelcomeFeatureCard(
+        icon: feature['icon'] as IconData,
+        title: feature['title'] as String,
+        description: feature['description'] as String,
       );
     }).toList();
   }
