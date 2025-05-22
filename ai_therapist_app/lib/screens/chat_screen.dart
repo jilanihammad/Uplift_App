@@ -12,6 +12,11 @@ import 'package:lottie/lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../blocs/chat_bloc.dart';
+import '../blocs/voice_session_bloc.dart';
+import '../blocs/voice_session_state.dart';
+import '../blocs/voice_session_event.dart';
+import '../services/voice_service.dart';
+import '../services/vad_manager.dart';
 
 import '../di/service_locator.dart';
 import '../services/voice_service.dart';
@@ -30,7 +35,6 @@ import '../data/datasources/remote/api_client.dart';
 import '../services/auto_listening_coordinator.dart';
 import '../services/base_voice_service.dart' as bvs;
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:ai_therapist_app/services/vad_manager.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
@@ -38,16 +42,32 @@ import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_bubble.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
 
-class ChatScreen extends StatefulWidget {
+class ChatScreen extends StatelessWidget {
   final String? sessionId;
-
   const ChatScreen({Key? key, this.sessionId}) : super(key: key);
 
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  Widget build(BuildContext context) {
+    return BlocProvider<VoiceSessionBloc>(
+      create: (context) => VoiceSessionBloc(
+        voiceService: serviceLocator<VoiceService>(),
+        vadManager: serviceLocator<VADManager>(),
+      ),
+      child: _ChatScreenBody(sessionId: sessionId),
+    );
+  }
 }
 
-class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
+class _ChatScreenBody extends StatefulWidget {
+  final String? sessionId;
+  const _ChatScreenBody({Key? key, this.sessionId}) : super(key: key);
+
+  @override
+  State<_ChatScreenBody> createState() => _ChatScreenBodyState();
+}
+
+class _ChatScreenBodyState extends State<_ChatScreenBody>
+    with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<bool> _isProcessing = ValueNotifier(false);
