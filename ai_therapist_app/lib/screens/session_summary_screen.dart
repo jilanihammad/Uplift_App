@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../models/therapy_message.dart';
 import '../widgets/mood_selector.dart';
+import 'widgets/session_summary_card.dart';
+import 'widgets/action_items_card.dart';
 
 class SessionSummaryScreen extends StatelessWidget {
   final String sessionId;
@@ -42,16 +44,7 @@ class SessionSummaryScreen extends StatelessWidget {
           children: [
             // Session summary
             const SizedBox(height: 8),
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  summary,
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-            ),
+            SessionSummaryCard(summary: summary),
 
             const SizedBox(height: 24),
 
@@ -64,34 +57,7 @@ class SessionSummaryScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: actionItems
-                      .map((item) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.check_circle_outline,
-                                    color: Colors.green),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    item,
-                                    style: const TextStyle(fontSize: 16),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ))
-                      .toList(),
-                ),
-              ),
-            ),
+            ActionItemsCard(actionItems: actionItems),
 
             const SizedBox(height: 32),
 
