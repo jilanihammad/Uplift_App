@@ -35,6 +35,7 @@ import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
+import 'package:ai_therapist_app/screens/widgets/chat_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -461,80 +462,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildMessageItem(TherapyMessage message) {
     final isUser = message.isUser;
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isUser)
-            CircleAvatar(
-              backgroundColor: Theme.of(context).primaryColor,
-              child: const Icon(Icons.emoji_emotions, color: Colors.white),
-            ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? Theme.of(context).primaryColor
-                        : Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
-                      BoxShadow(
-                        offset: Offset(0, 2),
-                        blurRadius: 4,
-                        color: Color.fromRGBO(0, 0, 0, 0.1),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    message.content,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: isUser
-                          ? Colors.white
-                          : isDarkMode
-                              ? Colors.cyan[100]
-                              : Colors.black87,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (message.audioUrl != null)
-                      IconButton(
-                        icon: const Icon(Icons.play_circle_outline, size: 20),
-                        onPressed: () => _playAudio(message.audioUrl!),
-                        constraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
-                        padding: EdgeInsets.zero,
-                        iconSize: 20,
-                      ),
-                    Text(
-                      DateFormat('h:mm a').format(message.timestamp),
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (isUser) const CircleAvatar(child: Icon(Icons.person)),
-        ],
-      ),
+    return ChatBubble(
+      message: message,
+      isUser: isUser,
+      isDarkMode: isDarkMode,
+      onPlayAudio:
+          message.audioUrl != null ? () => _playAudio(message.audioUrl!) : null,
     );
   }
 
