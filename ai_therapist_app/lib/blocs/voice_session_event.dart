@@ -60,3 +60,13 @@ class SetProcessing extends VoiceSessionEvent {
   final bool isProcessing;
   const SetProcessing(this.isProcessing);
 }
+
+class SetRecordingState extends VoiceSessionEvent {
+  final bool isRecording;
+  const SetRecordingState(this.isRecording);
+}
+
+class ProcessTextMessage extends VoiceSessionEvent {
+  final String text;
+  const ProcessTextMessage(this.text);
+}

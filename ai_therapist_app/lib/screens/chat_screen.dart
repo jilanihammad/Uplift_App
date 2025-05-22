@@ -71,8 +71,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<bool> _isProcessing = ValueNotifier(false);
-  final ValueNotifier<bool> _isVADActive = ValueNotifier(false);
-  final ValueNotifier<bool> _isRecording = ValueNotifier(false);
   bool _showMoodSelector = false;
   bool _showDurationSelector = false;
   bool _isInitializing = true; // Add this flag to track initialization
@@ -90,8 +88,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   late Animation<double> _micAnimation;
   late VoiceService _voiceService;
   StreamSubscription<bool>? _ttsSubscription;
-  StreamSubscription<bvs.RecordingState>?
-      _voiceServiceRecordingStateSubscription;
 
   // Session duration
   int _sessionDurationMinutes = 15; // Default is 15 minutes
@@ -108,9 +104,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Declare a variable to track if session is being ended
   bool _isEndingSession = false;
-
-  // Add a variable to track VAD state
-  StreamSubscription<bool>? _vadSubscription;
 
   int _previousMessageCount = 0;
 
@@ -135,49 +128,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _voiceService = serviceLocator<VoiceService>();
     _initializeVoiceService();
 
-    // Listen to VAD/auto-listening state
-    _vadSubscription =
-        _voiceService.autoListeningModeEnabledStream.listen((enabled) {
-      _isVADActive.value = enabled;
-    });
-
-    // Listen to recording state for animation
-    _voiceServiceRecordingStateSubscription =
-        _voiceService.recordingState.listen((
-      state,
-    ) {
-      if (kDebugMode) {
-        print(
-          '[ChatScreen] Recording state update from VoiceService: $state, _isRecording: \x1B[36m${_isRecording.value}[0m',
-        );
+    // Wire up recording completion to Bloc
+    _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
+        (audioPath) {
+      if (mounted) {
+        context.read<VoiceSessionBloc>().add(ProcessAudio(audioPath));
       }
-      if (mounted &&
-          _isRecording.value != (state == bvs.RecordingState.recording)) {
-        _isRecording.value = (state == bvs.RecordingState.recording);
-      }
-    });
-
-    // Setup AutoListeningCoordinator callback for VAD-completed recordings
-    _voiceService.autoListeningCoordinator.onRecordingCompleteCallback = (
-      audioPath,
-    ) async {
-      if (audioPath == null || audioPath.isEmpty) {
-        if (kDebugMode) {
-          print(
-            '[ChatScreen][ALC Callback] Received null or empty audioPath. Skipping.',
-          );
-        }
-        return;
-      }
-      if (kDebugMode) {
-        print(
-          '[ChatScreen][ALC Callback] Processing VAD audio from path: $audioPath',
-        );
-      }
-      // Call the refactored _startVoiceInput with the path from VAD
-      // No need to check _isRecording here, as ALC manages the recording lifecycle for VAD.
-      // _startVoiceInput will handle the transcription and further processing.
-      await _startVoiceInput(preRecordedAudioPath: audioPath);
     };
 
     // Initialize session after the build is complete
@@ -196,18 +152,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   void dispose() {
     debugPrint('[ChatScreen] dispose called');
     WakelockPlus.disable(); // Allow screen to sleep after session
-    _vadSubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     _ttsSubscription?.cancel();
-    _voiceServiceRecordingStateSubscription?.cancel();
     _micAnimationController.dispose();
     _voiceService.dispose();
     _sessionTimer?.cancel();
     _navigationService.showBottomNav();
     _isProcessing.dispose();
-    _isVADActive.dispose();
-    _isRecording.dispose();
     super.dispose();
   }
 
@@ -318,37 +270,22 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                       )
                     : _isVoiceMode
                         ? _buildVoiceChatView()
-                        : BlocListener<ChatBloc, ChatState>(
-                            listener: (context, state) {
-                              final messages = _extractMessages(state);
-                              if (messages.length > _previousMessageCount) {
-                                WidgetsBinding.instance
-                                    .addPostFrameCallback((_) {
-                                  if (_scrollController.hasClients) {
-                                    _scrollController.animateTo(
-                                      _scrollController
-                                          .position.maxScrollExtent,
-                                      duration:
-                                          const Duration(milliseconds: 300),
-                                      curve: Curves.easeOut,
-                                    );
-                                  }
-                                });
-                              }
-                              _previousMessageCount = messages.length;
-                            },
-                            child: _buildTextChatView(),
-                          ),
+                        : _buildTextChatView(),
       ),
     );
   }
 
   Widget _buildVoiceChatView() {
-    return ValueListenableBuilder<bool>(
-      valueListenable: _isRecording,
-      builder: (context, isRecording, _) => ValueListenableBuilder<bool>(
-        valueListenable: _isProcessing,
-        builder: (context, isProcessing, __) => Column(
+    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
+      builder: (context, state) {
+        // Mic animation logic: trigger animation when state.isRecording changes
+        if (state.isRecording && !_micAnimationController.isAnimating) {
+          _micAnimationController.repeat(reverse: true);
+        } else if (!state.isRecording && _micAnimationController.isAnimating) {
+          _micAnimationController.stop();
+          _micAnimationController.reset();
+        }
+        return Column(
           children: [
             Expanded(
               child: Center(
@@ -358,7 +295,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                     Container(
                       width: 120,
                       height: 120,
-                      child: isRecording
+                      child: state.isRecording
                           ? Lottie.asset(
                               'assets/animations/Microphone Animation.json',
                               width: 120,
@@ -374,7 +311,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                     ),
                     const SizedBox(height: 32),
                     Text(
-                      isRecording
+                      state.isRecording
                           ? "Listening to you..."
                           : 'Press "Talk" to speak',
                       style: const TextStyle(
@@ -387,11 +324,18 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
               ),
             ),
             VoiceControls(
-              isRecording: isRecording,
-              isProcessing: isProcessing,
+              isRecording: state.isRecording,
+              isProcessing: _isProcessing.value,
               isSpeakerMuted: _isSpeakerMuted,
               micAnimation: _micAnimation,
-              onMicTap: _startVoiceInput,
+              onMicTap: () {
+                final bloc = context.read<VoiceSessionBloc>();
+                if (state.isRecording) {
+                  bloc.add(StopListening());
+                } else {
+                  bloc.add(StartListening());
+                }
+              },
               onSpeakerToggle: () async {
                 setState(() {
                   _isSpeakerMuted = !_isSpeakerMuted;
@@ -403,50 +347,45 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
               onSwitchMode: _toggleChatMode,
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
-  }
-
-  // Helper to extract messages from any ChatState
-  List<TherapyMessage> _extractMessages(ChatState state) {
-    if (state is ChatLoaded) return state.messages;
-    if (state is ChatCompletedState) return state.messages;
-    if (state is ChatErrorState) return state.messages;
-    if (state is ChatLoading) {
-      // Try to get messages from previous state if possible
-      // (In practice, this may not always work, but we try)
-      // In this context, just return an empty list
-      return [];
-    }
-    return [];
   }
 
   Widget _buildTextChatView() {
     debugPrint('[ChatScreen] _buildTextChatView called');
-    return Container(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: Column(
-        children: [
-          Expanded(
-            child: ChatMessageList(
-              scrollController: _scrollController,
-              onNewMessage: (count) {
-                _previousMessageCount = count;
-              },
-            ),
+    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
+      builder: (context, state) {
+        return Container(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: Column(
+            children: [
+              Expanded(
+                child: ChatMessageList(
+                  messages: state.messages,
+                  scrollController: _scrollController,
+                  onNewMessage: (count) {
+                    // Scroll to bottom when new messages are added
+                    if (count > _previousMessageCount) {
+                      _scrollToBottom();
+                    }
+                    _previousMessageCount = count;
+                  },
+                ),
+              ),
+              if (_isProcessing.value) const LinearProgressIndicator(),
+              TextInputBar(
+                messageController: _messageController,
+                micAnimation: _micAnimation,
+                micButton: _buildMicButton(),
+                isProcessing: _isProcessing.value,
+                onSend: _sendMessage,
+                onSwitchMode: _toggleChatMode,
+              ),
+            ],
           ),
-          if (_isProcessing.value) const LinearProgressIndicator(),
-          TextInputBar(
-            messageController: _messageController,
-            micAnimation: _micAnimation,
-            micButton: _buildMicButton(),
-            isProcessing: _isProcessing.value,
-            onSend: _sendMessage,
-            onSwitchMode: _toggleChatMode,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -465,9 +404,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Future<void> _initializeVoiceService() async {
     // Dispose old subscriptions before creating new ones
     await _ttsSubscription?.cancel();
-    await _voiceServiceRecordingStateSubscription?.cancel();
     _ttsSubscription = null;
-    _voiceServiceRecordingStateSubscription = null;
 
     try {
       await _voiceService.initialize();
@@ -476,90 +413,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not initialize microphone: $e')),
       );
-    }
-
-    // Subscribe to the RecordingManager-driven stream via VoiceService
-    _voiceServiceRecordingStateSubscription =
-        _voiceService.recordingState.listen((
-      state,
-    ) {
-      if (kDebugMode) {
-        print('[ChatScreen][REC_STATE_LISTENER] Received raw state: $state');
-      }
-
-      if (mounted) {
-        if (kDebugMode) {
-          print(
-            '[ChatScreen][REC_STATE_LISTENER] Component is MOUNTED. Current _isRecording: ${_isRecording.value}',
-          );
-        }
-        bool newIsRecording = (state == bvs.RecordingState.recording);
-        if (kDebugMode) {
-          print(
-            '[ChatScreen][REC_STATE_LISTENER] Calculated newIsRecording: $newIsRecording (from state: $state)',
-          );
-        }
-
-        if (_isRecording.value != newIsRecording) {
-          if (kDebugMode) {
-            print(
-              '[ChatScreen][REC_STATE_LISTENER] _isRecording (${_isRecording.value}) != newIsRecording ($newIsRecording). Calling setState...',
-            );
-          }
-          _isRecording.value = newIsRecording;
-          if (kDebugMode) {
-            print(
-              '[ChatScreen][REC_STATE_LISTENER] setState COMPLETED. _isRecording is now: ${_isRecording.value}',
-            );
-          }
-        } else {
-          if (kDebugMode) {
-            print(
-              '[ChatScreen][REC_STATE_LISTENER] _isRecording (${_isRecording.value}) == newIsRecording ($newIsRecording). Skipping setState.',
-            );
-          }
-        }
-
-        // Animation logic based on the updated _isRecording
-        if (_isRecording.value) {
-          if (kDebugMode)
-            print(
-              '[ChatScreen][REC_STATE_LISTENER] Calling _startPulseMicAnimation() because _isRecording is true.',
-            );
-          _startPulseMicAnimation();
-        } else {
-          if (kDebugMode)
-            print(
-              '[ChatScreen][REC_STATE_LISTENER] Calling _stopPulseMicAnimation() because _isRecording is false.',
-            );
-          _stopPulseMicAnimation();
-        }
-
-        if (kDebugMode) {
-          print(
-            '[ChatScreen][REC_STATE_LISTENER] Final check. VoiceService state: $state, ChatScreen _isRecording: ${_isRecording.value}',
-          );
-        }
-      } else {
-        if (kDebugMode) {
-          print(
-            '[ChatScreen][REC_STATE_LISTENER] Component is NOT MOUNTED. State $state received but not processed for UI.',
-          );
-        }
-      }
-    });
-  }
-
-  void _startPulseMicAnimation() {
-    if (_isRecording.value && mounted && !_micAnimationController.isAnimating) {
-      _micAnimationController.repeat(reverse: true);
-    }
-  }
-
-  void _stopPulseMicAnimation() {
-    if (!_isRecording.value && mounted && _micAnimationController.isAnimating) {
-      _micAnimationController.stop();
-      _micAnimationController.reset();
     }
   }
 
@@ -666,26 +519,19 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         welcomeMessage =
             "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
     }
-    // Step 1: Only add the welcome message as an assistant message and play it via TTS
-    // Do NOT send it to the LLM or dispatch a user message event
-    final chatBloc = context.read<ChatBloc>();
+
+    // Create Maya's welcome message
     final aiWelcomeMsg = TherapyMessage(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: DateTime.now().microsecondsSinceEpoch.toString() + '_maya_welcome',
       content: welcomeMessage,
       isUser: false,
       timestamp: DateTime.now(),
       audioUrl: null,
     );
-    // Add the assistant message to the chat state
-    if (chatBloc.state is ChatLoaded) {
-      final currentMessages = List<TherapyMessage>.from(
-        (chatBloc.state as ChatLoaded).messages,
-      );
-      currentMessages.add(aiWelcomeMsg);
-      chatBloc.add(ReplaceMessages(currentMessages));
-    } else {
-      chatBloc.add(ReplaceMessages([aiWelcomeMsg]));
-    }
+
+    // Add the welcome message to VoiceSessionBloc (this is what ChatMessageList uses)
+    context.read<VoiceSessionBloc>().add(AddMessage(aiWelcomeMsg));
+
     // Play welcome message as audio in voice mode
     if (_isVoiceMode) {
       // Ensure AutoListeningCoordinator is in auto mode before the first TTS
@@ -695,12 +541,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             '[ChatScreen] Auto mode enabled by _addInitialAIMessage before welcome TTS.',
           );
         // Now play TTS, which will trigger _startListeningAfterTTS on completion.
-        // _startListeningAfterTTS will then just reset _isProcessing.
-        // ALC will handle VAD reactivation based on isAiSpeaking stream.
         _voiceService.streamAndPlayTTS(
           text: welcomeMessage,
-          onDone:
-              _startListeningAfterTTS, // This callback will reset _isProcessing
+          onDone: _startListeningAfterTTS,
           onError: (error) {
             if (kDebugMode)
               print(
@@ -759,38 +602,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _sendMessage() async {
-    debugPrint('[ChatScreen] Send button pressed');
-    if (_messageController.text.trim().isEmpty) return;
-    final message = _messageController.text;
+  void _sendMessage() {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+    if (_isVoiceMode) {
+      // Existing voice mode logic
+      return;
+    }
+    // In text mode, dispatch to Bloc
+    context.read<VoiceSessionBloc>().add(ProcessTextMessage(text));
     _messageController.clear();
-    _isProcessing.value = true;
-    _scrollToBottom();
-    // Get conversation history (excluding the current user message)
-    final currentState = context.read<ChatBloc>().state;
-    final history = currentState is ChatLoaded
-        ? currentState.messages
-            .map(
-              (m) => {
-                'role': m.isUser ? 'user' : 'assistant',
-                'content': m.content,
-              },
-            )
-            .toList() as List<Map<String, dynamic>>
-        : <Map<String, dynamic>>[];
-    debugPrint('[ChatScreen] _sendMessage called');
-    debugPrint('[ChatScreen] _sendMessage: message="$message"');
-    debugPrint('[ChatScreen] _sendMessage: history.length=${history.length}');
-    context.read<ChatBloc>().add(
-          SendUserMessage(
-            message: message,
-            history: history,
-            sessionId: _currentSessionId,
-          ),
-        );
-    debugPrint(
-      '[ChatScreen] _sendMessage: Sent SendUserMessage event to ChatBloc',
-    );
   }
 
   void _scrollToBottom() {
@@ -824,6 +645,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         _isProcessing.value = false;
       }
     }
+    // Explicitly dispatch StartListening to the Bloc after TTS completes
+    if (mounted) {
+      context.read<VoiceSessionBloc>().add(StartListening());
+    }
     // If autoMode is enabled in ALC, it should start listening automatically
     // when isAiSpeaking stream becomes false.
   }
@@ -840,11 +665,11 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       return;
     }
 
-    // If _isRecording is true (manual stop) OR if a preRecordedAudioPath is provided (VAD flow)
-    if (_isRecording.value || preRecordedAudioPath != null) {
+    // If a preRecordedAudioPath is provided (VAD flow)
+    if (preRecordedAudioPath != null) {
       if (kDebugMode) {
         print(
-          '💬 CHAT: Processing voice input. Manual stop: ${_isRecording.value}, VAD path: $preRecordedAudioPath',
+          '💬 CHAT: VAD flow - Transcribing pre-recorded audio at $preRecordedAudioPath',
         );
       }
 
@@ -858,7 +683,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       // The _isRecording state in ChatScreen is updated via the recordingState stream.
       // However, to be absolutely sure the UI for recording stops if VAD triggers this,
       // and the stream update might be slightly delayed:
-      if (preRecordedAudioPath != null && _isRecording.value && mounted) {
+      if (preRecordedAudioPath != null && _isProcessing.value && mounted) {
         // setState(() { _isRecording = false; }); // This might conflict with stream updates.
         // Let the stream handle _isRecording, _isProcessing is key here.
       }
@@ -875,30 +700,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           transcription = await _voiceService.processRecordedAudioFile(
             preRecordedAudioPath,
           );
-        } else if (_isRecording.value) {
-          // Manual stop flow
-          if (kDebugMode) {
-            print(
-              '💬 CHAT: Manual stop flow - Calling _voiceService.stopRecording()',
-            );
-          }
-          transcription = await _voiceService.stopRecording();
-          if (_isVoiceMode && mounted) {
-            if (kDebugMode) {
-              print(
-                '[ChatScreen] Manual recording stopped & processed. Re-enabling ALC for voice mode.',
-              );
-            }
-            _voiceService.autoListeningCoordinator.enableAutoMode().catchError((
-              e,
-            ) {
-              if (kDebugMode) {
-                print(
-                  '[ChatScreen] Error re-enabling ALC after manual stop processing: $e',
-                );
-              }
-            });
-          }
         } else {
           if (kDebugMode) {
             print(
@@ -1157,7 +958,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Future<void> _playAudio(String audioPath, {bool inVoiceMode = false}) async {
     // This method is primarily for playing back user-recorded or non-TTS audio.
     // TTS audio playback and its animation are now handled by isTtsActuallySpeaking stream.
-    _isRecording.value = false;
     _isProcessing.value = false;
 
     if (kDebugMode) {
@@ -1248,8 +1048,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     await _voiceService.autoListeningCoordinator.disableAutoMode();
     await _voiceService.stopRecording();
     await _voiceService.stopAudio();
-    _stopPulseMicAnimation();
-    _isRecording.value = false;
+    _micAnimationController.stop();
+    _micAnimationController.reset();
     _isProcessing.value = false;
     _voiceService.dispose();
 
@@ -1493,44 +1293,45 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Widget _buildMicButton() {
-    // Determine mic state
-    if (!_isVADActive.value) {
-      // VAD is off: show idle/off mic
-      return IconButton(
-        icon: Icon(Icons.mic_off, color: Colors.grey),
-        onPressed: null,
-      );
-    } else if (_isRecording.value) {
-      // Recording: show active/recording mic
-      return ScaleTransition(
-        scale: _micAnimation,
-        child: IconButton(
-          icon: Lottie.asset(
-            'assets/animations/Microphone Animation.json',
-            width: 24,
-            height: 24,
-            fit: BoxFit.contain,
-          ),
-          color: Colors.red,
-          onPressed: () {
-            print('[ChatScreen] Mic button pressed (recording)');
-            _startVoiceInput();
-          },
-        ),
-      );
-    } else {
-      // VAD is on, not recording: show listening/pulse mic
-      return ScaleTransition(
-        scale: _micAnimation,
-        child: IconButton(
-          icon: Icon(Icons.mic, color: Colors.blue),
-          onPressed: () {
-            print('[ChatScreen] Mic button pressed (listening)');
-            _startVoiceInput();
-          },
-        ),
-      );
-    }
+    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
+      builder: (context, state) {
+        if (!state.isVADActive) {
+          // VAD is off: show idle/off mic
+          return IconButton(
+            icon: Icon(Icons.mic_off, color: Colors.grey),
+            onPressed: null,
+          );
+        } else if (state.isRecording) {
+          // Recording: show active/recording mic
+          return ScaleTransition(
+            scale: _micAnimation,
+            child: IconButton(
+              icon: Lottie.asset(
+                'assets/animations/Microphone Animation.json',
+                width: 24,
+                height: 24,
+                fit: BoxFit.contain,
+              ),
+              color: Colors.red,
+              onPressed: () {
+                context.read<VoiceSessionBloc>().add(StopListening());
+              },
+            ),
+          );
+        } else {
+          // VAD is on, not recording: show listening/pulse mic
+          return ScaleTransition(
+            scale: _micAnimation,
+            child: IconButton(
+              icon: Icon(Icons.mic, color: Colors.blue),
+              onPressed: () {
+                context.read<VoiceSessionBloc>().add(StartListening());
+              },
+            ),
+          );
+        }
+      },
+    );
   }
 
   // Add this guard function
