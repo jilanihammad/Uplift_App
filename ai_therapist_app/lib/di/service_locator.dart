@@ -37,6 +37,7 @@ import '../services/audio_generator.dart';
 import '../services/conversation_flow_manager.dart';
 import 'package:ai_therapist_app/utils/database_helper.dart';
 import '../services/groq_service.dart';
+import '../services/vad_manager.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -310,6 +311,12 @@ Future<void> setupServiceLocator() async {
     if (!serviceLocator.isRegistered<GroqService>()) {
       serviceLocator.registerLazySingleton<GroqService>(() => GroqService());
       debugPrint('Registered GroqService');
+    }
+
+    // Register VADManager for voice session Bloc and services
+    if (!serviceLocator.isRegistered<VADManager>()) {
+      serviceLocator.registerLazySingleton<VADManager>(() => VADManager());
+      debugPrint('Registered VADManager');
     }
 
     // Mark core services as registered
