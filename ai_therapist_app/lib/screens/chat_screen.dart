@@ -31,6 +31,8 @@ import '../services/auto_listening_coordinator.dart';
 import '../services/base_voice_service.dart' as bvs;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:ai_therapist_app/services/vad_manager.dart';
+import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
+import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -281,9 +283,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         body: _isInitializing
             ? const Center(child: CircularProgressIndicator())
             : _showDurationSelector
-                ? _buildDurationSelectorView()
+                ? DurationSelector(
+                    selectedDuration: _sessionDurationMinutes,
+                    onDurationSelected: _handleDurationSelection,
+                  )
                 : _showMoodSelector
-                    ? _buildMoodSelectorView()
+                    ? MoodSelectorScreen(
+                        selectedMood: _initialMood,
+                        onMoodSelected: _handleMoodSelection,
+                      )
                     : _isVoiceMode
                         ? _buildVoiceChatView()
                         : BlocListener<ChatBloc, ChatState>(
@@ -307,179 +315,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             },
                             child: _buildTextChatView(),
                           ),
-      ),
-    );
-  }
-
-  Widget _buildDurationSelectorView() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Theme.of(context).scaffoldBackgroundColor,
-            Theme.of(context).primaryColor.withOpacity(0.05),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Select Session Duration',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).primaryColor,
-              ),
-            ),
-            const SizedBox(height: 40),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildDurationButton(5),
-                const SizedBox(width: 24),
-                _buildDurationButton(15),
-                const SizedBox(width: 24),
-                _buildDurationButton(30),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDurationButton(int minutes) {
-    return Container(
-      width: 90,
-      height: 90,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () => _handleDurationSelection(minutes),
-          splashColor: Theme.of(context).primaryColor.withOpacity(0.3),
-          highlightColor: Theme.of(context).primaryColor.withOpacity(0.2),
-          child: Ink(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Theme.of(context).primaryColor.withOpacity(0.15),
-              border: Border.all(
-                color: Theme.of(context).primaryColor.withOpacity(0.5),
-                width: 2,
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '$minutes',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).primaryColor,
-                  ),
-                ),
-                Text(
-                  'min',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Theme.of(context).primaryColor.withOpacity(0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMoodSelectorView() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Theme.of(context).scaffoldBackgroundColor,
-            Theme.of(context).primaryColor.withOpacity(0.05),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'How are you feeling today?',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).primaryColor,
-              ),
-            ),
-            const SizedBox(height: 40),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [MoodSelector(onMoodSelected: _handleMoodSelection)],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Helper method to create circular buttons
-  Widget _buildCircularButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onPressed,
-    Color? color,
-  }) {
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: (color ?? Theme.of(context).primaryColor).withOpacity(
-          onPressed == null ? 0.4 : 0.85,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Tooltip(
-        message: tooltip,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: Center(child: Icon(icon, color: Colors.white, size: 24)),
-          ),
-        ),
       ),
     );
   }
@@ -1991,6 +1826,43 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       debugPrint('Wakelock unexpectedly disabled, re-enabling');
       WakelockPlus.enable();
     }
+  }
+
+  // Helper method to create circular buttons
+  Widget _buildCircularButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    Color? color,
+  }) {
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: (color ?? Theme.of(context).primaryColor).withOpacity(
+          onPressed == null ? 0.4 : 0.85,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: Center(child: Icon(icon, color: Colors.white, size: 24)),
+          ),
+        ),
+      ),
+    );
   }
 }
 
