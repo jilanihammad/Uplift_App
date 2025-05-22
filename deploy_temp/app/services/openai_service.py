@@ -213,10 +213,10 @@ class OpenAIService:
             
             # Handle file extension based on format
             audio_format = format_params.get("response_format", "mp3") if format_params else "mp3"
-            if audio_format == "opus" or audio_format == "ogg_opus":
+            if audio_format == "opus" or audio_format == "mp3":
                 # Make sure output path has correct extension
-                if not output_path.endswith((".opus", ".ogg")):
-                    output_path = output_path.rsplit(".", 1)[0] + ".ogg"
+                if not output_path.endswith((".opus", ".mp3")):
+                    output_path = output_path.rsplit(".", 1)[0] + ".opus"
             
             # Prepare API call
             headers = {

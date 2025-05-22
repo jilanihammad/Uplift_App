@@ -47,6 +47,14 @@ class NewMessageChunkReceived extends ChatEvent {
   List<Object?> get props => [content, isDone, error];
 }
 
+// New event for replacing all messages (for UI sync)
+class ReplaceMessages extends ChatEvent {
+  final List<TherapyMessage> messages;
+  const ReplaceMessages(this.messages);
+  @override
+  List<Object?> get props => [messages];
+}
+
 class ChatCompleted extends ChatEvent {}
 
 class ChatError extends ChatEvent {
@@ -105,6 +113,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatCompleted>(_onChatCompleted);
     on<ChatError>(_onChatError);
     on<NewMessageChunkReceived>(_onNewMessageChunkReceived);
+    on<ReplaceMessages>(_onReplaceMessages);
   }
 
   // StartChat: only for session/sessionId initialization or initial AI welcome
@@ -267,6 +276,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         event.error, List<TherapyMessage>.from(_currentMessages)));
     debugPrint(
         '[ChatBloc] Emitted ChatErrorState with ${_currentMessages.length} messages');
+  }
+
+  Future<void> _onReplaceMessages(
+      ReplaceMessages event, Emitter<ChatState> emit) async {
+    _currentMessages = List<TherapyMessage>.from(event.messages);
+    emit(ChatLoaded(_currentMessages));
   }
 
   @override

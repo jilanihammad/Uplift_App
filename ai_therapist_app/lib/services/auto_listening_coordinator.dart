@@ -339,11 +339,24 @@ class AutoListeningCoordinator {
   Future<void> _stopRecording() async {
     if (kDebugMode) {
       print(
-          '[AutoListeningCoordinator][DEBUG] _stopRecording called. Current state: [36m$_currentState[0m');
+          '[AutoListeningCoordinator][DEBUG] _stopRecording called. Current state: \x1B[36m[36m[0m');
       print(StackTrace.current);
     }
     if (_currentState == AutoListeningState.userSpeaking) {
       try {
+        // Minimum speech duration check
+        const minSpeechDuration = Duration(milliseconds: 600);
+        final elapsed = _recordingManager.elapsed;
+        if (elapsed < minSpeechDuration) {
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator][DEBUG] Discarded recording shorter than 600 ms (actual: [33m${elapsed.inMilliseconds}ms[0m)');
+          }
+          await _recordingManager.stopRecording(); // Stop and discard file
+          // Optionally delete the file if needed
+          _startListeningAfterDelay(); // Go back to listening
+          return;
+        }
         if (kDebugMode) {
           print(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
