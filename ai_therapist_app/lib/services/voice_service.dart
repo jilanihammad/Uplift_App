@@ -37,6 +37,29 @@ import 'base_voice_service.dart' as base_voice;
 // Transcription models
 enum TranscriptionModel { gpt4oMini, deepgramAI, assembly }
 
+// Top-level function for Isolate file processing (must be outside any class for compute)
+Future<Map<String, dynamic>> processAudioFileInIsolate(
+    Map<String, dynamic> args) async {
+  final String recordedFilePath = args['recordedFilePath'] as String;
+  final file = io.File(recordedFilePath);
+  bool fileExists = await file.exists();
+  if (!fileExists) {
+    return {'error': 'Audio file does not exist at path: $recordedFilePath'};
+  }
+  final bytes = await file.readAsBytes();
+  if (bytes.isEmpty) {
+    return {'error': 'Audio file is empty.'};
+  }
+  String base64Audio = base64Encode(bytes);
+  while (base64Audio.length % 4 != 0) {
+    base64Audio += '=';
+  }
+  return {
+    'base64Audio': base64Audio,
+    'fileSize': bytes.length,
+  };
+}
+
 class VoiceService {
   // Singleton instance
   static VoiceService? _instance;
@@ -509,109 +532,58 @@ class VoiceService {
     }
 
     try {
-      final io.File audioFile = io.File(recordedFilePath);
-      bool fileExists = await audioFile.exists();
-
+      // Use compute to offload file I/O and encoding
+      final result = await compute(
+          processAudioFileInIsolate, {'recordedFilePath': recordedFilePath});
+      if (result['error'] != null) {
+        if (kDebugMode) print('❌ VOICE ERROR: ${result['error']}');
+        await _deleteFile(recordedFilePath);
+        return "Error: ${result['error']} Please try again.";
+      }
+      final String base64Audio = result['base64Audio'];
+      final int fileSize = result['fileSize'];
       if (kDebugMode) {
         print(
-            '⏹️ VOICE DEBUG: processRecordedAudioFile: Audio file exists: $fileExists');
+            '⏹️ VOICE DEBUG: Audio file encoded in isolate, size: $fileSize bytes, base64 length: ${base64Audio.length}');
       }
-
-      if (fileExists) {
-        final bytes = await audioFile.readAsBytes();
-
+      // Continue with API call as before
+      try {
+        final startTime = DateTime.now();
         if (kDebugMode) {
           print(
-              '⏹️ VOICE DEBUG: processRecordedAudioFile: Audio file read successfully');
+              '⏹️ VOICE DEBUG: processRecordedAudioFile: Making API call to transcribe audio...');
         }
-
-        if (bytes.isNotEmpty) {
-          if (kDebugMode) {
-            print(
-                '⏹️ VOICE DEBUG: processRecordedAudioFile: Audio file size: ${bytes.length} bytes');
-          }
-
-          String base64Audio = base64Encode(bytes);
-          while (base64Audio.length % 4 != 0) {
-            base64Audio += '=';
-          }
-
-          if (kDebugMode) {
-            print(
-                '⏹️ VOICE DEBUG: processRecordedAudioFile: Audio file encoded successfully, size: ${base64Audio.length} chars');
-          }
-
-          try {
-            final startTime = DateTime.now();
-            if (kDebugMode) {
-              print(
-                  '⏹️ VOICE DEBUG: processRecordedAudioFile: Making API call to transcribe audio...');
-            }
-
-            final response = await _apiClient.post('/voice/transcribe', body: {
-              'audio_data': base64Audio,
-              'audio_format': 'm4a',
-              'model': 'gpt-4o-mini-transcribe'
-            });
-
-            final duration =
-                DateTime.now().difference(startTime).inMilliseconds;
-            if (kDebugMode) {
-              print(
-                  '⏹️ VOICE DEBUG: processRecordedAudioFile: Transcription API response in ${duration}ms: $response');
-            }
-
-            if (response != null && response.containsKey('text')) {
-              final transcription = response['text'] as String;
-              if (kDebugMode) {
-                print(
-                    '⏹️ VOICE DEBUG: processRecordedAudioFile: Transcription result: $transcription');
-              }
-              // Successfully transcribed, now delete the file
-              await _deleteFile(recordedFilePath);
-              return transcription.isNotEmpty
-                  ? transcription
-                  : ""; // Return empty string if backend gives empty text but no error
-            } else {
-              if (kDebugMode) {
-                print(
-                    '❌ VOICE ERROR: processRecordedAudioFile: Invalid response format from transcription API: $response');
-              }
-              await _deleteFile(
-                  recordedFilePath); // Attempt to delete even on API error
-              return "Error: Invalid response from transcription service";
-            }
-          } catch (e) {
-            if (kDebugMode) {
-              print(
-                  '❌ VOICE ERROR: processRecordedAudioFile: Error calling transcription API: $e');
-            }
-            await _deleteFile(
-                recordedFilePath); // Attempt to delete on API error
-            return "Error: Unable to transcribe audio. Please try again.";
-          }
-        } else {
-          if (kDebugMode) {
-            print(
-                '❌ VOICE ERROR: processRecordedAudioFile: Audio file is empty.');
-          }
-          await _deleteFile(recordedFilePath); // Delete empty file
-          return "Error: Audio recording was empty. Please try again.";
-        }
-      } else {
+        final response = await _apiClient.post('/voice/transcribe', body: {
+          'audio_data': base64Audio,
+          'audio_format': 'm4a',
+          'model': 'gpt-4o-mini-transcribe'
+        });
+        final duration = DateTime.now().difference(startTime).inMilliseconds;
         if (kDebugMode) {
           print(
-              '❌ VOICE ERROR: processRecordedAudioFile: Audio file does not exist at path: $recordedFilePath');
+              '⏹️ VOICE DEBUG: processRecordedAudioFile: Transcription API response in \\${duration}ms: $response');
         }
-        // No file to delete if it doesn't exist
-        return "Error: Could not find recorded audio file.";
+        final transcription = response['text'] as String;
+        if (kDebugMode) {
+          print(
+              '⏹️ VOICE DEBUG: processRecordedAudioFile: Transcription result: $transcription');
+        }
+        // Successfully transcribed, now delete the file
+        await _deleteFile(recordedFilePath);
+        return transcription.isNotEmpty ? transcription : "";
+      } catch (e) {
+        if (kDebugMode) {
+          print(
+              '❌ VOICE ERROR: processRecordedAudioFile: Error calling transcription API: $e');
+        }
+        await _deleteFile(recordedFilePath);
+        return "Error: Unable to transcribe audio. Please try again.";
       }
     } catch (e) {
       if (kDebugMode) {
         print(
             '❌ VOICE ERROR: processRecordedAudioFile: Error processing audio file: $e');
       }
-      // Attempt to delete if path is valid, even on general error, if file might exist
       try {
         final file = io.File(recordedFilePath);
         if (await file.exists()) {
