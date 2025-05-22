@@ -1,0 +1,62 @@
+import '../widgets/mood_selector.dart';
+import '../models/therapy_message.dart';
+
+abstract class VoiceSessionEvent {
+  const VoiceSessionEvent();
+}
+
+class StartSession extends VoiceSessionEvent {
+  const StartSession();
+}
+
+class EndSession extends VoiceSessionEvent {
+  const EndSession();
+}
+
+class StartListening extends VoiceSessionEvent {
+  const StartListening();
+}
+
+class StopListening extends VoiceSessionEvent {
+  const StopListening();
+}
+
+class SelectMood extends VoiceSessionEvent {
+  final Mood mood;
+  const SelectMood(this.mood);
+}
+
+class ChangeDuration extends VoiceSessionEvent {
+  final int minutes;
+  const ChangeDuration(this.minutes);
+}
+
+class SwitchMode extends VoiceSessionEvent {
+  final bool isVoiceMode;
+  const SwitchMode(this.isVoiceMode);
+}
+
+class ProcessAudio extends VoiceSessionEvent {
+  final String audioPath;
+  const ProcessAudio(this.audioPath);
+}
+
+class HandleError extends VoiceSessionEvent {
+  final String error;
+  const HandleError(this.error);
+}
+
+class UpdateAmplitude extends VoiceSessionEvent {
+  final double amplitude;
+  const UpdateAmplitude(this.amplitude);
+}
+
+class AddMessage extends VoiceSessionEvent {
+  final TherapyMessage message;
+  const AddMessage(this.message);
+}
+
+class SetProcessing extends VoiceSessionEvent {
+  final bool isProcessing;
+  const SetProcessing(this.isProcessing);
+}
