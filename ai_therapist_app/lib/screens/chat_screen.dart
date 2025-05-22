@@ -33,6 +33,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:ai_therapist_app/services/vad_manager.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
+import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? sessionId;
@@ -362,119 +363,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            if (isProcessing) const LinearProgressIndicator(),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                boxShadow: const [
-                  BoxShadow(
-                    offset: Offset(0, -2),
-                    blurRadius: 4,
-                    color: Color.fromRGBO(0, 0, 0, 0.1),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: (isRecording
-                                  ? Colors.red
-                                  : Theme.of(context).primaryColor)
-                              .withOpacity(0.85),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Tooltip(
-                          message: isRecording
-                              ? 'Stop Recording'
-                              : 'Start Recording',
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: _startVoiceInput,
-                              child: Center(
-                                child: Text(
-                                  isRecording ? 'Stop' : 'Talk',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      _buildCircularButton(
-                        icon: _isSpeakerMuted
-                            ? Icons.volume_off
-                            : Icons.volume_up,
-                        tooltip:
-                            _isSpeakerMuted ? 'Unmute Speaker' : 'Mute Speaker',
-                        onPressed: () async {
-                          setState(() {
-                            _isSpeakerMuted = !_isSpeakerMuted;
-                          });
-                          if (_isSpeakerMuted) {
-                            await _voiceService
-                                .stopAudio(); // Ensure all audio and TTS stop immediately
-                          }
-                        },
-                        color: _isSpeakerMuted ? Colors.grey : null,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  InkWell(
-                    onTap: _toggleChatMode,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.chat_bubble_outline,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Switch to Chat Mode',
-                            style: TextStyle(
-                              color: Theme.of(context).primaryColor,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            VoiceControls(
+              isRecording: isRecording,
+              isProcessing: isProcessing,
+              isSpeakerMuted: _isSpeakerMuted,
+              micAnimation: _micAnimation,
+              onMicTap: _startVoiceInput,
+              onSpeakerToggle: () async {
+                setState(() {
+                  _isSpeakerMuted = !_isSpeakerMuted;
+                });
+                if (_isSpeakerMuted) {
+                  await _voiceService.stopAudio();
+                }
+              },
+              onSwitchMode: _toggleChatMode,
             ),
           ],
         ),
@@ -1826,43 +1729,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       debugPrint('Wakelock unexpectedly disabled, re-enabling');
       WakelockPlus.enable();
     }
-  }
-
-  // Helper method to create circular buttons
-  Widget _buildCircularButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onPressed,
-    Color? color,
-  }) {
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: (color ?? Theme.of(context).primaryColor).withOpacity(
-          onPressed == null ? 0.4 : 0.85,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Tooltip(
-        message: tooltip,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: Center(child: Icon(icon, color: Colors.white, size: 24)),
-          ),
-        ),
-      ),
-    );
   }
 }
 
