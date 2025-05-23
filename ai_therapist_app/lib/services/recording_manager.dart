@@ -7,6 +7,14 @@ import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
 import 'base_voice_service.dart';
 
+// Add at the very top of the file, before RecordingManager
+class NotRecordingException implements Exception {
+  final String message;
+  NotRecordingException([this.message = 'Recorder is not recording']);
+  @override
+  String toString() => 'NotRecordingException: $message';
+}
+
 /// Manages audio recording functionality
 ///
 /// Responsible for starting/stopping recording, handling permissions,
@@ -116,15 +124,19 @@ class RecordingManager {
     }
   }
 
-  // Stop recording audio
-  Future<String> stopRecording() async {
+  /// Stops the current recording session if active.
+  ///
+  /// Returns the path to the recorded file, or null if not recording.
+  /// Throws [NotRecordingException] if called when not recording.
+  Future<String?> stopRecording() async {
     final isRecording = await _recorder.isRecording();
     if (!isRecording) {
       _errorController.add('Recorder is not recording');
       if (kDebugMode) {
         print('⚠️ Stop recording called but recorder was not recording');
       }
-      return '';
+      // Throw a typed error and return null
+      throw NotRecordingException();
     }
 
     try {
@@ -152,7 +164,7 @@ class RecordingManager {
       if (kDebugMode) {
         print('❌ Error stopping recording: $e');
       }
-      return '';
+      return null;
     }
   }
 

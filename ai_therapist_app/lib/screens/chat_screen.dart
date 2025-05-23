@@ -5,11 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../blocs/chat_bloc.dart';
 import '../blocs/voice_session_bloc.dart';
@@ -19,27 +17,22 @@ import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
 
 import '../di/service_locator.dart';
-import '../services/voice_service.dart';
 import '../services/therapy_service.dart' hide TherapyServiceMessage;
 import '../services/progress_service.dart';
 import '../services/preferences_service.dart';
 import '../widgets/mood_selector.dart';
 import '../models/therapist_style.dart';
-import '../models/user_preferences.dart';
 import '../models/therapy_message.dart';
 import '../data/repositories/session_repository.dart';
 import '../services/navigation_service.dart';
 import '../services/audio_generator.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
-import '../services/auto_listening_coordinator.dart';
-import '../services/base_voice_service.dart' as bvs;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
-import 'package:ai_therapist_app/screens/widgets/chat_bubble.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -76,7 +69,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   String _currentSessionId = '';
   Mood? _initialMood;
   TherapistStyle? _therapistStyle;
-  bool _isMicMuted = false;
   bool _isSpeakerMuted = false;
 
   // Voice recording variables
@@ -93,7 +85,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Session timer - kept local for UI timing
   Timer? _sessionTimer;
-  int _remainingTimeSeconds = 0;
 
   // Declare a variable to track if session is being ended
   bool _isEndingSession = false;
@@ -119,7 +110,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Initialize voice service instance and setup
     _voiceService = serviceLocator<VoiceService>();
-    _initializeVoiceService();
+    _initializeServices();
 
     // Wire up recording completion to Bloc
     _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
@@ -334,7 +325,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                   _isSpeakerMuted = !_isSpeakerMuted;
                 });
                 if (_isSpeakerMuted) {
-                  await _voiceService.stopAudio();
+                  context.read<VoiceSessionBloc>().add(StopAudio());
                 }
               },
               onSwitchMode: _toggleChatMode,
@@ -382,30 +373,36 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     );
   }
 
-  Widget _buildMessageItem(TherapyMessage message) {
-    final isUser = message.isUser;
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    return ChatBubble(
-      message: message,
-      isUser: isUser,
-      isDarkMode: isDarkMode,
-      onPlayAudio:
-          message.audioUrl != null ? () => _playAudio(message.audioUrl!) : null,
-    );
-  }
-
-  Future<void> _initializeVoiceService() async {
-    // Dispose old subscriptions before creating new ones
-    await _ttsSubscription?.cancel();
-    _ttsSubscription = null;
+  Future<void> _initializeServices() async {
+    debugPrint('[ChatScreen] _initializeServices called');
 
     try {
-      await _voiceService.initialize();
+      // Use Bloc event instead of direct service calls
+      context.read<VoiceSessionBloc>().add(InitializeService());
+
+      // Wait for initialization to complete
+      await Future.delayed(const Duration(milliseconds: 1000));
+
+      // Set up callback for recording completion - this is critical!
+      _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
+          (String audioPath) {
+        debugPrint(
+            '[ChatScreen] Recording complete callback triggered with path: $audioPath');
+        // Process the audio through the Bloc
+        context.read<VoiceSessionBloc>().add(ProcessAudio(audioPath));
+      };
+
+      // Listen to TTS playback stream
       _ttsSubscription = _voiceService.audioPlaybackStream.listen((_) {});
+
+      debugPrint('[ChatScreen] Services initialized successfully');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not initialize microphone: $e')),
-      );
+      debugPrint('[ChatScreen] Service initialization failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to initialize services: $e')),
+        );
+      }
     }
   }
 
@@ -484,76 +481,58 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _addInitialAIMessage(selectedMood);
   }
 
-  void _addInitialAIMessage(Mood mood) {
-    String welcomeMessage;
+  String _getWelcomeMessage(Mood mood) {
     switch (mood) {
       case Mood.happy:
-        welcomeMessage =
-            "I'm glad to hear you're feeling positive today! What would you like to talk about?";
-        break;
+        return "I'm glad to hear you're feeling positive today! What would you like to talk about?";
       case Mood.sad:
-        welcomeMessage =
-            "I'm sorry to hear you're feeling down. Would you like to talk about what's troubling you?";
-        break;
+        return "I'm sorry to hear you're feeling down. Would you like to talk about what's troubling you?";
       case Mood.anxious:
-        welcomeMessage =
-            "I notice you're feeling anxious. Let's explore what's causing these feelings and find ways to help you feel more at ease.";
-        break;
+        return "I notice you're feeling anxious. Let's explore what's causing these feelings and find ways to help you feel more at ease.";
       case Mood.angry:
-        welcomeMessage =
-            "I can see you're feeling frustrated or angry. It's good to acknowledge these emotions. Would you like to talk about what triggered these feelings?";
-        break;
+        return "I can see you're feeling frustrated or angry. It's good to acknowledge these emotions. Would you like to talk about what triggered these feelings?";
       case Mood.stressed:
-        welcomeMessage =
-            "It sounds like you're under stress. Let's talk about what's happening and explore some coping strategies that might help.";
-        break;
+        return "It sounds like you're under stress. Let's talk about what's happening and explore some coping strategies that might help.";
       default:
-        welcomeMessage =
-            "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
+        return "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
     }
+  }
 
-    final aiWelcomeMsg = TherapyMessage(
-      id: DateTime.now().microsecondsSinceEpoch.toString() + '_maya_welcome',
+  void _addInitialAIMessage(Mood mood) {
+    final state = context.read<VoiceSessionBloc>().state;
+    String welcomeMessage = _getWelcomeMessage(mood);
+
+    final aiMessage = TherapyMessage(
+      id: DateTime.now().millisecondsSinceEpoch.toString() + '_ai',
       content: welcomeMessage,
       isUser: false,
       timestamp: DateTime.now(),
-      audioUrl: null,
     );
 
-    context.read<VoiceSessionBloc>().add(AddMessage(aiWelcomeMsg));
+    // Add message to Bloc
+    context.read<VoiceSessionBloc>().add(AddMessage(aiMessage));
 
-    final state = context.read<VoiceSessionBloc>().state;
+    // If in voice mode, generate TTS for the welcome message
     if (state.isVoiceMode) {
-      _voiceService.autoListeningCoordinator.enableAutoMode().then((_) {
-        if (kDebugMode)
-          print(
-            '[ChatScreen] Auto mode enabled by _addInitialAIMessage before welcome TTS.',
-          );
-        _voiceService.streamAndPlayTTS(
-          text: welcomeMessage,
-          onDone: _startListeningAfterTTS,
-          onError: (error) {
-            if (kDebugMode)
-              print(
-                '[ChatScreen] Error during initial welcome TTS: $error',
-              );
-            _startListeningAfterTTS();
-          },
-        );
-      }).catchError((e) {
-        if (kDebugMode)
-          print(
-            '[ChatScreen] Error enabling auto mode in _addInitialAIMessage: $e',
-          );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error enabling voice mode: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      });
+      debugPrint('[ChatScreen] Starting welcome TTS in voice mode');
+
+      _voiceService.streamAndPlayTTS(
+        text: welcomeMessage,
+        onDone: () {
+          debugPrint('[ChatScreen] Welcome TTS completed, enabling auto mode');
+          // Enable auto mode AFTER TTS completes
+          context.read<VoiceSessionBloc>().add(EnableAutoMode());
+          _startListeningAfterTTS();
+        },
+        onError: (error) {
+          debugPrint('Welcome TTS Error: $error');
+          // Enable auto mode even on error
+          context.read<VoiceSessionBloc>().add(EnableAutoMode());
+          _startListeningAfterTTS();
+        },
+      );
+    } else {
+      _startListeningAfterTTS();
     }
   }
 
@@ -595,348 +574,21 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Helper: After TTS completes, re-enable VAD and start recording
   Future<void> _startListeningAfterTTS() async {
-    if (!mounted) return; // Added safety check for mounted state
-    if (kDebugMode) {
-      print(
-        '[ChatScreen] _startListeningAfterTTS: TTS playback complete. AutoListeningCoordinator should handle VAD reactivation.',
-      );
-    }
-    // The AutoListeningCoordinator should react to its isTtsActuallySpeakingStream
-    // and its autoModeEnabled state to restart VAD. No need to call enableAutoMode() here.
-
-    // Ensure ChatScreen's processing state is reset.
-    if (mounted) {
-      context.read<VoiceSessionBloc>().add(StartListening());
-    }
-    // If autoMode is enabled in ALC, it should start listening automatically
-    // when isAiSpeaking stream becomes false.
-  }
-
-  Future<void> _startVoiceInput({String? preRecordedAudioPath}) async {
     final state = context.read<VoiceSessionBloc>().state;
-    if (!_voiceService.isInitialized) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Microphone not ready. Please try again or end the session.',
-          ),
-        ),
-      );
+    debugPrint(
+        '[ChatScreen] _startListeningAfterTTS: TTS playback complete. Current voice mode: ${state.isVoiceMode}');
+
+    if (!state.isVoiceMode) {
+      debugPrint(
+          '[ChatScreen] Not in voice mode, skipping listening activation');
       return;
     }
 
-    // If a preRecordedAudioPath is provided (VAD flow)
-    if (preRecordedAudioPath != null) {
-      if (kDebugMode) {
-        print(
-          '💬 CHAT: VAD flow - Transcribing pre-recorded audio at $preRecordedAudioPath',
-        );
-      }
+    // The AutoListeningCoordinator should handle VAD reactivation automatically
+    // We just need to ensure the Bloc state reflects that we're ready to listen
+    context.read<VoiceSessionBloc>().add(StartListening());
 
-      // Ensure UI reflects processing state immediately
-      if (mounted && !state.isProcessing) {
-        context.read<VoiceSessionBloc>().add(SetProcessing(true));
-      }
-      // If this was triggered by VAD, ensure _isRecording visually stops if it hasn't already
-      // The actual recording is already stopped by AutoListeningCoordinator.
-      // The _isRecording state in ChatScreen is updated via the recordingState stream.
-      // However, to be absolutely sure the UI for recording stops if VAD triggers this,
-      // and the stream update might be slightly delayed:
-      if (preRecordedAudioPath != null && state.isProcessing && mounted) {
-        // setState(() { _isRecording = false; }); // This might conflict with stream updates.
-        // Let the stream handle _isRecording, _isProcessing is key here.
-      }
-
-      String transcription;
-      try {
-        if (preRecordedAudioPath != null && preRecordedAudioPath.isNotEmpty) {
-          // VAD flow: transcribe the provided audio path
-          if (kDebugMode) {
-            print(
-              '💬 CHAT: VAD flow - Transcribing pre-recorded audio at $preRecordedAudioPath',
-            );
-          }
-          transcription = await _voiceService.processRecordedAudioFile(
-            preRecordedAudioPath,
-          );
-        } else {
-          if (kDebugMode) {
-            print(
-              '⚠️ CHAT: _startVoiceInput called to stop, but not recording and no VAD path.',
-            );
-          }
-          if (mounted) {
-            context.read<VoiceSessionBloc>().add(SetProcessing(false));
-          }
-          return;
-        }
-
-        if (kDebugMode) {
-          print('💬 CHAT: Transcription received/processed: "$transcription"');
-        }
-
-        if (transcription.startsWith("Error:")) {
-          if (mounted) {
-            if (kDebugMode) print('💬 CHAT ERROR: $transcription');
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(transcription),
-                duration: const Duration(seconds: 3),
-                backgroundColor: Colors.red,
-              ),
-            );
-            context.read<VoiceSessionBloc>().add(SetProcessing(false));
-          }
-          return;
-        }
-
-        if (transcription.isNotEmpty &&
-            !transcription.contains("Tap to speak") &&
-            !transcription.contains("type your message")) {
-          if (kDebugMode) {
-            print('💬 CHAT: Valid transcription obtained: $transcription');
-          }
-
-          // 1. Create and add user message to ChatBloc
-          final userMessage = TherapyMessage(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            content: transcription,
-            isUser: true,
-            timestamp: DateTime.now(),
-          );
-
-          List<TherapyMessage> currentMessagesForBloc = [];
-          final currentChatState = context.read<ChatBloc>().state;
-          if (currentChatState is ChatLoaded) {
-            currentMessagesForBloc = List.from(currentChatState.messages);
-          } else if (currentChatState is ChatCompletedState) {
-            currentMessagesForBloc = List.from(currentChatState.messages);
-          } else if (currentChatState is ChatErrorState) {
-            currentMessagesForBloc = List.from(currentChatState.messages);
-          }
-          // Add other states like ChatInitial or ChatLoading if needed
-
-          currentMessagesForBloc.add(userMessage);
-          if (mounted) {
-            // Ensure mounted before interacting with context/Bloc
-            context.read<ChatBloc>().add(
-                  ReplaceMessages(List.from(currentMessagesForBloc)),
-                ); // Add copy
-            if (kDebugMode)
-              print(
-                '💬 CHAT: Emitted ChatLoaded with user message: "$transcription"',
-              );
-          }
-
-          final history =
-              currentMessagesForBloc // Use the updated list for history
-                  .where(
-                    (m) => m.id != userMessage.id,
-                  ) // Exclude current user message from history for LLM
-                  .map(
-                    (m) => {
-                      'role': m.isUser ? 'user' : 'assistant',
-                      'content': m.content,
-                    },
-                  )
-                  .toList();
-
-          debugPrint('📜 Passing history to ChatBloc/therapyService: $history');
-
-          // 2. Call TherapyService
-          final Map<String, dynamic>? responseData =
-              await _therapyService.processUserMessageWithStreamingAudio(
-            transcription,
-            history,
-            onTTSPlaybackComplete: _startListeningAfterTTS,
-            onTTSError: (String error) {
-              if (kDebugMode) {
-                print('💬 CHAT: TTS Error from TherapyService: $error');
-              }
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('TTS Error: $error'),
-                    backgroundColor: Colors.orangeAccent,
-                  ),
-                );
-                _startListeningAfterTTS();
-              }
-            },
-          );
-
-          final aiResponseText = responseData?['text'] as String?;
-
-          // 3. If AI response is valid, create and add AI message to ChatBloc
-          if (aiResponseText != null && aiResponseText.trim().isNotEmpty) {
-            if (kDebugMode) {
-              print('🟩 AI Response Text from TherapyService: $aiResponseText');
-            }
-            final aiMessage = TherapyMessage(
-              id: DateTime.now()
-                  .microsecondsSinceEpoch
-                  .toString(), // Ensure unique ID
-              content: aiResponseText,
-              isUser: false,
-              timestamp: DateTime.now(),
-            );
-            currentMessagesForBloc.add(
-              aiMessage,
-            ); // Add to the list that already has user's message
-            if (mounted) {
-              // Ensure mounted
-              context.read<ChatBloc>().add(
-                    ReplaceMessages(List.from(currentMessagesForBloc)),
-                  ); // Add copy
-              if (kDebugMode)
-                print(
-                  '🟩 CHAT: Emitted ChatLoaded with AI message: "$aiResponseText"',
-                );
-            }
-          } else {
-            if (kDebugMode) {
-              print('⚠️ Empty AI reply text from TherapyService.');
-            }
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Maya had no text response.')),
-              );
-              // If no AI text, the state was already emitted with just user message.
-              // _startListeningAfterTTS should be called by onTTSPlaybackComplete or onTTSError.
-              // If TherapyService guarantees to call one of them, this is fine.
-              // Safety net if neither was called due to no text:
-              if (responseData == null ||
-                  (responseData['text'] as String? ?? '').trim().isEmpty) {
-                if (kDebugMode)
-                  print(
-                    'Ensuring listening restarts after empty/null AI text response and no TTS activity.',
-                  );
-                await _startListeningAfterTTS();
-              }
-            }
-          }
-        } else if (transcription.isNotEmpty) {
-          // Got a placeholder message, just show it to the user
-          if (mounted) {
-            if (kDebugMode) {
-              print('💬 CHAT: Got placeholder: $transcription');
-            }
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(transcription),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
-        }
-        // Ensure _isProcessing is reset if not handled by specific AI response paths
-        if (mounted && state.isProcessing) {
-          context.read<VoiceSessionBloc>().add(SetProcessing(false));
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print(
-            '💬 CHAT ERROR: Error processing voice in _startVoiceInput: $e',
-          );
-        }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error processing voice: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          if (state.isProcessing) {
-            context.read<VoiceSessionBloc>().add(SetProcessing(false));
-          }
-        }
-      } finally {
-        // Final safety net to ensure _isProcessing is false
-        if (mounted && state.isProcessing) {
-          context.read<VoiceSessionBloc>().add(SetProcessing(false));
-        }
-      }
-    } else {
-      // This block is for starting recording (manual "Talk" button press when not already recording)
-      if (kDebugMode) {
-        print('💬 CHAT: Starting recording manually');
-      }
-      if (mounted && !state.isProcessing) {
-        // Ensure processing is true while attempting to start
-        context.read<VoiceSessionBloc>().add(SetProcessing(true));
-      }
-
-      try {
-        // Disable ALC before manual recording starts to prevent VAD interference
-        await _voiceService.autoListeningCoordinator.disableAutoMode();
-        if (kDebugMode) print('[ChatScreen] Manual recording: ALC disabled.');
-
-        // VoiceService.startRecording now delegates to RecordingManager,
-        // and RecordingManager updates its own state stream, which ChatScreen listens to.
-        // So, _isRecording will be set by the stream listener.
-        await _voiceService.startRecording();
-        // _isRecording is now true due to stream update if successful
-        if (kDebugMode) {
-          print('💬 CHAT: Manual recording start initiated via VoiceService.');
-        }
-      } catch (e) {
-        // _isRecording should remain false or be set by stream to error/stopped.
-        if (kDebugMode) {
-          print('💬 CHAT ERROR: Failed to start recording manually: $e');
-        }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error starting recording: $e'),
-              duration: const Duration(seconds: 3),
-              backgroundColor: Colors.red,
-            ),
-          );
-          // If starting failed, re-enable ALC if in voice mode, as it was just disabled
-          if (state.isVoiceMode) {
-            _voiceService.autoListeningCoordinator.enableAutoMode().catchError((
-              alcError,
-            ) {
-              if (kDebugMode)
-                print(
-                  '[ChatScreen] Error re-enabling ALC after failed manual start: $alcError',
-                );
-            });
-          }
-        }
-      } finally {
-        // Reset _isProcessing after attempting to start.
-        // _isRecording state is managed by the stream.
-        if (mounted && state.isProcessing) {
-          context.read<VoiceSessionBloc>().add(SetProcessing(false));
-        }
-      }
-    }
-  }
-
-  Future<void> _playAudio(String audioPath, {bool inVoiceMode = false}) async {
-    // This method is primarily for playing back user-recorded or non-TTS audio.
-    // TTS audio playback and its animation are now handled by isTtsActuallySpeaking stream.
-    context.read<VoiceSessionBloc>().add(SetProcessing(false));
-
-    if (kDebugMode) {
-      print(
-        '💬 CHAT: Starting general audio playback for path: $audioPath (not TTS)',
-      );
-    }
-
-    try {
-      // Play audio - if it's TTS, VoiceService will handle the speaking state.
-      // For other audio, we don't show the "Maya is speaking" animation.
-      await _voiceService.playAudio(audioPath);
-    } catch (e) {
-      if (kDebugMode) {
-        print('💬 CHAT ERROR: Error playing general audio: $e');
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error playing audio: $e')));
-    }
+    debugPrint('[ChatScreen] Listening state updated in Bloc');
   }
 
   Future<void> _endSession() async {
@@ -1047,7 +699,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Re-initialize VoiceService for next session
     if (kDebugMode) print('🔄 Re-initializing VoiceService for next session');
     await _voiceService.initializeOnlyIfNeeded();
-    await _initializeVoiceService(); // <-- Ensure subscriptions and mic are set up for the new instance
+    await _initializeServices(); // <-- Ensure subscriptions and mic are set up for the new instance
 
     // Show a modal progress indicator
     if (mounted) {
@@ -1226,36 +878,22 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   void _toggleChatMode() {
     final bloc = context.read<VoiceSessionBloc>();
     final state = bloc.state;
-    // Stop any ongoing audio before switching modes
-    _voiceService.stopAudio();
+
+    debugPrint(
+        '🔄 Switching from ${state.isVoiceMode ? "voice" : "chat"} to ${state.isVoiceMode ? "chat" : "voice"} mode');
+
+    // Stop any ongoing audio before switching
+    bloc.add(StopAudio());
+
     setState(() {
       _isSpeakerMuted = false;
       _messageController.clear();
     });
-    // Toggle the mode in the bloc
+
+    // Toggle the mode in the bloc (VAD management is handled by the Bloc)
     bloc.add(SwitchMode(!state.isVoiceMode));
-    debugPrint('🔄 Switched to \\${state.isVoiceMode ? "chat" : "voice"} mode');
-  }
 
-  void _switchToTextMode() {
-    context.read<VoiceSessionBloc>().add(SwitchMode(false));
-    setState(() {
-      _isSpeakerMuted = true;
-    });
-    debugPrint('🔄 Switched to text mode');
-  }
-
-  void _switchToVoiceMode() {
-    context.read<VoiceSessionBloc>().add(SwitchMode(true));
-    setState(() {
-      _isSpeakerMuted = false;
-    });
-    debugPrint('🔄 Switched to voice mode');
-  }
-
-  void _navigateAway() {
-    debugPrint('[ChatScreen] Navigating away from chat screen');
-    Navigator.of(context).pop();
+    debugPrint('🔄 Mode switch complete');
   }
 
   Widget _buildMicButton() {
@@ -1298,15 +936,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         }
       },
     );
-  }
-
-  // Add this guard function
-  void _ensureLock() async {
-    final enabled = await WakelockPlus.enabled;
-    if (!enabled) {
-      debugPrint('Wakelock unexpectedly disabled, re-enabling');
-      WakelockPlus.enable();
-    }
   }
 }
 
