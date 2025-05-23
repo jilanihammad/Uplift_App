@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:just_audio/just_audio.dart';
@@ -64,14 +66,21 @@ class TTSStreamingService {
 
   Future<void> _playBufferedAudio(String format) async {
     try {
-      // Write buffer to a temp file or use a custom audio source
-      // For simplicity, use AudioPlayer's BytesAudioSource
-      final audioSource = BytesAudioSource(
-        Uint8List.fromList(_audioBuffer),
-        contentType: format == 'opus' ? 'audio/ogg' : 'audio/mpeg',
-      );
-      await _player.setAudioSource(audioSource);
+      // Write buffer to a temporary file and play from file
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File(
+          '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.${format == 'opus' ? 'ogg' : 'mp3'}');
+      await tempFile.writeAsBytes(_audioBuffer);
+
+      await _player.setFilePath(tempFile.path);
       await _player.play();
+
+      // Clean up temp file after playback
+      _player.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          tempFile.delete().catchError((_) {});
+        }
+      });
     } catch (e) {
       // Handle playback errors
       rethrow;

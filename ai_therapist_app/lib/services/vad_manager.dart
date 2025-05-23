@@ -24,16 +24,17 @@ class VADManager {
   // Amplitude thresholds
   final double _speechStartThreshold =
       -25.0; // dB (higher means more sensitive)
-  final double _speechEndThreshold =
-      -45.0; // dB (higher means less likely to end)
+  final double _speechEndThreshold = -35.0; // dB (made less strict - was -45.0)
 
   // Processing options
   final int _consecutiveLoudFramesRequired =
       2; // More responsive speech detection
-  final int _consecutiveQuietFramesRequired = 10; // Faster speech end detection
+  final int _consecutiveQuietFramesRequired =
+      6; // Faster speech end detection (was 10)
 
   // Silence timeouts (ms)
-  final int _maxSilenceDuration = 700; // Stop recording after this much silence
+  final int _maxSilenceDuration =
+      1500; // Stop recording after this much silence (was 700)
 
   // State tracking
   bool _isInitialized = false;
@@ -201,10 +202,10 @@ class VADManager {
     if (!_isListening) return;
 
     if (kDebugMode) {
-      // Print every 5 amplitude readings (to avoid flooding the console)
-      if (Random().nextInt(5) == 0) {
+      // Print every 10 amplitude readings (to avoid flooding the console)
+      if (Random().nextInt(10) == 0) {
         print(
-            '🎙️ VAD amplitude: $level dB (threshold: $_speechStartThreshold)');
+            '🎙️ VAD amplitude: $level dB (start threshold: $_speechStartThreshold, end threshold: $_speechEndThreshold, speech detected: $_isSpeechDetected)');
       }
     }
 
@@ -212,40 +213,56 @@ class VADManager {
       // Already detecting speech, check if it ended
       if (level < _speechEndThreshold) {
         _consecutiveQuietFrames++;
+        _consecutiveLoudFrames = 0; // Reset loud frames when quiet
+
+        if (kDebugMode && _consecutiveQuietFrames % 3 == 0) {
+          print(
+              '🎙️ VAD: Quiet frames: $_consecutiveQuietFrames/$_consecutiveQuietFramesRequired (level: $level dB)');
+        }
 
         if (_consecutiveQuietFrames >= _consecutiveQuietFramesRequired) {
-          // Reset counters and update state
-          _consecutiveQuietFrames = 0;
-          _consecutiveLoudFrames = 0;
-
-          // Only stop if we've recorded for at least 1 second
+          // Check minimum speech duration
           final now = DateTime.now();
           final speechDuration = _speechStartTime != null
               ? now.difference(_speechStartTime!).inMilliseconds
               : 0;
 
-          if (speechDuration > 1000) {
+          if (speechDuration > 800) {
+            // Reduced from 1000ms to 800ms
             if (kDebugMode) {
-              print('🎙️ VAD: Speech ended (duration: ${speechDuration}ms)');
+              print(
+                  '🎙️ VAD: Speech ended after ${speechDuration}ms (quiet frames)');
             }
             _stopSpeechDetection();
           } else if (kDebugMode) {
             print(
                 '🎙️ VAD: Ignoring brief speech fragment (${speechDuration}ms)');
+            // Reset counters to continue listening
+            _consecutiveQuietFrames = 0;
           }
         }
       } else {
         // Reset quiet frame counter if volume is still loud enough
+        if (_consecutiveQuietFrames > 0) {
+          if (kDebugMode) {
+            print('🎙️ VAD: Speech resumed, resetting quiet frames');
+          }
+        }
         _consecutiveQuietFrames = 0;
+        _consecutiveLoudFrames++;
 
-        // Cancel any active silence timer
+        // Cancel any active silence timer since we're still speaking
         _silenceTimer?.cancel();
 
         // Start a new silence timer
         _silenceTimer = Timer(Duration(milliseconds: _maxSilenceDuration), () {
           if (_isSpeechDetected) {
+            final speechDuration = _speechStartTime != null
+                ? DateTime.now().difference(_speechStartTime!).inMilliseconds
+                : 0;
             if (kDebugMode) {
-              print('🎙️ VAD: Speech ended due to silence timeout');
+              print(
+                  '🎙️ VAD: Speech ended due to silence timeout after ${speechDuration}ms');
             }
             _stopSpeechDetection();
           }
@@ -255,10 +272,12 @@ class VADManager {
       // Not yet detecting speech, check if it started
       if (level >= _speechStartThreshold) {
         _consecutiveLoudFrames++;
+        _consecutiveQuietFrames = 0; // Reset quiet frames when loud
 
         if (_consecutiveLoudFrames >= _consecutiveLoudFramesRequired) {
           if (kDebugMode) {
-            print('🎙️ VAD: Speech detected! Starting recording');
+            print(
+                '🎙️ VAD: Speech detected! Starting recording (level: $level dB)');
           }
           _startSpeechDetection();
         }

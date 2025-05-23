@@ -367,7 +367,7 @@ class AutoListeningCoordinator {
           print(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: stopRecording() returned path: $audioPath');
         }
-        if (audioPath.isNotEmpty) {
+        if (audioPath != null && audioPath.isNotEmpty) {
           // Notify listeners that recording has completed
           if (onRecordingCompleteCallback != null) {
             onRecordingCompleteCallback!(audioPath);
@@ -429,7 +429,35 @@ class AutoListeningCoordinator {
     }
   }
 
-  // Enable automatic listening mode
+  // Enable automatic listening mode with explicit audio state from Bloc
+  Future<void> enableAutoModeWithAudioState(bool isAudioPlaying) async {
+    if (!_autoModeEnabled) {
+      _autoModeEnabled = true;
+      _autoModeEnabledController.add(true);
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [MODE] enableAutoModeWithAudioState called with isAudioPlaying=$isAudioPlaying, autoModeEnabled set to true');
+      }
+
+      // Use the audio state provided by the Bloc instead of checking AudioPlayerManager
+      if (!isAudioPlaying) {
+        if (kDebugMode)
+          print(
+              '[AutoListeningCoordinator] [MODE] Bloc says audio not playing, calling _startListening()');
+        await _startListening();
+      } else {
+        if (kDebugMode)
+          print(
+              '[AutoListeningCoordinator] [MODE] Bloc says audio is playing, setting state to aiSpeaking');
+        _updateState(AutoListeningState.aiSpeaking);
+      }
+    } else if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator] [MODE] enableAutoModeWithAudioState called, but autoModeEnabled already true');
+    }
+  }
+
+  // Enable automatic listening mode (original method using AudioPlayerManager)
   Future<void> enableAutoMode() async {
     if (!_autoModeEnabled) {
       _autoModeEnabled = true;
@@ -438,8 +466,18 @@ class AutoListeningCoordinator {
         print(
             '[AutoListeningCoordinator] [MODE] enableAutoMode called, autoModeEnabled set to true');
       }
+
+      // Check audio playing state with detailed logging
+      final isAudioPlaying = _audioPlayerManager.isPlaying;
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [MODE] Audio playing state check: isPlaying=$isAudioPlaying');
+        print(
+            '[AutoListeningCoordinator] [MODE] AudioPlayerManager internal state check...');
+      }
+
       // If AI is not currently speaking, start listening
-      if (!_audioPlayerManager.isPlaying) {
+      if (!isAudioPlaying) {
         if (kDebugMode)
           print(
               '[AutoListeningCoordinator] [MODE] Not playing audio, calling _startListening()');

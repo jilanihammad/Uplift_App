@@ -8,6 +8,7 @@ class VoiceSessionState extends Equatable {
   final double amplitude;
   final bool isVADActive;
   final bool isVoiceMode;
+  final bool isAudioPlaying;
   final Mood? selectedMood;
   final int sessionDurationMinutes;
   final int sessionTimerSeconds;
@@ -24,6 +25,7 @@ class VoiceSessionState extends Equatable {
     this.amplitude = 0.0,
     this.isVADActive = false,
     this.isVoiceMode = true,
+    this.isAudioPlaying = false,
     this.selectedMood,
     this.sessionDurationMinutes = 15,
     this.sessionTimerSeconds = 0,
@@ -41,6 +43,7 @@ class VoiceSessionState extends Equatable {
     double? amplitude,
     bool? isVADActive,
     bool? isVoiceMode,
+    bool? isAudioPlaying,
     Mood? selectedMood,
     int? sessionDurationMinutes,
     int? sessionTimerSeconds,
@@ -57,6 +60,7 @@ class VoiceSessionState extends Equatable {
       amplitude: amplitude ?? this.amplitude,
       isVADActive: isVADActive ?? this.isVADActive,
       isVoiceMode: isVoiceMode ?? this.isVoiceMode,
+      isAudioPlaying: isAudioPlaying ?? this.isAudioPlaying,
       selectedMood: selectedMood ?? this.selectedMood,
       sessionDurationMinutes:
           sessionDurationMinutes ?? this.sessionDurationMinutes,
@@ -77,6 +81,7 @@ class VoiceSessionState extends Equatable {
         amplitude,
         isVADActive,
         isVoiceMode,
+        isAudioPlaying,
         selectedMood,
         sessionDurationMinutes,
         sessionTimerSeconds,

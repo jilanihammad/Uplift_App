@@ -84,3 +84,25 @@ class ShowDurationSelector extends VoiceSessionEvent {
 class ToggleMicMute extends VoiceSessionEvent {
   const ToggleMicMute();
 }
+
+// Phase 3: New events for service calls
+class InitializeService extends VoiceSessionEvent {
+  const InitializeService();
+}
+
+class EnableAutoMode extends VoiceSessionEvent {
+  const EnableAutoMode();
+}
+
+class DisableAutoMode extends VoiceSessionEvent {
+  const DisableAutoMode();
+}
+
+class StopAudio extends VoiceSessionEvent {
+  const StopAudio();
+}
+
+class PlayAudio extends VoiceSessionEvent {
+  final String audioPath;
+  const PlayAudio(this.audioPath);
+}

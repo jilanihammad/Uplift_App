@@ -11,6 +11,9 @@ class AudioPlayerManager {
   // Audio player instance
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // Force override for isPlaying state
+  bool? _forceIsPlayingState;
+
   // Stream controllers
   final StreamController<bool> _playingStateController =
       StreamController<bool>.broadcast();
@@ -117,6 +120,9 @@ class AudioPlayerManager {
       // Stop any current playback
       await _audioPlayer.stop();
 
+      // Clear force override when starting new playback
+      _forceIsPlayingState = null;
+
       // Load and play the audio
       await _audioPlayer.setFilePath(audioPath);
       await _audioPlayer.play();
@@ -147,10 +153,14 @@ class AudioPlayerManager {
   Future<void> stopAudio() async {
     try {
       await _audioPlayer.stop();
+
+      // Force the state to false immediately
+      _forceIsPlayingState = false;
       _playingStateController.add(false);
 
       if (kDebugMode) {
-        print('🎧 Audio playback stopped');
+        print(
+            '🎧 AudioPlayerManager: Audio playback stopped - isPlaying forced to false');
       }
     } catch (e) {
       _errorController.add('Error stopping audio: $e');
@@ -160,8 +170,33 @@ class AudioPlayerManager {
     }
   }
 
+  // Force reset the playing state
+  void forceStopState() {
+    _forceIsPlayingState = false;
+    _playingStateController.add(false);
+    if (kDebugMode) {
+      print('🎧 AudioPlayerManager: Playing state forced to false');
+    }
+  }
+
   // Check if audio is currently playing
-  bool get isPlaying => _audioPlayer.playing;
+  bool get isPlaying {
+    // If we have a force override, use that
+    if (_forceIsPlayingState != null) {
+      if (kDebugMode) {
+        print(
+            '🎧 AudioPlayerManager.isPlaying: Using force override = $_forceIsPlayingState');
+      }
+      return _forceIsPlayingState!;
+    }
+    // Otherwise use the actual player state
+    final actualState = _audioPlayer.playing;
+    if (kDebugMode) {
+      print(
+          '🎧 AudioPlayerManager.isPlaying: Using actual player state = $actualState');
+    }
+    return actualState;
+  }
 
   // Clean up resources
   Future<void> dispose() async {

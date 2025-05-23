@@ -37,14 +37,14 @@ class AppLogger {
   // Log an error message with optional stack trace
   static void e(String message, [dynamic error, StackTrace? stackTrace]) {
     if (kDebugMode) {
-      _logger.e(message, error, stackTrace);
+      _logger.e(message, error: error, stackTrace: stackTrace);
     }
   }
 
   // Log a fatal error
-  static void wtf(String message, [dynamic error, StackTrace? stackTrace]) {
+  static void f(String message, [dynamic error, StackTrace? stackTrace]) {
     if (kDebugMode) {
-      _logger.wtf(message, error, stackTrace);
+      _logger.f(message, error: error, stackTrace: stackTrace);
     }
   }
 }
