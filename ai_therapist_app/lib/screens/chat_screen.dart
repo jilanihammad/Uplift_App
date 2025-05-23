@@ -262,6 +262,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Widget _buildVoiceChatView() {
     return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
       builder: (context, state) {
+        // UI Guard: If processing but not recording, clear stuck state
+        if (state.isProcessing && !state.isRecording) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted)
+              setState(() {}); // Triggers rebuild, UI will clear spinner
+          });
+        }
         // Mic animation logic: trigger animation when state.isRecording changes
         if (state.isRecording && !_micAnimationController.isAnimating) {
           _micAnimationController.repeat(reverse: true);
@@ -340,6 +347,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     debugPrint('[ChatScreen] _buildTextChatView called');
     return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
       builder: (context, state) {
+        // UI Guard: If processing but not recording, clear stuck state
+        if (state.isProcessing && !state.isRecording) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted)
+              setState(() {}); // Triggers rebuild, UI will clear spinner
+          });
+        }
         return Container(
           color: Theme.of(context).scaffoldBackgroundColor,
           child: Column(
