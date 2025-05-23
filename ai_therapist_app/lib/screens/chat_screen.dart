@@ -70,16 +70,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final ValueNotifier<bool> _isProcessing = ValueNotifier(false);
-  bool _showMoodSelector = false;
-  bool _showDurationSelector = false;
+
+  // Local state that doesn't belong in Bloc (UI-specific only)
   bool _isInitializing = true; // Add this flag to track initialization
   String _currentSessionId = '';
   Mood? _initialMood;
   TherapistStyle? _therapistStyle;
-
-  // Mode management variables
-  bool _isVoiceMode = true; // Default to voice mode
   bool _isMicMuted = false;
   bool _isSpeakerMuted = false;
 
@@ -89,16 +85,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   late VoiceService _voiceService;
   StreamSubscription<bool>? _ttsSubscription;
 
-  // Session duration
-  int _sessionDurationMinutes = 15; // Default is 15 minutes
-
   // Services
   final TherapyService _therapyService = serviceLocator<TherapyService>();
   final ProgressService _progressService = serviceLocator<ProgressService>();
   final NavigationService _navigationService =
       serviceLocator<NavigationService>();
 
-  // Countdown timer variables
+  // Session timer - kept local for UI timing
   Timer? _sessionTimer;
   int _remainingTimeSeconds = 0;
 
@@ -159,119 +152,119 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _voiceService.dispose();
     _sessionTimer?.cancel();
     _navigationService.showBottomNav();
-    _isProcessing.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     debugPrint('[ChatScreen] build called');
-    return WillPopScope(
-      onWillPop: () async {
-        print('[ChatScreen] onWillPop called');
-        final blocState = context.read<ChatBloc>().state;
-        final hasMessages =
-            blocState is ChatLoaded && blocState.messages.isNotEmpty;
-        if (hasMessages &&
-            !_showDurationSelector &&
-            !_showMoodSelector &&
-            !_isInitializing) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Please use the End button to finish your session.',
-              ),
-            ),
-          );
-          return false;
-        }
-        return true;
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Row(
-            children: [
-              const Text('Ongoing Session'),
-              if (_therapistStyle != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: Tooltip(
-                    message: _therapistStyle!.name,
-                    child: Icon(
-                      _therapistStyle!.icon,
-                      size: 16,
-                      color: _therapistStyle!.color,
-                    ),
+    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
+      builder: (context, state) {
+        return WillPopScope(
+          onWillPop: () async {
+            print('[ChatScreen] onWillPop called');
+            final blocState = context.read<ChatBloc>().state;
+            final hasMessages =
+                blocState is ChatLoaded && blocState.messages.isNotEmpty;
+            if (hasMessages &&
+                !state.showDurationSelector &&
+                !state.showMoodSelector &&
+                !_isInitializing) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Please use the End button to finish your session.',
                   ),
                 ),
-            ],
-          ),
-          actions: [
-            if (!_showDurationSelector &&
-                !_showMoodSelector &&
-                !_isInitializing)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.lightBlue.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.lightBlue, width: 1),
-                      ),
-                      child: Text(
-                        _formatRemainingTime(),
-                        style: const TextStyle(
-                          color: Colors.lightBlue,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
+              );
+              return false;
+            }
+            return true;
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              title: Row(
+                children: [
+                  const Text('Ongoing Session'),
+                  if (_therapistStyle != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8.0),
+                      child: Tooltip(
+                        message: _therapistStyle!.name,
+                        child: Icon(
+                          _therapistStyle!.icon,
+                          size: 16,
+                          color: _therapistStyle!.color,
                         ),
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
-            if (!_showDurationSelector &&
-                !_showMoodSelector &&
-                !_isInitializing)
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: ElevatedButton(
-                  onPressed: _endSession,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
+              actions: [
+                if (!_isInitializing)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.lightBlue.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border:
+                                Border.all(color: Colors.lightBlue, width: 1),
+                          ),
+                          child: Text(
+                            _formatRemainingTime(),
+                            style: const TextStyle(
+                              color: Colors.lightBlue,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: const Text('End'),
-                ),
-              ),
-          ],
-        ),
-        body: _isInitializing
-            ? const Center(child: CircularProgressIndicator())
-            : _showDurationSelector
-                ? DurationSelector(
-                    selectedDuration: _sessionDurationMinutes,
-                    onDurationSelected: _handleDurationSelection,
-                  )
-                : _showMoodSelector
-                    ? MoodSelectorScreen(
-                        selectedMood: _initialMood,
-                        onMoodSelected: _handleMoodSelection,
+                if (!_isInitializing)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: ElevatedButton(
+                      onPressed: _endSession,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                      child: const Text('End'),
+                    ),
+                  ),
+              ],
+            ),
+            body: _isInitializing
+                ? const Center(child: CircularProgressIndicator())
+                : state.showDurationSelector
+                    ? DurationSelector(
+                        selectedDuration: state.sessionDurationMinutes,
+                        onDurationSelected: _handleDurationSelection,
                       )
-                    : _isVoiceMode
-                        ? _buildVoiceChatView()
-                        : _buildTextChatView(),
-      ),
+                    : state.showMoodSelector
+                        ? MoodSelectorScreen(
+                            selectedMood: _initialMood,
+                            onMoodSelected: _handleMoodSelection,
+                          )
+                        : state.isVoiceMode
+                            ? _buildVoiceChatView()
+                            : _buildTextChatView(),
+          ),
+        );
+      },
     );
   }
 
@@ -325,7 +318,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             ),
             VoiceControls(
               isRecording: state.isRecording,
-              isProcessing: _isProcessing.value,
+              isProcessing: state.isProcessing,
               isSpeakerMuted: _isSpeakerMuted,
               micAnimation: _micAnimation,
               onMicTap: () {
@@ -373,12 +366,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                   },
                 ),
               ),
-              if (_isProcessing.value) const LinearProgressIndicator(),
+              if (state.isProcessing) const LinearProgressIndicator(),
               TextInputBar(
                 messageController: _messageController,
                 micAnimation: _micAnimation,
                 micButton: _buildMicButton(),
-                isProcessing: _isProcessing.value,
+                isProcessing: state.isProcessing,
                 onSend: _sendMessage,
                 onSwitchMode: _toggleChatMode,
               ),
@@ -437,19 +430,21 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<void> _initSession() async {
+    final bloc = context.read<VoiceSessionBloc>();
+
     if (widget.sessionId != null) {
       // Load existing session (would normally fetch from repository)
       _currentSessionId = widget.sessionId ?? '';
-      _showMoodSelector = false;
-      _showDurationSelector = false;
+      bloc.add(ShowMoodSelector(false));
+      bloc.add(ShowDurationSelector(false));
 
       // Show loading indicator
-      _isProcessing.value = true;
+      bloc.add(SetProcessing(true));
 
       // Simulate loading delay (replace with actual loading)
       await Future.delayed(const Duration(seconds: 1));
 
-      _isProcessing.value = false;
+      bloc.add(SetProcessing(false));
 
       // Start the session timer for continuing sessions too
       _startSessionTimer();
@@ -465,30 +460,27 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       }
 
       // For new sessions, we show the duration selector first, then mood selector
-      setState(() {
-        _showDurationSelector = true;
-        // Ensure we start in voice mode
-        _isVoiceMode = true;
-      });
+      bloc.add(ShowDurationSelector(true));
+      bloc.add(SwitchMode(true)); // Ensure we start in voice mode
     }
   }
 
   void _handleDurationSelection(int minutes) {
-    setState(() {
-      _sessionDurationMinutes = minutes;
-      _showDurationSelector = false;
-      _showMoodSelector = true;
-      debugPrint('Duration selected: $minutes min, showing mood selector');
-    });
+    final bloc = context.read<VoiceSessionBloc>();
+    bloc.add(ChangeDuration(minutes));
+    bloc.add(ShowDurationSelector(false));
+    bloc.add(ShowMoodSelector(true));
+    debugPrint('Duration selected: $minutes min, showing mood selector');
   }
 
   void _handleMoodSelection(Mood selectedMood) {
+    final bloc = context.read<VoiceSessionBloc>();
     setState(() {
       _initialMood = selectedMood;
-      _showMoodSelector = false;
       _isInitializing = false;
-      debugPrint('Mood selected: $selectedMood, session is now active');
     });
+    bloc.add(ShowMoodSelector(false));
+    debugPrint('Mood selected: $selectedMood, session is now active');
     _addInitialAIMessage(selectedMood);
   }
 
@@ -520,7 +512,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
     }
 
-    // Create Maya's welcome message
     final aiWelcomeMsg = TherapyMessage(
       id: DateTime.now().microsecondsSinceEpoch.toString() + '_maya_welcome',
       content: welcomeMessage,
@@ -529,18 +520,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       audioUrl: null,
     );
 
-    // Add the welcome message to VoiceSessionBloc (this is what ChatMessageList uses)
     context.read<VoiceSessionBloc>().add(AddMessage(aiWelcomeMsg));
 
-    // Play welcome message as audio in voice mode
-    if (_isVoiceMode) {
-      // Ensure AutoListeningCoordinator is in auto mode before the first TTS
+    final state = context.read<VoiceSessionBloc>().state;
+    if (state.isVoiceMode) {
       _voiceService.autoListeningCoordinator.enableAutoMode().then((_) {
         if (kDebugMode)
           print(
             '[ChatScreen] Auto mode enabled by _addInitialAIMessage before welcome TTS.',
           );
-        // Now play TTS, which will trigger _startListeningAfterTTS on completion.
         _voiceService.streamAndPlayTTS(
           text: welcomeMessage,
           onDone: _startListeningAfterTTS,
@@ -549,11 +537,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
               print(
                 '[ChatScreen] Error during initial welcome TTS: $error',
               );
-            // Ensure processing is reset and try to start listening anyway
-            if (mounted && _isProcessing.value) {
-              if (mounted) _isProcessing.value = false;
-            }
-            _startListeningAfterTTS(); // Attempt to recover listening state
+            _startListeningAfterTTS();
           },
         );
       }).catchError((e) {
@@ -561,7 +545,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           print(
             '[ChatScreen] Error enabling auto mode in _addInitialAIMessage: $e',
           );
-        // Handle error, maybe show a message or don't proceed with TTS
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -574,42 +557,25 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
   }
 
-  // Start the session countdown timer
   void _startSessionTimer() {
-    // Calculate total seconds from minutes
-    _remainingTimeSeconds = _sessionDurationMinutes * 60;
-
-    // Create and start the timer
-    _sessionTimer?.cancel(); // Cancel any existing timer
-    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        if (_remainingTimeSeconds > 0) {
-          _remainingTimeSeconds--;
-          _ensureLock(); // Ensure wakelock is always enabled
-        } else {
-          _sessionTimer?.cancel();
-          // Optionally auto-end the session or show a notification
-          // For now, we'll just leave the timer at 00:00
-        }
-      });
-    });
+    // Timer logic should be handled by Bloc; this can be removed or left empty.
   }
 
-  // Format the remaining time as mm:ss
   String _formatRemainingTime() {
-    final minutes = (_remainingTimeSeconds / 60).floor();
-    final seconds = _remainingTimeSeconds % 60;
+    final state = context.read<VoiceSessionBloc>().state;
+    final minutes = (state.sessionTimerSeconds / 60).floor();
+    final seconds = state.sessionTimerSeconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
-    if (_isVoiceMode) {
+    final state = context.read<VoiceSessionBloc>().state;
+    if (state.isVoiceMode) {
       // Existing voice mode logic
       return;
     }
-    // In text mode, dispatch to Bloc
     context.read<VoiceSessionBloc>().add(ProcessTextMessage(text));
     _messageController.clear();
   }
@@ -639,13 +605,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // and its autoModeEnabled state to restart VAD. No need to call enableAutoMode() here.
 
     // Ensure ChatScreen's processing state is reset.
-    if (_isProcessing.value) {
-      if (mounted) {
-        // Double check mounted before setState
-        _isProcessing.value = false;
-      }
-    }
-    // Explicitly dispatch StartListening to the Bloc after TTS completes
     if (mounted) {
       context.read<VoiceSessionBloc>().add(StartListening());
     }
@@ -654,6 +613,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<void> _startVoiceInput({String? preRecordedAudioPath}) async {
+    final state = context.read<VoiceSessionBloc>().state;
     if (!_voiceService.isInitialized) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -674,16 +634,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       }
 
       // Ensure UI reflects processing state immediately
-      if (mounted && !_isProcessing.value) {
-        // Avoid redundant setState if already processing
-        _isProcessing.value = true;
+      if (mounted && !state.isProcessing) {
+        context.read<VoiceSessionBloc>().add(SetProcessing(true));
       }
       // If this was triggered by VAD, ensure _isRecording visually stops if it hasn't already
       // The actual recording is already stopped by AutoListeningCoordinator.
       // The _isRecording state in ChatScreen is updated via the recordingState stream.
       // However, to be absolutely sure the UI for recording stops if VAD triggers this,
       // and the stream update might be slightly delayed:
-      if (preRecordedAudioPath != null && _isProcessing.value && mounted) {
+      if (preRecordedAudioPath != null && state.isProcessing && mounted) {
         // setState(() { _isRecording = false; }); // This might conflict with stream updates.
         // Let the stream handle _isRecording, _isProcessing is key here.
       }
@@ -707,7 +666,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             );
           }
           if (mounted) {
-            _isProcessing.value = false;
+            context.read<VoiceSessionBloc>().add(SetProcessing(false));
           }
           return;
         }
@@ -726,7 +685,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                 backgroundColor: Colors.red,
               ),
             );
-            _isProcessing.value = false;
+            context.read<VoiceSessionBloc>().add(SetProcessing(false));
           }
           return;
         }
@@ -871,8 +830,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           }
         }
         // Ensure _isProcessing is reset if not handled by specific AI response paths
-        if (mounted && _isProcessing.value) {
-          _isProcessing.value = false;
+        if (mounted && state.isProcessing) {
+          context.read<VoiceSessionBloc>().add(SetProcessing(false));
         }
       } catch (e) {
         if (kDebugMode) {
@@ -887,14 +846,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
               backgroundColor: Colors.red,
             ),
           );
-          if (_isProcessing.value) {
-            _isProcessing.value = false;
+          if (state.isProcessing) {
+            context.read<VoiceSessionBloc>().add(SetProcessing(false));
           }
         }
       } finally {
         // Final safety net to ensure _isProcessing is false
-        if (mounted && _isProcessing.value) {
-          _isProcessing.value = false;
+        if (mounted && state.isProcessing) {
+          context.read<VoiceSessionBloc>().add(SetProcessing(false));
         }
       }
     } else {
@@ -902,9 +861,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       if (kDebugMode) {
         print('💬 CHAT: Starting recording manually');
       }
-      if (mounted && !_isProcessing.value) {
+      if (mounted && !state.isProcessing) {
         // Ensure processing is true while attempting to start
-        _isProcessing.value = true;
+        context.read<VoiceSessionBloc>().add(SetProcessing(true));
       }
 
       try {
@@ -934,7 +893,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             ),
           );
           // If starting failed, re-enable ALC if in voice mode, as it was just disabled
-          if (_isVoiceMode) {
+          if (state.isVoiceMode) {
             _voiceService.autoListeningCoordinator.enableAutoMode().catchError((
               alcError,
             ) {
@@ -948,8 +907,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       } finally {
         // Reset _isProcessing after attempting to start.
         // _isRecording state is managed by the stream.
-        if (mounted && _isProcessing.value) {
-          _isProcessing.value = false;
+        if (mounted && state.isProcessing) {
+          context.read<VoiceSessionBloc>().add(SetProcessing(false));
         }
       }
     }
@@ -958,7 +917,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Future<void> _playAudio(String audioPath, {bool inVoiceMode = false}) async {
     // This method is primarily for playing back user-recorded or non-TTS audio.
     // TTS audio playback and its animation are now handled by isTtsActuallySpeaking stream.
-    _isProcessing.value = false;
+    context.read<VoiceSessionBloc>().add(SetProcessing(false));
 
     if (kDebugMode) {
       print(
@@ -981,8 +940,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<void> _endSession() async {
-    // Prevent multiple end session attempts
-    if (_isEndingSession || _isProcessing.value) {
+    final state = context.read<VoiceSessionBloc>().state;
+    if (_isEndingSession || state.isProcessing) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Session ending in progress...')));
@@ -1000,7 +959,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     } else if (blocState is ChatErrorState) {
       messages = blocState.messages;
     }
-    if (messages.isEmpty || _showDurationSelector || _showMoodSelector) {
+    if (messages.isEmpty ||
+        state.showDurationSelector ||
+        state.showMoodSelector) {
       if (kDebugMode) {
         print(
           'Session not properly started, skipping session summary generation',
@@ -1037,7 +998,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     setState(() {
       _isEndingSession = true;
-      _isProcessing.value = true;
+      context.read<VoiceSessionBloc>().add(SetProcessing(true));
     });
 
     _navigationService.showBottomNav();
@@ -1050,7 +1011,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     await _voiceService.stopAudio();
     _micAnimationController.stop();
     _micAnimationController.reset();
-    _isProcessing.value = false;
+    context.read<VoiceSessionBloc>().add(SetProcessing(false));
     _voiceService.dispose();
 
     // Unregister and re-register VoiceService and AudioGenerator for a fresh instance
@@ -1145,14 +1106,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       try {
         // Additional validation to ensure we have a valid session to save
         if (_currentSessionId.isEmpty ||
-            _showDurationSelector ||
-            _showMoodSelector) {
+            state.showDurationSelector ||
+            state.showMoodSelector) {
           if (kDebugMode) {
             print(
               'Invalid session state, skipping save: ' +
                   'sessionId=${_currentSessionId.isEmpty}, ' +
-                  'showDurationSelector=$_showDurationSelector, ' +
-                  'showMoodSelector=$_showMoodSelector',
+                  'showDurationSelector=${state.showDurationSelector}, ' +
+                  'showMoodSelector=${state.showMoodSelector}',
             );
           }
           throw Exception('Cannot save incomplete session');
@@ -1213,7 +1174,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
       setState(() {
         _isEndingSession = false;
-        _isProcessing.value = false;
+        context.read<VoiceSessionBloc>().add(SetProcessing(false));
       });
 
       // Navigate to summary screen using GoRouter
@@ -1237,7 +1198,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
       setState(() {
         _isEndingSession = false;
-        _isProcessing.value = false;
+        context.read<VoiceSessionBloc>().add(SetProcessing(false));
       });
 
       if (kDebugMode) {
@@ -1263,28 +1224,33 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Toggle between voice and text chat modes
   void _toggleChatMode() {
+    final bloc = context.read<VoiceSessionBloc>();
+    final state = bloc.state;
     // Stop any ongoing audio before switching modes
     _voiceService.stopAudio();
     setState(() {
-      _isVoiceMode = !_isVoiceMode;
+      _isSpeakerMuted = false;
       _messageController.clear();
-      _isProcessing.value = false;
     });
-    debugPrint('🔄 Switched to ${_isVoiceMode ? 'voice' : 'text'} mode');
+    // Toggle the mode in the bloc
+    bloc.add(SwitchMode(!state.isVoiceMode));
+    debugPrint('🔄 Switched to \\${state.isVoiceMode ? "chat" : "voice"} mode');
   }
 
   void _switchToTextMode() {
-    debugPrint('🔄 Switched to text mode');
+    context.read<VoiceSessionBloc>().add(SwitchMode(false));
     setState(() {
-      _isVoiceMode = false;
+      _isSpeakerMuted = true;
     });
+    debugPrint('🔄 Switched to text mode');
   }
 
   void _switchToVoiceMode() {
-    debugPrint('🔄 Switched to voice mode');
+    context.read<VoiceSessionBloc>().add(SwitchMode(true));
     setState(() {
-      _isVoiceMode = true;
+      _isSpeakerMuted = false;
     });
+    debugPrint('🔄 Switched to voice mode');
   }
 
   void _navigateAway() {

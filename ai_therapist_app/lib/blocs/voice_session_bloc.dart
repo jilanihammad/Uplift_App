@@ -30,6 +30,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<SetProcessing>(_onSetProcessing);
     on<SetRecordingState>(_onSetRecordingState);
     on<ProcessTextMessage>(_onProcessTextMessage);
+    on<ShowMoodSelector>(_onShowMoodSelector);
+    on<ShowDurationSelector>(_onShowDurationSelector);
+    on<ToggleMicMute>(_onToggleMicMute);
     // Subscribe to recording state
     _recordingStateSub = voiceService.recordingState.listen((recState) {
       final isRecording = recState.toString().contains('recording');
@@ -272,5 +275,23 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint('[VoiceSessionBloc] Error processing text message: $e');
       emit(state.copyWith(isProcessing: false, error: e.toString()));
     }
+  }
+
+  void _onShowMoodSelector(
+      ShowMoodSelector event, Emitter<VoiceSessionState> emit) {
+    debugPrint('[VoiceSessionBloc] Show mood selector: ${event.show}');
+    emit(state.copyWith(showMoodSelector: event.show));
+  }
+
+  void _onShowDurationSelector(
+      ShowDurationSelector event, Emitter<VoiceSessionState> emit) {
+    debugPrint('[VoiceSessionBloc] Show duration selector: ${event.show}');
+    emit(state.copyWith(showDurationSelector: event.show));
+  }
+
+  void _onToggleMicMute(ToggleMicMute event, Emitter<VoiceSessionState> emit) {
+    final newMutedState = !state.isMicMuted;
+    debugPrint('[VoiceSessionBloc] Toggle mic mute: $newMutedState');
+    emit(state.copyWith(isMicMuted: newMutedState));
   }
 }
