@@ -148,143 +148,149 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   Widget build(BuildContext context) {
     debugPrint('[ChatScreen] build called');
-    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
-      builder: (context, state) {
-        return WillPopScope(
-          onWillPop: () async {
-            print('[ChatScreen] onWillPop called');
-            final blocState = context.read<ChatBloc>().state;
-            final hasMessages =
-                blocState is ChatLoaded && blocState.messages.isNotEmpty;
-            if (hasMessages &&
-                !state.showDurationSelector &&
-                !state.showMoodSelector &&
-                !_isInitializing) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Please use the End button to finish your session.',
+    return WillPopScope(
+      onWillPop: () async {
+        print('[ChatScreen] onWillPop called');
+        final blocState = context.read<ChatBloc>().state;
+        final state = context.read<VoiceSessionBloc>().state;
+        final hasMessages =
+            blocState is ChatLoaded && blocState.messages.isNotEmpty;
+        if (hasMessages &&
+            !state.showDurationSelector &&
+            !state.showMoodSelector &&
+            !_isInitializing) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Please use the End button to finish your session.',
+              ),
+            ),
+          );
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              const Text('Ongoing Session'),
+              if (_therapistStyle != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: Tooltip(
+                    message: _therapistStyle!.name,
+                    child: Icon(
+                      _therapistStyle!.icon,
+                      size: 16,
+                      color: _therapistStyle!.color,
+                    ),
                   ),
                 ),
-              );
-              return false;
-            }
-            return true;
-          },
-          child: Scaffold(
-            appBar: AppBar(
-              title: Row(
-                children: [
-                  const Text('Ongoing Session'),
-                  if (_therapistStyle != null)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8.0),
-                      child: Tooltip(
-                        message: _therapistStyle!.name,
-                        child: Icon(
-                          _therapistStyle!.icon,
-                          size: 16,
-                          color: _therapistStyle!.color,
-                        ),
+            ],
+          ),
+          actions: [
+            if (!_isInitializing)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
                       ),
-                    ),
-                ],
-              ),
-              actions: [
-                if (!_isInitializing)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.lightBlue.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(12),
-                            border:
-                                Border.all(color: Colors.lightBlue, width: 1),
-                          ),
-                          child: Text(
-                            _formatRemainingTime(),
+                      decoration: BoxDecoration(
+                        color: Colors.lightBlue.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.lightBlue, width: 1),
+                      ),
+                      child: BlocSelector<VoiceSessionBloc, VoiceSessionState,
+                          int>(
+                        selector: (state) => state.sessionTimerSeconds,
+                        builder: (context, seconds) {
+                          final minutes = (seconds / 60).floor();
+                          final secs = seconds % 60;
+                          return Text(
+                            '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}',
                             style: const TextStyle(
                               color: Colors.lightBlue,
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (!_isInitializing)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: ElevatedButton(
-                      onPressed: _endSession,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
+                          );
+                        },
                       ),
-                      child: const Text('End'),
+                    ),
+                  ],
+                ),
+              ),
+            if (!_isInitializing)
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: ElevatedButton(
+                  onPressed: _endSession,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
                     ),
                   ),
-              ],
-            ),
-            body: _isInitializing
-                ? const Center(child: CircularProgressIndicator())
-                : state.showDurationSelector
-                    ? DurationSelector(
-                        selectedDuration: state.sessionDurationMinutes,
-                        onDurationSelected: _handleDurationSelection,
-                      )
-                    : state.showMoodSelector
-                        ? MoodSelectorScreen(
-                            selectedMood: _initialMood,
-                            onMoodSelected: _handleMoodSelection,
-                          )
-                        : state.isVoiceMode
-                            ? _buildVoiceChatView()
-                            : _buildTextChatView(),
-          ),
-        );
-      },
+                  child: const Text('End'),
+                ),
+              ),
+          ],
+        ),
+        body: _isInitializing
+            ? const Center(child: CircularProgressIndicator())
+            : BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
+                builder: (context, state) {
+                  if (state.showDurationSelector) {
+                    return DurationSelector(
+                      selectedDuration: state.sessionDurationMinutes,
+                      onDurationSelected: _handleDurationSelection,
+                    );
+                  } else if (state.showMoodSelector) {
+                    return MoodSelectorScreen(
+                      selectedMood: _initialMood,
+                      onMoodSelected: _handleMoodSelection,
+                    );
+                  } else if (state.isVoiceMode) {
+                    return _buildVoiceChatView();
+                  } else {
+                    return _buildTextChatView();
+                  }
+                },
+              ),
+      ),
     );
   }
 
   Widget _buildVoiceChatView() {
-    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
-      builder: (context, state) {
-        // UI Guard: If processing but not recording, clear stuck state
-        if (state.isProcessing && !state.isRecording) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted)
-              setState(() {}); // Triggers rebuild, UI will clear spinner
-          });
-        }
-        // Mic animation logic: trigger animation when state.isRecording changes
-        if (state.isRecording && !_micAnimationController.isAnimating) {
-          _micAnimationController.repeat(reverse: true);
-        } else if (!state.isRecording && _micAnimationController.isAnimating) {
-          _micAnimationController.stop();
-          _micAnimationController.reset();
-        }
-        return Column(
-          children: [
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
+    return Column(
+      children: [
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              BlocSelector<VoiceSessionBloc, VoiceSessionState,
+                  ({bool rec, double amp})>(
+                selector: (blocState) =>
+                    (rec: blocState.isRecording, amp: blocState.amplitude),
+                builder: (context, data) {
+                  // Mic animation logic: trigger animation when isRecording changes
+                  if (data.rec && !_micAnimationController.isAnimating) {
+                    _micAnimationController.repeat(reverse: true);
+                  } else if (!data.rec && _micAnimationController.isAnimating) {
+                    _micAnimationController.stop();
+                    _micAnimationController.reset();
+                  }
+                  return Container(
                     width: 120,
                     height: 120,
-                    child: state.isRecording
+                    child: data.rec
                         ? Lottie.asset(
                             'assets/animations/Microphone Animation.json',
                             width: 120,
@@ -297,43 +303,53 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                             height: 120,
                             fit: BoxFit.contain,
                           ),
-                  ),
-                  const SizedBox(height: 32),
-                  Text(
-                    state.isRecording
-                        ? "Listening to you..."
-                        : 'Press "Talk" to speak',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
-            ),
-            VoiceControls(
-              isRecording: state.isRecording,
-              isProcessing: state.isProcessing,
-              isSpeakerMuted: state.isSpeakerMuted,
-              micAnimation: _micAnimation,
-              onMicTap: () {
-                final bloc = context.read<VoiceSessionBloc>();
-                if (state.isRecording) {
-                  bloc.add(StopListening());
-                } else {
-                  bloc.add(StartListening());
-                }
-              },
-              onSpeakerToggle: () async {
-                final bloc = context.read<VoiceSessionBloc>();
-                final newMuted = !state.isSpeakerMuted;
-                bloc.add(SetSpeakerMuted(newMuted));
-              },
-              onSwitchMode: _toggleChatMode,
-            ),
-          ],
-        );
-      },
+              const SizedBox(height: 32),
+              BlocSelector<VoiceSessionBloc, VoiceSessionState, bool>(
+                selector: (blocState) => blocState.isRecording,
+                builder: (context, isRecording) => Text(
+                  isRecording ? "Listening to you..." : 'Press "Talk" to speak',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // The rest of the controls will be refactored in the next steps
+        BlocSelector<VoiceSessionBloc, VoiceSessionState,
+            ({bool rec, bool proc, bool muted})>(
+          selector: (state) => (
+            rec: state.isRecording,
+            proc: state.isProcessing,
+            muted: state.isSpeakerMuted
+          ),
+          builder: (context, data) => VoiceControls(
+            isRecording: data.rec,
+            isProcessing: data.proc,
+            isSpeakerMuted: data.muted,
+            micAnimation: _micAnimation,
+            onMicTap: () {
+              final bloc = context.read<VoiceSessionBloc>();
+              if (data.rec) {
+                bloc.add(StopListening());
+              } else {
+                bloc.add(StartListening());
+              }
+            },
+            onSpeakerToggle: () async {
+              final bloc = context.read<VoiceSessionBloc>();
+              final newMuted = !data.muted;
+              bloc.add(SetSpeakerMuted(newMuted));
+            },
+            onSwitchMode: _toggleChatMode,
+          ),
+        ),
+      ],
     );
   }
 
@@ -365,7 +381,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                   },
                 ),
               ),
-              if (state.isProcessing) const LinearProgressIndicator(),
+              BlocSelector<VoiceSessionBloc, VoiceSessionState, bool>(
+                selector: (state) => state.isProcessing,
+                builder: (context, isProcessing) {
+                  return isProcessing
+                      ? const LinearProgressIndicator()
+                      : const SizedBox.shrink();
+                },
+              ),
               TextInputBar(
                 messageController: _messageController,
                 micAnimation: _micAnimation,
