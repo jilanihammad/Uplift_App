@@ -106,3 +106,8 @@ class PlayAudio extends VoiceSessionEvent {
   final String audioPath;
   const PlayAudio(this.audioPath);
 }
+
+class SetSpeakerMuted extends VoiceSessionEvent {
+  final bool isMuted;
+  const SetSpeakerMuted(this.isMuted);
+}
