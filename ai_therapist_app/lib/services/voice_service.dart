@@ -1173,4 +1173,13 @@ class VoiceService {
     }
     _setAiSpeaking(false);
   }
+
+  /// Mute or unmute the speaker (local device only, does not affect streams)
+  Future<void> setSpeakerMuted(bool muted) async {
+    final volume = muted ? 0.0 : 1.0;
+    await _audioPlayerManager.setVolume(volume);
+    if (kDebugMode) {
+      print('[VoiceService] setSpeakerMuted: muted=$muted (volume=$volume)');
+    }
+  }
 }

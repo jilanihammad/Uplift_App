@@ -34,6 +34,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<ShowMoodSelector>(_onShowMoodSelector);
     on<ShowDurationSelector>(_onShowDurationSelector);
     on<ToggleMicMute>(_onToggleMicMute);
+    on<SetSpeakerMuted>(_onSetSpeakerMuted);
     // Phase 3: New event handlers
     on<InitializeService>(_onInitializeService);
     on<EnableAutoMode>(_onEnableAutoMode);
@@ -379,6 +380,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     final newMutedState = !state.isMicMuted;
     debugPrint('[VoiceSessionBloc] Toggle mic mute: $newMutedState');
     emit(state.copyWith(isMicMuted: newMutedState));
+  }
+
+  void _onSetSpeakerMuted(
+      SetSpeakerMuted event, Emitter<VoiceSessionState> emit) {
+    // Only update the state and set volume, do not stop audio or disrupt streams
+    voiceService.setSpeakerMuted(event.isMuted);
+    emit(state.copyWith(isSpeakerMuted: event.isMuted));
   }
 
   Future<void> _onInitializeService(

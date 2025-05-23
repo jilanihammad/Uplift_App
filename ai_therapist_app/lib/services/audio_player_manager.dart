@@ -204,4 +204,19 @@ class AudioPlayerManager {
     await _playingStateController.close();
     await _errorController.close();
   }
+
+  /// Set the playback volume (0.0 = mute, 1.0 = full volume)
+  Future<void> setVolume(double volume) async {
+    try {
+      await _audioPlayer.setVolume(volume);
+      if (kDebugMode) {
+        print('🎧 AudioPlayerManager: Volume set to $volume');
+      }
+    } catch (e) {
+      _errorController.add('Error setting volume: $e');
+      if (kDebugMode) {
+        print('❌ Error setting volume: $e');
+      }
+    }
+  }
 }

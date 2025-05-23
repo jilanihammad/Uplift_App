@@ -69,7 +69,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   String _currentSessionId = '';
   Mood? _initialMood;
   TherapistStyle? _therapistStyle;
-  bool _isSpeakerMuted = false;
 
   // Voice recording variables
   late AnimationController _micAnimationController;
@@ -279,45 +278,43 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         return Column(
           children: [
             Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 120,
-                      height: 120,
-                      child: state.isRecording
-                          ? Lottie.asset(
-                              'assets/animations/Microphone Animation.json',
-                              width: 120,
-                              height: 120,
-                              fit: BoxFit.contain,
-                            )
-                          : Lottie.asset(
-                              'assets/animations/Session Animation.json',
-                              width: 120,
-                              height: 120,
-                              fit: BoxFit.contain,
-                            ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 120,
+                    height: 120,
+                    child: state.isRecording
+                        ? Lottie.asset(
+                            'assets/animations/Microphone Animation.json',
+                            width: 120,
+                            height: 120,
+                            fit: BoxFit.contain,
+                          )
+                        : Lottie.asset(
+                            'assets/animations/Session Animation.json',
+                            width: 120,
+                            height: 120,
+                            fit: BoxFit.contain,
+                          ),
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    state.isRecording
+                        ? "Listening to you..."
+                        : 'Press "Talk" to speak',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
                     ),
-                    const SizedBox(height: 32),
-                    Text(
-                      state.isRecording
-                          ? "Listening to you..."
-                          : 'Press "Talk" to speak',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             VoiceControls(
               isRecording: state.isRecording,
               isProcessing: state.isProcessing,
-              isSpeakerMuted: _isSpeakerMuted,
+              isSpeakerMuted: state.isSpeakerMuted,
               micAnimation: _micAnimation,
               onMicTap: () {
                 final bloc = context.read<VoiceSessionBloc>();
@@ -328,12 +325,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                 }
               },
               onSpeakerToggle: () async {
-                setState(() {
-                  _isSpeakerMuted = !_isSpeakerMuted;
-                });
-                if (_isSpeakerMuted) {
-                  context.read<VoiceSessionBloc>().add(StopAudio());
-                }
+                final bloc = context.read<VoiceSessionBloc>();
+                final newMuted = !state.isSpeakerMuted;
+                bloc.add(SetSpeakerMuted(newMuted));
               },
               onSwitchMode: _toggleChatMode,
             ),
@@ -900,7 +894,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     bloc.add(StopAudio());
 
     setState(() {
-      _isSpeakerMuted = false;
       _messageController.clear();
     });
 
