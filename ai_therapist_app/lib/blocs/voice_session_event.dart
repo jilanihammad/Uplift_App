@@ -70,3 +70,17 @@ class ProcessTextMessage extends VoiceSessionEvent {
   final String text;
   const ProcessTextMessage(this.text);
 }
+
+class ShowMoodSelector extends VoiceSessionEvent {
+  final bool show;
+  const ShowMoodSelector(this.show);
+}
+
+class ShowDurationSelector extends VoiceSessionEvent {
+  final bool show;
+  const ShowDurationSelector(this.show);
+}
+
+class ToggleMicMute extends VoiceSessionEvent {
+  const ToggleMicMute();
+}

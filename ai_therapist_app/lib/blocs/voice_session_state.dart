@@ -14,6 +14,9 @@ class VoiceSessionState extends Equatable {
   final bool isProcessing;
   final String? error;
   final List<TherapyMessage> messages;
+  final bool showMoodSelector;
+  final bool showDurationSelector;
+  final bool isMicMuted;
 
   const VoiceSessionState({
     this.isListening = false,
@@ -27,6 +30,9 @@ class VoiceSessionState extends Equatable {
     this.isProcessing = false,
     this.error,
     this.messages = const [],
+    this.showMoodSelector = false,
+    this.showDurationSelector = false,
+    this.isMicMuted = false,
   });
 
   VoiceSessionState copyWith({
@@ -41,6 +47,9 @@ class VoiceSessionState extends Equatable {
     bool? isProcessing,
     String? error,
     List<TherapyMessage>? messages,
+    bool? showMoodSelector,
+    bool? showDurationSelector,
+    bool? isMicMuted,
   }) {
     return VoiceSessionState(
       isListening: isListening ?? this.isListening,
@@ -55,6 +64,9 @@ class VoiceSessionState extends Equatable {
       isProcessing: isProcessing ?? this.isProcessing,
       error: error,
       messages: messages ?? this.messages,
+      showMoodSelector: showMoodSelector ?? this.showMoodSelector,
+      showDurationSelector: showDurationSelector ?? this.showDurationSelector,
+      isMicMuted: isMicMuted ?? this.isMicMuted,
     );
   }
 
@@ -71,5 +83,8 @@ class VoiceSessionState extends Equatable {
         isProcessing,
         error,
         messages,
+        showMoodSelector,
+        showDurationSelector,
+        isMicMuted,
       ];
 }
