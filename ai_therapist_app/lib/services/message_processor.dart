@@ -5,11 +5,17 @@ import 'package:flutter/foundation.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
+import '../config/llm_config.dart'; // Import LLM Configuration
 
 /// Handles processing of user messages and generating AI responses
 class MessageProcessor {
   // API client for making requests
   final ApiClient _apiClient;
+
+  // Flag to control whether to use direct LLM calls or backend proxy
+  // Set this to true to bypass backend and call LLM providers directly
+  static const bool _useDirectLLMCalls =
+      false; // Change to true to enable direct calls
 
   // Cache for API responses to avoid redundant processing
   final Map<String, String> _responseCache = {};
@@ -69,6 +75,82 @@ class MessageProcessor {
         return _responseCache[userMessage]!;
       }
 
+      String response;
+
+      if (_useDirectLLMCalls) {
+        // Make direct LLM API call
+        response = await _processMessageDirectLLM(
+            userMessage, systemPrompt, graphResult);
+      } else {
+        // Use backend proxy (original behavior)
+        response = await _processMessageViaBackend(
+            userMessage, systemPrompt, graphResult);
+      }
+
+      // Cache the response for future use
+      _responseCache[userMessage] = response;
+
+      // Limit cache size to avoid memory issues
+      if (_responseCache.length > 100) {
+        // Remove oldest entries when cache gets too large
+        final oldestKey = _responseCache.keys.first;
+        _responseCache.remove(oldestKey);
+      }
+
+      return response;
+    } catch (e, stackTrace) {
+      log.e('General error processing message', e, stackTrace);
+      return "I'm having trouble understanding that right now. Could you try expressing that differently?";
+    }
+  }
+
+  /// Process message using direct LLM API calls
+  Future<String> _processMessageDirectLLM(String userMessage,
+      String systemPrompt, Map<String, dynamic> graphResult) async {
+    try {
+      log.d(
+          'Using direct LLM calls (${LLMConfig.activeLLMProvider} - ${LLMConfig.activeLLMModelId})');
+
+      // Build the effective system prompt with context
+      final effectiveSystemPrompt =
+          _buildSystemPrompt(systemPrompt, graphResult);
+
+      // Make direct LLM call
+      final response = await _apiClient.callLLMDirect(
+        effectiveSystemPrompt,
+        userMessage,
+        additionalParams: {
+          'temperature': 0.7,
+          'max_tokens': 1000,
+        },
+      );
+
+      if (response.containsKey('response') && response['response'] != null) {
+        final responseText = response['response'] as String;
+
+        if (kDebugMode) {
+          print(
+              '[MessageProcessor] Direct LLM response received: ${responseText.length} characters');
+          if (response.containsKey('usage')) {
+            print('[MessageProcessor] Token usage: ${response['usage']}');
+          }
+        }
+
+        return responseText.trim();
+      } else {
+        log.w('Invalid response format from direct LLM call');
+        throw Exception('Invalid response format from LLM');
+      }
+    } catch (e) {
+      log.e('Error with direct LLM call, falling back to local response', e);
+      return _generateFallbackResponseLocally(userMessage);
+    }
+  }
+
+  /// Process message using backend proxy (original behavior)
+  Future<String> _processMessageViaBackend(String userMessage,
+      String systemPrompt, Map<String, dynamic> graphResult) async {
+    try {
       // Build the request payload
       final effectiveSystemPrompt =
           _buildSystemPrompt(systemPrompt, graphResult);
@@ -89,33 +171,19 @@ class MessageProcessor {
 
         if (response != null && response.containsKey('response')) {
           log.d('API call successful. Response received.');
-
-          // Cache the response for future use
-          _responseCache[userMessage] = response['response'];
-
-          // Limit cache size to avoid memory issues
-          if (_responseCache.length > 100) {
-            // Remove oldest entries when cache gets too large
-            final oldestKey = _responseCache.keys.first;
-            _responseCache.remove(oldestKey);
-          }
-
           return response['response'];
         } else {
           log.w('Invalid response format. Response was: $response');
+          throw Exception('Invalid backend response format');
         }
       } catch (e, stackTrace) {
-        log.e('API Error', e, stackTrace);
+        log.e('Backend API Error', e, stackTrace);
         _logDetailedError(e);
-        return _generateFallbackResponseLocally(userMessage);
+        throw e; // Re-throw to be caught by outer try-catch
       }
-
-      // Generate fallback response if API call failed or response was invalid
-      log.w('API call didn\'t return valid response, generating fallback');
-      return await _generateFallbackResponse(userMessage);
-    } catch (e, stackTrace) {
-      log.e('General error processing message', e, stackTrace);
-      return "I'm having trouble understanding that right now. Could you try expressing that differently?";
+    } catch (e) {
+      log.w('Backend call failed, generating fallback response');
+      return _generateFallbackResponseLocally(userMessage);
     }
   }
 
@@ -257,30 +325,14 @@ class MessageProcessor {
   Future<Map<String, dynamic>> generateSessionSummary(
       List<Map<String, dynamic>> messages, String systemPrompt) async {
     try {
-      log.i('Making API call to end_session with payload: ${json.encode({
-            'messages_count': messages.length,
-            'system_prompt_length': systemPrompt.length
-          })}');
+      log.i('Generating session summary for ${messages.length} messages');
 
-      // Make API call to end session and get summary
-      try {
-        final response = await _apiClient.post('/therapy/end_session',
-            body: {'messages': messages, 'system_prompt': systemPrompt});
-
-        if (response != null) {
-          log.i(
-              'Received response from end_session API: ${json.encode(response)}');
-          log.i('Session summary generated successfully');
-          return response;
-        } else {
-          log.w('Received null response from end_session API');
-          // Try fallback summary generation
-          return _generateFallbackSummary(messages);
-        }
-      } catch (e) {
-        log.e('API error in generateSessionSummary', e);
-        _logDetailedError(e);
-        return _generateFallbackSummary(messages);
+      if (_useDirectLLMCalls) {
+        // Use direct LLM call for session summary
+        return await _generateSessionSummaryDirectLLM(messages, systemPrompt);
+      } else {
+        // Use backend proxy (original behavior)
+        return await _generateSessionSummaryViaBackend(messages, systemPrompt);
       }
     } catch (e) {
       log.e('Error ending session', e);
@@ -293,6 +345,118 @@ class MessageProcessor {
           'Remember the strategies discussed'
         ],
       };
+    }
+  }
+
+  /// Generate session summary using direct LLM call
+  Future<Map<String, dynamic>> _generateSessionSummaryDirectLLM(
+      List<Map<String, dynamic>> messages, String systemPrompt) async {
+    try {
+      log.d('Using direct LLM call for session summary');
+
+      // Build conversation text
+      final conversationText = messages.map((msg) {
+        final role = msg['isUser'] == true ? 'User' : 'Therapist';
+        return '$role: ${msg['content']}';
+      }).join('\n\n');
+
+      // Create summary prompt
+      final summaryPrompt =
+          '''Based on this therapy session conversation, please provide:
+
+1. A compassionate summary of the session (2-3 sentences)
+2. 3-5 actionable items for the client to consider
+3. Key topics discussed
+
+Return your response in JSON format:
+{
+  "summary": "...",
+  "action_items": ["...", "...", "..."],
+  "topics": ["...", "...", "..."]
+}
+
+Conversation:
+$conversationText''';
+
+      // Make direct LLM call
+      final response = await _apiClient.callLLMDirect(
+        'You are an expert therapist creating session summaries. Provide thoughtful, actionable insights.',
+        summaryPrompt,
+        additionalParams: {
+          'temperature': 0.3, // Lower temperature for more consistent summaries
+          'max_tokens': 1500,
+        },
+      );
+
+      if (response.containsKey('response') && response['response'] != null) {
+        final responseText = response['response'] as String;
+
+        try {
+          // Try to parse as JSON
+          final jsonMatch =
+              RegExp(r'\{.*\}', dotAll: true).firstMatch(responseText);
+          if (jsonMatch != null) {
+            final jsonStr = jsonMatch.group(0)!;
+            final parsedJson = json.decode(jsonStr) as Map<String, dynamic>;
+
+            log.i('Session summary generated successfully via direct LLM');
+            return {
+              'summary':
+                  parsedJson['summary'] ?? 'Session completed successfully.',
+              'action_items':
+                  parsedJson['action_items'] ?? ['Practice self-care'],
+              'topics': parsedJson['topics'] ?? [],
+              'generated_via': 'direct_llm',
+            };
+          }
+        } catch (e) {
+          log.w('Could not parse LLM response as JSON: $e');
+        }
+
+        // If JSON parsing fails, create summary from text
+        return {
+          'summary': responseText.length > 500
+              ? responseText.substring(0, 500) + '...'
+              : responseText,
+          'action_items': ['Reflect on today\'s session', 'Practice self-care'],
+          'topics': [],
+          'generated_via': 'direct_llm_text',
+        };
+      }
+
+      throw Exception('No response from direct LLM call');
+    } catch (e) {
+      log.e('Error with direct LLM session summary, falling back', e);
+      return _generateFallbackSummary(messages);
+    }
+  }
+
+  /// Generate session summary using backend proxy (original behavior)
+  Future<Map<String, dynamic>> _generateSessionSummaryViaBackend(
+      List<Map<String, dynamic>> messages, String systemPrompt) async {
+    try {
+      log.i('Making API call to end_session with payload: ${json.encode({
+            'messages_count': messages.length,
+            'system_prompt_length': systemPrompt.length
+          })}');
+
+      // Make API call to end session and get summary
+      final response = await _apiClient.post('/therapy/end_session',
+          body: {'messages': messages, 'system_prompt': systemPrompt});
+
+      if (response != null) {
+        log.i(
+            'Received response from end_session API: ${json.encode(response)}');
+        log.i('Session summary generated successfully');
+        return response;
+      } else {
+        log.w('Received null response from end_session API');
+        return _generateFallbackSummary(messages);
+      }
+    } catch (e) {
+      log.e('Backend API error in generateSessionSummary', e);
+      _logDetailedError(e);
+      return _generateFallbackSummary(messages);
     }
   }
 

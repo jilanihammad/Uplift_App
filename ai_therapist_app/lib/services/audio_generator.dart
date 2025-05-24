@@ -11,6 +11,7 @@ import '../data/datasources/remote/api_client.dart';
 import '../services/voice_service.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
+import '../config/llm_config.dart';
 
 /// Handles generation of audio from text
 class AudioGenerator {
@@ -31,6 +32,11 @@ class AudioGenerator {
 
   // Flag to track if initialized
   bool _isInitialized = false;
+
+  // Flag to control whether to use direct TTS calls or backend proxy
+  // Set this to true to bypass backend and call TTS providers directly
+  static const bool _useDirectTTSCalls =
+      false; // Change to true to enable direct calls
 
   // Factory constructor to enforce singleton pattern
   factory AudioGenerator({
@@ -232,6 +238,43 @@ class AudioGenerator {
     }
 
     try {
+      String? audioPath;
+
+      if (_useDirectTTSCalls) {
+        // Use direct TTS API call
+        log.d(
+            'Using direct TTS calls (${LLMConfig.activeTTSProvider} - ${LLMConfig.activeTTSModelId})');
+        audioPath = await generateAudioDirect(text, isAiSpeaking: isAiSpeaking);
+      } else {
+        // Use backend proxy (original behavior)
+        audioPath =
+            await _generateAudioViaBackend(text, isAiSpeaking: isAiSpeaking);
+      }
+
+      if (audioPath != null) {
+        // Cache the result
+        _audioCache[text] = audioPath;
+        stopwatch.stop();
+        _performanceMetrics['total_generate'] = stopwatch.elapsedMilliseconds;
+        return audioPath;
+      }
+
+      stopwatch.stop();
+      _performanceMetrics['total_generate'] = stopwatch.elapsedMilliseconds;
+      return null;
+    } catch (e) {
+      stopwatch.stop();
+      log.e('Error generating audio', e);
+      _performanceMetrics['generate_audio_error'] =
+          stopwatch.elapsedMilliseconds;
+      return null;
+    }
+  }
+
+  /// Generate audio using backend proxy (original behavior)
+  Future<String?> _generateAudioViaBackend(String text,
+      {bool isAiSpeaking = true}) async {
+    try {
       // Generate a unique filename with OGG extension for opus format
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final hash = text.hashCode.abs();
@@ -254,33 +297,19 @@ class AudioGenerator {
         if (response.statusCode == 200) {
           final file = File(localPath);
           await file.writeAsBytes(response.bodyBytes);
-
-          // Cache the local file path
-          _audioCache[text] = localPath;
-
-          stopwatch.stop();
-          _performanceMetrics['total_generate'] = stopwatch.elapsedMilliseconds;
           return localPath;
         }
       }
 
       // If it's a local file path already, just use it
       if (audioPath != null && !audioPath.startsWith('http')) {
-        _audioCache[text] = audioPath;
-        stopwatch.stop();
-        _performanceMetrics['total_generate'] = stopwatch.elapsedMilliseconds;
         return audioPath;
       }
 
       // Return whatever we got from voice service
-      stopwatch.stop();
-      _performanceMetrics['total_generate'] = stopwatch.elapsedMilliseconds;
       return audioPath;
     } catch (e) {
-      stopwatch.stop();
-      log.e('Error generating audio', e);
-      _performanceMetrics['generate_audio_error'] =
-          stopwatch.elapsedMilliseconds;
+      log.e('Error generating audio via backend', e);
       return null;
     }
   }
@@ -476,5 +505,134 @@ class AudioGenerator {
       log.e('Error streaming audio', e);
       return false;
     }
+  }
+
+  /// Make a direct TTS API call using centralized configuration
+  /// This bypasses the backend and calls the TTS provider directly
+  Future<String?> generateAudioDirect(String text,
+      {bool isAiSpeaking = true}) async {
+    try {
+      final ttsConfig = LLMConfig.currentTTSConfig;
+
+      if (kDebugMode) {
+        print(
+            '[AudioGenerator] Making direct TTS call to ${ttsConfig.modelId}');
+      }
+
+      // Get API key from environment variable
+      final apiKey = await _getApiKeyForProvider(ttsConfig.apiKeyEnvVar);
+      if (apiKey == null || apiKey.isEmpty) {
+        throw Exception('API key not found for ${ttsConfig.apiKeyEnvVar}');
+      }
+
+      // Build headers
+      final headers = Map<String, String>.from(ttsConfig.headers);
+      headers['Authorization'] = 'Bearer $apiKey';
+
+      // Build request body based on provider
+      final body = _buildTTSRequestBody(ttsConfig, text, isAiSpeaking);
+
+      if (kDebugMode) {
+        print('[AudioGenerator] TTS Request to: ${ttsConfig.endpoint}');
+        print('[AudioGenerator] TTS Model: ${ttsConfig.modelId}');
+      }
+
+      // Make the request
+      final response = await http.post(
+        Uri.parse(ttsConfig.endpoint),
+        headers: headers,
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        // For OpenAI TTS, the response is the audio data directly
+        final audioBytes = response.bodyBytes;
+
+        // Save to temporary file
+        final tempDir = await getTemporaryDirectory();
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final audioFileName = 'direct_tts_${timestamp}.mp3';
+        final audioFile = File('${tempDir.path}/$audioFileName');
+
+        await audioFile.writeAsBytes(audioBytes);
+
+        if (kDebugMode) {
+          print(
+              '[AudioGenerator] Direct TTS audio saved to: ${audioFile.path}');
+        }
+
+        return audioFile.path;
+      } else {
+        throw Exception(
+            'TTS API call failed with status: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[AudioGenerator] Direct TTS call failed: $e');
+      }
+      return null;
+    }
+  }
+
+  /// Build request body for different TTS providers
+  Map<String, dynamic> _buildTTSRequestBody(
+    TTSModelConfig config,
+    String text,
+    bool isAiSpeaking,
+  ) {
+    final provider = LLMConfig.activeTTSProvider;
+
+    switch (provider) {
+      case LLMProvider.openai:
+        return _buildOpenAITTSBody(config, text, isAiSpeaking);
+
+      case LLMProvider.custom:
+        // For custom providers, use OpenAI format as default
+        return _buildOpenAITTSBody(config, text, isAiSpeaking);
+
+      default:
+        // For other providers that don't have TTS yet, use OpenAI format
+        return _buildOpenAITTSBody(config, text, isAiSpeaking);
+    }
+  }
+
+  /// Build OpenAI TTS style request body
+  Map<String, dynamic> _buildOpenAITTSBody(
+    TTSModelConfig config,
+    String text,
+    bool isAiSpeaking,
+  ) {
+    // Choose voice based on speaking role and config
+    String voice = config.voice ?? LLMConfig.activeTTSVoice;
+
+    // You could customize voice based on isAiSpeaking if needed
+    // For example: if (!isAiSpeaking) voice = 'onyx';
+
+    final body = {
+      'model': config.modelId,
+      'input': text,
+      'voice': voice,
+      ...config.defaultParams,
+    };
+
+    return body;
+  }
+
+  /// Get API key for a specific provider from secure storage
+  Future<String?> _getApiKeyForProvider(String envVarName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(envVarName);
+    } catch (e) {
+      if (kDebugMode) {
+        print('[AudioGenerator] Error getting API key for $envVarName: $e');
+      }
+      return null;
+    }
+  }
+
+  /// Get the current cache size
+  int getCacheSize() {
+    return _audioCache.length;
   }
 }
