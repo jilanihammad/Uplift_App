@@ -89,12 +89,41 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     ));
   }
 
-  void _onEndSession(EndSession event, Emitter<VoiceSessionState> emit) {
+  Future<void> _onEndSession(
+      EndSession event, Emitter<VoiceSessionState> emit) async {
+    debugPrint(
+        '[VoiceSessionBloc] Ending session - cleaning up audio and resources...');
+
+    try {
+      // 1. Stop all audio playback immediately
+      await voiceService.stopAudio();
+      debugPrint('[VoiceSessionBloc] Audio stopped successfully');
+
+      // 2. Reset TTS state
+      voiceService.resetTTSState();
+
+      // 3. Disable auto mode and VAD
+      await voiceService.autoListeningCoordinator.disableAutoMode();
+
+      // 4. Stop any ongoing recording
+      try {
+        await voiceService.stopRecording();
+      } on NotRecordingException {
+        // Not recording, that's fine
+      }
+
+      debugPrint('[VoiceSessionBloc] Session cleanup completed successfully');
+    } catch (e) {
+      debugPrint('[VoiceSessionBloc] Error during session cleanup: $e');
+    }
+
+    // 5. Update state to reflect session ended
     emit(state.copyWith(
       isListening: false,
       isRecording: false,
       isVADActive: false,
       isProcessing: false,
+      isAudioPlaying: false, // Ensure audio state is cleared
     ));
   }
 
