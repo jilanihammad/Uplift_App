@@ -1,3 +1,6 @@
+/// AuthState represents all possible authentication states (loading, authenticated, error, etc.) throughout the app.
+/// These immutable state classes enable the UI to reactively update based on authentication status changes.
+
 import 'package:equatable/equatable.dart';
 
 abstract class AuthState extends Equatable {
@@ -44,4 +47,4 @@ class PhoneCodeSent extends AuthState {
 
   @override
   List<Object?> get props => [verificationId, resendToken];
-} 
+}

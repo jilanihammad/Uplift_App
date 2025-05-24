@@ -1,3 +1,7 @@
+/// VoiceSessionBloc manages the entire therapy session state including voice/text mode switching,
+/// audio recording, TTS playback, message processing, and session lifecycle (mood selection, timer, etc).
+/// This is the central brain that coordinates all real-time interactions during a therapy session.
+
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'voice_session_event.dart';
@@ -47,6 +51,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<AudioPlaybackStateChanged>(_onAudioPlaybackStateChanged);
     on<TtsStateChanged>(_onTtsStateChanged);
     on<WelcomeMessageCompleted>(_onWelcomeMessageCompleted);
+    // New event handlers
+    on<SetInitializing>(_onSetInitializing);
+    on<SetEndingSession>(_onSetEndingSession);
+    on<UpdateSessionTimer>(_onUpdateSessionTimer);
     // Subscribe to recording state
     _recordingStateSub = voiceService.recordingState.listen((recState) {
       final isRecording = recState.toString().contains('recording');
@@ -548,6 +556,23 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       WelcomeMessageCompleted event, Emitter<VoiceSessionState> emit) {
     debugPrint('[VoiceSessionBloc] Welcome message completed');
     emit(state.copyWith(welcomeMessageCompleted: true));
+  }
+
+  void _onSetInitializing(
+      SetInitializing event, Emitter<VoiceSessionState> emit) {
+    emit(state.copyWith(isInitializing: event.isInitializing));
+  }
+
+  void _onSetEndingSession(
+      SetEndingSession event, Emitter<VoiceSessionState> emit) {
+    emit(state.copyWith(isEndingSession: event.isEndingSession));
+  }
+
+  void _onUpdateSessionTimer(
+      UpdateSessionTimer event, Emitter<VoiceSessionState> emit) {
+    emit(state.copyWith(
+      sessionTimerSeconds: state.sessionTimerSeconds + 1,
+    ));
   }
 
   List<Map<String, String>> _buildConversationHistory(

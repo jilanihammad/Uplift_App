@@ -1,3 +1,6 @@
+/// VoiceSessionEvent defines all possible user actions and system events that can occur during a therapy session.
+/// These events trigger state changes in VoiceSessionBloc, enabling clean separation between UI actions and business logic.
+
 import '../widgets/mood_selector.dart';
 import '../models/therapy_message.dart';
 
@@ -126,4 +129,19 @@ class TtsStateChanged extends VoiceSessionEvent {
 // Event to mark when the welcome message TTS has completed
 class WelcomeMessageCompleted extends VoiceSessionEvent {
   const WelcomeMessageCompleted();
+}
+
+// Events for state management
+class SetInitializing extends VoiceSessionEvent {
+  final bool isInitializing;
+  const SetInitializing(this.isInitializing);
+}
+
+class SetEndingSession extends VoiceSessionEvent {
+  final bool isEndingSession;
+  const SetEndingSession(this.isEndingSession);
+}
+
+class UpdateSessionTimer extends VoiceSessionEvent {
+  const UpdateSessionTimer();
 }
