@@ -27,7 +27,6 @@ import '../services/navigation_service.dart';
 import '../services/audio_generator.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
-import '../utils/list_extensions.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
@@ -512,7 +511,22 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _startSessionTimer();
   }
 
-    String _getWelcomeMessage(Mood mood) {    switch (mood) {      case Mood.happy:        return [          "Heyyy! That's wonderful to hear! What's keeping your spirits high today?",          "Hello hello! Your positivity is contagious! What's on your mind?",          "Hey there! Glad you're feeling upbeat! How can I support you today?",          "Heyyy! Hearing you're happy makes me happy! Anything special you'd like to talk about?",          "Hello hello! That's great news! Would you like to share more about what's brightening your day?"        ].random();      case Mood.sad:        return [          "I'm here for you. Would you like to talk about what's making you feel this way?",          "I'm sorry things feel tough right now. I'm ready to listen whenever you're comfortable sharing.",          "It's okay to feel sad sometimes. What's weighing on your mind?",          "I understand you're feeling down, and I'd like to help. What's troubling you today?",          "You're not alone—let's take some time to talk about how you're feeling."        ].random();      case Mood.anxious:        return [          "Let's take a moment together and gently explore what's causing your anxiety today.",          "I see you're feeling anxious, and I'm here with you. What's making you feel this way?",          "It's perfectly natural to feel anxious sometimes. Do you want to talk about what's on your mind?",          "I'm here to help you navigate these feelings. What's causing your anxiety right now?",          "Anxiety can feel overwhelming. Let's slow down together and discuss what's triggering these feelings."        ].random();      case Mood.angry:        return [          "It's good that you're acknowledging your anger. Would talking about what's causing it help?",          "I can sense you're upset right now. I'm here to listen when you're ready.",          "Your feelings matter—would you like to share what's behind this frustration?",          "It's understandable to feel this way sometimes. Want to discuss what's triggering these emotions?",          "I'm glad you're recognizing these feelings. What's causing your anger today?"        ].random();      case Mood.stressed:        return [          "It sounds like you're dealing with a lot. Would you like to share what's stressing you out?",          "Stress can be really challenging. Let's talk it through and find ways to ease the burden.",          "I'm here to help you unpack this stress. What's been heavy on your mind?",          "I see things are feeling tough right now. Want to talk about what's making you feel this way?",          "You're managing a lot. Let's discuss what's going on and explore some helpful strategies."        ].random();      default:        return [          "Hey there! Thanks for opening up about how you're feeling. What should we explore today?",          "Hello hello! I appreciate your honesty. What would you like to talk about?",          "Heyyy! Thanks for sharing with me. How can I best support you today?",          "Hey there! I'm glad you shared that. What's the main thing you'd like to discuss right now?",          "Hello hello! Thanks for letting me know. Where should we start our conversation today?"        ].random();    }  }
+  String _getWelcomeMessage(Mood mood) {
+    switch (mood) {
+      case Mood.happy:
+        return "I'm glad to hear you're feeling positive today! What would you like to talk about?";
+      case Mood.sad:
+        return "I'm sorry to hear you're feeling down. Would you like to talk about what's troubling you?";
+      case Mood.anxious:
+        return "I notice you're feeling anxious. Let's explore what's causing these feelings and find ways to help you feel more at ease.";
+      case Mood.angry:
+        return "I can see you're feeling frustrated or angry. It's good to acknowledge these emotions. Would you like to talk about what triggered these feelings?";
+      case Mood.stressed:
+        return "It sounds like you're under stress. Let's talk about what's happening and explore some coping strategies that might help.";
+      default:
+        return "Thank you for sharing how you're feeling. What would you like to focus on in our conversation today?";
+    }
+  }
 
   void _addInitialAIMessage(Mood mood) {
     final state = context.read<VoiceSessionBloc>().state;
