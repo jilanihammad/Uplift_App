@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../blocs/chat_bloc.dart';
 import '../blocs/voice_session_bloc.dart';
 import '../blocs/voice_session_state.dart';
 import '../blocs/voice_session_event.dart';
@@ -64,8 +63,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  // Local state that doesn't belong in Bloc (UI-specific only)
-  bool _isInitializing = true; // Add this flag to track initialization
+  // Session state
   String _currentSessionId = '';
   Mood? _initialMood;
   TherapistStyle? _therapistStyle;
@@ -81,12 +79,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   final NavigationService _navigationService =
       serviceLocator<NavigationService>();
 
-  // Session timer - kept local for UI timing
+  // Session timer
   Timer? _sessionTimer;
-
-  // Declare a variable to track if session is being ended
-  bool _isEndingSession = false;
-
   int _previousMessageCount = 0;
 
   @override
@@ -94,6 +88,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     super.initState();
     debugPrint('[ChatScreen] initState called');
     WakelockPlus.enable(); // Keep screen awake during session
+
     // Set up microphone animation
     _micAnimationController = AnimationController(
       vsync: this,
@@ -103,30 +98,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       CurvedAnimation(parent: _micAnimationController, curve: Curves.easeInOut),
     );
 
-    // Load therapist style
-    _loadTherapistStyle();
-
-    // Initialize voice service instance and setup
+    // Initialize services
     _voiceService = serviceLocator<VoiceService>();
     _initializeServices();
-
-    // Wire up recording completion to Bloc
-    _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
-        (audioPath) {
-      if (mounted) {
-        context.read<VoiceSessionBloc>().add(ProcessAudio(audioPath));
-      }
-    };
+    _loadTherapistStyle();
 
     // Initialize session after the build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
       print('[ChatScreen] PostFrameCallback: calling _initSession');
-      _initSession().then((_) {
-        setState(() {
-          _isInitializing = false;
-        });
-        print('[ChatScreen] _initSession complete, _isInitializing=false');
-      });
+      _initSession();
     });
   }
 
@@ -137,7 +117,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _messageController.dispose();
     _scrollController.dispose();
     _micAnimationController.dispose();
-    _voiceService.dispose();
     _sessionTimer?.cancel();
     _navigationService.showBottomNav();
     super.dispose();
@@ -146,124 +125,144 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   Widget build(BuildContext context) {
     debugPrint('[ChatScreen] build called');
-    return WillPopScope(
-      onWillPop: () async {
-        print('[ChatScreen] onWillPop called');
-        final blocState = context.read<ChatBloc>().state;
-        final state = context.read<VoiceSessionBloc>().state;
-        final hasMessages =
-            blocState is ChatLoaded && blocState.messages.isNotEmpty;
-        if (hasMessages &&
-            !state.showDurationSelector &&
-            !state.showMoodSelector &&
-            !_isInitializing) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Please use the End button to finish your session.',
-              ),
+    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
+      builder: (context, state) {
+        // Handle initialization state
+        if (state.isInitializing) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Ongoing Session')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // Handle duration selector
+        if (state.showDurationSelector) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Ongoing Session')),
+            body: DurationSelector(
+              selectedDuration: state.sessionDurationMinutes,
+              onDurationSelected: _handleDurationSelection,
             ),
           );
-          return false;
         }
-        return true;
+
+        // Handle mood selector
+        if (state.showMoodSelector) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Ongoing Session')),
+            body: MoodSelectorScreen(
+              selectedMood: _initialMood,
+              onMoodSelected: _handleMoodSelection,
+            ),
+          );
+        }
+
+        // Main chat interface
+        return WillPopScope(
+          onWillPop: () async => _handleBackPress(state),
+          child: Scaffold(
+            appBar: _buildAppBar(state),
+            body: state.isVoiceMode
+                ? _buildVoiceChatView()
+                : _buildTextChatView(),
+          ),
+        );
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Row(
-            children: [
-              const Text('Ongoing Session'),
-              if (_therapistStyle != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: Tooltip(
-                    message: _therapistStyle!.name,
-                    child: Icon(
-                      _therapistStyle!.icon,
-                      size: 16,
-                      color: _therapistStyle!.color,
-                    ),
-                  ),
+    );
+  }
+
+  AppBar _buildAppBar(VoiceSessionState state) {
+    return AppBar(
+      title: Row(
+        children: [
+          const Text('Ongoing Session'),
+          if (_therapistStyle != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Tooltip(
+                message: _therapistStyle!.name,
+                child: Icon(
+                  _therapistStyle!.icon,
+                  size: 16,
+                  color: _therapistStyle!.color,
                 ),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        // Session timer
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.lightBlue.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.lightBlue, width: 1),
+                ),
+                child: BlocSelector<VoiceSessionBloc, VoiceSessionState, int>(
+                  selector: (state) => state.sessionTimerSeconds,
+                  builder: (context, seconds) {
+                    final minutes = (seconds / 60).floor();
+                    final secs = seconds % 60;
+                    return Text(
+                      '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        color: Colors.lightBlue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
-          actions: [
-            if (!_isInitializing)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.lightBlue.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.lightBlue, width: 1),
-                      ),
-                      child: BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                          int>(
-                        selector: (state) => state.sessionTimerSeconds,
-                        builder: (context, seconds) {
-                          final minutes = (seconds / 60).floor();
-                          final secs = seconds % 60;
-                          return Text(
-                            '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}',
-                            style: const TextStyle(
-                              color: Colors.lightBlue,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (!_isInitializing)
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: ElevatedButton(
-                  onPressed: _endSession,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: const Text('End'),
-                ),
-              ),
-          ],
         ),
-        body: _isInitializing
-            ? const Center(child: CircularProgressIndicator())
-            : BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
-                builder: (context, state) {
-                  if (state.showDurationSelector) {
-                    return DurationSelector(
-                      selectedDuration: state.sessionDurationMinutes,
-                      onDurationSelected: _handleDurationSelection,
-                    );
-                  } else if (state.showMoodSelector) {
-                    return MoodSelectorScreen(
-                      selectedMood: _initialMood,
-                      onMoodSelected: _handleMoodSelection,
-                    );
-                  } else if (state.isVoiceMode) {
-                    return _buildVoiceChatView();
-                  } else {
-                    return _buildTextChatView();
-                  }
-                },
+        // End session button
+        Padding(
+          padding: const EdgeInsets.only(right: 8.0),
+          child: ElevatedButton(
+            onPressed: state.isProcessing || state.isEndingSession
+                ? null
+                : _endSession,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
               ),
-      ),
+            ),
+            child: const Text('End'),
+          ),
+        ),
+      ],
     );
+  }
+
+  Future<bool> _handleBackPress(VoiceSessionState state) async {
+    print('[ChatScreen] onWillPop called');
+    final hasMessages = state.messages.isNotEmpty;
+
+    if (hasMessages &&
+        !state.showDurationSelector &&
+        !state.showMoodSelector &&
+        !state.isInitializing) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please use the End button to finish your session.'),
+        ),
+      );
+      return false;
+    }
+    return true;
   }
 
   Widget _buildVoiceChatView() {
@@ -278,7 +277,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                 selector: (blocState) =>
                     (rec: blocState.isRecording, amp: blocState.amplitude),
                 builder: (context, data) {
-                  // Mic animation logic: trigger animation when isRecording changes
+                  // Mic animation logic
                   if (data.rec && !_micAnimationController.isAnimating) {
                     _micAnimationController.repeat(reverse: true);
                   } else if (!data.rec && _micAnimationController.isAnimating) {
@@ -318,7 +317,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             ],
           ),
         ),
-        // The rest of the controls will be refactored in the next steps
         BlocSelector<VoiceSessionBloc, VoiceSessionState,
             ({bool rec, bool proc, bool muted})>(
           selector: (state) => (
@@ -355,13 +353,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     debugPrint('[ChatScreen] _buildTextChatView called');
     return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
       builder: (context, state) {
-        // UI Guard: If processing but not recording, clear stuck state
-        if (state.isProcessing && !state.isRecording) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted)
-              setState(() {}); // Triggers rebuild, UI will clear spinner
-          });
-        }
         return Container(
           color: Theme.of(context).scaffoldBackgroundColor,
           child: Column(
@@ -420,19 +411,17 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     debugPrint('[ChatScreen] _initializeServices called');
 
     try {
-      // Use Bloc event instead of direct service calls
+      // Initialize services through Bloc
       context.read<VoiceSessionBloc>().add(InitializeService());
 
-      // Wait for initialization to complete
-      await Future.delayed(const Duration(milliseconds: 1000));
-
-      // Set up callback for recording completion - this is critical!
+      // Set up callback for recording completion
       _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
           (String audioPath) {
         debugPrint(
             '[ChatScreen] Recording complete callback triggered with path: $audioPath');
-        // Process the audio through the Bloc
-        context.read<VoiceSessionBloc>().add(ProcessAudio(audioPath));
+        if (mounted) {
+          context.read<VoiceSessionBloc>().add(ProcessAudio(audioPath));
+        }
       };
 
       debugPrint('[ChatScreen] Services initialized successfully');
@@ -469,36 +458,37 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Future<void> _initSession() async {
     final bloc = context.read<VoiceSessionBloc>();
 
+    // Start initialization
+    bloc.add(SetInitializing(true));
+
     if (widget.sessionId != null) {
-      // Load existing session (would normally fetch from repository)
+      // Load existing session
       _currentSessionId = widget.sessionId ?? '';
       bloc.add(ShowMoodSelector(false));
       bloc.add(ShowDurationSelector(false));
 
-      // Show loading indicator
-      bloc.add(SetProcessing(true));
-
       // Simulate loading delay (replace with actual loading)
       await Future.delayed(const Duration(seconds: 1));
 
-      bloc.add(SetProcessing(false));
-
-      // Start the session timer for continuing sessions too
+      // Start the session timer
       _startSessionTimer();
+
+      // End initialization
+      bloc.add(SetInitializing(false));
     } else {
-      // Generate a UUID for the session but don't create it yet
-      // We'll create the session only after the user selects a duration
+      // Generate a UUID for the session
       _currentSessionId = const Uuid().v4();
 
       if (kDebugMode) {
-        print(
-          'Generated session ID: $_currentSessionId (will be created after duration selection)',
-        );
+        print('Generated session ID: $_currentSessionId');
       }
 
-      // For new sessions, we show the duration selector first, then mood selector
+      // For new sessions, show duration selector first
       bloc.add(ShowDurationSelector(true));
       bloc.add(SwitchMode(true)); // Ensure we start in voice mode
+
+      // End initialization
+      bloc.add(SetInitializing(false));
     }
   }
 
@@ -514,11 +504,11 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     final bloc = context.read<VoiceSessionBloc>();
     setState(() {
       _initialMood = selectedMood;
-      _isInitializing = false;
     });
     bloc.add(ShowMoodSelector(false));
     debugPrint('Mood selected: $selectedMood, session is now active');
     _addInitialAIMessage(selectedMood);
+    _startSessionTimer();
   }
 
   String _getWelcomeMessage(Mood mood) {
@@ -569,24 +559,21 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   void _startSessionTimer() {
-    // Timer logic should be handled by Bloc; this can be removed or left empty.
-  }
+    // Cancel any existing timer
+    _sessionTimer?.cancel();
 
-  String _formatRemainingTime() {
-    final state = context.read<VoiceSessionBloc>().state;
-    final minutes = (state.sessionTimerSeconds / 60).floor();
-    final seconds = state.sessionTimerSeconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    // Start a new timer that updates every second
+    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        context.read<VoiceSessionBloc>().add(UpdateSessionTimer());
+      }
+    });
   }
 
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
-    final state = context.read<VoiceSessionBloc>().state;
-    if (state.isVoiceMode) {
-      // Existing voice mode logic
-      return;
-    }
+
     context.read<VoiceSessionBloc>().add(ProcessTextMessage(text));
     _messageController.clear();
   }
@@ -605,34 +592,25 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<void> _endSession() async {
-    final state = context.read<VoiceSessionBloc>().state;
-    if (_isEndingSession || state.isProcessing) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Session ending in progress...')));
+    final bloc = context.read<VoiceSessionBloc>();
+    final state = bloc.state;
+
+    // Prevent multiple end session calls
+    if (state.isEndingSession || state.isProcessing) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session ending in progress...')),
+      );
       return;
     }
 
     // Don't generate a summary if the session didn't actually start
-    // (no messages or still in setup screens)
-    final blocState = context.read<ChatBloc>().state;
-    List<TherapyMessage> messages = [];
-    if (blocState is ChatLoaded) {
-      messages = blocState.messages;
-    } else if (blocState is ChatCompletedState) {
-      messages = blocState.messages;
-    } else if (blocState is ChatErrorState) {
-      messages = blocState.messages;
-    }
-    if (messages.isEmpty ||
+    if (state.messages.isEmpty ||
         state.showDurationSelector ||
         state.showMoodSelector) {
       if (kDebugMode) {
         print(
-          'Session not properly started, skipping session summary generation',
-        );
+            'Session not properly started, skipping session summary generation');
       }
-      // Show the bottom navigation bar and return to previous screen
       _navigationService.showBottomNav();
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -659,62 +637,18 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       ),
     );
 
-    if (result != true) return;
+    if (result != true || !mounted) return;
 
-    setState(() {
-      _isEndingSession = true;
-      context.read<VoiceSessionBloc>().add(SetProcessing(true));
-    });
+    // Start ending session
+    bloc.add(SetEndingSession(true));
+    bloc.add(SetProcessing(true));
 
     _navigationService.showBottomNav();
 
-    // Stop and dispose audio/TTS resources robustly
-    if (kDebugMode)
-      print('🛑 Ending session: stopping and disposing VoiceService');
-    await _voiceService.autoListeningCoordinator.disableAutoMode();
-    await _voiceService.stopRecording();
-    await _voiceService.stopAudio();
-    _micAnimationController.stop();
-    _micAnimationController.reset();
-    context.read<VoiceSessionBloc>().add(SetProcessing(false));
-    _voiceService.dispose();
+    // Stop audio and clean up resources
+    await _cleanupSessionResources();
 
-    // Unregister and re-register VoiceService and AudioGenerator for a fresh instance
-    if (kDebugMode)
-      print(
-        '🗑️ Unregistering VoiceService and AudioGenerator from service locator',
-      );
-    if (serviceLocator.isRegistered<VoiceService>()) {
-      serviceLocator.unregister<VoiceService>();
-    }
-    if (serviceLocator.isRegistered<AudioGenerator>()) {
-      serviceLocator.unregister<AudioGenerator>();
-    }
-    if (kDebugMode) print('🔄 Registering new VoiceService and AudioGenerator');
-    serviceLocator.registerLazySingleton<VoiceService>(() {
-      final service = VoiceService(apiClient: serviceLocator<ApiClient>());
-      service.initializeOnlyIfNeeded();
-      return service;
-    });
-    serviceLocator.registerLazySingleton<AudioGenerator>(() {
-      final generator = AudioGenerator(
-        voiceService: serviceLocator<VoiceService>(),
-        apiClient: serviceLocator<ApiClient>(),
-      );
-      generator.initializeOnlyIfNeeded();
-      return generator;
-    });
-    // Update local reference to the new VoiceService
-    if (kDebugMode) print('🔄 Updating local _voiceService reference');
-    final newVoiceService = serviceLocator<VoiceService>();
-    _voiceService = newVoiceService;
-
-    // Re-initialize VoiceService for next session
-    if (kDebugMode) print('🔄 Re-initializing VoiceService for next session');
-    await _voiceService.initializeOnlyIfNeeded();
-    await _initializeServices(); // <-- Ensure subscriptions and mic are set up for the new instance
-
-    // Show a modal progress indicator
+    // Show progress dialog
     if (mounted) {
       showDialog(
         context: context,
@@ -733,157 +667,190 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
 
     try {
-      if (kDebugMode) {
-        print('Ending session with ID: $_currentSessionId');
-      }
-      // Log current mood
-      if (_initialMood != null) {
-        await _progressService.logMood(_initialMood!);
-        if (kDebugMode) {
-          print('Mood logged: $_initialMood, Notes: null');
-        }
-      }
+      // Generate session summary
+      final sessionData = await _generateSessionSummary(state.messages);
 
-      // Prepare messages for the session summary
-      final messageList = messages.map((m) => m.toJson()).toList();
+      // Save session
+      await _saveSession(sessionData, state.messages);
 
-      if (kDebugMode) {
-        print('Ending therapy session with ${messageList.length} messages');
-      }
-
-      // Get session summary from therapy service
-      final sessionData = await _therapyService.endSession(messageList);
-
-      final summary = sessionData['summary'] as String? ??
-          'Thank you for your session today. I hope our conversation was helpful.';
-
-      final actionItems = sessionData['action_items'] as List<dynamic>? ??
-          sessionData['actionItems'] as List<dynamic>? ??
-          ['Take care of yourself', 'Return soon for another session'];
-
-      final insights = sessionData['insights'] as List<dynamic>? ?? [];
-
-      if (kDebugMode) {
-        print('Session summary generated successfully');
-      }
-
-      // Save the session to the repository
-      try {
-        // Additional validation to ensure we have a valid session to save
-        if (_currentSessionId.isEmpty ||
-            state.showDurationSelector ||
-            state.showMoodSelector) {
-          if (kDebugMode) {
-            print(
-              'Invalid session state, skipping save: ' +
-                  'sessionId=${_currentSessionId.isEmpty}, ' +
-                  'showDurationSelector=${state.showDurationSelector}, ' +
-                  'showMoodSelector=${state.showMoodSelector}',
-            );
-          }
-          throw Exception('Cannot save incomplete session');
-        }
-
-        final sessionRepository = serviceLocator<SessionRepository>();
-        final messageRepository = serviceLocator<MessageRepository>();
-
-        // Ensure the session exists in the repository before updating it
-        try {
-          await sessionRepository.getSession(_currentSessionId);
-        } catch (e) {
-          if (kDebugMode) {
-            print('Session not found in repository, creating it now');
-          }
-          // Create the session if it doesn't exist
-          final sessionTitle =
-              'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
-          final createdSession = await sessionRepository.createSession(
-            sessionTitle,
-            id: _currentSessionId,
-          );
-          // Update _currentSessionId to backend's returned ID if it differs
-          if (createdSession.id != _currentSessionId) {
-            if (kDebugMode) {
-              print(
-                'Updating _currentSessionId from $_currentSessionId to ${createdSession.id}',
-              );
-            }
-            _currentSessionId = createdSession.id;
-          }
-        }
-
-        // Now save the session with its summary and messages
-        await sessionRepository.saveSession(
-          id: _currentSessionId,
-          messages: messages.map((m) => m.toJson()).toList(),
-          summary: summary,
-          actionItems: actionItems.cast<String>(),
-          initialMood: _initialMood,
-          messageRepository: messageRepository,
-        );
-
-        if (kDebugMode) {
-          print('Session saved to repository successfully');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error saving session to repository: $e');
-        }
-        // Continue anyway - we don't want to block the user
-      }
-
-      // Close the progress dialog if it's still showing
+      // Close progress dialog
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
 
-      setState(() {
-        _isEndingSession = false;
-        context.read<VoiceSessionBloc>().add(SetProcessing(false));
-      });
-
-      // Navigate to summary screen using GoRouter
+      // Navigate to summary screen
       if (!mounted) return;
+
       context.pushReplacement(
         '/session_summary',
         extra: {
           'sessionId': _currentSessionId,
-          'summary': summary,
-          'actionItems': actionItems.cast<String>(),
-          'insights': insights.cast<String>(),
-          'messages': messages,
+          'summary': sessionData['summary'],
+          'actionItems': sessionData['actionItems'],
+          'insights': sessionData['insights'],
+          'messages': state.messages,
           'initialMood': _initialMood,
         },
       );
     } catch (e) {
-      // Close the progress dialog if it's still showing
+      // Close progress dialog if still showing
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
 
-      setState(() {
-        _isEndingSession = false;
-        context.read<VoiceSessionBloc>().add(SetProcessing(false));
-      });
+      bloc.add(SetEndingSession(false));
+      bloc.add(SetProcessing(false));
 
       if (kDebugMode) {
         print('Error ending session: $e');
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Unable to generate session summary: ${e.toString().length > 100 ? '${e.toString().substring(0, 100)}...' : e}',
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Unable to generate session summary: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Try Again',
+              onPressed: _endSession,
+            ),
           ),
-          duration: const Duration(seconds: 5),
-          action: SnackBarAction(
-            label: 'Try Again',
-            onPressed: () {
-              _endSession(); // Allow retry
-            },
-          ),
-        ),
+        );
+      }
+    }
+  }
+
+  Future<void> _cleanupSessionResources() async {
+    if (kDebugMode) {
+      print('🛑 Ending session: stopping and disposing VoiceService');
+    }
+
+    await _voiceService.autoListeningCoordinator.disableAutoMode();
+    await _voiceService.stopRecording();
+    await _voiceService.stopAudio();
+    _micAnimationController.stop();
+    _micAnimationController.reset();
+
+    // Re-register services for fresh instance
+    _reregisterServices();
+  }
+
+  void _reregisterServices() {
+    if (kDebugMode) {
+      print('🔄 Re-registering VoiceService and AudioGenerator');
+    }
+
+    // Unregister existing services
+    if (serviceLocator.isRegistered<VoiceService>()) {
+      serviceLocator.unregister<VoiceService>();
+    }
+    if (serviceLocator.isRegistered<AudioGenerator>()) {
+      serviceLocator.unregister<AudioGenerator>();
+    }
+
+    // Register new instances
+    serviceLocator.registerLazySingleton<VoiceService>(() {
+      final service = VoiceService(apiClient: serviceLocator<ApiClient>());
+      service.initializeOnlyIfNeeded();
+      return service;
+    });
+
+    serviceLocator.registerLazySingleton<AudioGenerator>(() {
+      final generator = AudioGenerator(
+        voiceService: serviceLocator<VoiceService>(),
+        apiClient: serviceLocator<ApiClient>(),
       );
+      generator.initializeOnlyIfNeeded();
+      return generator;
+    });
+
+    // Update local reference
+    _voiceService = serviceLocator<VoiceService>();
+    _initializeServices();
+  }
+
+  Future<Map<String, dynamic>> _generateSessionSummary(
+      List<TherapyMessage> messages) async {
+    if (kDebugMode) {
+      print('Ending session with ID: $_currentSessionId');
+    }
+
+    // Log mood
+    if (_initialMood != null) {
+      await _progressService.logMood(_initialMood!);
+    }
+
+    // Prepare messages for the session summary
+    final messageList = messages.map((m) => m.toJson()).toList();
+
+    if (kDebugMode) {
+      print('Ending therapy session with ${messageList.length} messages');
+    }
+
+    // Get session summary from therapy service
+    final sessionData = await _therapyService.endSession(messageList);
+
+    // Safely extract and convert lists to List<String>
+    final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
+        sessionData['actionItems'] as List<dynamic>? ??
+        ['Take care of yourself', 'Return soon for another session'];
+
+    final insightsDynamic = sessionData['insights'] as List<dynamic>? ?? [];
+
+    return {
+      'summary': sessionData['summary'] as String? ??
+          'Thank you for your session today. I hope our conversation was helpful.',
+      'actionItems': actionItemsDynamic.map((item) => item.toString()).toList(),
+      'insights': insightsDynamic.map((item) => item.toString()).toList(),
+    };
+  }
+
+  Future<void> _saveSession(
+      Map<String, dynamic> sessionData, List<TherapyMessage> messages) async {
+    try {
+      final sessionRepository = serviceLocator<SessionRepository>();
+      final messageRepository = serviceLocator<MessageRepository>();
+
+      // Ensure the session exists in the repository
+      try {
+        await sessionRepository.getSession(_currentSessionId);
+      } catch (e) {
+        if (kDebugMode) {
+          print('Session not found in repository, creating it now');
+        }
+        // Create the session if it doesn't exist
+        final sessionTitle =
+            'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+        final createdSession = await sessionRepository.createSession(
+          sessionTitle,
+          id: _currentSessionId,
+        );
+        // Update _currentSessionId to backend's returned ID if it differs
+        if (createdSession.id != _currentSessionId) {
+          _currentSessionId = createdSession.id;
+        }
+      }
+
+      // Save the session with its summary and messages
+      await sessionRepository.saveSession(
+        id: _currentSessionId,
+        messages: messages.map((m) => m.toJson()).toList(),
+        summary: sessionData['summary'],
+        actionItems:
+            (sessionData['actionItems'] as List<dynamic>).cast<String>(),
+        initialMood: _initialMood,
+        messageRepository: messageRepository,
+      );
+
+      if (kDebugMode) {
+        print('Session saved to repository successfully');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error saving session to repository: $e');
+      }
+      // Continue anyway - we don't want to block the user
     }
   }
 
@@ -902,7 +869,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       _messageController.clear();
     });
 
-    // Toggle the mode in the bloc (VAD management is handled by the Bloc)
+    // Toggle the mode in the bloc
     bloc.add(SwitchMode(!state.isVoiceMode));
 
     debugPrint('🔄 Mode switch complete');
@@ -947,67 +914,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           );
         }
       },
-    );
-  }
-}
-
-class ChatMessage extends StatelessWidget {
-  final String text;
-  final bool isUser;
-
-  const ChatMessage({Key? key, required this.text, required this.isUser})
-      : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isUser)
-            CircleAvatar(
-              backgroundColor: Theme.of(context).primaryColor,
-              child: const Icon(Icons.emoji_emotions, color: Colors.white),
-            ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isUser
-                    ? Theme.of(context).primaryColor
-                    : Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(
-                    offset: Offset(0, 2),
-                    blurRadius: 4,
-                    color: Color.fromRGBO(0, 0, 0, 0.1),
-                  ),
-                ],
-              ),
-              child: Text(
-                text,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isUser
-                      ? Colors.white
-                      : isDarkMode
-                          ? Colors.cyan[100]
-                          : Colors.black87,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (isUser) const CircleAvatar(child: Icon(Icons.person)),
-        ],
-      ),
     );
   }
 }

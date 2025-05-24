@@ -1,3 +1,7 @@
+/// VoiceSessionState holds all the current state data for an active therapy session including
+/// UI states (mood/duration selectors), audio states (recording, playing), and session data (messages, timer).
+/// This immutable state class ensures predictable state management across the entire chat interface.
+
 import 'package:equatable/equatable.dart';
 import '../models/therapy_message.dart';
 import '../widgets/mood_selector.dart';
@@ -22,6 +26,8 @@ class VoiceSessionState extends Equatable {
   final bool isTtsSpeaking;
   final bool hasInitialTtsPlayed;
   final bool welcomeMessageCompleted;
+  final bool isInitializing;
+  final bool isEndingSession;
 
   const VoiceSessionState({
     this.isListening = false,
@@ -43,6 +49,8 @@ class VoiceSessionState extends Equatable {
     this.isTtsSpeaking = false,
     this.hasInitialTtsPlayed = false,
     this.welcomeMessageCompleted = false,
+    this.isInitializing = true,
+    this.isEndingSession = false,
   });
 
   VoiceSessionState copyWith({
@@ -65,6 +73,8 @@ class VoiceSessionState extends Equatable {
     bool? isTtsSpeaking,
     bool? hasInitialTtsPlayed,
     bool? welcomeMessageCompleted,
+    bool? isInitializing,
+    bool? isEndingSession,
   }) {
     return VoiceSessionState(
       isListening: isListening ?? this.isListening,
@@ -88,6 +98,8 @@ class VoiceSessionState extends Equatable {
       hasInitialTtsPlayed: hasInitialTtsPlayed ?? this.hasInitialTtsPlayed,
       welcomeMessageCompleted:
           welcomeMessageCompleted ?? this.welcomeMessageCompleted,
+      isInitializing: isInitializing ?? this.isInitializing,
+      isEndingSession: isEndingSession ?? this.isEndingSession,
     );
   }
 
@@ -112,6 +124,8 @@ class VoiceSessionState extends Equatable {
         isTtsSpeaking,
         hasInitialTtsPlayed,
         welcomeMessageCompleted,
+        isInitializing,
+        isEndingSession,
       ];
 
   bool get canSend => !isProcessing && !isVoiceMode;

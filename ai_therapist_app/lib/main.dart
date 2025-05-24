@@ -44,8 +44,6 @@ import 'package:ai_therapist_app/screens/profile_screen.dart';
 import 'package:ai_therapist_app/screens/onboarding/onboarding_wrapper.dart';
 import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
-import 'package:ai_therapist_app/blocs/chat_bloc.dart'; //new addition
-import 'package:ai_therapist_app/services/groq_service.dart'; //new addition
 import 'debug_api.dart';
 import 'debug_firebase.dart'; // Import for debugging only
 import 'dart:async';
@@ -459,13 +457,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                       }
                       return authBloc;
                     }
-                  },
-                ),
-                BlocProvider<ChatBloc>(
-                  create: (context) {
-                    debugPrint(
-                        '[main.dart] Creating ChatBloc in MultiBlocProvider');
-                    return ChatBloc(groqService: serviceLocator<GroqService>());
                   },
                 ),
               ],

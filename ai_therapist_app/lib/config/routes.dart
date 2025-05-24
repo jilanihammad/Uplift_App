@@ -5,9 +5,6 @@ import 'package:get_it/get_it.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:ai_therapist_app/blocs/chat_bloc.dart';
-import 'package:ai_therapist_app/services/groq_service.dart';
 
 // Import screen files with the correct paths
 import 'package:ai_therapist_app/screens/splash_screen.dart';
@@ -173,10 +170,17 @@ class AppRouter {
         builder: (context, state) {
           // For safety, use type check and provide defaults
           final extra = state.extra as Map<String, dynamic>? ?? {};
+
+          // Safely cast actionItems from List<dynamic> to List<String>
+          final actionItemsDynamic =
+              extra['actionItems'] as List<dynamic>? ?? [];
+          final actionItems =
+              actionItemsDynamic.map((item) => item.toString()).toList();
+
           return SessionSummaryScreen(
             sessionId: extra['sessionId'] as String? ?? 'unknown',
             summary: extra['summary'] as String? ?? '',
-            actionItems: extra['actionItems'] as List<String>? ?? [],
+            actionItems: actionItems,
             messages: extra['messages'],
             initialMood: extra['initialMood'],
           );
@@ -199,7 +203,6 @@ class AppRouter {
       ),
 
       // Main app shell with bottom navigation
-      // NOTE: BlocProvider<ChatBloc> should be provided at the app root (see main.dart)
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) {
