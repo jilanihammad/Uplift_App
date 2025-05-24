@@ -187,7 +187,7 @@ class LLMConfig {
   /// Groq Configuration
   static const Map<String, LLMModelConfig> _groqModels = {
     'llama-3.1-70b-versatile': LLMModelConfig(
-      modelId: 'llama-4-scout-17b-16e-instruct',
+      modelId: 'llama-3.1-70b-versatile',
       endpoint: 'https://api.groq.com/openai/v1/chat/completions',
       headers: {
         'Content-Type': 'application/json',
@@ -198,7 +198,7 @@ class LLMConfig {
         'stream': false,
       },
       apiKeyEnvVar: 'GROQ_API_KEY',
-      maxTokens: 51,
+      maxTokens: 512,
       temperature: 0.7,
     ),
     'llama-3.1-8b-instant': LLMModelConfig(

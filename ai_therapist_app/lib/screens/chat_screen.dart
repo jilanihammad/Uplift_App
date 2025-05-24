@@ -645,8 +645,20 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     _navigationService.showBottomNav();
 
-    // Stop audio and clean up resources through the bloc
+    // Stop audio and clean up resources through the bloc - WAIT for completion
     bloc.add(const EndSession());
+
+    // Give the EndSession event time to complete audio cleanup
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    // Additional safety: Force stop audio directly
+    try {
+      await _voiceService.stopAudio();
+      await _voiceService.stopRecording();
+      _voiceService.resetTTSState();
+    } catch (e) {
+      debugPrint('[ChatScreen] Direct audio cleanup error: $e');
+    }
 
     // Show progress dialog
     if (mounted) {
