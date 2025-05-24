@@ -74,7 +74,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   late AnimationController _micAnimationController;
   late Animation<double> _micAnimation;
   late VoiceService _voiceService;
-  StreamSubscription<bool>? _ttsSubscription;
 
   // Services
   final TherapyService _therapyService = serviceLocator<TherapyService>();
@@ -137,7 +136,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     WakelockPlus.disable(); // Allow screen to sleep after session
     _messageController.dispose();
     _scrollController.dispose();
-    _ttsSubscription?.cancel();
     _micAnimationController.dispose();
     _voiceService.dispose();
     _sessionTimer?.cancel();
@@ -389,13 +387,27 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                       : const SizedBox.shrink();
                 },
               ),
-              TextInputBar(
-                messageController: _messageController,
-                micAnimation: _micAnimation,
-                micButton: _buildMicButton(),
-                isProcessing: state.isProcessing,
-                onSend: _sendMessage,
-                onSwitchMode: _toggleChatMode,
+              BlocSelector<VoiceSessionBloc, VoiceSessionState,
+                  ({bool isVoice, bool isProcessing, bool canSend})>(
+                selector: (state) => (
+                  isVoice: state.isVoiceMode,
+                  isProcessing: state.isProcessing,
+                  canSend: state.canSend
+                ),
+                builder: (context, data) {
+                  if (data.isVoice) {
+                    return const SizedBox.shrink();
+                  }
+                  return TextInputBar(
+                    messageController: _messageController,
+                    micAnimation: _micAnimation,
+                    micButton: _buildMicButton(),
+                    isProcessing: data.isProcessing,
+                    onSend: _sendMessage,
+                    onSwitchMode: _toggleChatMode,
+                    enabled: data.canSend,
+                  );
+                },
               ),
             ],
           ),
@@ -422,9 +434,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Process the audio through the Bloc
         context.read<VoiceSessionBloc>().add(ProcessAudio(audioPath));
       };
-
-      // Listen to TTS playback stream
-      _ttsSubscription = _voiceService.audioPlaybackStream.listen((_) {});
 
       debugPrint('[ChatScreen] Services initialized successfully');
     } catch (e) {
@@ -550,20 +559,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       _voiceService.streamAndPlayTTS(
         text: welcomeMessage,
         onDone: () {
-          debugPrint('[ChatScreen] Welcome TTS completed, enabling auto mode');
-          // Enable auto mode AFTER TTS completes
-          context.read<VoiceSessionBloc>().add(EnableAutoMode());
-          _startListeningAfterTTS();
+          debugPrint('[ChatScreen] Welcome TTS completed');
         },
         onError: (error) {
           debugPrint('Welcome TTS Error: $error');
-          // Enable auto mode even on error
-          context.read<VoiceSessionBloc>().add(EnableAutoMode());
-          _startListeningAfterTTS();
         },
       );
-    } else {
-      _startListeningAfterTTS();
     }
   }
 
@@ -601,25 +602,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         );
       }
     });
-  }
-
-  // Helper: After TTS completes, re-enable VAD and start recording
-  Future<void> _startListeningAfterTTS() async {
-    final state = context.read<VoiceSessionBloc>().state;
-    debugPrint(
-        '[ChatScreen] _startListeningAfterTTS: TTS playback complete. Current voice mode: ${state.isVoiceMode}');
-
-    if (!state.isVoiceMode) {
-      debugPrint(
-          '[ChatScreen] Not in voice mode, skipping listening activation');
-      return;
-    }
-
-    // The AutoListeningCoordinator should handle VAD reactivation automatically
-    // We just need to ensure the Bloc state reflects that we're ready to listen
-    context.read<VoiceSessionBloc>().add(StartListening());
-
-    debugPrint('[ChatScreen] Listening state updated in Bloc');
   }
 
   Future<void> _endSession() async {
