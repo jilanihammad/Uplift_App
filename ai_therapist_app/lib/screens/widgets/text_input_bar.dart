@@ -7,6 +7,7 @@ class TextInputBar extends StatelessWidget {
   final bool isProcessing;
   final VoidCallback onSend;
   final VoidCallback onSwitchMode;
+  final bool enabled;
 
   const TextInputBar({
     Key? key,
@@ -16,6 +17,7 @@ class TextInputBar extends StatelessWidget {
     required this.isProcessing,
     required this.onSend,
     required this.onSwitchMode,
+    this.enabled = true,
   }) : super(key: key);
 
   @override
@@ -44,6 +46,7 @@ class TextInputBar extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: messageController,
+                  enabled: enabled,
                   decoration: const InputDecoration(
                     hintText: 'Type your message...',
                     border: OutlineInputBorder(

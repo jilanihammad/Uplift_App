@@ -41,6 +41,9 @@ class AutoListeningCoordinator {
   // Debounce timer for voice activity
   Timer? _speechEndDebounceTimer;
 
+  // Timer to prevent stuck states
+  Timer? _stuckStateTimer;
+
   // Callback for when speech is detected and recording starts
   Function()? onSpeechDetectedCallback;
 
@@ -124,8 +127,7 @@ class AutoListeningCoordinator {
       } else {
         // TTS stopped speaking
         if (_currentState == AutoListeningState.aiSpeaking ||
-            _currentState == AutoListeningState.idle ||
-            _currentState == AutoListeningState.listeningForVoice) {
+            _currentState == AutoListeningState.idle) {
           if (kDebugMode) {
             print(
                 '[AutoListeningCoordinator] [TTS] TTS stopped speaking. Current state $_currentState is suitable for restarting listening. Calling _startListeningAfterDelay().');
@@ -209,42 +211,89 @@ class AutoListeningCoordinator {
       print(
           '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay called | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
     }
-    // Short delay to allow for audio playback to fully complete
-    Future.delayed(const Duration(milliseconds: 0), () async {
-      if (_autoModeEnabled) {
-        if (kDebugMode) {
-          print(
-              '[AutoListeningCoordinator] [VAD] Delay completed, now starting listening (VAD should be active) | currentState=$_currentState');
-        }
-        // Force the state to idle first to ensure clean transition
-        if (_currentState == AutoListeningState.aiSpeaking) {
-          _updateState(AutoListeningState.idle);
-        }
-        // Start listening for VAD input
-        _updateState(AutoListeningState.listeningForVoice);
-        await _vadManager.startListening();
-        if (kDebugMode) {
-          print(
-              '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
-        }
-        // Start the actual recording pipeline as well
-        if (kDebugMode) {
-          print(
-              '[AutoListeningCoordinator] [RECORDING] Calling voiceService.startRecording() after VAD start');
-        }
-        try {
-          await _voiceService.startRecording();
-        } catch (e) {
-          if (kDebugMode) {
-            print(
-                '[AutoListeningCoordinator] [RECORDING] Error starting recording: $e');
-          }
-        }
-      } else if (kDebugMode) {
+    // Only allow transition from idle or aiSpeaking states to prevent infinite loops
+    if (!(_currentState == AutoListeningState.idle ||
+        _currentState == AutoListeningState.aiSpeaking)) {
+      if (kDebugMode) {
         print(
-            '[AutoListeningCoordinator] [VAD] Auto mode disabled during delay, not starting listening');
+            '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay ignored - already in state: $_currentState');
+      }
+      return;
+    }
+
+    // Update state immediately
+    _updateState(AutoListeningState.listeningForVoice);
+
+    // Cancel any existing stuck state timer
+    _stuckStateTimer?.cancel();
+
+    // Set a timer to reset if we get stuck
+    _stuckStateTimer = Timer(const Duration(seconds: 1), () {
+      if (_currentState == AutoListeningState.listeningForVoice) {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [VAD] Stuck in listeningForVoice state, resetting to idle');
+        }
+        _updateState(AutoListeningState.idle);
+        // Try again
+        _startListeningAfterDelay();
       }
     });
+
+    // Execute VAD start logic immediately (no Future.delayed)
+    if (!_autoModeEnabled) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [VAD] Auto mode disabled, not starting listening');
+      }
+      _stuckStateTimer?.cancel();
+      return;
+    }
+
+    // Start listening immediately
+    _executeListeningStart();
+  }
+
+  // New method to handle the actual listening start
+  Future<void> _executeListeningStart() async {
+    if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator] [VAD] Starting listening (VAD should be active) | currentState=$_currentState');
+    }
+
+    // Only stop playback if something is actually playing
+    if (_audioPlayerManager.isPlaying) {
+      await _voiceService.stopAudio();
+    }
+
+    await _vadManager.startListening();
+    if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
+    }
+
+    // Start the actual recording pipeline as well
+    if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator] [RECORDING] Calling voiceService.startRecording() after VAD start');
+    }
+
+    try {
+      await _voiceService.startRecording();
+      // Transition to listening state now that VAD is active
+      _updateState(AutoListeningState.listening);
+      // Cancel the stuck state timer since we successfully started
+      _stuckStateTimer?.cancel();
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [VAD] Transitioned to listening state');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [RECORDING] Error starting recording: $e');
+      }
+    }
   }
 
   // Start listening for voice activity
@@ -459,6 +508,15 @@ class AutoListeningCoordinator {
 
   // Enable automatic listening mode (original method using AudioPlayerManager)
   Future<void> enableAutoMode() async {
+    // If we're stuck in listeningForVoice, reset to idle first
+    if (_currentState == AutoListeningState.listeningForVoice) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [MODE] enableAutoMode: Resetting from stuck listeningForVoice state to idle');
+      }
+      _updateState(AutoListeningState.idle);
+    }
+
     if (!_autoModeEnabled) {
       _autoModeEnabled = true;
       _autoModeEnabledController.add(true);
@@ -526,6 +584,7 @@ class AutoListeningCoordinator {
   // Clean up resources
   Future<void> dispose() async {
     _cancelSpeechEndTimer();
+    _stuckStateTimer?.cancel();
     await _autoModeEnabledController.close();
     await _stateController.close();
     await _errorController.close();
@@ -536,11 +595,13 @@ class AutoListeningCoordinator {
     try {
       // Initialize components that need it
       await _vadManager.initialize();
-      _autoModeEnabled = true;
-      _autoModeEnabledController.add(true);
+      // Do NOT enable auto mode during initialization
+      // It will be enabled explicitly when needed (after TTS)
+      _autoModeEnabled = false;
+      _autoModeEnabledController.add(false);
 
       if (kDebugMode) {
-        print('🤖 Auto listening coordinator initialized');
+        print('🤖 Auto listening coordinator initialized (auto mode OFF)');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -560,6 +621,19 @@ class AutoListeningCoordinator {
     } else if (kDebugMode) {
       print(
           '🤖 Auto mode: External trigger ignored - already listening or auto mode disabled');
+    }
+  }
+
+  // Called when processing is complete to resume listening
+  void onProcessingComplete() {
+    if (_autoModeEnabled && _currentState == AutoListeningState.processing) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] Processing complete, resuming listening');
+      }
+      // Transition back to listening state
+      _updateState(AutoListeningState.idle);
+      _startListeningAfterDelay();
     }
   }
 }

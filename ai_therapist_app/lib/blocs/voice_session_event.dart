@@ -111,3 +111,19 @@ class SetSpeakerMuted extends VoiceSessionEvent {
   final bool isMuted;
   const SetSpeakerMuted(this.isMuted);
 }
+
+// Events for tracking service states
+class AudioPlaybackStateChanged extends VoiceSessionEvent {
+  final bool isPlaying;
+  const AudioPlaybackStateChanged(this.isPlaying);
+}
+
+class TtsStateChanged extends VoiceSessionEvent {
+  final bool isSpeaking;
+  const TtsStateChanged(this.isSpeaking);
+}
+
+// Event to mark when the welcome message TTS has completed
+class WelcomeMessageCompleted extends VoiceSessionEvent {
+  const WelcomeMessageCompleted();
+}

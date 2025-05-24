@@ -14,6 +14,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   final VoiceService voiceService;
   final VADManager vadManager;
   StreamSubscription? _recordingStateSub;
+  StreamSubscription? _audioPlaybackSub;
+  StreamSubscription? _ttsStateSub;
 
   VoiceSessionBloc({required this.voiceService, required this.vadManager})
       : super(const VoiceSessionState()) {
@@ -41,10 +43,27 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<DisableAutoMode>(_onDisableAutoMode);
     on<StopAudio>(_onStopAudio);
     on<PlayAudio>(_onPlayAudio);
+    // Service state tracking
+    on<AudioPlaybackStateChanged>(_onAudioPlaybackStateChanged);
+    on<TtsStateChanged>(_onTtsStateChanged);
+    on<WelcomeMessageCompleted>(_onWelcomeMessageCompleted);
     // Subscribe to recording state
     _recordingStateSub = voiceService.recordingState.listen((recState) {
       final isRecording = recState.toString().contains('recording');
       add(SetRecordingState(isRecording));
+    });
+
+    // Subscribe to audio playback state
+    _audioPlaybackSub = voiceService
+        .getAudioPlayerManager()
+        .isPlayingStream
+        .listen((isPlaying) {
+      add(AudioPlaybackStateChanged(isPlaying));
+    });
+
+    // Subscribe to TTS state
+    _ttsStateSub = voiceService.isTtsActuallySpeaking.listen((isSpeaking) {
+      add(TtsStateChanged(isSpeaking));
     });
   }
 
@@ -57,6 +76,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       error: null,
       sessionTimerSeconds: 0,
       messages: [],
+      hasInitialTtsPlayed: false,
+      welcomeMessageCompleted: false,
     ));
   }
 
@@ -90,16 +111,21 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   Future<void> _onSwitchMode(
       SwitchMode event, Emitter<VoiceSessionState> emit) async {
     debugPrint(
-        '[VoiceSessionBloc] Switching to ${event.isVoiceMode ? "voice" : "chat"} mode');
+        '[VoiceSessionBloc] Switching to [36m${event.isVoiceMode ? "voice" : "chat"}[0m mode');
 
     if (event.isVoiceMode) {
-      // Switching TO voice mode: stop any audio, reset TTS state, then enable VAD
-      debugPrint('[VoiceSessionBloc] Enabling VAD for voice mode');
+      // Switching TO voice mode: stop any audio, reset TTS state, but DO NOT enable VAD yet
+      debugPrint(
+          '[VoiceSessionBloc] Preparing for voice mode (will enable VAD after TTS)');
       try {
         // 1. Update state to show we're stopping audio
         emit(state.copyWith(
           isVoiceMode: event.isVoiceMode,
           isAudioPlaying: false, // Bloc manages audio state
+          isVADActive: false, // Ensure VAD is off until TTS is done
+          hasInitialTtsPlayed:
+              false, // Reset this flag when switching to voice mode
+          welcomeMessageCompleted: false, // Reset welcome message flag
         ));
 
         // 2. Stop any ongoing audio
@@ -112,14 +138,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // 4. Add a small delay to ensure audio state is fully updated
         await Future.delayed(const Duration(milliseconds: 200));
 
-        // 5. Enable auto mode with Bloc-managed audio state (false = not playing)
-        await voiceService.enableAutoModeWithAudioState(state.isAudioPlaying);
-        emit(state.copyWith(isVADActive: true));
-        debugPrint(
-            '[VoiceSessionBloc] VAD enabled successfully for voice mode');
+        // 5. Do NOT enable auto mode or VAD here. Wait for EnableAutoMode event after TTS.
+        debugPrint('[VoiceSessionBloc] Waiting for EnableAutoMode after TTS');
       } catch (e) {
-        debugPrint(
-            '[VoiceSessionBloc] Failed to enable VAD for voice mode: $e');
+        debugPrint('[VoiceSessionBloc] Failed to prepare for voice mode: $e');
         emit(state.copyWith(error: e.toString()));
       }
     } else {
@@ -235,12 +257,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
             // Update state to show Maya stopped speaking
             emit(state.copyWith(isProcessing: false, isAudioPlaying: false));
+            // Resume listening after processing is complete
+            voiceService.autoListeningCoordinator.onProcessingComplete();
           },
           onTTSError: (error) async {
             debugPrint('[VoiceSessionBloc] TTS error: $error');
             // Update state to show Maya stopped speaking (due to error)
             emit(state.copyWith(
                 isProcessing: false, error: error, isAudioPlaying: false));
+            // Resume listening even on error
+            voiceService.autoListeningCoordinator.onProcessingComplete();
           },
         );
 
@@ -414,6 +440,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       EnableAutoMode event, Emitter<VoiceSessionState> emit) async {
     debugPrint('[VoiceSessionBloc] Enabling auto mode...');
 
+    // Guard: Don't enable if already active
+    if (state.isVADActive) {
+      debugPrint('[VoiceSessionBloc] Auto mode already active, skipping');
+      return;
+    }
+
     try {
       // Stop any ongoing audio
       await voiceService.stopAudio();
@@ -422,12 +454,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // Reset TTS state
       voiceService.resetTTSState();
 
-      // Add a small delay to ensure audio state is fully updated
-      await Future.delayed(const Duration(milliseconds: 200));
-
       // Enable auto mode (starts in idle instead of aiSpeaking)
       await voiceService.enableAutoMode();
-      debugPrint('[VoiceSessionBloc] Auto mode enabled successfully');
+      emit(state.copyWith(isVADActive: true));
+
+      // Trigger listening to start after a brief delay
+      voiceService.autoListeningCoordinator.triggerListening();
+
+      debugPrint(
+          '[VoiceSessionBloc] Auto mode enabled successfully, VAD is now active');
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Failed to enable auto mode: $e');
       emit(state.copyWith(error: e.toString()));
@@ -473,6 +508,48 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
+  void _onAudioPlaybackStateChanged(
+      AudioPlaybackStateChanged event, Emitter<VoiceSessionState> emit) {
+    debugPrint(
+        '[VoiceSessionBloc] Audio playback state changed: ${event.isPlaying}');
+    emit(state.copyWith(isAudioPlaying: event.isPlaying));
+  }
+
+  void _onTtsStateChanged(
+      TtsStateChanged event, Emitter<VoiceSessionState> emit) {
+    debugPrint('[VoiceSessionBloc] TTS state changed: ${event.isSpeaking}');
+
+    // Store the previous TTS state before updating
+    final bool wasSpeaking = state.isTtsSpeaking;
+    emit(state.copyWith(isTtsSpeaking: event.isSpeaking));
+
+    // When TTS TRANSITIONS from speaking to not speaking for the first time, that's our cue to start listening
+    if (wasSpeaking &&
+        !event.isSpeaking &&
+        !state.hasInitialTtsPlayed &&
+        state.isVoiceMode) {
+      debugPrint(
+          '[VoiceSessionBloc] TTS transition detected (true -> false), initial TTS has completed, enabling listening');
+      emit(state.copyWith(hasInitialTtsPlayed: true));
+
+      // Give a small delay to ensure all states are updated
+      Future.delayed(const Duration(milliseconds: 100), () {
+        // Only add EnableAutoMode if we're still in voice mode and not already listening
+        if (state.isVoiceMode && !state.isVADActive && !state.isRecording) {
+          debugPrint(
+              '[VoiceSessionBloc] Dispatching EnableAutoMode after initial TTS');
+          add(EnableAutoMode());
+        }
+      });
+    }
+  }
+
+  void _onWelcomeMessageCompleted(
+      WelcomeMessageCompleted event, Emitter<VoiceSessionState> emit) {
+    debugPrint('[VoiceSessionBloc] Welcome message completed');
+    emit(state.copyWith(welcomeMessageCompleted: true));
+  }
+
   List<Map<String, String>> _buildConversationHistory(
       List<TherapyMessage> messages) {
     return messages
@@ -481,5 +558,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
               'content': message.content,
             })
         .toList();
+  }
+
+  @override
+  Future<void> close() {
+    _recordingStateSub?.cancel();
+    _audioPlaybackSub?.cancel();
+    _ttsStateSub?.cancel();
+    return super.close();
   }
 }

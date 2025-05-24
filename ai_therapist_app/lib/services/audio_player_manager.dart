@@ -20,6 +20,9 @@ class AudioPlayerManager {
   final StreamController<String?> _errorController =
       StreamController<String?>.broadcast();
 
+  // Track last emitted playing state to prevent duplicate broadcasts
+  bool? _lastEmittedPlayingState;
+
   // Streams for external components to listen to
   Stream<bool> get isPlayingStream => _playingStateController.stream;
   Stream<String?> get errorStream => _errorController.stream;
@@ -31,6 +34,17 @@ class AudioPlayerManager {
   // Constructor
   AudioPlayerManager() {
     _initAudioPlayer();
+  }
+
+  // Helper method to emit playing state only if it changed
+  void _emitPlayingState(bool isPlaying) {
+    if (_lastEmittedPlayingState != isPlaying) {
+      _lastEmittedPlayingState = isPlaying;
+      _playingStateController.add(isPlaying);
+      if (kDebugMode) {
+        print('🎧 AudioPlayerManager: Playing state changed to $isPlaying');
+      }
+    }
   }
 
   // Initialize the audio player
@@ -53,7 +67,7 @@ class AudioPlayerManager {
       // Set up player listeners
       _audioPlayer.playerStateStream.listen((playerState) {
         final isPlaying = playerState.playing;
-        _playingStateController.add(isPlaying);
+        _emitPlayingState(isPlaying);
 
         if (kDebugMode && isPlaying) {
           print('🎧 Audio playback started');
@@ -65,7 +79,7 @@ class AudioPlayerManager {
       _audioPlayer.processingStateStream.listen((state) {
         if (state == ProcessingState.completed) {
           // Ensure we broadcast playback stopped when audio completes
-          _playingStateController.add(false);
+          _emitPlayingState(false);
           if (kDebugMode) {
             print('🎧 Audio playback completed');
           }
@@ -74,7 +88,7 @@ class AudioPlayerManager {
           Future.delayed(const Duration(milliseconds: 100), () {
             // Double-check that we're actually stopped
             if (!_audioPlayer.playing) {
-              _playingStateController.add(false);
+              _emitPlayingState(false);
               if (kDebugMode) {
                 print('🎧 Audio playback completion confirmed');
               }
@@ -156,11 +170,11 @@ class AudioPlayerManager {
 
       // Force the state to false immediately
       _forceIsPlayingState = false;
-      _playingStateController.add(false);
+      _emitPlayingState(false);
 
       if (kDebugMode) {
         print(
-            '🎧 AudioPlayerManager: Audio playback stopped - isPlaying forced to false');
+            '�� AudioPlayerManager: Audio playback stopped - isPlaying forced to false');
       }
     } catch (e) {
       _errorController.add('Error stopping audio: $e');
@@ -173,7 +187,7 @@ class AudioPlayerManager {
   // Force reset the playing state
   void forceStopState() {
     _forceIsPlayingState = false;
-    _playingStateController.add(false);
+    _emitPlayingState(false);
     if (kDebugMode) {
       print('🎧 AudioPlayerManager: Playing state forced to false');
     }

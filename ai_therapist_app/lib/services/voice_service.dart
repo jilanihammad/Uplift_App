@@ -515,6 +515,16 @@ class VoiceService {
               await _audioPlayerManager.playAudio(filePath!);
               // Playback is complete here
 
+              // Immediately update TTS state to false so listening can start promptly
+              isAiSpeaking = false;
+              _ttsSpeakingStateController.add(false);
+              if (kDebugMode) {
+                print(
+                    '[VoiceService] [TTS] isAiSpeaking set to false (immediately after playback)');
+                print(
+                    '[VoiceService] [TTS] TTS state stream set to false (immediately after playback)');
+              }
+
               onDone?.call();
               if (kDebugMode)
                 print(
@@ -564,13 +574,7 @@ class VoiceService {
       channel.sink.add(request);
       return await completer.future;
     } finally {
-      isAiSpeaking = false;
-      if (kDebugMode)
-        print(
-            '[VoiceService] [TTS] isAiSpeaking set to false (streamAndPlayTTS)');
-      _ttsSpeakingStateController.add(false);
-      if (kDebugMode)
-        print('[VoiceService] [TTS] TTS state stream set to false');
+      // No longer set isAiSpeaking = false here, already done immediately after playback
 
       // Ensure file deletion even if errors occurred before playback completion,
       // or if playback itself errored (handled by playAudio returning Future.error)
@@ -706,10 +710,18 @@ class VoiceService {
       onError?.call('TTS generation error: ${e.toString()}');
       return null; // Indicate failure
     } finally {
-      _setAiSpeaking(false); // Use the new helper
-      if (kDebugMode) {
-        print(
-            '[VoiceService] [TTS] TTS state stream set to false (generateAudio final)');
+      // No longer set isAiSpeaking = false here, already done immediately after playback
+
+      // Ensure file deletion even if errors occurred before playback completion,
+      // or if playback itself errored (handled by playAudio returning Future.error)
+      if (finalFilePath != null && !finalFilePath!.startsWith('http')) {
+        try {
+          await _deleteFile(finalFilePath!);
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error cleaning up audio file: $e');
+          }
+        }
       }
     }
   }

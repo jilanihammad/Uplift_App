@@ -19,6 +19,9 @@ class VoiceSessionState extends Equatable {
   final bool showDurationSelector;
   final bool isMicMuted;
   final bool isSpeakerMuted;
+  final bool isTtsSpeaking;
+  final bool hasInitialTtsPlayed;
+  final bool welcomeMessageCompleted;
 
   const VoiceSessionState({
     this.isListening = false,
@@ -37,6 +40,9 @@ class VoiceSessionState extends Equatable {
     this.showDurationSelector = false,
     this.isMicMuted = false,
     this.isSpeakerMuted = false,
+    this.isTtsSpeaking = false,
+    this.hasInitialTtsPlayed = false,
+    this.welcomeMessageCompleted = false,
   });
 
   VoiceSessionState copyWith({
@@ -56,6 +62,9 @@ class VoiceSessionState extends Equatable {
     bool? showDurationSelector,
     bool? isMicMuted,
     bool? isSpeakerMuted,
+    bool? isTtsSpeaking,
+    bool? hasInitialTtsPlayed,
+    bool? welcomeMessageCompleted,
   }) {
     return VoiceSessionState(
       isListening: isListening ?? this.isListening,
@@ -75,6 +84,10 @@ class VoiceSessionState extends Equatable {
       showDurationSelector: showDurationSelector ?? this.showDurationSelector,
       isMicMuted: isMicMuted ?? this.isMicMuted,
       isSpeakerMuted: isSpeakerMuted ?? this.isSpeakerMuted,
+      isTtsSpeaking: isTtsSpeaking ?? this.isTtsSpeaking,
+      hasInitialTtsPlayed: hasInitialTtsPlayed ?? this.hasInitialTtsPlayed,
+      welcomeMessageCompleted:
+          welcomeMessageCompleted ?? this.welcomeMessageCompleted,
     );
   }
 
@@ -96,5 +109,10 @@ class VoiceSessionState extends Equatable {
         showDurationSelector,
         isMicMuted,
         isSpeakerMuted,
+        isTtsSpeaking,
+        hasInitialTtsPlayed,
+        welcomeMessageCompleted,
       ];
+
+  bool get canSend => !isProcessing && !isVoiceMode;
 }
