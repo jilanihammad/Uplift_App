@@ -645,8 +645,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     _navigationService.showBottomNav();
 
-    // Stop audio and clean up resources
-    await _cleanupSessionResources();
+    // Stop audio and clean up resources through the bloc
+    bloc.add(const EndSession());
 
     // Show progress dialog
     if (mounted) {
