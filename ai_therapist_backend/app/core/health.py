@@ -10,7 +10,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 def get_health_status():
-    """Get the health status of all services"""
+    """Get the health status of all services using unified LLM manager"""
     
     health_info = {
         "status": "healthy",
@@ -22,37 +22,41 @@ def get_health_status():
         }
     }
     
-    # Check TTS service
+    # Check services via unified LLM manager
     try:
-        from app.services.voice_service import voice_service
-        if hasattr(voice_service, 'api_key') and voice_service.api_key:
-            health_info["services"]["openai_tts"] = "available"
+        from app.services.llm_manager import llm_manager
+        
+        # Get comprehensive status from unified manager
+        manager_status = llm_manager.get_status()
+        
+        # Add LLM service status
+        llm_config = manager_status["configurations"]["llm"]
+        if llm_config["available"]:
+            health_info["services"]["llm"] = f"available - {llm_config['provider']} ({llm_config['model']})"
         else:
-            health_info["services"]["openai_tts"] = "unavailable - no API key"
-    except Exception as e:
-        logger.warning(f"TTS service health check failed: {str(e)}")
-        health_info["services"]["openai_tts"] = f"unavailable - {str(e)}"
-    
-    # Check transcription service
-    try:
-        from app.services.transcription_service import transcription_service
-        if hasattr(transcription_service, 'available') and transcription_service.available:
-            health_info["services"]["groq_transcription"] = "available"
+            health_info["services"]["llm"] = f"unavailable - {llm_config['provider']} not configured"
+        
+        # Add TTS service status
+        tts_config = manager_status["configurations"]["tts"]
+        if tts_config["available"]:
+            health_info["services"]["tts"] = f"available - {tts_config['provider']} ({tts_config['model']})"
         else:
-            health_info["services"]["groq_transcription"] = "unavailable - not properly initialized"
-    except Exception as e:
-        logger.warning(f"Transcription service health check failed: {str(e)}")
-        health_info["services"]["groq_transcription"] = f"unavailable - {str(e)}"
-    
-    # Check LLM service
-    try:
-        from app.core.config import settings
-        if settings.GROQ_API_KEY:
-            health_info["services"]["groq_llm"] = "available"
+            health_info["services"]["tts"] = f"unavailable - {tts_config['provider']} not configured"
+        
+        # Add transcription service status
+        transcription_config = manager_status["configurations"]["transcription"]
+        if transcription_config["available"]:
+            health_info["services"]["transcription"] = f"available - {transcription_config['provider']} ({transcription_config['model']})"
         else:
-            health_info["services"]["groq_llm"] = "unavailable - no API key"
+            health_info["services"]["transcription"] = f"unavailable - {transcription_config['provider']} not configured"
+        
+        # Add available providers info
+        health_info["available_providers"] = manager_status["available_providers"]
+        health_info["active_models"] = manager_status["model_info"]
+        
     except Exception as e:
-        logger.warning(f"LLM service health check failed: {str(e)}")
-        health_info["services"]["groq_llm"] = f"unavailable - {str(e)}"
+        logger.warning(f"LLM manager health check failed: {str(e)}")
+        health_info["services"]["llm_manager"] = f"unavailable - {str(e)}"
+        health_info["status"] = "degraded"
     
     return health_info 

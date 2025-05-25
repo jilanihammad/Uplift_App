@@ -88,14 +88,12 @@ except Exception as e:
         PROJECT_NAME="AI Therapist API",
         API_V1_STR="/api/v1",
         BACKEND_CORS_ORIGINS=["*"],
-        # Add API keys and model values for compatibility
+        # Remove old LLM-specific settings - now handled by unified LLM manager
         OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY", ""),
         GROQ_API_KEY=os.environ.get("GROQ_API_KEY", ""),
         GROQ_API_BASE_URL=os.environ.get("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1"),
-        GROQ_LLM_MODEL_ID=os.environ.get("GROQ_LLM_MODEL_ID", "meta-llama/llama-4-scout-17b-16e-instruct"),
-        OPENAI_TTS_MODEL=os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
-        OPENAI_TTS_VOICE=os.environ.get("OPENAI_TTS_VOICE", "sage"),
-        OPENAI_TRANSCRIPTION_MODEL=os.environ.get("OPENAI_TRANSCRIPTION_MODEL", "whisper-1")
+        GROQ_LLM_MODEL_ID=os.environ.get("GROQ_LLM_MODEL_ID", "meta-llama/llama-4-scout-17b-16e-instruct")
+        # Removed OPENAI_TTS_MODEL, OPENAI_TTS_VOICE, OPENAI_TRANSCRIPTION_MODEL - now in unified config
     )
     
     # Create fallback middleware classes if they couldn't be imported
@@ -252,17 +250,20 @@ def health_check():
 
 @app.get(f"{settings.API_V1_STR}/llm/status")
 async def llm_status():
-    """Check if the LLM API is available."""
+    """Check if the LLM API is available using unified LLM manager."""
     try:
-        # Check that we have either a GROQ or OpenAI API key
-        if not settings.GROQ_API_KEY and not settings.OPENAI_API_KEY:
-            return {"status": "unavailable", "reason": "No API key configured"}
+        # Use unified LLM manager instead of checking individual API keys
+        if not llm_manager:
+            return {"status": "unavailable", "reason": "Unified LLM manager not available"}
         
-        # Return which API we're using
-        if settings.OPENAI_API_KEY:
-            return {"status": "available", "model": settings.OPENAI_TTS_MODEL, "provider": "openai"}
-        else:
-            return {"status": "available", "model": settings.GROQ_LLM_MODEL_ID, "provider": "groq"}
+        # Get status from unified LLM manager
+        status_info = llm_manager.get_status()
+        
+        return {
+            "status": "available" if status_info.get("available_providers") else "unavailable",
+            "manager_status": status_info,
+            "unified_system": True
+        }
     except Exception as e:
         logger.error("Error checking LLM status: %s", str(e))
         return {"status": "unavailable", "reason": str(e)}
@@ -276,8 +277,8 @@ class AIRequest(BaseModel):
 
 class VoiceRequest(BaseModel):
     text: str
-    voice: str = "nia-PlayAI"  # Default voice for PlayAI TTS model
-    model: str = None
+    voice: Optional[str] = None  # No default, config handles it
+    model: Optional[str] = None
 
 class TranscriptionRequest(BaseModel):
     audio_url: Optional[str] = None
@@ -294,29 +295,25 @@ class EndSessionRequest(BaseModel):
 
 @app.post("/ai/response")
 async def ai_response(request: AIRequest):
-    """Handle AI response requests using Groq's LLM."""
+    """Handle AI response requests using unified LLM manager."""
     try:
         logger.info("Received AI response request: %s", request.message)
         
-        # Import Groq service instead of OpenAI
-        try:
-            from app.services.groq_service import groq_service
-            logger.info("Groq service imported successfully")
-        except Exception as import_error:
-            logger.error(f"Failed to import groq_service: {str(import_error)}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Groq service import error: {str(import_error)}")
+        # Use unified LLM manager instead of individual services
+        if not llm_manager:
+            logger.error("Unified LLM manager not available")
+            raise HTTPException(status_code=500, detail="LLM service not available")
         
-        # Generate response using Groq
-        response_text = await groq_service.generate_response(
+        # Generate response using unified LLM manager
+        response_text = await llm_manager.generate_response(
             message=request.message,
             system_prompt=request.system_prompt, 
-            model=request.model,
+            # Don't pass model - unified LLM manager handles this internally
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
         
-        logger.info("AI response generated successfully using Groq")
+        logger.info("AI response generated successfully using unified LLM manager")
         return {"response": response_text}
             
     except Exception as e:
@@ -328,23 +325,43 @@ async def ai_response(request: AIRequest):
 
 @app.post("/therapy/end_session")
 async def end_session(request: EndSessionRequest):
-    """Generate therapy session summary using OpenAI's LLM."""
+    """Generate therapy session summary using unified LLM manager."""
     try:
         logger.info("Received end session request with %d messages", len(request.messages))
         
-        # Import OpenAI service
-        from app.services.openai_service import openai_service
+        # Use unified LLM manager instead of individual services
+        if not llm_manager:
+            logger.error("Unified LLM manager not available")
+            raise HTTPException(status_code=500, detail="LLM service not available")
         
-        # Generate session summary using OpenAI
-        result = await openai_service.generate_session_summary(
-            messages=request.messages,
-            therapeutic_approach=request.therapeutic_approach,
-            system_prompt=request.system_prompt,
-            memory_context=request.memory_context
+        # Generate session summary using unified LLM manager
+        # Create a comprehensive prompt for session summary
+        summary_prompt = f"""
+        Please analyze this therapy session and provide a comprehensive summary.
+        
+        Therapeutic Approach: {request.therapeutic_approach}
+        System Context: {request.system_prompt}
+        Memory Context: {request.memory_context}
+        
+        Session Messages:
+        {json.dumps(request.messages, indent=2)}
+        
+        Please provide:
+        1. A brief session summary
+        2. Key themes discussed
+        3. Progress indicators
+        4. Recommendations for future sessions
+        """
+        
+        result = await llm_manager.generate_response(
+            message=summary_prompt,
+            system_prompt="You are a professional therapy session analyzer. Provide structured, helpful summaries.",
+            temperature=0.3,  # Lower temperature for more consistent summaries
+            max_tokens=1500
         )
         
-        logger.info("Session summary generated successfully")
-        return result
+        logger.info("Session summary generated successfully using unified LLM manager")
+        return {"summary": result, "therapeutic_approach": request.therapeutic_approach}
             
     except Exception as e:
         logger.error("Error generating session summary: %s", str(e))
@@ -357,40 +374,46 @@ async def voice_synthesize(request: VoiceRequest):
         if not request.text:
             logger.warning("[API] No text provided for TTS")
             raise HTTPException(status_code=400, detail="No text provided for TTS")
+            
+        # Use unified LLM manager instead of individual services
+        if not llm_manager:
+            logger.error("Unified LLM manager not available")
+            raise HTTPException(status_code=500, detail="LLM service not available")
+        
         try:
-            from app.services.voice_service import voice_service
-            logger.info("[API] Voice service imported successfully")
-        except Exception as import_error:
-            logger.error(f"[API] Failed to import voice_service: {str(import_error)}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Voice service import error: {str(import_error)}")
-        if request.voice:
-            try:
-                logger.info(f"[API] Setting voice to: {request.voice}")
-                voice_service.set_voice(request.voice)
-            except Exception as voice_error:
-                logger.error(f"[API] Error setting voice: {str(voice_error)}")
-                logger.error(traceback.format_exc())
-                raise HTTPException(status_code=500, detail=f"Error setting voice: {str(voice_error)}")
-        try:
-            audio_url = await voice_service.generate_speech(request.text)
-            logger.info(f"[API] generate_speech returned audio_url: {audio_url}")
-            if not audio_url:
-                logger.error("[API] Failed to generate audio - empty URL returned")
-                raise HTTPException(status_code=500, detail="Failed to generate audio - empty URL returned")
-            # Check if file exists on disk
-            file_path = os.path.join(voice_service.audio_dir, audio_url.split('/')[-1])
-            if os.path.exists(file_path):
-                file_size = os.path.getsize(file_path)
-                logger.info(f"[API] Audio file exists at: {file_path} ({file_size} bytes)")
-            else:
-                logger.error(f"[API] Audio file missing at: {file_path}")
-            logger.info(f"[API] Returning audio_url to client: {audio_url}")
-            return {"url": audio_url}
+            logger.info(f"[API] Using unified LLM manager for TTS")
+            
+            # Accept response_format from request if present (for OPUS/OGG support)
+            response_format = getattr(request, 'response_format', None)
+            if not response_format:
+                # Try to get from request body if sent as dict
+                if hasattr(request, 'dict'):
+                    response_format = request.dict().get('response_format', None)
+            if not response_format:
+                response_format = 'mp3'  # Default for backward compatibility
+
+            # Generate speech using unified LLM manager
+            audio_data = await llm_manager.text_to_speech(
+                text=request.text,
+                voice=request.voice,
+                response_format=response_format
+            )
+            
+            logger.info(f"[API] TTS generated successfully via unified LLM manager")
+            
+            if not audio_data:
+                logger.error("[API] Failed to generate audio - empty data returned")
+                raise HTTPException(status_code=500, detail="Failed to generate audio - empty data returned")
+            
+            # Return the audio data and format
+            logger.info(f"[API] Returning audio data to client (format: {response_format})")
+            return {"audio_data": audio_data, "format": response_format}
+            
         except Exception as speech_error:
             logger.error(f"[API] Error generating speech: {str(speech_error)}")
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=f"Error generating speech: {str(speech_error)}")
+            
     except HTTPException:
         raise
     except Exception as e:
@@ -400,16 +423,16 @@ async def voice_synthesize(request: VoiceRequest):
 
 @app.post("/voice/transcribe")
 async def transcribe_audio(request: Request):
-    """Endpoint to transcribe audio sent as base64 encoded data using OpenAI."""
+    """Endpoint to transcribe audio sent as base64 encoded data using unified LLM manager."""
     try:
         # Get the request body as JSON
         json_data = await request.json()
         audio_data = json_data.get("audio_data")
         audio_format = json_data.get("audio_format", "aac")  # Default to aac if not specified
-        # Use environment variable for model if specified in request
-        requested_model = json_data.get("model", settings.OPENAI_TRANSCRIPTION_MODEL)
+        # Model selection is now handled by unified LLM manager
+        requested_model = json_data.get("model")  # Optional override
         
-        logger.info(f"Received transcription request. Format: {audio_format}, Model: {requested_model}")
+        logger.info(f"Received transcription request. Format: {audio_format}, Model: {requested_model or 'default'}")
         
         # Check if audio data was provided
         if not audio_data:
@@ -419,6 +442,11 @@ async def transcribe_audio(request: Request):
         # Log the size of the received audio data
         audio_data_length = len(audio_data) if audio_data else 0
         logger.info(f"Audio data received: {audio_data_length} characters")
+        
+        # Use unified LLM manager instead of individual services
+        if not llm_manager:
+            logger.error("Unified LLM manager not available")
+            raise HTTPException(status_code=500, detail="LLM service not available")
         
         # Decode the base64 audio data
         try:
@@ -450,31 +478,14 @@ async def transcribe_audio(request: Request):
                 logger.error(f"Failed to save audio file at {temp_file_path}")
                 raise HTTPException(status_code=500, detail="Failed to save audio file")
             
-            # Import OpenAI service
-            from app.services.openai_service import openai_service
-            
-            # Set the requested model in the service if it was provided
-            if requested_model != settings.OPENAI_TRANSCRIPTION_MODEL:
-                logger.info(f"Using non-default transcription model: {requested_model}")
-                # Save original model to restore later
-                original_model = openai_service.transcription_model
-                openai_service.transcription_model = requested_model
-            
-            # Transcribe the audio using OpenAI service
-            logger.info(f"Calling OpenAI transcription service with model: {openai_service.transcription_model}")
+            # Transcribe the audio using unified LLM manager
+            logger.info(f"Calling unified LLM manager transcription service")
             try:
-                transcription = await openai_service.transcribe_audio(temp_file_path)
+                # Don't pass model parameter - unified LLM manager handles this internally
+                transcription = await llm_manager.transcribe_audio(temp_file_path)
                 logger.info(f"Transcription service returned: '{transcription}'")
-                
-                # Restore original model if we changed it
-                if requested_model != settings.OPENAI_TRANSCRIPTION_MODEL:
-                    openai_service.transcription_model = original_model
                     
             except Exception as e:
-                # Restore original model if we changed it
-                if requested_model != settings.OPENAI_TRANSCRIPTION_MODEL:
-                    openai_service.transcription_model = original_model
-                    
                 logger.error(f"Error from transcription service: {str(e)}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
                 # Clean up the temporary file
@@ -513,14 +524,23 @@ async def transcribe_audio(request: Request):
 
 @app.post("/voice/transcribe_file")
 async def transcribe_file(file: UploadFile = File(...)):
+    """Transcribe uploaded audio file using unified LLM manager."""
     import tempfile, os
+    
+    # Use unified LLM manager instead of individual services
+    if not llm_manager:
+        logger.error("Unified LLM manager not available")
+        raise HTTPException(status_code=500, detail="LLM service not available")
+    
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     temp.write(await file.read())
     temp.close()
-    from app.services.openai_service import openai_service
-    transcription = await openai_service.transcribe_audio(temp.name)
-    os.remove(temp.name)
-    return {"text": transcription}
+    
+    try:
+        transcription = await llm_manager.transcribe_audio(temp.name)
+        return {"text": transcription}
+    finally:
+        os.remove(temp.name)
 
 # Add the database and CRUD imports
 from app.crud import session as crud_session
@@ -994,6 +1014,25 @@ async def api_v1_voice_synthesize(request: VoiceRequest):
 # Include the voice router
 from app.api.endpoints import voice
 app.include_router(voice.router, prefix="/voice", tags=["voice"])
+
+# Replace old service imports with unified LLM manager
+try:
+    from app.services.llm_manager import llm_manager
+    logger.info("Successfully imported unified LLM manager")
+except Exception as e:
+    logger.warning(f"Error importing unified LLM manager: {str(e)}")
+    llm_manager = None
+
+@app.get("/debug/env")
+def debug_env():
+    return {
+        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
+        "GROQ_API_KEY": os.environ.get("GROQ_API_KEY"),
+        "GOOGLE_API_KEY": os.environ.get("GOOGLE_API_KEY"),
+        "ACTIVE_LLM_PROVIDER": os.environ.get("ACTIVE_LLM_PROVIDER"),
+        "ACTIVE_TTS_PROVIDER": os.environ.get("ACTIVE_TTS_PROVIDER"),
+        "ACTIVE_TRANSCRIPTION_PROVIDER": os.environ.get("ACTIVE_TRANSCRIPTION_PROVIDER"),
+    }
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

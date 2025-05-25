@@ -6,10 +6,8 @@ import json
 from datetime import datetime
 import uuid
 
-from app.services.ai_service import ai_service
-from app.services.groq_service import groq_service
-from app.services.voice_service import voice_service
-from app.services.transcription_service import transcription_service
+# Replace individual service imports with unified manager
+from app.services.llm_manager import llm_manager
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -22,20 +20,27 @@ session_store = {}
 @router.post("/generate", response_class=JSONResponse)
 async def generate_response(request: Request):
     """
-    Generate response from AI model (now using Groq's LLM service)
+    Generate response from AI model using the unified LLM manager
     """
     try:
         data = await request.json()
         user_message = data.get("message", "")
         conversation_history = data.get("history", [])
+        system_prompt = data.get("system_prompt", "")
+        user_info = data.get("user_info")
         
         if not user_message:
             return JSONResponse({"error": "No message provided"}, status_code=400)
             
         logger.info(f"Generating AI response for message: {user_message[:30]}...")
         
-        # Generate AI response using Groq instead of OpenAI
-        response = await groq_service.generate_response(user_message, conversation_history)
+        # Generate AI response using unified LLM manager
+        response = await llm_manager.generate_response(
+            message=user_message,
+            context=conversation_history,
+            system_prompt=system_prompt,
+            user_info=user_info
+        )
         
         if not response:
             return JSONResponse({"error": "Failed to generate response"}, status_code=500)
@@ -49,50 +54,13 @@ async def generate_response(request: Request):
 @router.get("/status", response_class=JSONResponse)
 async def check_service_status():
     """
-    Diagnostic endpoint to check the status of all AI services
+    Diagnostic endpoint to check the status of all AI services using unified manager
     """
     try:
-        # Check the status of all services
-        # Now using groq_service instead of ai_service for LLM
-        groq_available = hasattr(groq_service, 'available') and groq_service.available
-        voice_available = hasattr(voice_service, 'available') and voice_service.available
-        transcription_available = hasattr(transcription_service, 'available') and transcription_service.available
+        # Get comprehensive status from unified manager
+        status = llm_manager.get_status()
         
-        # Check for API keys
-        openai_key_available = bool(settings.OPENAI_API_KEY)
-        groq_key_available = bool(settings.GROQ_API_KEY)
-        
-        # Build the status response
-        status = {
-            "services": {
-                "llm": {
-                    "available": groq_available,
-                    "model": getattr(groq_service, 'chat_model', "unknown") 
-                },
-                "tts": {
-                    "available": voice_available,
-                    "model": getattr(voice_service, 'tts_model', "unknown"),
-                    "voice": getattr(voice_service, 'voice', "unknown")
-                },
-                "transcription": {
-                    "available": transcription_available,
-                    "model": getattr(transcription_service, 'model', "unknown")
-                }
-            },
-            "api_keys": {
-                "openai": {
-                    "available": openai_key_available,
-                    "key_preview": settings.OPENAI_API_KEY[:5] + "..." if openai_key_available else None
-                },
-                "groq": {
-                    "available": groq_key_available,
-                    "key_preview": settings.GROQ_API_KEY[:5] + "..." if groq_key_available else None
-                }
-            },
-            "environment": settings.model_config.get("env_file", "unknown")
-        }
-        
-        logger.info(f"Service status check: LLM (Groq): {groq_available}, TTS: {voice_available}, Transcription: {transcription_available}")
+        logger.info(f"Service status check completed")
         
         return JSONResponse(status)
     except Exception as e:
@@ -100,28 +68,52 @@ async def check_service_status():
         return JSONResponse({"error": str(e), "traceback": str(traceback.format_exc())}, status_code=500)
 
 @router.get("/test-key", response_class=JSONResponse)
-async def test_openai_key():
+async def test_api_keys():
     """
-    Test the API keys to ensure they're working correctly
+    Test all API keys to ensure they're working correctly using unified manager
     """
     try:
-        logger.info("Testing API keys")
+        logger.info("Testing API keys via unified LLM manager")
         
-        # Test both Groq and OpenAI
-        groq_result = await groq_service.test_api()
-        openai_result = await ai_service.test_api()
+        # Test all APIs through unified manager
+        result = await llm_manager.test_api()
         
-        result = {
-            "groq_api": groq_result,
-            "openai_api": openai_result,
-            "primary_llm": "Using Groq for text completion"
-        }
-        
-        logger.info(f"API key test results: Groq: {groq_result.get('available')}, OpenAI: {openai_result.get('available')}")
+        logger.info(f"API key test results completed")
         
         return JSONResponse(result)
     except Exception as e:
         logger.error(f"Error testing API keys: {str(e)}")
+        return JSONResponse({"error": str(e), "traceback": str(traceback.format_exc())}, status_code=500)
+
+@router.get("/config", response_class=JSONResponse)
+async def get_configuration():
+    """
+    Get detailed configuration information and validation status
+    """
+    try:
+        from app.core.llm_config import LLMConfig
+        
+        # Get validation results
+        validation = LLMConfig.validate_configuration()
+        
+        # Get current status from manager
+        manager_status = llm_manager.get_status()
+        
+        result = {
+            "validation": validation,
+            "manager_status": manager_status,
+            "active_providers": {
+                "llm": LLMConfig.ACTIVE_LLM_PROVIDER,
+                "tts": LLMConfig.ACTIVE_TTS_PROVIDER,
+                "transcription": LLMConfig.ACTIVE_TRANSCRIPTION_PROVIDER
+            }
+        }
+        
+        logger.info("Configuration status retrieved successfully")
+        
+        return JSONResponse(result)
+    except Exception as e:
+        logger.error(f"Error getting configuration: {str(e)}")
         return JSONResponse({"error": str(e), "traceback": str(traceback.format_exc())}, status_code=500)
 
 @router.websocket("/ws/chat")
@@ -146,6 +138,9 @@ async def websocket_chat(websocket: WebSocket):
             message = payload.get("message", "")
             history = payload.get("history")
             incoming_session_id = payload.get("session_id")
+            system_prompt = payload.get("system_prompt", "")
+            user_info = payload.get("user_info")
+            
             # Session management
             if incoming_session_id and incoming_session_id in session_store:
                 session_id = incoming_session_id
@@ -160,36 +155,56 @@ async def websocket_chat(websocket: WebSocket):
                 new_session = True
                 if history is None:
                     history = []
+            
             # Append current user message to session history
             session["history"].append({"isUser": True, "content": message})
-            from app.services.groq_service import groq_service
-            async for chunk in groq_service.stream_chat_completion(
-                message=message,
-                context=history
-            ):
-                response = {
-                    "type": "chunk",
-                    "content": chunk,
+            
+            # Stream response using unified LLM manager
+            try:
+                async for chunk in llm_manager.stream_chat_completion(
+                    message=message,
+                    context=history,
+                    system_prompt=system_prompt,
+                    user_info=user_info
+                ):
+                    response = {
+                        "type": "chunk",
+                        "content": chunk,
+                        "sequence": sequence,
+                        "timestamp": datetime.utcnow().isoformat() + 'Z',
+                        "session_id": session_id
+                    }
+                    await websocket.send_text(json.dumps(response))
+                    sequence += 1
+                
+                await websocket.send_text(json.dumps({
+                    "type": "done",
                     "sequence": sequence,
                     "timestamp": datetime.utcnow().isoformat() + 'Z',
                     "session_id": session_id
-                }
-                await websocket.send_text(json.dumps(response))
+                }))
                 sequence += 1
-            await websocket.send_text(json.dumps({
-                "type": "done",
-                "sequence": sequence,
-                "timestamp": datetime.utcnow().isoformat() + 'Z',
-                "session_id": session_id
-            }))
-            sequence += 1
+                
+            except Exception as stream_error:
+                logger.error(f"Error in streaming: {str(stream_error)}")
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "detail": f"Streaming error: {str(stream_error)}",
+                    "timestamp": datetime.utcnow().isoformat() + 'Z',
+                    "session_id": session_id
+                }))
+                
     except WebSocketDisconnect:
         logger.info("WebSocket chat disconnected")
     except Exception as e:
-        await websocket.send_text(json.dumps({
-            "type": "error",
-            "detail": str(e),
-            "timestamp": datetime.utcnow().isoformat() + 'Z',
-            "session_id": session_id
-        }))
-        await websocket.close() 
+        logger.error(f"WebSocket error: {str(e)}")
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "detail": str(e),
+                "timestamp": datetime.utcnow().isoformat() + 'Z',
+                "session_id": session_id
+            }))
+            await websocket.close()
+        except:
+            pass  # WebSocket might already be closed 

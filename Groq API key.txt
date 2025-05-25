@@ -33,10 +33,10 @@ Transcription: POST /voice/transcribe
 add correct environment variables to backend after this deployment
 
 backend URL newest: https://ai-therapist-backend-385290373302.us-central1.run.app
-backend URL new: https://new---ai-therapist-backend-fuukqlcsha-uc.a.run.app
+backend URL new: https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/
 
 GitHub upload command for streaming branch:
-git add . ; git commit -m "Sync all recent changes to Streaming branch" ; git push origin Streaming
+git add . ; git commit -m "Most bloc fixed" ; git push origin main
 
 GitHub pull and reset completey:
-git reset --hard ; git clean -fd ; git fetch origin ; git checkout Streaming ; git pull origin Streaming
+git reset --hard ; git clean -fd ; git fetch origin ; git checkout Streaming ; git pull origin main
