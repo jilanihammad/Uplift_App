@@ -19,7 +19,8 @@ TTS Model ID: gpt-4o-mini-tts
 
 Voice: Sage
 
-LLM: gpt-4.1-mini
+Google API:
+***REMOVED***
 
 Endpoint: https://api.openai.com/v1/audio/speech
 
@@ -36,7 +37,7 @@ backend URL newest: https://ai-therapist-backend-385290373302.us-central1.run.ap
 backend URL new: https://ai-therapist-backend-fuukqlcsha-uc.a.run.app/
 
 GitHub upload command for streaming branch:
-git add . ; git commit -m "Most bloc fixed" ; git push origin main
+git add . ; git commit -m "All good now" ; git push origin main
 
 GitHub pull and reset completey:
 git reset --hard ; git clean -fd ; git fetch origin ; git checkout Streaming ; git pull origin main
