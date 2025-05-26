@@ -19,29 +19,23 @@ $PORT = 8000  # Cloud Run will use this port
 $TIMESTAMP = Get-Date -Format "yyyyMMddHHmmss"
 $BUILD_TAG = "$SERVICE_NAME-$TIMESTAMP"
 
-# Read API keys from .env only, do not prompt
-$ENV_FILE_PATH = "ai_therapist_backend\.env"
-$openai_api_key = $null
-$groq_api_key = $null
-$google_api_key = $null
-if (Test-Path $ENV_FILE_PATH) {
-    $envLines = Get-Content $ENV_FILE_PATH
-    foreach ($line in $envLines) {
-        if ($line -match '^OPENAI_API_KEY=(.*)') { $openai_api_key = $Matches[1].Trim() }
-        if ($line -match '^GROQ_API_KEY=(.*)') { $groq_api_key = $Matches[1].Trim() }
-        if ($line -match '^GOOGLE_API_KEY=(.*)') { $google_api_key = $Matches[1].Trim() }
-    }
-}
-if (-not $openai_api_key) {
-    Write-Host "Error: OPENAI_API_KEY not found in $ENV_FILE_PATH. Please add it and try again." -ForegroundColor Red
+# Ask for the OpenAI API key
+Write-Host "Please enter your OpenAI API key (starts with 'sk-'): " -ForegroundColor Yellow -NoNewline
+$openai_api_key = Read-Host
+
+# Validate the OpenAI key format
+if (-not $openai_api_key.StartsWith("sk-")) {
+    Write-Host "Error: OpenAI API key should start with 'sk-'" -ForegroundColor Red
     exit 1
 }
-if (-not $groq_api_key) {
-    Write-Host "Error: GROQ_API_KEY not found in $ENV_FILE_PATH. Please add it and try again." -ForegroundColor Red
-    exit 1
-}
-if (-not $google_api_key) {
-    Write-Host "Error: GOOGLE_API_KEY not found in $ENV_FILE_PATH. Please add it and try again." -ForegroundColor Red
+
+# Ask for the Google API key
+Write-Host "Please enter your Google API key: " -ForegroundColor Yellow -NoNewline
+$google_api_key = Read-Host
+
+# Validate the Google key is not empty
+if ([string]::IsNullOrWhiteSpace($google_api_key)) {
+    Write-Host "Error: Google API key cannot be empty" -ForegroundColor Red
     exit 1
 }
 
@@ -91,6 +85,7 @@ ENVIRONMENT=production
 GOOGLE_CLOUD=1
 DATABASE_URL=sqlite:///./app.db
 OPENAI_API_KEY=${openai_api_key}
+GOOGLE_API_KEY=${google_api_key}
 DEBUG=0
 "@
     Set-Content -Path "$TEMP_DIR\.env" -Value $envContent
@@ -137,8 +132,11 @@ ENV ENVIRONMENT=production
 ENV GOOGLE_CLOUD=1
 ENV DATABASE_URL=sqlite:///./data/app.db
 ENV OPENAI_API_KEY=$openai_api_key
-ENV GROQ_API_KEY=$groq_api_key
 ENV GOOGLE_API_KEY=$google_api_key
+ENV OPENAI_LLM_MODEL=gpt-3.5-turbo
+ENV OPENAI_TTS_MODEL=gpt-4o-mini-tts
+ENV OPENAI_TTS_VOICE=sage
+ENV OPENAI_TRANSCRIPTION_MODEL=whisper-1
 ENV PYTHONUNBUFFERED=1
 ENV USE_GROQ=0
 
