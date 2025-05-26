@@ -28,7 +28,7 @@ import '../services/audio_generator.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../utils/list_extensions.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import '../services/wakelock_service.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
@@ -60,7 +60,7 @@ class _ChatScreenBody extends StatefulWidget {
 }
 
 class _ChatScreenBodyState extends State<_ChatScreenBody>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -84,11 +84,68 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Timer? _sessionTimer;
   int _previousMessageCount = 0;
 
+  // Wakelock management - simplified and safe
+  Future<void> _enableWakelock() async {
+    try {
+      await WakelockService.enable();
+
+      // Sanity check - verify wakelock is actually enabled
+      final enabled = await WakelockService.isEnabled;
+      debugPrint(
+          '[ChatScreen] Wakelock enabled successfully - KEEP_SCREEN_ON = $enabled');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to enable wakelock: $e');
+    }
+  }
+
+  Future<void> _disableWakelock() async {
+    try {
+      await WakelockService.disable();
+      debugPrint('[ChatScreen] Wakelock disabled successfully');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to disable wakelock: $e');
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // Re-enable wakelock when app comes back to foreground (engine is attached)
+        debugPrint('[ChatScreen] App resumed, re-enabling wakelock');
+        _enableWakelock();
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        // Keep wakelock active during therapy session - do NOT disable
+        // Screen should stay on even when notification shade is pulled down,
+        // proximity sensor triggers, or other brief interruptions occur
+        debugPrint(
+            '[ChatScreen] App lifecycle changed to $state, keeping wakelock active');
+        break;
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // Called on rotation, PiP, split-screen, etc. - re-apply wakelock
+    debugPrint('[ChatScreen] Metrics changed, re-enabling wakelock');
+    _enableWakelock();
+  }
+
   @override
   void initState() {
     super.initState();
     debugPrint('[ChatScreen] initState called');
-    WakelockPlus.enable(); // Keep screen awake during session
+    WidgetsBinding.instance.addObserver(this);
+
+    // Wait until the first frame so the platform channel is definitely ready
+    WidgetsBinding.instance.addPostFrameCallback((_) => _enableWakelock());
 
     // Set up microphone animation
     _micAnimationController = AnimationController(
@@ -114,7 +171,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   void dispose() {
     debugPrint('[ChatScreen] dispose called');
-    WakelockPlus.disable(); // Allow screen to sleep after session
+    WidgetsBinding.instance.removeObserver(this);
+    _disableWakelock(); // Allow screen to sleep after session
     _messageController.dispose();
     _scrollController.dispose();
     _micAnimationController.dispose();
@@ -516,11 +574,11 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     switch (mood) {
       case Mood.happy:
         return [
-          "Heyyy! That's wonderful to hear! What's keeping your spirits high today?",
+          "Heyyy! What's keeping your spirits high today?",
           "Hello hello! Your positivity is contagious! What's on your mind?",
           "Hey there! Glad you're feeling upbeat! How can I support you today?",
           "Heyyy! Hearing you're happy makes me happy! Anything special you'd like to talk about?",
-          "Hello hello! That's great news! Would you like to share more about what's brightening your day?"
+          "Hello hello! Would you like to share more about what's brightening your day?"
         ].random();
       case Mood.sad:
         return [
@@ -557,10 +615,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       default:
         return [
           "Hey there! Thanks for opening up about how you're feeling. What should we explore today?",
-          "Hello hello! I appreciate your honesty. What would you like to talk about?",
+          "Hello hello! What would you like to talk about?",
           "Heyyy! Thanks for sharing with me. How can I best support you today?",
-          "Hey there! I'm glad you shared that. What's the main thing you'd like to discuss right now?",
-          "Hello hello! Thanks for letting me know. Where should we start our conversation today?"
+          "Hey there! What brings you here today?",
+          "Hello hello! I'm glad you're here. Where should we start our conversation today?"
         ].random();
     }
   }
@@ -603,6 +661,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         context.read<VoiceSessionBloc>().add(UpdateSessionTimer());
+
+        // Timer continues - no wakelock refresh needed here
       }
     });
   }
@@ -679,6 +739,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Start ending session
     bloc.add(SetEndingSession(true));
     bloc.add(SetProcessing(true));
+
+    // Disable wakelock when ending session
+    await _disableWakelock();
 
     _navigationService.showBottomNav();
 
