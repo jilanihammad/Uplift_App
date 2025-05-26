@@ -566,6 +566,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     });
     bloc.add(ShowMoodSelector(false));
     debugPrint('Mood selected: $selectedMood, session is now active');
+
+    // Hide bottom navigation bar during therapy session to prevent accidental navigation
+    _navigationService.hideBottomNav();
+
     _addInitialAIMessage(selectedMood);
     _startSessionTimer();
   }

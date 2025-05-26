@@ -21,17 +21,24 @@ void main() {
       expect(isEnabled, isFalse);
     });
 
-    test('should refresh wakelock when enabled', () async {
+    test('should handle multiple enable calls gracefully', () async {
       await WakelockService.enable();
-      await WakelockService.refresh();
+      await WakelockService.enable(); // Should not throw
       final isEnabled = await WakelockService.isEnabled;
       expect(isEnabled, isTrue);
     });
 
-    test('should handle refresh when disabled', () async {
+    test('should handle multiple disable calls gracefully', () async {
+      await WakelockService.enable();
       await WakelockService.disable();
+      await WakelockService.disable(); // Should not throw
+      final isEnabled = await WakelockService.isEnabled;
+      expect(isEnabled, isFalse);
+    });
+
+    test('should handle disable when never enabled', () async {
       // Should not throw an error
-      await WakelockService.refresh();
+      await WakelockService.disable();
       final isEnabled = await WakelockService.isEnabled;
       expect(isEnabled, isFalse);
     });
