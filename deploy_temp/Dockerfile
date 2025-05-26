@@ -3,7 +3,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Add build timestamp as an argument to force rebuild without cache
-ENV BUILD_TIMESTAMP=20250524235115
+ENV BUILD_TIMESTAMP=20250525235919
 
 # Install dependencies with --no-cache-dir to avoid cache issues
 COPY requirements.txt .
@@ -35,8 +35,11 @@ ENV ENVIRONMENT=production
 ENV GOOGLE_CLOUD=1
 ENV DATABASE_URL=sqlite:///./data/app.db
 ENV OPENAI_API_KEY=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
-ENV GROQ_API_KEY=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
 ENV GOOGLE_API_KEY=AIzaSyAa525sLf7FPId43NgvVTJECO8K79SJHzM
+ENV OPENAI_LLM_MODEL=gpt-3.5-turbo
+ENV OPENAI_TTS_MODEL=gpt-4o-mini-tts
+ENV OPENAI_TTS_VOICE=sage
+ENV OPENAI_TRANSCRIPTION_MODEL=whisper-1
 ENV PYTHONUNBUFFERED=1
 ENV USE_GROQ=0
 
