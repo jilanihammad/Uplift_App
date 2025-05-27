@@ -175,7 +175,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // 4. Add a small delay to ensure audio state is fully updated
         await Future.delayed(const Duration(milliseconds: 200));
 
-        // 5. Do NOT enable auto mode or VAD here. Wait for EnableAutoMode event after TTS.
+        // 5. If TTS is not speaking, immediately enable auto mode and trigger listening
+        if (!state.isTtsSpeaking) {
+          await voiceService.enableAutoMode();
+          voiceService.autoListeningCoordinator.triggerListening();
+        }
+
         debugPrint('[VoiceSessionBloc] Waiting for EnableAutoMode after TTS');
       } catch (e) {
         debugPrint('[VoiceSessionBloc] Failed to prepare for voice mode: $e');
