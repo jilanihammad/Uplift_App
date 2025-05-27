@@ -111,10 +111,25 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
+    // Only manage wakelock if we're in an active therapy session
+    final bloc = context.read<VoiceSessionBloc>();
+    final sessionState = bloc.state;
+    final isActiveSession = !sessionState.showMoodSelector &&
+        !sessionState.showDurationSelector &&
+        !sessionState.isInitializing &&
+        sessionState.messages.isNotEmpty;
+
+    if (!isActiveSession) {
+      debugPrint(
+          '[ChatScreen] Not in active session, skipping wakelock management');
+      return;
+    }
+
     switch (state) {
       case AppLifecycleState.resumed:
         // Re-enable wakelock when app comes back to foreground (engine is attached)
-        debugPrint('[ChatScreen] App resumed, re-enabling wakelock');
+        debugPrint(
+            '[ChatScreen] App resumed, re-enabling wakelock for active session');
         _enableWakelock();
         break;
       case AppLifecycleState.paused:
@@ -125,7 +140,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Screen should stay on even when notification shade is pulled down,
         // proximity sensor triggers, or other brief interruptions occur
         debugPrint(
-            '[ChatScreen] App lifecycle changed to $state, keeping wakelock active');
+            '[ChatScreen] App lifecycle changed to $state, keeping wakelock active for session');
         break;
     }
   }
@@ -133,9 +148,24 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
-    // Called on rotation, PiP, split-screen, etc. - re-apply wakelock
-    debugPrint('[ChatScreen] Metrics changed, re-enabling wakelock');
-    _enableWakelock();
+
+    // Only re-apply wakelock if we're in an active therapy session
+    final bloc = context.read<VoiceSessionBloc>();
+    final sessionState = bloc.state;
+    final isActiveSession = !sessionState.showMoodSelector &&
+        !sessionState.showDurationSelector &&
+        !sessionState.isInitializing &&
+        sessionState.messages.isNotEmpty;
+
+    if (isActiveSession) {
+      // Called on rotation, PiP, split-screen, etc. - re-apply wakelock
+      debugPrint(
+          '[ChatScreen] Metrics changed, re-enabling wakelock for active session');
+      _enableWakelock();
+    } else {
+      debugPrint(
+          '[ChatScreen] Metrics changed, but not in active session - skipping wakelock');
+    }
   }
 
   @override
@@ -144,8 +174,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     debugPrint('[ChatScreen] initState called');
     WidgetsBinding.instance.addObserver(this);
 
-    // Wait until the first frame so the platform channel is definitely ready
-    WidgetsBinding.instance.addPostFrameCallback((_) => _enableWakelock());
+    // Don't enable wakelock here - only enable during active therapy session
 
     // Set up microphone animation
     _micAnimationController = AnimationController(
@@ -570,6 +599,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Hide bottom navigation bar during therapy session to prevent accidental navigation
     _navigationService.hideBottomNav();
 
+    // Ensure speaker is unmuted for new session (in case previous session ended with mute)
+    bloc.add(SetSpeakerMuted(false));
+
+    // Enable wakelock now that therapy session is starting
+    _enableWakelock();
+
     _addInitialAIMessage(selectedMood);
     _startSessionTimer();
   }
@@ -695,6 +730,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Future<void> _endSession() async {
     final bloc = context.read<VoiceSessionBloc>();
     final state = bloc.state;
+
+    // Mute speaker immediately to stop any ongoing TTS
+    bloc.add(SetSpeakerMuted(true));
+
+    // Disable wakelock since session is ending
+    _disableWakelock();
 
     // Prevent multiple end session calls
     if (state.isEndingSession || state.isProcessing) {
