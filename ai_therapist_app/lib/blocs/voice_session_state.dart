@@ -129,16 +129,4 @@ class VoiceSessionState extends Equatable {
       ];
 
   bool get canSend => !isProcessing && !isVoiceMode;
-
-  VoiceSessionState listening() =>
-      copyWith(isListening: true, isVADActive: true);
-  VoiceSessionState idle() => copyWith(
-      isListening: false,
-      isVADActive: false,
-      isRecording: false,
-      isProcessing: false);
-  VoiceSessionState recording() =>
-      copyWith(isRecording: true, isListening: true, isVADActive: true);
-  VoiceSessionState errorOccurred(String error) =>
-      copyWith(isProcessing: false, error: error);
 }

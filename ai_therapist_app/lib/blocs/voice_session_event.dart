@@ -145,8 +145,3 @@ class SetEndingSession extends VoiceSessionEvent {
 class UpdateSessionTimer extends VoiceSessionEvent {
   const UpdateSessionTimer();
 }
-
-class VoiceSessionErrorOccurred extends VoiceSessionEvent {
-  final String error;
-  const VoiceSessionErrorOccurred(this.error);
-}
