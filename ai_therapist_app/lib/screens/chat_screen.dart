@@ -746,6 +746,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       return;
     }
 
+    // Explicitly stop VAD immediately to prevent it from continuing to run
+    try {
+      await serviceLocator<VADManager>().stopListening();
+      debugPrint('[ChatScreen] VAD explicitly stopped in _endSession');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to stop VAD in _endSession: $e');
+    }
+
     // Don't generate a summary if the session didn't actually start
     if (state.messages.isEmpty ||
         state.showDurationSelector ||
