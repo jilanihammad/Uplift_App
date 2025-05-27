@@ -316,9 +316,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         Padding(
           padding: const EdgeInsets.only(right: 8.0),
           child: ElevatedButton(
-            onPressed: state.isProcessing || state.isEndingSession
-                ? null
-                : _endSession,
+            onPressed: state.isEndingSession ? null : _endSession,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
@@ -741,7 +739,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
 
     // Prevent multiple end session calls
-    if (state.isEndingSession || state.isProcessing) {
+    if (state.isEndingSession) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Session ending in progress...')),
       );
