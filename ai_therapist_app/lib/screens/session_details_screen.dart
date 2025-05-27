@@ -1,3 +1,5 @@
+// Screen for viewing detailed session information including messages and summary from history screen
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:get_it/get_it.dart';
@@ -77,7 +79,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         'messages',
         where: 'session_id = ?',
         whereArgs: [sessionId],
-        orderBy: 'timestamp ASC',
+        orderBy:
+            'timestamp ASC', // Consider ordering by sequence ASC as well/instead
       );
 
       return results
@@ -87,6 +90,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                 isUser: (data['is_user'] as int) == 1,
                 timestamp: DateTime.parse(data['timestamp'] as String),
                 audioUrl: data['audio_url'] as String?,
+                sequence: data['sequence'] as int? ?? 0, // Default to 0 if null
               ))
           .toList();
     } catch (e) {

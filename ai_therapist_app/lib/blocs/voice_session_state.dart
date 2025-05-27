@@ -28,6 +28,7 @@ class VoiceSessionState extends Equatable {
   final bool welcomeMessageCompleted;
   final bool isInitializing;
   final bool isEndingSession;
+  final int currentMessageSequence;
 
   const VoiceSessionState({
     this.isListening = false,
@@ -51,6 +52,7 @@ class VoiceSessionState extends Equatable {
     this.welcomeMessageCompleted = false,
     this.isInitializing = true,
     this.isEndingSession = false,
+    this.currentMessageSequence = 0,
   });
 
   VoiceSessionState copyWith({
@@ -75,6 +77,7 @@ class VoiceSessionState extends Equatable {
     bool? welcomeMessageCompleted,
     bool? isInitializing,
     bool? isEndingSession,
+    int? currentMessageSequence,
   }) {
     return VoiceSessionState(
       isListening: isListening ?? this.isListening,
@@ -100,6 +103,8 @@ class VoiceSessionState extends Equatable {
           welcomeMessageCompleted ?? this.welcomeMessageCompleted,
       isInitializing: isInitializing ?? this.isInitializing,
       isEndingSession: isEndingSession ?? this.isEndingSession,
+      currentMessageSequence:
+          currentMessageSequence ?? this.currentMessageSequence,
     );
   }
 
@@ -126,6 +131,7 @@ class VoiceSessionState extends Equatable {
         welcomeMessageCompleted,
         isInitializing,
         isEndingSession,
+        currentMessageSequence,
       ];
 
   bool get canSend => !isProcessing && !isVoiceMode;
