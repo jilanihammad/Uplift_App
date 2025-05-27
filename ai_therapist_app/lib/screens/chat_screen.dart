@@ -28,7 +28,7 @@ import '../services/audio_generator.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../utils/list_extensions.dart';
-import '../services/wakelock_service.dart';
+import '../services/native_wakelock_service.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
@@ -87,23 +87,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   // Wakelock management - simplified and safe
   Future<void> _enableWakelock() async {
     try {
-      await WakelockService.enable();
+      await NativeWakelockService.enable();
 
       // Sanity check - verify wakelock is actually enabled
-      final enabled = await WakelockService.isEnabled;
+      final enabled = await NativeWakelockService.isEnabled;
       debugPrint(
           '[ChatScreen] Wakelock enabled successfully - KEEP_SCREEN_ON = $enabled');
     } catch (e) {
       debugPrint('[ChatScreen] Failed to enable wakelock: $e');
-    }
-  }
-
-  Future<void> _disableWakelock() async {
-    try {
-      await WakelockService.disable();
-      debugPrint('[ChatScreen] Wakelock disabled successfully');
-    } catch (e) {
-      debugPrint('[ChatScreen] Failed to disable wakelock: $e');
     }
   }
 
@@ -200,8 +191,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   void dispose() {
     debugPrint('[ChatScreen] dispose called');
+
+    // Disable wakelock immediately in dispose (fire and forget)
+    NativeWakelockService.disable().then((_) {
+      debugPrint('[ChatScreen] Wakelock disabled successfully in dispose');
+    }).catchError((e) {
+      debugPrint('[ChatScreen] Failed to disable wakelock in dispose: $e');
+    });
+
     WidgetsBinding.instance.removeObserver(this);
-    _disableWakelock(); // Allow screen to sleep after session
     _messageController.dispose();
     _scrollController.dispose();
     _micAnimationController.dispose();
@@ -734,8 +732,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Mute speaker immediately to stop any ongoing TTS
     bloc.add(SetSpeakerMuted(true));
 
-    // Disable wakelock since session is ending
-    _disableWakelock();
+    // Disable wakelock immediately since session is ending
+    try {
+      await NativeWakelockService.disable();
+      debugPrint('[ChatScreen] Wakelock disabled successfully in _endSession');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
+    }
 
     // Prevent multiple end session calls
     if (state.isEndingSession || state.isProcessing) {
@@ -784,9 +787,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Start ending session
     bloc.add(SetEndingSession(true));
     bloc.add(SetProcessing(true));
-
-    // Disable wakelock when ending session
-    await _disableWakelock();
 
     _navigationService.showBottomNav();
 
