@@ -667,6 +667,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       content: welcomeMessage,
       isUser: false,
       timestamp: DateTime.now(),
+      sequence: 1,
     );
 
     // Add message to Bloc

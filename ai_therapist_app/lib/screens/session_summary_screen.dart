@@ -1,3 +1,5 @@
+// Screen for displaying the summary of a therapy session immediately after it ends
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';

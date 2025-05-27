@@ -3,7 +3,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Add build timestamp as an argument to force rebuild without cache
-ENV BUILD_TIMESTAMP=20250526112339
+ENV BUILD_TIMESTAMP=20250527000049
 
 # Install dependencies with --no-cache-dir to avoid cache issues
 COPY requirements.txt .

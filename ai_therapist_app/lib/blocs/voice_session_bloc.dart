@@ -86,6 +86,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       messages: [],
       hasInitialTtsPlayed: false,
       welcomeMessageCompleted: false,
+      currentMessageSequence: 0,
     ));
   }
 
@@ -238,17 +239,25 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         return;
       }
 
+      // --- Sequence Start (User Message) ---
+      final nextUserSequence = state.currentMessageSequence + 1;
+      // --- Sequence End (User Message) ---
+
       // 2. Create user message
       final userMessage = TherapyMessage(
         id: DateTime.now().millisecondsSinceEpoch.toString() + '_user',
         content: transcription,
         isUser: true,
         timestamp: DateTime.now(),
+        sequence: nextUserSequence,
       );
 
-      // 3. Add user message to state
+      // 3. Add user message to state & update sequence
       final messagesWithUser = List.of(state.messages)..add(userMessage);
-      emit(state.copyWith(messages: messagesWithUser));
+      emit(state.copyWith(
+        messages: messagesWithUser,
+        currentMessageSequence: nextUserSequence,
+      ));
 
       // 4. Build conversation history for therapy service
       final history = _buildConversationHistory(messagesWithUser);
@@ -258,7 +267,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       final therapyService = serviceLocator<TherapyService>();
       final mayaResponseText = await therapyService.processUserMessage(
         transcription,
-        history: history, // Pass the proper conversation history
+        history: history,
       );
 
       if (mayaResponseText.trim().isEmpty) {
@@ -271,17 +280,25 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint(
           '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
 
+      // --- Sequence Start (AI Message) ---
+      final nextAISequence = state.currentMessageSequence + 1;
+      // --- Sequence End (AI Message) ---
+
       // 6. Create Maya's message and add to chat immediately
       final mayaMessage = TherapyMessage(
         id: DateTime.now().millisecondsSinceEpoch.toString() + '_maya',
         content: mayaResponseText,
         isUser: false,
         timestamp: DateTime.now(),
+        sequence: nextAISequence,
       );
 
-      // 7. Add Maya's message to state immediately (chat bubble appears now)
+      // 7. Add Maya's message to state & update sequence
       final finalMessages = List.of(messagesWithUser)..add(mayaMessage);
-      emit(state.copyWith(messages: finalMessages));
+      emit(state.copyWith(
+        messages: finalMessages,
+        currentMessageSequence: nextAISequence,
+      ));
 
       // 8. Generate and play TTS in the background (if in voice mode)
       if (state.isVoiceMode) {
@@ -294,7 +311,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         final audioResponse =
             await therapyService.processUserMessageWithStreamingAudio(
           transcription,
-          history, // Pass the proper conversation history
+          history,
           onTTSPlaybackComplete: () async {
             debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
             // Update state to show Maya stopped speaking
@@ -313,7 +330,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         );
 
         if (audioResponse['text'] == null) {
-          debugPrint('[VoiceSessionBloc] TTS generation failed');
+          debugPrint(
+              '[VoiceSessionBloc] TTS generation failed or no text in response');
+          // If TTS failed, Maya's message (with sequence) is already in state.
+          // We just need to ensure processing and audio playing flags are correct.
           emit(state.copyWith(
               isProcessing: false,
               error: 'TTS generation failed',
@@ -340,8 +360,24 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   void _onAddMessage(AddMessage event, Emitter<VoiceSessionState> emit) {
-    final updatedMessages = List.of(state.messages)..add(event.message);
-    emit(state.copyWith(messages: updatedMessages));
+    TherapyMessage messageWithSequence = event.message;
+    if (messageWithSequence.sequence <= 0) {
+      final nextSequence = state.currentMessageSequence + 1;
+      messageWithSequence = event.message.copyWith(sequence: nextSequence);
+      final updatedMessages = List.of(state.messages)..add(messageWithSequence);
+      emit(state.copyWith(
+        messages: updatedMessages,
+        currentMessageSequence: nextSequence,
+      ));
+    } else {
+      final updatedMessages = List.of(state.messages)..add(event.message);
+      int newMaxSequence = state.currentMessageSequence;
+      if (event.message.sequence > state.currentMessageSequence) {
+        newMaxSequence = event.message.sequence;
+      }
+      emit(state.copyWith(
+          messages: updatedMessages, currentMessageSequence: newMaxSequence));
+    }
   }
 
   void _onSetProcessing(SetProcessing event, Emitter<VoiceSessionState> emit) {
@@ -360,17 +396,25 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     emit(state.copyWith(isProcessing: true));
 
     try {
+      // --- Sequence Start (User Message) ---
+      final nextUserSequence = state.currentMessageSequence + 1;
+      // --- Sequence End (User Message) ---
+
       // 1. Create user message
       final userMessage = TherapyMessage(
         id: DateTime.now().millisecondsSinceEpoch.toString() + '_user',
         content: event.text,
         isUser: true,
         timestamp: DateTime.now(),
+        sequence: nextUserSequence,
       );
 
-      // 2. Add user message to state
+      // 2. Add user message to state & update sequence
       final messagesWithUser = List.of(state.messages)..add(userMessage);
-      emit(state.copyWith(messages: messagesWithUser));
+      emit(state.copyWith(
+        messages: messagesWithUser,
+        currentMessageSequence: nextUserSequence,
+      ));
 
       // 3. Build conversation history for therapy service
       final history = _buildConversationHistory(messagesWithUser);
@@ -378,6 +422,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // 4. Get Maya's response from TherapyService
       final therapyService = serviceLocator<TherapyService>();
       String mayaResponseText;
+
+      // --- Sequence Start (AI Message) ---
+      // We get AI's response, THEN create its message with the next sequence
+      // --- Sequence End (AI Message) ---
 
       if (state.isVoiceMode) {
         // In voice mode: get response with TTS audio
@@ -390,7 +438,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         final responseData =
             await therapyService.processUserMessageWithStreamingAudio(
           event.text,
-          history, // Pass the proper conversation history
+          history,
           onTTSPlaybackComplete: () async {
             debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
             // Update state to show Maya stopped speaking
@@ -409,9 +457,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         debugPrint('[VoiceSessionBloc] Text message in text mode - no TTS...');
         mayaResponseText = await therapyService.processUserMessage(
           event.text,
-          history: history, // Pass the proper conversation history
+          history: history,
         );
       }
+
+      // --- Sequence Start (AI Message) ---
+      final nextAISequence = state.currentMessageSequence + 1;
+      // --- Sequence End (AI Message) ---
 
       // 5. Create Maya's response message
       final mayaResponse = TherapyMessage(
@@ -419,11 +471,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         content: mayaResponseText,
         isUser: false,
         timestamp: DateTime.now(),
+        sequence: nextAISequence,
       );
 
-      // 6. Add Maya's response to state
+      // 6. Add Maya's response to state & update sequence
       final finalMessages = List.of(messagesWithUser)..add(mayaResponse);
-      emit(state.copyWith(messages: finalMessages, isProcessing: false));
+      emit(state.copyWith(
+        messages: finalMessages,
+        isProcessing: false,
+        currentMessageSequence: nextAISequence,
+      ));
 
       debugPrint('[VoiceSessionBloc] Text message processing complete');
     } catch (e) {

@@ -563,6 +563,7 @@ class MessageRequest(BaseModel):
     content: str
     is_user_message: bool = True
     audio_url: Optional[str] = None
+    sequence: Optional[int] = None
 
 @app.get("/sessions", status_code=status.HTTP_200_OK)
 async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] = None):
@@ -856,7 +857,8 @@ async def add_session_message(session_id: str, message: MessageRequest, db: DBSe
             session_id=session_id,
             content=message.content,
             is_user_message=message.is_user_message,
-            audio_url=message.audio_url
+            audio_url=message.audio_url,
+            sequence=message.sequence
         )
         
         # Return success with the message ID
@@ -885,7 +887,8 @@ async def add_session_messages_batch(session_id: str, messages: List[MessageRequ
             message_dicts.append({
                 "content": msg.content,
                 "is_user_message": msg.is_user_message,
-                "audio_url": msg.audio_url
+                "audio_url": msg.audio_url,
+                "sequence": msg.sequence
             })
         
         # Add messages to database
