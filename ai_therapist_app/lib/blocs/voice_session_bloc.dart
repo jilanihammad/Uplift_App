@@ -55,6 +55,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<SetInitializing>(_onSetInitializing);
     on<SetEndingSession>(_onSetEndingSession);
     on<UpdateSessionTimer>(_onUpdateSessionTimer);
+    on<VoiceSessionErrorOccurred>(_onVoiceSessionErrorOccurred);
     // Subscribe to recording state
     _recordingStateSub = voiceService.recordingState.listen((recState) {
       final isRecording = recState.toString().contains('recording');
@@ -326,7 +327,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error in _onProcessAudio: $e');
-      emit(state.copyWith(isProcessing: false, error: e.toString()));
+      add(VoiceSessionErrorOccurred(e.toString()));
     }
   }
 
@@ -607,6 +608,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     emit(state.copyWith(
       sessionTimerSeconds: state.sessionTimerSeconds + 1,
     ));
+  }
+
+  void _onVoiceSessionErrorOccurred(
+      VoiceSessionErrorOccurred event, Emitter<VoiceSessionState> emit) {
+    emit(state.errorOccurred(event.error));
   }
 
   List<Map<String, String>> _buildConversationHistory(
