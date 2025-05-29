@@ -7,6 +7,8 @@ import traceback
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI, AsyncOpenAI
+from google import genai
+from google.genai import types
 import anthropic
 
 from app.core.llm_config import LLMConfig, ModelType, ModelProvider, ModelConfig
@@ -280,64 +282,164 @@ class LLMManager:
         user_info: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> str:
-        """Generate response using Google Gemini API."""
+        """Generate response using Google Gemini API via Python SDK."""
         try:
             api_key = LLMConfig.get_api_key(self.llm_config)
             if not api_key:
                 raise ValueError("Google API key not found")
             
-            # Build conversation text for Gemini
-            conversation_text = ""
-            if system_prompt:
-                conversation_text += f"System: {system_prompt}\n\n"
-            elif user_info:
-                conversation_text += f"System: {self._build_system_prompt(user_info)}\n\n"
+           #genai.configure(api_key=api_key)
             
-            # Add conversation history
-            if context:
-                for msg in context:
-                    role = "User" if msg.get("isUser", False) else "Assistant"
-                    conversation_text += f"{role}: {msg.get('content', '')}\n\n"
+            # Prepare history for Google's format
+            history_for_google = []
+            if context: # 'context' is the list of dicts from frontend
+                for msg_from_frontend in context:
+                    frontend_role = msg_from_frontend.get("role") # This is 'user' or 'assistant'
+                    content = msg_from_frontend.get("content", "")
+                    
+                    actual_role_for_google = "user" # Default for safety
+                    if frontend_role == "user":
+                        actual_role_for_google = "user"
+                    elif frontend_role == "assistant": # Explicitly map 'assistant' to 'model'
+                        actual_role_for_google = "model"
+                    else:
+                        logger.warning(f"Unexpected role '{frontend_role}' in context from frontend, defaulting to 'user'.")
+                        actual_role_for_google = "user" 
+                    
+                    history_for_google.append({
+                        "role": actual_role_for_google,
+                        "parts": [{"text": content}]
+                    })
             
-            # Add current message
-            conversation_text += f"User: {message}\n\nAssistant:"
+            # Add current message to the history (always as "user" initially)
+            history_for_google.append({"role": "user", "parts": [{"text": message}]})
+
+            # Prepare system instruction
+            system_instruction_text = system_prompt
+            if not system_instruction_text and user_info:
+                system_instruction_text = self._build_system_prompt(user_info)
+
+            # Initialize the model
+            # self.llm_config.model_id should be like "gemini-1.5-flash-latest"
+            model = genai.GenerativeModel(
+                model_name=self.llm_config.model_id,
+                system_instruction=system_instruction_text if system_instruction_text else None
+            )
             
-            # Prepare parameters
-            params = self.llm_config.default_params.copy()
-            params.update(kwargs)
+            # Prepare generation configuration
+            gen_config_params = self.llm_config.default_params.copy()
+            gen_config_params.update(kwargs)
             
-            headers = {
-                "Content-Type": "application/json"
-            }
+            generation_config = types.GenerationConfig(
+                temperature=gen_config_params.get("temperature", 0.7),
+                max_output_tokens=gen_config_params.get("max_tokens", gen_config_params.get("maxOutputTokens", 1000)), # Handle both naming conventions
+                top_p=gen_config_params.get("top_p", 1.0),
+                top_k=gen_config_params.get("top_k", None) # Add top_k if it's in your params
+                # Add other relevant parameters from gen_config_params if needed
+            )
             
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": conversation_text
-                    }]
-                }],
-                "generationConfig": {
-                    "temperature": params.get("temperature", 0.7),
-                    "maxOutputTokens": params.get("max_tokens", 1000),
-                    "topP": params.get("top_p", 1.0)
-                }
-            }
+            logger.debug(f"Sending to Google Gemini: model={self.llm_config.model_id}, system_instruction_present={bool(system_instruction_text)}, history_length={len(history_for_google)}")
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.llm_config.base_url}/models/{self.llm_config.model_id}:generateContent?key={api_key}",
-                    headers=headers,
-                    json=payload
-                )
-                
-                response.raise_for_status()
-                result = response.json()
-                
-                return result["candidates"][0]["content"]["parts"][0]["text"]
+            response = await model.generate_content_async(
+                contents=history_for_google,
+                generation_config=generation_config,
+                request_options={'timeout': 60} # Optional: set a timeout
+            )
             
+            # Accessing the text response might vary slightly based on SDK version or response structure
+            # Common ways: response.text or response.candidates[0].content.parts[0].text
+            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                return response.candidates[0].content.parts[0].text
+            elif hasattr(response, 'text'):
+                 return response.text # Older SDK versions or simpler responses
+            else:
+                logger.error(f"Could not extract text from Google response. Response: {response}")
+                raise ValueError("Failed to extract text from Google Gemini response")
+
         except Exception as e:
-            logger.error(f"Error generating Google response: {str(e)}")
+            logger.error(f"Error generating Google response using SDK: {str(e)}")
             logger.error(traceback.format_exc())
+            # Consider if you want to re-raise or return a fallback
+            # For now, re-raising to make the error visible.
+            raise
+    
+    async def _stream_google_response(
+        self,
+        message: str,
+        context: List[Dict[str, str]] = None,
+        system_prompt: str = "",
+        user_info: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> AsyncGenerator[str, None]:
+        """Stream response using Google Gemini API via Python SDK."""
+        try:
+            api_key = LLMConfig.get_api_key(self.llm_config)
+            if not api_key:
+                raise ValueError("Google API key not found")
+
+            genai.configure(api_key=api_key)
+
+            history_for_google = []
+            if context: # 'context' is the list of dicts from frontend
+                for msg_from_frontend in context:
+                    frontend_role = msg_from_frontend.get("role") # This is 'user' or 'assistant'
+                    content = msg_from_frontend.get("content", "")
+                    
+                    actual_role_for_google = "user" # Default for safety
+                    if frontend_role == "user":
+                        actual_role_for_google = "user"
+                    elif frontend_role == "assistant": # Explicitly map 'assistant' to 'model'
+                        actual_role_for_google = "model"
+                    else:
+                        logger.warning(f"Unexpected role '{frontend_role}' in context from frontend, defaulting to 'user'.")
+                        actual_role_for_google = "user"
+                    
+                    history_for_google.append({
+                        "role": actual_role_for_google,
+                        "parts": [{"text": content}]
+                    })
+            
+            history_for_google.append({"role": "user", "parts": [{"text": message}]})
+
+            system_instruction_text = system_prompt
+            if not system_instruction_text and user_info:
+                system_instruction_text = self._build_system_prompt(user_info)
+
+            model = genai.GenerativeModel(
+                model_name=self.llm_config.model_id,
+                system_instruction=system_instruction_text if system_instruction_text else None
+            )
+
+            gen_config_params = self.llm_config.default_params.copy()
+            gen_config_params.update(kwargs)
+
+            generation_config = types.GenerationConfig(
+                temperature=gen_config_params.get("temperature", 0.7),
+                max_output_tokens=gen_config_params.get("max_tokens", gen_config_params.get("maxOutputTokens", 1000)),
+                top_p=gen_config_params.get("top_p", 1.0),
+                top_k=gen_config_params.get("top_k", None)
+            )
+
+            logger.debug(f"Streaming from Google Gemini: model={self.llm_config.model_id}, system_instruction_present={bool(system_instruction_text)}, history_length={len(history_for_google)}")
+
+            response_stream = await model.generate_content_async(
+                contents=history_for_google,
+                generation_config=generation_config,
+                stream=True,
+                request_options={'timeout': 120} # Longer timeout for streaming
+            )
+
+            async for chunk in response_stream:
+                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                    yield chunk.candidates[0].content.parts[0].text
+                elif hasattr(chunk, 'text') and chunk.text is not None: # Fallback for simpler chunk structures
+                    yield chunk.text
+
+        except Exception as e:
+            logger.error(f"Error streaming Google response using SDK: {str(e)}")
+            logger.error(traceback.format_exc())
+            # Optionally, you could yield an error message or re-raise
+            # For now, re-raising to make the error visible during development.
             raise
     
     # =============================================================================
@@ -373,6 +475,7 @@ class LLMManager:
         
         if not self.llm_config.supports_streaming:
             # Fall back to non-streaming if provider doesn't support it
+            logger.info(f"Provider {self.llm_config.provider} ({self.llm_config.model_id}) does not support streaming or it's disabled. Falling back to non-streaming.")
             response = await self.generate_response(message, context, system_prompt, user_info, **kwargs)
             yield response
             return
@@ -384,8 +487,12 @@ class LLMManager:
         elif self.llm_config.provider == ModelProvider.ANTHROPIC:
             async for chunk in self._stream_anthropic_response(message, context, system_prompt, user_info, **kwargs):
                 yield chunk
+        elif self.llm_config.provider == ModelProvider.GOOGLE: # New case for Google streaming
+            async for chunk in self._stream_google_response(message, context, system_prompt, user_info, **kwargs):
+                yield chunk
         else:
-            # Fall back to non-streaming for unsupported providers
+            # Fall back to non-streaming for unsupported providers if streaming flag was somehow true
+            logger.warning(f"Streaming not implemented for provider {self.llm_config.provider} ({self.llm_config.model_id}), but supports_streaming is True. Falling back to non-streaming.")
             response = await self.generate_response(message, context, system_prompt, user_info, **kwargs)
             yield response
     

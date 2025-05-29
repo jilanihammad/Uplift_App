@@ -10,6 +10,7 @@ import '../data/datasources/local/database_helper.dart';
 
 import '../data/repositories/auth_repository.dart';
 import '../data/repositories/user_repository.dart';
+import '../services/langchain/custom_langchain.dart';
 import '../data/repositories/session_repository.dart';
 import '../data/repositories/message_repository.dart';
 
@@ -17,6 +18,7 @@ import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/voice_service.dart';
 import '../services/therapy_service.dart';
+import '../blocs/voice_session_bloc.dart';
 import '../services/preferences_service.dart';
 import '../services/progress_service.dart';
 import '../services/user_profile_service.dart';
@@ -198,19 +200,76 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered MemoryManager with true lazy initialization');
     }
 
+    // ===== REGISTER ConversationBufferMemory (if not already done elsewhere) =====
+    // This is a dependency for MessageProcessor
+    if (!serviceLocator.isRegistered<ConversationBufferMemory>()) {
+      serviceLocator.registerLazySingleton<ConversationBufferMemory>(
+        // Corrected: Use maxMessages as per the constructor definition
+        () => ConversationBufferMemory(maxMessages: 20),
+      );
+      debugPrint('Registered ConversationBufferMemory');
+    }
+
+    // ===== REGISTER TherapyService (BEFORE MessageProcessor) =====
+    // This is a dependency for MessageProcessor
+    // Ensure its own dependencies (AudioGenerator, MemoryManager, ApiClient) are resolvable
+    if (!serviceLocator.isRegistered<TherapyService>()) {
+      serviceLocator.registerLazySingleton<TherapyService>(() {
+        debugPrint('Creating TherapyService instance (lazy initialization)');
+        return TherapyService(
+          // Ensure these are registered or resolvable by serviceLocator
+          // ConfigService will be needed by ApiClient if ApiClient is created here or passed
+          // For now, assuming ApiClient is registered elsewhere (e.g. in registerApiDependentServices)
+          // and that ConfigService is also available to ApiClient when it's created.
+          messageProcessor: serviceLocator<
+              MessageProcessor>(), // This creates a circular dependency if MessageProcessor needs TherapyService. Re-evaluate.
+          audioGenerator: serviceLocator<AudioGenerator>(),
+          memoryManager: serviceLocator<MemoryManager>(),
+          apiClient:
+              serviceLocator<ApiClient>(), // ApiClient needs ConfigService
+        );
+      });
+      debugPrint('Registered TherapyService');
+    }
+
+    // ===== CORRECTED MessageProcessor REGISTRATION =====
     if (!serviceLocator.isRegistered<MessageProcessor>()) {
       serviceLocator.registerLazySingleton<MessageProcessor>(() {
         debugPrint('Creating MessageProcessor instance (lazy initialization)');
+
+        // Ensure VoiceSessionBloc is handled. If it's a BLoC provided by the UI,
+        // MessageProcessor might not be the place to get it via GetIt directly.
+        // For now, assuming it's registered for an exceptional case or you'll adjust.
+        // A common pattern is for BLoCs to use services, not the other way around.
+        // If VoiceSessionBloc is not in GetIt, this will fail.
+        // You might need a placeholder or a way for the BLoC to pass itself to MessageProcessor if absolutely necessary.
+
+        VoiceSessionBloc? vsBloc;
+        try {
+          vsBloc = serviceLocator<VoiceSessionBloc>();
+        } catch (e) {
+          debugPrint(
+              'VoiceSessionBloc not found in serviceLocator for MessageProcessor. This might be an issue if MessageProcessor strictly requires it at instantiation.');
+          // Depending on your design, MessageProcessor might need to operate without it,
+          // or it needs to be provided differently.
+          // For now, we'll proceed assuming it might be optional or provided later / differently.
+          // If it's essential, this needs to be resolved.
+        }
+
         final processor = MessageProcessor(
-          apiClient: serviceLocator<ApiClient>(),
+          // These are the parameters your MessageProcessor constructor now expects:
+          voiceSessionBloc:
+              vsBloc, // Made vsBloc nullable to avoid forcing registration if not always needed
+          conversationHistory: serviceLocator<ConversationBufferMemory>(),
+          configService: serviceLocator<ConfigService>(),
         );
 
-        // Nothing to initialize for MessageProcessor
         DependencyStatus.markInitialized('MessageProcessor');
-
+        debugPrint('MessageProcessor instance created and marked initialized.');
         return processor;
       });
-      debugPrint('Registered MessageProcessor with constructor injection');
+      debugPrint(
+          'Registered MessageProcessor with correct constructor injection');
     }
 
     if (!serviceLocator.isRegistered<AudioGenerator>()) {
