@@ -312,7 +312,8 @@ class TherapyService {
           userMessage,
           _buildSystemPromptWithContext(
               _systemPrompt, memoryContext, graphResult),
-          graphResult);
+          graphResult,
+          history: history);
 
       // Process response insights and save to memory in background
       final responseMap = {'response': aiResponse};

@@ -9,6 +9,8 @@ import traceback
 from typing import List, Dict, Any, Optional, Tuple
 from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI  # Import the OpenAI client
+from google import genai
+from google.genai import types
 
 from app.core.config import settings
 from app.services.encryption_service import encryption_service

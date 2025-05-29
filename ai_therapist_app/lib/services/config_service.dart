@@ -23,9 +23,9 @@ class ConfigService {
   String _llmModelEndpoint = '';
   String _llmModelId = '';
   String _ttsModelEndpoint = '';
-  String _ttsModelId = '';
+  String _ttsModelId = 'default_tts'; // Generic default
   String _transcriptionEndpoint = '';
-  String _transcriptionModelId = '';
+  String _transcriptionModelId = 'default_transcription'; // Generic default
 
   // Firebase configuration
   String _firebaseApiKey = '';
@@ -41,14 +41,18 @@ class ConfigService {
   bool _useMockTranscription = false;
   String? _appVersion;
 
+  // ADD THIS FIELD
+  bool _directLLMMode = false; // Default to false
+
   // Getters for config values
   String get groqApiKey => _groqApiKey;
   String get groqApiBaseUrl => _groqApiBaseUrl;
-  String get llmApiEndpoint => _llmApiEndpoint;
+  // String get llmApiEndpoint => _llmApiEndpoint; // We'll adjust this below
   String get voiceModelEndpoint => _voiceModelEndpoint;
 
   // Getters for model configurations
-  String get llmModelEndpoint => _llmModelEndpoint;
+  String get llmModelEndpoint =>
+      _llmModelEndpoint; // This is the direct model endpoint
   String get llmModelId => _llmModelId;
   String get ttsModelEndpoint => _ttsModelEndpoint;
   String get ttsModelId => _ttsModelId;
@@ -69,26 +73,62 @@ class ConfigService {
   bool get useMockTranscription => _useMockTranscription;
   String get appVersion => _appVersion ?? 'Unknown';
 
+  // ADD THIS GETTER
+  bool get directLLMModeEnabled => _directLLMMode;
+
+  // ADJUST llmApiEndpoint GETTER
+  // This getter will now decide which endpoint to return based on _directLLMMode
+  String get llmApiEndpoint {
+    if (_directLLMMode) {
+      // In direct mode, use the specific LLM model endpoint
+      // This might be _llmModelEndpoint or a more specific one from LLMConfig if you use that elsewhere.
+      // For now, let's assume _llmModelEndpoint is the one for direct calls.
+      if (kDebugMode) {
+        print(
+            "[ConfigService] Direct LLM Mode: Using direct endpoint: $_llmModelEndpoint");
+      }
+      return _llmModelEndpoint; // Or construct it from LLMConfig.currentLLMConfig.endpoint
+    } else {
+      // In backend mode, use the general backend endpoint that proxies to the LLM
+      // Your existing _llmApiEndpoint field was likely intended for this.
+      if (kDebugMode) {
+        print(
+            "[ConfigService] Backend Mode: Using backend proxy endpoint: $_llmApiEndpoint (original private field)");
+      }
+      return this
+          ._llmApiEndpoint; // refers to the original private field intended for backend proxy
+    }
+  }
+
   // Constructor with dependency injection for testing
   ConfigService({
-    String? llmApiEndpoint,
+    String? llmApiEndpoint, // This will now be the backend proxy endpoint
     String? voiceModelEndpoint,
     String? groqApiKey,
     bool? useMockTranscription,
     bool? useMockLlmResponses,
     bool? isProductionMode,
+    // ADD directLLMMode to constructor if you want to set it during instantiation for tests
+    bool? directLLMMode,
   }) {
     // Initialize with default values
-    this._llmApiEndpoint = llmApiEndpoint ?? '';
+    this._llmApiEndpoint =
+        llmApiEndpoint ?? ''; // This is the backend proxy URL
     this._voiceModelEndpoint = voiceModelEndpoint ?? '';
     this._groqApiKey = groqApiKey ?? '';
     this._useMockTranscription = useMockTranscription ?? false;
     this._useMockLlmResponses = useMockLlmResponses ?? false;
     this._isProductionMode = isProductionMode ?? false;
+    this._directLLMMode =
+        directLLMMode ?? false; // Initialize from constructor or default
 
     // Debug output
     debugPrint(
-        '[ConfigService] Initialized with llmApiEndpoint: $_llmApiEndpoint');
+        '[ConfigService] Initialized with BACKEND llmApiEndpoint: ${this._llmApiEndpoint}');
+    if (this._directLLMMode) {
+      debugPrint(
+          '[ConfigService] Initialized in DIRECT LLM MODE. Effective endpoint will be: ${this.llmApiEndpoint}');
+    }
   }
 
   /// Initialize the configuration service
@@ -103,23 +143,18 @@ class ConfigService {
       // Get app version information
       await _loadAppInfo();
 
+      // ADD THIS CALL to load the preference
+      await _loadDirectLLMModePreference();
+
       if (kDebugMode) {
         print('ConfigService initialized successfully');
-        print('LLM API Endpoint: $_llmApiEndpoint');
-        print('Voice Model Endpoint: $_voiceModelEndpoint');
-        print('LLM Model ID: $_llmModelId');
-        print('TTS Model ID: $_ttsModelId');
-        print('Transcription Model ID: $_transcriptionModelId');
-
-        // Print Firebase configuration (only in debug mode)
-        print('Firebase Project ID: $_firebaseProjectId');
-        print('Firebase Storage Bucket: $_firebaseStorageBucket');
-        print('Firebase Database ID: $_firebaseDatabaseId');
-
-        // Only print first few characters of API key for debugging
-        if (_groqApiKey.isNotEmpty) {
-          print('Groq API Key: ${_groqApiKey.substring(0, 5)}...');
-        }
+        print(
+            'Effective LLM API Endpoint (used by ApiClient): $llmApiEndpoint'); // Use the getter
+        print(
+            'Backend Proxy LLM API Endpoint (private field): $_llmApiEndpoint');
+        print('Direct LLM Model Endpoint (private field): $_llmModelEndpoint');
+        print('Direct LLM Mode Enabled: $_directLLMMode');
+        // ... other prints ...
       }
     } catch (e) {
       if (kDebugMode) {
@@ -202,8 +237,9 @@ class ConfigService {
 
       // Model IDs
       final envLlmModelId = _safeGetEnv('LLM_MODEL_ID');
-      final envTtsModelId = _safeGetEnv('TTS_MODEL_ID');
-      final envTranscriptionModelId = _safeGetEnv('TRANSCRIPTION_MODEL_ID');
+      final String envLoadedTtsModelId = _safeGetEnv('TTS_MODEL_ID');
+      final String envLoadedTranscriptionModelId =
+          _safeGetEnv('TRANSCRIPTION_MODEL_ID');
 
       // Firebase configuration
       final envFirebaseApiKey = _safeGetEnv('FIREBASE_API_KEY');
@@ -270,20 +306,14 @@ class ConfigService {
       if (envLlmModelId.isNotEmpty) {
         _llmModelId = envLlmModelId;
       } else {
-        _llmModelId = 'meta-llama/llama-4-scout-17b-16e-instruct';
+        _llmModelId = 'gpt-4o-mini';
       }
 
-      if (envTtsModelId.isNotEmpty) {
-        _ttsModelId = envTtsModelId;
-      } else {
-        _ttsModelId = 'playai-tts';
-      }
-
-      if (envTranscriptionModelId.isNotEmpty) {
-        _transcriptionModelId = envTranscriptionModelId;
-      } else {
-        _transcriptionModelId = 'gpt-4o-mini-transcribe';
-      }
+      _ttsModelId =
+          envLoadedTtsModelId.isNotEmpty ? envLoadedTtsModelId : 'default_tts';
+      _transcriptionModelId = envLoadedTranscriptionModelId.isNotEmpty
+          ? envLoadedTranscriptionModelId
+          : 'default_transcription';
 
       // Set Firebase configuration
       if (envFirebaseApiKey.isNotEmpty) {
@@ -398,6 +428,44 @@ class ConfigService {
     } catch (e) {
       if (kDebugMode) {
         print('Error loading app info: $e');
+      }
+    }
+  }
+
+  // ADD THESE METHODS for loading and setting the preference
+
+  Future<void> _loadDirectLLMModePreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Load the value, defaulting to false if not found
+      _directLLMMode = prefs.getBool('directLLMModeEnabled') ??
+          _safeGetEnv('DIRECT_LLM_MODE_ENABLED') == 'true' ??
+          false;
+      if (kDebugMode) {
+        print(
+            '[ConfigService] Direct LLM Mode loaded from prefs/env: $_directLLMMode');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print(
+            '[ConfigService] Error loading directLLMModeEnabled preference: $e. Defaulting to false.');
+      }
+      _directLLMMode = false; // Fallback
+    }
+  }
+
+  Future<void> setDirectLLMModePreference(bool enabled) async {
+    _directLLMMode = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('directLLMModeEnabled', enabled);
+      if (kDebugMode) {
+        print('[ConfigService] Direct LLM Mode preference saved: $enabled');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print(
+            '[ConfigService] Error saving directLLMModeEnabled preference: $e');
       }
     }
   }

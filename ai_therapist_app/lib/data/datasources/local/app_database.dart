@@ -111,22 +111,11 @@ class AppDatabase {
         onUpgrade: _upgradeDatabase,
         onDowngrade:
             onDatabaseDowngradeDelete, // For development: delete and recreate on downgrade
+        onConfigure: _onConfigureDatabase,
         onOpen: (db) {
-          debugPrint('Database opened successfully');
-          // Increase timeout limits to prevent "database locked" errors
-          db.execute(
-              'PRAGMA busy_timeout = 10000;'); // 10 second timeout (increased from 5s)
-          db.execute(
-              'PRAGMA journal_mode = WAL;'); // Write-Ahead Logging for better concurrency
-          db.execute(
-              'PRAGMA synchronous = NORMAL;'); // Slightly less durable but faster (default is FULL)
-          db.execute(
-              'PRAGMA cache_size = 10000;'); // Increase cache size for better performance
-          db.execute(
-              'PRAGMA foreign_keys = ON;'); // Ensure foreign key constraints are enforced
-          db.execute(
-              'PRAGMA temp_store = MEMORY;'); // Use memory for temporary storage instead of disk
+          debugPrint('Database opened successfully. Path: ${db.path}');
         },
+        singleInstance: true,
       );
     } catch (e, stackTrace) {
       debugPrint('Failed to initialize database: $e');
@@ -666,5 +655,72 @@ class AppDatabase {
       _onError(e, stackTrace);
       rethrow;
     }
+  }
+
+  Future<void> _onConfigureDatabase(Database db) async {
+    debugPrint('Configuring database...');
+    try {
+      await db.execute('PRAGMA foreign_keys = ON;');
+      debugPrint('PRAGMA foreign_keys = ON executed.');
+
+      // Try setting busy_timeout using rawQuery, and catch potential errors
+      try {
+        await db.rawQuery(
+            'PRAGMA busy_timeout = 10000;'); // Note: rawQuery usually expects a result
+        debugPrint(
+            'PRAGMA busy_timeout = 10000 attempt via rawQuery successful (or did not throw).');
+      } catch (e) {
+        debugPrint(
+            'Error attempting to set PRAGMA busy_timeout via rawQuery: $e. Trying execute as fallback.');
+        // Fallback to execute if rawQuery fails for a set-only PRAGMA (less likely to work if rawQuery failed)
+        try {
+          await db.execute('PRAGMA busy_timeout = 10000;');
+          debugPrint(
+              'PRAGMA busy_timeout = 10000 attempt via execute successful.');
+        } catch (e2) {
+          debugPrint(
+              'Error attempting to set PRAGMA busy_timeout via execute: $e2. This PRAGMA might not be settable this way or is not supported.');
+        }
+      }
+
+      // PRAGMA journal_mode = WAL
+      try {
+        final List<Map<String, dynamic>> journalModeResult =
+            await db.rawQuery('PRAGMA journal_mode');
+        if (journalModeResult.isNotEmpty &&
+            journalModeResult.first.values.first.toString().toLowerCase() ==
+                'wal') {
+          debugPrint('PRAGMA journal_mode is WAL.');
+        } else {
+          await db.execute('PRAGMA journal_mode = WAL;');
+          debugPrint('Attempted to set PRAGMA journal_mode = WAL explicitly.');
+          final List<Map<String, dynamic>> journalModeResultAfterSet =
+              await db.rawQuery('PRAGMA journal_mode');
+          debugPrint(
+              'PRAGMA journal_mode after explicit set: $journalModeResultAfterSet');
+        }
+      } catch (e) {
+        debugPrint(
+            'Error setting/checking PRAGMA journal_mode: $e. This might be okay if singleInstance=true handles it.');
+      }
+
+      await db.execute('PRAGMA synchronous = NORMAL;');
+      debugPrint('PRAGMA synchronous = NORMAL executed.');
+
+      await db.execute('PRAGMA cache_size = 10000;');
+      debugPrint('PRAGMA cache_size = 10000 executed.');
+
+      await db.execute('PRAGMA temp_store = MEMORY;');
+      debugPrint('PRAGMA temp_store = MEMORY executed.');
+    } catch (e, stackTrace) {
+      debugPrint('!!! Critical error during _onConfigureDatabase: $e');
+      debugPrintStack(
+          label: 'Stack trace for _onConfigureDatabase error',
+          stackTrace: stackTrace);
+      // It's important to rethrow if configuration fails fundamentally,
+      // otherwise the app might proceed with a misconfigured database.
+      rethrow;
+    }
+    debugPrint('Database configuration complete (or attempted).');
   }
 }

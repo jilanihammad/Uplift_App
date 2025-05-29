@@ -37,7 +37,7 @@ class LLMConfig:
     # =============================================================================
     # ACTIVE MODEL SELECTION - CHANGE THESE TO SWITCH MODELS EASILY
     # =============================================================================
-    ACTIVE_LLM_PROVIDER = ModelProvider.GOOGLE          # Change this to switch LLM provider
+    ACTIVE_LLM_PROVIDER = ModelProvider.OPENAI          # Change this to switch LLM provider
     ACTIVE_TTS_PROVIDER = ModelProvider.OPENAI        # Default TTS provider is OpenAI
     ACTIVE_TRANSCRIPTION_PROVIDER = ModelProvider.OPENAI  # Change this to switch transcription provider
     
@@ -183,7 +183,7 @@ class LLMConfig:
         # Google (Gemini) Models
         (ModelProvider.GOOGLE, ModelType.LLM): ModelConfig(
             provider=ModelProvider.GOOGLE,
-            model_id=os.getenv("GOOGLE_MODEL", "gemini-2.0-flash"),
+            model_id=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"),
             base_url="https://generativelanguage.googleapis.com/v1beta",
             api_key_env="GOOGLE_API_KEY",
             default_params={

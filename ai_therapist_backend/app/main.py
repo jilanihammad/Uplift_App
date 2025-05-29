@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, Request, status, HTTPException, APIRouter, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import logging
 import os
 from fastapi.staticfiles import StaticFiles
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import httpx
 import uuid
 import json
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 import traceback
 import base64
@@ -271,9 +271,10 @@ async def llm_status():
 class AIRequest(BaseModel):
     message: str
     system_prompt: str = ""
-    model: str = None
+    model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 1000
+    history: Optional[List[Dict[str, Any]]] = None
 
 class VoiceRequest(BaseModel):
     text: str
@@ -293,11 +294,20 @@ class EndSessionRequest(BaseModel):
     therapeutic_approach: str = "supportive"
     visited_nodes: list = []
 
+class ChatStreamRequestBody(BaseModel):
+    history: List[Dict[str, Any]] # Expects keys like 'role', 'content', 'sequence'
+    # You could add other optional parameters here if needed, e.g.,
+    # model_config: Optional[Dict[str, Any]] = None
+
 @app.post("/ai/response")
 async def ai_response(request: AIRequest):
     """Handle AI response requests using unified LLM manager."""
     try:
-        logger.info("Received AI response request: %s", request.message)
+        logger.info(f"Received AI response request for message: '{request.message[:50]}...'")
+        if request.history:
+            logger.info(f"Request includes history with {len(request.history)} messages.")
+        else:
+            logger.info("Request does not include history.")
         
         # Use unified LLM manager instead of individual services
         if not llm_manager:
@@ -308,6 +318,7 @@ async def ai_response(request: AIRequest):
         response_text = await llm_manager.generate_response(
             message=request.message,
             system_prompt=request.system_prompt, 
+            context=request.history,
             # Don't pass model - unified LLM manager handles this internally
             temperature=request.temperature,
             max_tokens=request.max_tokens
@@ -1036,6 +1047,67 @@ def debug_env():
         "ACTIVE_TTS_PROVIDER": os.environ.get("ACTIVE_TTS_PROVIDER"),
         "ACTIVE_TRANSCRIPTION_PROVIDER": os.environ.get("ACTIVE_TRANSCRIPTION_PROVIDER"),
     }
+
+@app.post("/sessions/{session_id}/chat_stream")
+async def stream_chat_from_llm(
+    session_id: str,
+    request_data: ChatStreamRequestBody,
+):
+    """
+    Streams chat completions from the LLM for a given session.
+    Expects a 'history' in the request body, where each message has 'role', 'content', and 'sequence'.
+    The history should include the latest user message.
+    """
+    if not llm_manager:
+        logger.error("LLM Manager not available for streaming chat.")
+        raise HTTPException(status_code=500, detail="LLM service not configured or unavailable.")
+
+    try:
+        logger.info(f"Received chat stream request for session_id: {session_id} with {len(request_data.history)} messages in history.")
+        
+        # --- System Prompt ---
+        # You'll need to decide how to get the system prompt.
+        # It could be a default, or loaded based on session_id or user settings.
+        # For now, let's use a generic one. Replace with your actual logic.
+        system_prompt_for_session = "You are Maya, a caring and empathetic AI therapist. Respond naturally and supportively."
+        # Example: Fetch from DB:
+        # session_settings = crud_session.get_session_settings(db, session_id)
+        # system_prompt_for_session = session_settings.system_prompt if session_settings else "Default prompt"
+
+        # The history from request_data.history should already be in the format
+        # that stream_google_chat_completion expects: List[Dict[str, str]]
+        # with 'role' and 'content'. Ensure 'sequence' is also there if your llm_manager uses it.
+        # The llm_manager.stream_google_chat_completion handles mapping this to Gemini's format.
+        
+        if not request_data.history:
+            raise HTTPException(status_code=400, detail="Chat history cannot be empty.")
+
+        # --- LLM Parameters ---
+        # You can make these configurable or pass them from the request if needed
+        llm_params = {
+            "temperature": 0.7, # Example
+            # "top_p": 1.0,
+            # "max_tokens": 1000 # Gemini SDK usually handles this with its own limits/defaults for stream
+        }
+
+        # Log the history being sent to the LLM for debugging
+        # logger.debug(f"History being sent to LLM for session {session_id}: {json.dumps(request_data.history, indent=2)}")
+
+        text_stream = llm_manager.stream_google_chat_completion(
+            system_prompt=system_prompt_for_session,
+            history=request_data.history, # This history should be correctly formatted
+            params=llm_params
+        )
+        
+        # The stream_google_chat_completion should yield plain text strings.
+        return StreamingResponse(text_stream, media_type="text/plain; charset=utf-8")
+
+    except HTTPException as e:
+        logger.error(f"HTTPException in stream_chat_from_llm for session {session_id}: {e.detail}")
+        raise e
+    except Exception as e:
+        logger.error(f"Error in stream_chat_from_llm for session {session_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An error occurred while streaming the chat response: {str(e)}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
