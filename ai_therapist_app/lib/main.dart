@@ -169,38 +169,39 @@ Future<void> main() async {
     debugPrint('[main.dart] AppConfig initialized');
     logger.info('[Main] AppConfig initialized with environment variables.');
 
-    // CRITICAL CHANGE: DISABLE FIREBASE APP CHECK COMPLETELY
-    try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      debugPrint(
-          "[main.dart] Firebase Core initialized directly - APP CHECK DISABLED");
-      debugPrint(
-          "[main.dart] Firebase App Check is INTENTIONALLY DISABLED to fix authentication issues");
-    } catch (e) {
-      debugPrint("[main.dart] Error during Firebase initialization: $e");
-      debugPrint("[main.dart] Continuing with app initialization...");
-    }
-
-    // 2. Now initialize Firebase using the synchronized method
+    // 2. Now initialize Firebase using the synchronized method ensureFirebaseInitialized()
+    // This will be the single point of Firebase initialization in the main isolate.
     final firebaseApp = await ensureFirebaseInitialized();
     if (firebaseApp != null) {
-      debugPrint('[main.dart] Firebase initialized successfully');
+      debugPrint(
+          '[main.dart] Firebase initialized successfully via ensureFirebaseInitialized()');
       logger.info(
-          '[Main] Firebase initialized successfully: ${firebaseApp.name}');
+          '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
+      // The debug print about App Check being disabled is already in ensureFirebaseInitialized()
     } else {
-      debugPrint('[main.dart] Could not initialize Firebase');
+      debugPrint(
+          '[main.dart] Could not initialize Firebase via ensureFirebaseInitialized()');
       logger.warning(
-          '[Main] Could not initialize Firebase, some features may be limited');
+          '[Main] Could not initialize Firebase via ensureFirebaseInitialized(), some features may be limited');
     }
 
     // 3. Register background messaging handler if Firebase is available
-    if (isFirebaseInitialized()) {
+    //    It's better to check if firebaseApp is not null rather than calling isFirebaseInitialized()
+    //    as isFirebaseInitialized() in your firebase_init.dart seems to rely on a separate flag _firebaseInitialized
+    //    which might not be set by ensureFirebaseInitialized in this version.
+    //    Or, ensure _firebaseInitialized is set within ensureFirebaseInitialized.
+    //    For now, let's assume ensureFirebaseInitialized handles making Firebase.app() available if successful.
+    try {
+      Firebase.app(); // Check if an app instance is available
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
       debugPrint('[main.dart] Background messaging handler registered.');
       logger.info('[Main] Background messaging handler registered.');
+    } catch (e) {
+      debugPrint(
+          '[main.dart] Firebase not available for background messaging handler registration or error: $e');
+      logger.warning(
+          '[Main] Firebase not available for background messaging handler registration or error: $e');
     }
 
     // 4. Setup error handling
