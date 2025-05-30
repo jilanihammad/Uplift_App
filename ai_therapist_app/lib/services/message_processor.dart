@@ -203,6 +203,12 @@ class MessageProcessor {
       final currentLLMHistory = _conversationHistory.getMessages();
       log.d(
           '[MessageProcessorBackend] Using internal history of length: ${currentLLMHistory.length}');
+      if (history != null) {
+        log.d(
+            '[MessageProcessorBackend] Received history parameter with length: ${history.length}');
+      } else {
+        log.d('[MessageProcessorBackend] Received null history parameter.');
+      }
 
       final payload = {
         'message': userMessage,
@@ -210,7 +216,8 @@ class MessageProcessor {
         'conversation_state': graphResult['state'] ?? 'exploration',
         'emotion': graphResult['analysis']?['emotion'] ?? 'neutral',
         'topics': graphResult['analysis']?['topics'] ?? [],
-        'history': currentLLMHistory,
+        'history': history ??
+            currentLLMHistory, // Ensure we use the passed-in history if available
       };
 
       try {
