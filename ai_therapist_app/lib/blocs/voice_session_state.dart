@@ -215,4 +215,7 @@ class VoiceSessionState extends Equatable {
   bool get isProcessing => isProcessingAudio;
   bool get isSpeakerMuted => speakerMuted;
   bool get isVADActive => isAutoListeningEnabled;
+  // Returns true when VAD is active, not recording, not processing, and not AI speaking
+  bool get isListeningForVoice =>
+      isVADActive && !isRecording && !isProcessing && !isAiSpeaking;
 }
