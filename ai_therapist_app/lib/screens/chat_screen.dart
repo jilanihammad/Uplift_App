@@ -369,21 +369,27 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                  ({bool rec, double amp})>(
-                selector: (blocState) =>
-                    (rec: blocState.isRecording, amp: blocState.amplitude),
+                  ({bool rec, double amp, bool listening})>(
+                selector: (blocState) => (
+                  rec: blocState.isRecording,
+                  amp: blocState.amplitude,
+                  listening: blocState.isListeningForVoice,
+                ),
                 builder: (context, data) {
                   // Mic animation logic
-                  if (data.rec && !_micAnimationController.isAnimating) {
+                  if ((data.rec || data.listening) &&
+                      !_micAnimationController.isAnimating) {
                     _micAnimationController.repeat(reverse: true);
-                  } else if (!data.rec && _micAnimationController.isAnimating) {
+                  } else if (!data.rec &&
+                      !data.listening &&
+                      _micAnimationController.isAnimating) {
                     _micAnimationController.stop();
                     _micAnimationController.reset();
                   }
                   return Container(
                     width: 120,
                     height: 120,
-                    child: data.rec
+                    child: (data.rec || data.listening)
                         ? Lottie.asset(
                             'assets/animations/Microphone Animation.json',
                             width: 120,
@@ -414,11 +420,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           ),
         ),
         BlocSelector<VoiceSessionBloc, VoiceSessionState,
-            ({bool rec, bool proc, bool muted})>(
+            ({bool rec, bool proc, bool muted, bool listening})>(
           selector: (state) => (
             rec: state.isRecording,
             proc: state.isProcessing,
-            muted: state.isSpeakerMuted
+            muted: state.isSpeakerMuted,
+            listening: state.isListeningForVoice,
           ),
           builder: (context, data) => VoiceControls(
             isRecording: data.rec,
@@ -1045,8 +1052,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             icon: Icon(Icons.mic_off, color: Colors.grey),
             onPressed: null,
           );
-        } else if (state.isRecording) {
-          // Recording: show active/recording mic
+        } else if (state.isRecording || state.isListeningForVoice) {
+          // Recording or listening: show active/recording mic
           return ScaleTransition(
             scale: _micAnimation,
             child: IconButton(
@@ -1056,14 +1063,18 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                 height: 24,
                 fit: BoxFit.contain,
               ),
-              color: Colors.red,
+              color: state.isRecording ? Colors.red : Colors.blue,
               onPressed: () {
-                context.read<VoiceSessionBloc>().add(StopListening());
+                if (state.isRecording) {
+                  context.read<VoiceSessionBloc>().add(StopListening());
+                } else {
+                  context.read<VoiceSessionBloc>().add(StartListening());
+                }
               },
             ),
           );
         } else {
-          // VAD is on, not recording: show listening/pulse mic
+          // VAD is on, not recording or listening: show listening/pulse mic
           return ScaleTransition(
             scale: _micAnimation,
             child: IconButton(
