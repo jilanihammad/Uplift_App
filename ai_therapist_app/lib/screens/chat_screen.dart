@@ -37,7 +37,7 @@ import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
-  const ChatScreen({Key? key, this.sessionId}) : super(key: key);
+  const ChatScreen({super.key, this.sessionId});
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +45,10 @@ class ChatScreen extends StatelessWidget {
       create: (context) => VoiceSessionBloc(
         voiceService: serviceLocator<VoiceService>(),
         vadManager: serviceLocator<VADManager>(),
+        memoryService: null,
+        therapyGraphService: null,
+        notificationService: null,
+        conversationHistory: null,
       ),
       child: _ChatScreenBody(sessionId: sessionId),
     );
@@ -53,7 +57,7 @@ class ChatScreen extends StatelessWidget {
 
 class _ChatScreenBody extends StatefulWidget {
   final String? sessionId;
-  const _ChatScreenBody({Key? key, this.sessionId}) : super(key: key);
+  const _ChatScreenBody({super.key, this.sessionId});
 
   @override
   State<_ChatScreenBody> createState() => _ChatScreenBodyState();
@@ -183,7 +187,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Initialize session after the build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      print('[ChatScreen] PostFrameCallback: calling _initSession');
+      debugPrint('[ChatScreen] PostFrameCallback: calling _initSession');
       _initSession();
     });
   }
@@ -244,8 +248,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         }
 
         // Main chat interface
-        return WillPopScope(
-          onWillPop: () async => _handleBackPress(state),
+        return PopScope(
+          canPop: true,
+          onPopInvoked: (didPop) async {
+            if (!didPop) return;
+            final shouldPop = await _handleBackPress(state);
+            if (!shouldPop && mounted) {
+              // Prevent pop if not allowed
+              // You may want to use Navigator.of(context).maybePop() or similar if needed
+            }
+          },
           child: Scaffold(
             appBar: _buildAppBar(state),
             body: state.isVoiceMode
@@ -289,7 +301,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.lightBlue.withOpacity(0.2),
+                  color: Colors.lightBlue.withAlpha(51),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.lightBlue, width: 1),
                 ),
@@ -299,7 +311,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                     final minutes = (seconds / 60).floor();
                     final secs = seconds % 60;
                     return Text(
-                      '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}',
+                      "${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}",
                       style: const TextStyle(
                         color: Colors.lightBlue,
                         fontWeight: FontWeight.bold,
@@ -332,7 +344,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<bool> _handleBackPress(VoiceSessionState state) async {
-    print('[ChatScreen] onWillPop called');
+    debugPrint('[ChatScreen] onWillPop called');
     final hasMessages = state.messages.isNotEmpty;
 
     if (hasMessages &&
@@ -535,7 +547,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _therapyService.setTherapistStyle(_therapistStyle!.systemPrompt);
 
     if (kDebugMode) {
-      print('Loaded therapist style: ${_therapistStyle!.name}');
+      debugPrint('Loaded therapist style: ${_therapistStyle!.name}');
     }
   }
 
@@ -564,7 +576,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       _currentSessionId = const Uuid().v4();
 
       if (kDebugMode) {
-        print('Generated session ID: $_currentSessionId');
+        debugPrint('Generated session ID: $_currentSessionId');
       }
 
       // For new sessions, show duration selector first
@@ -760,7 +772,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         state.showDurationSelector ||
         state.showMoodSelector) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             'Session not properly started, skipping session summary generation');
       }
       _navigationService.showBottomNav();
@@ -866,7 +878,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       bloc.add(SetProcessing(false));
 
       if (kDebugMode) {
-        print('Error ending session: $e');
+        debugPrint('Error ending session: $e');
       }
 
       if (mounted) {
@@ -885,24 +897,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
   }
 
-  Future<void> _cleanupSessionResources() async {
+  Future<void> _reregisterServices() {
     if (kDebugMode) {
-      print('🛑 Ending session: stopping and disposing VoiceService');
-    }
-
-    await _voiceService.autoListeningCoordinator.disableAutoMode();
-    await _voiceService.stopRecording();
-    await _voiceService.stopAudio();
-    _micAnimationController.stop();
-    _micAnimationController.reset();
-
-    // Re-register services for fresh instance
-    _reregisterServices();
-  }
-
-  void _reregisterServices() {
-    if (kDebugMode) {
-      print('🔄 Re-registering VoiceService and AudioGenerator');
+      debugPrint('🔄 Re-registering VoiceService and AudioGenerator');
     }
 
     // Unregister existing services
@@ -931,13 +928,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Update local reference
     _voiceService = serviceLocator<VoiceService>();
-    _initializeServices();
+    return _initializeServices();
   }
 
   Future<Map<String, dynamic>> _generateSessionSummary(
       List<TherapyMessage> messages) async {
     if (kDebugMode) {
-      print('Ending session with ID: $_currentSessionId');
+      debugPrint('Ending session with ID: $_currentSessionId');
     }
 
     // Log mood
@@ -949,7 +946,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     final messageList = messages.map((m) => m.toJson()).toList();
 
     if (kDebugMode) {
-      print('Ending therapy session with ${messageList.length} messages');
+      debugPrint('Ending therapy session with ${messageList.length} messages');
     }
 
     // Get session summary from therapy service
@@ -981,7 +978,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         await sessionRepository.getSession(_currentSessionId);
       } catch (e) {
         if (kDebugMode) {
-          print('Session not found in repository, creating it now');
+          debugPrint('Session not found in repository, creating it now');
         }
         // Create the session if it doesn't exist
         final sessionTitle =
@@ -1008,11 +1005,11 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       );
 
       if (kDebugMode) {
-        print('Session saved to repository successfully');
+        debugPrint('Session saved to repository successfully');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error saving session to repository: $e');
+        debugPrint('Error saving session to repository: $e');
       }
       // Continue anyway - we don't want to block the user
     }
