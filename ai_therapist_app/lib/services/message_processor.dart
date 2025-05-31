@@ -6,9 +6,7 @@ import '../data/datasources/remote/api_client.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import '../config/llm_config.dart'; // Import LLM Configuration
-import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
-import 'package:ai_therapist_app/services/config_service.dart';
-import '../blocs/voice_session_bloc.dart'; // Added for VoiceSessionBloc
+import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
 import './langchain/custom_langchain.dart'; // Added for ConversationBufferMemory
 import './config_service.dart'; // Added for ConfigService
 

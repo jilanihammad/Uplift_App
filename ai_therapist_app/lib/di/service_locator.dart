@@ -1,13 +1,10 @@
 // lib/di/service_locator.dart
 import 'package:get_it/get_it.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/datasources/remote/api_client.dart';
 import '../data/datasources/local/prefs_manager.dart';
 import '../data/datasources/local/app_database.dart';
-import '../data/datasources/local/database_helper.dart';
-
 import '../data/repositories/auth_repository.dart';
 import '../data/repositories/user_repository.dart';
 import '../services/langchain/custom_langchain.dart';
@@ -15,16 +12,16 @@ import '../data/repositories/session_repository.dart';
 import '../data/repositories/message_repository.dart';
 
 import '../services/auth_service.dart';
-import '../services/notification_service.dart';
+import '../services/notification_service.dart' as service_ns;
 import '../services/voice_service.dart';
 import '../services/therapy_service.dart';
-import '../blocs/voice_session_bloc.dart';
+import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
 import '../services/preferences_service.dart';
 import '../services/progress_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/onboarding_service.dart';
-import '../services/memory_service.dart';
-import '../services/therapy_graph_service.dart';
+import '../services/memory_service.dart' as service_ms;
+import '../services/therapy_graph_service.dart' as service_tgs;
 import '../services/config_service.dart';
 import '../services/firebase_service.dart';
 import '../services/backend_service.dart';
@@ -36,7 +33,6 @@ import '../data/datasources/local/database_provider.dart';
 import '../services/memory_manager.dart';
 import '../services/message_processor.dart';
 import '../services/audio_generator.dart';
-import '../services/conversation_flow_manager.dart';
 import 'package:ai_therapist_app/utils/database_helper.dart';
 import '../services/groq_service.dart';
 import '../services/vad_manager.dart';
@@ -154,9 +150,9 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered ConnectivityChecker');
     }
 
-    if (!serviceLocator.isRegistered<NotificationService>()) {
-      serviceLocator.registerLazySingleton<NotificationService>(
-          () => NotificationService());
+    if (!serviceLocator.isRegistered<service_ns.NotificationService>()) {
+      serviceLocator.registerLazySingleton<service_ns.NotificationService>(
+          () => service_ns.NotificationService());
       debugPrint('Registered NotificationService');
     }
 
@@ -174,10 +170,11 @@ Future<void> setupServiceLocator() async {
     // ===== SIMPLE DOMAIN SERVICES =====
     // These services have minimal dependencies but may need initialization later
 
-    if (!serviceLocator.isRegistered<MemoryService>()) {
-      serviceLocator.registerLazySingleton<MemoryService>(() => MemoryService(
-            databaseProvider: serviceLocator<DatabaseProvider>(),
-          ));
+    if (!serviceLocator.isRegistered<service_ms.MemoryService>()) {
+      serviceLocator.registerLazySingleton<service_ms.MemoryService>(
+          () => service_ms.MemoryService(
+                databaseProvider: serviceLocator<DatabaseProvider>(),
+              ));
       debugPrint('Registered MemoryService with constructor injection');
     }
 
@@ -186,7 +183,7 @@ Future<void> setupServiceLocator() async {
       serviceLocator.registerLazySingleton<MemoryManager>(() {
         debugPrint('Creating MemoryManager instance (lazy initialization)');
         final manager = MemoryManager(
-          memoryService: serviceLocator<MemoryService>(),
+          memoryService: serviceLocator<service_ms.MemoryService>(),
         );
 
         // Initialize only if needed when first accessed
@@ -204,7 +201,7 @@ Future<void> setupServiceLocator() async {
     // This is a dependency for MessageProcessor
     if (!serviceLocator.isRegistered<ConversationBufferMemory>()) {
       serviceLocator.registerLazySingleton<ConversationBufferMemory>(
-        // Corrected: Use maxMessages as per the constructor definition
+        // This will now unambiguously refer to the one from custom_langchain.dart
         () => ConversationBufferMemory(maxMessages: 20),
       );
       debugPrint('Registered ConversationBufferMemory');
@@ -237,30 +234,18 @@ Future<void> setupServiceLocator() async {
       serviceLocator.registerLazySingleton<MessageProcessor>(() {
         debugPrint('Creating MessageProcessor instance (lazy initialization)');
 
-        // Ensure VoiceSessionBloc is handled. If it's a BLoC provided by the UI,
-        // MessageProcessor might not be the place to get it via GetIt directly.
-        // For now, assuming it's registered for an exceptional case or you'll adjust.
-        // A common pattern is for BLoCs to use services, not the other way around.
-        // If VoiceSessionBloc is not in GetIt, this will fail.
-        // You might need a placeholder or a way for the BLoC to pass itself to MessageProcessor if absolutely necessary.
-
         VoiceSessionBloc? vsBloc;
         try {
           vsBloc = serviceLocator<VoiceSessionBloc>();
         } catch (e) {
           debugPrint(
               'VoiceSessionBloc not found in serviceLocator for MessageProcessor. This might be an issue if MessageProcessor strictly requires it at instantiation.');
-          // Depending on your design, MessageProcessor might need to operate without it,
-          // or it needs to be provided differently.
-          // For now, we'll proceed assuming it might be optional or provided later / differently.
-          // If it's essential, this needs to be resolved.
         }
 
         final processor = MessageProcessor(
-          // These are the parameters your MessageProcessor constructor now expects:
-          voiceSessionBloc:
-              vsBloc, // Made vsBloc nullable to avoid forcing registration if not always needed
-          conversationHistory: serviceLocator<ConversationBufferMemory>(),
+          voiceSessionBloc: vsBloc,
+          conversationHistory: serviceLocator<
+              ConversationBufferMemory>(), // This should now be unambiguous
           configService: serviceLocator<ConfigService>(),
         );
 
@@ -310,16 +295,17 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered VoiceService with true lazy initialization');
     }
 
-    if (!serviceLocator.isRegistered<TherapyGraphService>()) {
-      serviceLocator.registerLazySingleton<TherapyGraphService>(
-          () => TherapyGraphService());
+    if (!serviceLocator.isRegistered<service_tgs.TherapyGraphService>()) {
+      serviceLocator.registerLazySingleton<service_tgs.TherapyGraphService>(
+          () => service_tgs.TherapyGraphService());
       debugPrint('Registered TherapyGraphService');
     }
 
     if (!serviceLocator.isRegistered<ProgressService>()) {
       serviceLocator.registerLazySingleton<ProgressService>(() =>
           ProgressService(
-              notificationService: serviceLocator<NotificationService>()));
+              notificationService:
+                  serviceLocator<service_ns.NotificationService>()));
       debugPrint('Registered ProgressService');
     }
 
