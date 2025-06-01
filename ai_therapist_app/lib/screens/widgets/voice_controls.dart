@@ -25,18 +25,17 @@ class VoiceControls extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        if (isProcessing) const LinearProgressIndicator(),
         Container(
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor,
-            boxShadow: const [
-              BoxShadow(
-                offset: Offset(0, -2),
-                blurRadius: 4,
-                color: Color.fromRGBO(0, 0, 0, 0.1),
-              ),
-            ],
+            // boxShadow: const [
+            //   BoxShadow(
+            //     offset: Offset(0, -2),
+            //     blurRadius: 4,
+            //     color: Color.fromRGBO(0, 0, 0, 0.1),
+            //   ),
+            // ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -154,6 +153,10 @@ class VoiceControls extends StatelessWidget {
                   ),
                 ),
               ),
+              if (isProcessing) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(),
+              ],
             ],
           ),
         ),

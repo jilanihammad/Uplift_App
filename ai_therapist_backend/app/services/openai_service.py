@@ -274,14 +274,14 @@ class OpenAIService:
             logger.error(traceback.format_exc())
             raise Exception(f"TTS error: {str(e)}")
     
-    # Implemented session summary generation method using Groq service
+    # Implemented session summary generation method using LLM manager
     async def generate_session_summary(self,
                                      messages: List[Dict[str, Any]],
                                      therapeutic_approach: str = "supportive",
                                      system_prompt: str = "",
                                      memory_context: str = "") -> Dict[str, Any]:
         """
-        Generate a summary of a therapy session using OpenAI's language model.
+        Generate a summary of a therapy session using the configured LLM service.
         
         Args:
             messages: List of conversation messages
@@ -308,133 +308,235 @@ class OpenAIService:
             }
         
         try:
-            # Import the groq service here to avoid circular imports
-            from app.services.groq_service import groq_service
+            # Use the LLM manager instead of direct Groq service
+            from app.services.llm_manager import LLMManager
+            llm_manager = LLMManager()
             
-            # Create a summarization prompt
+            # Create a comprehensive summarization prompt
             conversation_text = ""
+            user_concerns = []
+            therapist_suggestions = []
+            
             for msg in messages:
                 role = "User" if msg.get("isUser", False) else "Therapist"
-                conversation_text += f"{role}: {msg.get('content', '')}\n\n"
+                content = msg.get('content', '')
+                conversation_text += f"{role}: {content}\n\n"
+                
+                # Extract key themes for better action items
+                if msg.get("isUser", False):
+                    user_concerns.append(content)
+                else:
+                    therapist_suggestions.append(content)
             
-            summary_prompt = f"""
-            You are a skilled AI therapist assistant. Based on the conversation below, please provide:
-            1. A concise summary of the key points discussed
-            2. 3-5 actionable suggestions for the client
-            3. 2-3 insights about patterns or progress noticed
+            summary_prompt = f"""Based on this therapy session, provide a comprehensive summary with personalized action items.
+
+THERAPEUTIC APPROACH: {therapeutic_approach}
+
+CONVERSATION:
+{conversation_text}
+
+{memory_context if memory_context else ""}
+
+Please analyze this conversation and provide:
+
+1. **SUMMARY**: A compassionate 2-3 sentence summary highlighting the main topics discussed and progress made
+
+2. **ACTION ITEMS**: 3-5 specific, actionable steps tailored to this client's situation. Make these:
+   - Specific to what was discussed in this session
+   - Realistic and achievable
+   - Related to the coping strategies or insights mentioned
+   - Personal to the client's expressed concerns
+
+3. **INSIGHTS**: 2-3 observations about patterns, progress, or strengths noticed
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
+{{
+    "summary": "Your compassionate summary here",
+    "action_items": [
+        "Specific action based on conversation topic 1",
+        "Specific action based on conversation topic 2", 
+        "Specific action based on conversation topic 3"
+    ],
+    "insights": [
+        "Insight about patterns or progress",
+        "Insight about strengths or observations"
+    ]
+}}"""
             
-            Therapeutic approach: {therapeutic_approach}
-            
-            CONVERSATION:
-            {conversation_text}
-            
-            {memory_context}
-            
-            IMPORTANT: Please provide your response as a valid JSON object with the following structure, without any additional text, explanation, or markdown formatting:
-            {{
-                "summary": "Summary of the session",
-                "action_items": ["Action 1", "Action 2", ...],
-                "insights": ["Insight 1", "Insight 2", ...]
-            }}
-            """
-            
-            # Get the assistant's response using the groq service
+            # Get the assistant's response using the LLM manager
             try:
-                response_text = await groq_service.generate_response(
+                response_text = await llm_manager.generate_response(
                     message=summary_prompt,
-                    temperature=0.7,
-                    max_tokens=2000
+                    context=[],
+                    system_prompt="You are an expert therapist creating personalized session summaries. Focus on providing actionable, conversation-specific guidance.",
+                    temperature=0.3,  # Lower temperature for consistency
+                    max_tokens=1500
                 )
-            except Exception as groq_error:
-                logger.warning(f"Error using Groq for session summary: {str(groq_error)}")
-                logger.warning("Falling back to default summary")
-                return {
-                    "summary": "We had a thoughtful conversation about your current situation and explored some potential strategies moving forward.",
-                    "action_items": [
-                        "Take time for self-care activities",
-                        "Practice mindfulness exercises",
-                        "Reflect on the insights from our session"
-                    ],
-                    "insights": [
-                        "You're showing progress in how you approach challenges",
-                        "Your self-awareness is a significant strength"
-                    ]
-                }
+            except Exception as llm_error:
+                logger.warning(f"Error using LLM manager for session summary: {str(llm_error)}")
+                logger.warning("Falling back to conversation-based summary")
+                return await self._generate_conversation_based_summary(messages, therapeutic_approach)
             
-            # Try to parse the JSON response
+            # Enhanced JSON parsing with multiple fallback strategies
             try:
-                # Extract JSON from the response text (it might be wrapped in markdown code blocks)
-                json_str = response_text
+                # First, try to extract clean JSON
+                json_str = response_text.strip()
                 
-                # Handle various formats the LLM might return
-                if "```json" in response_text:
-                    json_str = response_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in response_text:
-                    json_str = response_text.split("```")[1].strip()
+                # Remove common LLM response prefixes
+                prefixes_to_remove = [
+                    "Here is the session summary:",
+                    "Based on the conversation, here is the summary:",
+                    "Here's the session summary:",
+                    "Session summary:"
+                ]
                 
-                # Handle cases where the LLM adds "Here is the response:" or similar text
-                if "Here is the response" in json_str:
-                    # Try to find JSON structure
-                    import re
+                for prefix in prefixes_to_remove:
+                    if json_str.lower().startswith(prefix.lower()):
+                        json_str = json_str[len(prefix):].strip()
+                
+                # Handle markdown code blocks
+                if "```json" in json_str:
+                    json_str = json_str.split("```json")[1].split("```")[0].strip()
+                elif "```" in json_str:
+                    json_str = json_str.split("```")[1].strip()
+                
+                # Find JSON structure using regex if needed
+                import re
+                if not json_str.startswith('{'):
                     json_match = re.search(r'({[\s\S]*})', json_str)
                     if json_match:
                         json_str = json_match.group(1)
                 
-                logger.info(f"Extracted JSON string: {json_str[:100]}...")
+                logger.info(f"Attempting to parse JSON: {json_str[:200]}...")
                 
                 # Parse the JSON string
                 result = json.loads(json_str)
                 
-                # Verify result has the expected structure
-                if not isinstance(result, dict):
-                    raise ValueError("Response is not a dictionary")
+                # Validate and clean the result
+                result = await self._validate_and_clean_summary(result, messages)
                 
-                # Make sure all required fields are present
-                required_fields = ["summary", "action_items", "insights"]
-                for field in required_fields:
-                    if field not in result:
-                        result[field] = []
-                        if field == "summary":
-                            result[field] = "Session summary not available"
-                
-                logger.info("Session summary generated successfully")
+                logger.info("Session summary generated successfully using LLM manager")
                 return result
                 
             except (json.JSONDecodeError, KeyError, ValueError) as e:
-                # If JSON parsing fails, create a structured response manually
-                logger.warning(f"Failed to parse LLM response as JSON: {str(e)}, response: {response_text[:100]}...")
-                logger.warning("Creating structured response manually")
-                
-                # Attempt to extract meaningful content from the response
-                summary = response_text
-                if "summary" in response_text.lower():
-                    summary_lines = [line for line in response_text.split('\n') if "summary" in line.lower()]
-                    if summary_lines:
-                        summary = summary_lines[0].split(":", 1)[1].strip() if ":" in summary_lines[0] else summary_lines[0]
-                
-                return {
-                    "summary": summary,
-                    "action_items": ["Practice mindfulness daily", "Journal about emotions"],
-                    "insights": ["Working through challenges with good progress"]
-                }
+                logger.warning(f"Failed to parse LLM response as JSON: {str(e)}")
+                logger.warning(f"Raw response: {response_text[:300]}...")
+                return await self._generate_conversation_based_summary(messages, therapeutic_approach)
                 
         except Exception as e:
             logger.error(f"Error generating session summary: {str(e)}")
             logger.error(traceback.format_exc())
+            return await self._generate_conversation_based_summary(messages, therapeutic_approach)
+
+    async def _validate_and_clean_summary(self, result: Dict[str, Any], messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Validate and clean the summary result, ensuring quality action items."""
+        
+        # Ensure result is a dictionary
+        if not isinstance(result, dict):
+            raise ValueError("Response is not a dictionary")
+        
+        # Validate summary
+        if not result.get("summary") or len(result["summary"].strip()) < 20:
+            result["summary"] = "Thank you for sharing your thoughts and feelings in this session. We explored important topics together."
+        
+        # Validate and improve action items
+        action_items = result.get("action_items", [])
+        if not action_items or len(action_items) == 0:
+            # Generate basic action items based on conversation
+            action_items = await self._generate_basic_action_items(messages)
+        else:
+            # Clean existing action items
+            cleaned_items = []
+            for item in action_items:
+                if isinstance(item, str) and len(item.strip()) > 10:
+                    cleaned_items.append(item.strip())
             
-            # Return a fallback summary
-            return {
-                "summary": "We had a productive conversation today exploring your feelings and thoughts.",
-                "action_items": [
-                    "Take time for self-care",
-                    "Practice mindfulness",
-                    "Reflect on today's insights"
-                ],
-                "insights": [
-                    "You're making progress in your journey",
-                    "Your resilience is a key strength"
-                ]
-            }
+            if len(cleaned_items) < 2:
+                # Add some basic items if we don't have enough
+                basic_items = await self._generate_basic_action_items(messages)
+                cleaned_items.extend(basic_items[:3])
+            
+            action_items = cleaned_items[:5]  # Limit to 5 items
+        
+        result["action_items"] = action_items
+        
+        # Validate insights
+        insights = result.get("insights", [])
+        if not insights:
+            insights = [
+                "You showed courage by sharing your experiences today",
+                "Your self-awareness is a valuable strength"
+            ]
+        
+        result["insights"] = insights
+        
+        return result
+
+    async def _generate_basic_action_items(self, messages: List[Dict[str, Any]]) -> List[str]:
+        """Generate basic action items based on conversation content."""
+        
+        # Extract keywords from user messages to create relevant action items
+        user_messages = [msg.get('content', '').lower() for msg in messages if msg.get("isUser", False)]
+        conversation_text = ' '.join(user_messages)
+        
+        action_items = []
+        
+        # Keyword-based action item suggestions
+        if any(word in conversation_text for word in ['stress', 'anxious', 'worry', 'overwhelmed']):
+            action_items.append("Practice deep breathing exercises when feeling stressed or anxious")
+        
+        if any(word in conversation_text for word in ['sleep', 'tired', 'exhausted']):
+            action_items.append("Focus on improving your sleep routine and getting adequate rest")
+        
+        if any(word in conversation_text for word in ['relationship', 'family', 'friends', 'partner']):
+            action_items.append("Consider having an open conversation with someone you trust")
+        
+        if any(word in conversation_text for word in ['work', 'job', 'career']):
+            action_items.append("Take regular breaks during work to maintain balance")
+        
+        if any(word in conversation_text for word in ['exercise', 'physical', 'activity']):
+            action_items.append("Incorporate some physical activity into your daily routine")
+        
+        # Add default items if we don't have enough specific ones
+        default_items = [
+            "Take time for self-reflection and journaling",
+            "Practice mindfulness or meditation for a few minutes daily",
+            "Engage in one activity that brings you joy this week",
+            "Be kind and patient with yourself as you work through challenges"
+        ]
+        
+        # Combine and ensure we have 3-4 items
+        all_items = action_items + default_items
+        return list(dict.fromkeys(all_items))[:4]  # Remove duplicates and limit to 4
+
+    async def _generate_conversation_based_summary(self, messages: List[Dict[str, Any]], therapeutic_approach: str) -> Dict[str, Any]:
+        """Generate a fallback summary based on conversation analysis."""
+        
+        logger.info("Generating conversation-based fallback summary")
+        
+        # Basic conversation analysis
+        user_message_count = len([msg for msg in messages if msg.get("isUser", False)])
+        therapist_message_count = len([msg for msg in messages if not msg.get("isUser", False)])
+        
+        # Generate summary based on conversation length and content
+        if user_message_count > 5:
+            summary = "Thank you for sharing so openly in today's session. We covered several important topics and explored different perspectives together."
+        else:
+            summary = "Thank you for taking the time to connect today. Even brief conversations can provide valuable insights."
+        
+        # Generate action items based on conversation
+        action_items = await self._generate_basic_action_items(messages)
+        
+        insights = [
+            f"You engaged thoughtfully in our conversation today",
+            "Your willingness to explore these topics shows strength and self-awareness"
+        ]
+        
+        return {
+            "summary": summary,
+            "action_items": action_items,
+            "insights": insights
+        }
 
 # Create a singleton instance
 try:

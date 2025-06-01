@@ -14,6 +14,7 @@ class Message(Base):
     is_user_message = Column(Boolean, default=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     audio_url = Column(String, nullable=True)
+    sequence = Column(Integer, nullable=True)
     
     # Relationships
     session = relationship("Session", back_populates="messages")

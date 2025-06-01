@@ -7,6 +7,8 @@ import traceback
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI, AsyncOpenAI
+from google import genai
+from google.genai import types
 import anthropic
 
 from app.core.llm_config import LLMConfig, ModelType, ModelProvider, ModelConfig
@@ -280,63 +282,96 @@ class LLMManager:
         user_info: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> str:
-        """Generate response using Google Gemini API."""
+        """Generate response using Google Gemini API via new GenAI SDK."""
         try:
             api_key = LLMConfig.get_api_key(self.llm_config)
             if not api_key:
                 raise ValueError("Google API key not found")
+
+            # Initialize client with new SDK
+            client = genai.Client(api_key=api_key)
+
+            # Prepare system instruction
+            system_instruction_text = system_prompt
+            if not system_instruction_text and user_info:
+                system_instruction_text = self._build_system_prompt(user_info)
+
+            # Build conversation contents for new SDK
+            contents = []
             
-            # Build conversation text for Gemini
-            conversation_text = ""
-            if system_prompt:
-                conversation_text += f"System: {system_prompt}\n\n"
-            elif user_info:
-                conversation_text += f"System: {self._build_system_prompt(user_info)}\n\n"
-            
-            # Add conversation history
+            # Add conversation history first
             if context:
-                for msg in context:
-                    role = "User" if msg.get("isUser", False) else "Assistant"
-                    conversation_text += f"{role}: {msg.get('content', '')}\n\n"
+                for msg_from_frontend in context:
+                    # Fix: Use correct field name that frontend sends
+                    is_user = msg_from_frontend.get("isUser", False)
+                    content = msg_from_frontend.get("content", "")
+                    
+                    if is_user:
+                        contents.append({
+                            "role": "user",
+                            "parts": [{"text": content}]
+                        })
+                    else:
+                        contents.append({
+                            "role": "model", 
+                            "parts": [{"text": content}]
+                        })
             
-            # Add current message
-            conversation_text += f"User: {message}\n\nAssistant:"
+            # Add current user message
+            contents.append({
+                "role": "user",
+                "parts": [{"text": message}]
+            })
+
+            # Prepare generation configuration
+            gen_config_params = self.llm_config.default_params.copy()
+            gen_config_params.update(kwargs)
+
+            # Create request config for new SDK - FIX: Use correct structure
+            request_config = {}
+            if system_instruction_text:
+                request_config["system_instruction"] = system_instruction_text
             
-            # Prepare parameters
-            params = self.llm_config.default_params.copy()
-            params.update(kwargs)
+            # Map parameters to new SDK format - FIX: Don't nest in generation_config
+            if "temperature" in gen_config_params:
+                request_config["temperature"] = gen_config_params.get("temperature", 0.7)
+            if "max_tokens" in gen_config_params:
+                request_config["max_output_tokens"] = gen_config_params.get("max_tokens", 1000)
+            elif "maxOutputTokens" in gen_config_params:
+                request_config["max_output_tokens"] = gen_config_params.get("maxOutputTokens", 1000)
+            else:
+                request_config["max_output_tokens"] = 1000
+            if "top_p" in gen_config_params:
+                request_config["top_p"] = gen_config_params.get("top_p", 1.0)
+            if "top_k" in gen_config_params:
+                request_config["top_k"] = gen_config_params.get("top_k")
+
+            logger.debug(f"Sending to Google Gemini: model={self.llm_config.model_id}, system_instruction_present={bool(system_instruction_text)}, contents_length={len(contents)}")
             
-            headers = {
-                "Content-Type": "application/json"
-            }
+            # Generate response using new SDK
+            response = client.models.generate_content(
+                model=self.llm_config.model_id,
+                contents=contents,
+                config=request_config
+            )
             
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": conversation_text
-                    }]
-                }],
-                "generationConfig": {
-                    "temperature": params.get("temperature", 0.7),
-                    "maxOutputTokens": params.get("max_tokens", 1000),
-                    "topP": params.get("top_p", 1.0)
-                }
-            }
+            # Extract text from response
+            if hasattr(response, 'text') and response.text:
+                return response.text
+            elif hasattr(response, 'candidates') and response.candidates:
+                # Try to extract from candidates structure
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and candidate.content:
+                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                        return candidate.content.parts[0].text
+                    elif hasattr(candidate.content, 'text'):
+                        return candidate.content.text
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.llm_config.base_url}/models/{self.llm_config.model_id}:generateContent?key={api_key}",
-                    headers=headers,
-                    json=payload
-                )
-                
-                response.raise_for_status()
-                result = response.json()
-                
-                return result["candidates"][0]["content"]["parts"][0]["text"]
-            
+            logger.error(f"Could not extract text from Google response. Response structure: {response}")
+            raise ValueError("Failed to extract text from Google Gemini response")
+
         except Exception as e:
-            logger.error(f"Error generating Google response: {str(e)}")
+            logger.error(f"Error generating Google response using new SDK: {str(e)}")
             logger.error(traceback.format_exc())
             raise
     
@@ -373,6 +408,7 @@ class LLMManager:
         
         if not self.llm_config.supports_streaming:
             # Fall back to non-streaming if provider doesn't support it
+            logger.info(f"Provider {self.llm_config.provider} ({self.llm_config.model_id}) does not support streaming or it's disabled. Falling back to non-streaming.")
             response = await self.generate_response(message, context, system_prompt, user_info, **kwargs)
             yield response
             return
@@ -384,8 +420,12 @@ class LLMManager:
         elif self.llm_config.provider == ModelProvider.ANTHROPIC:
             async for chunk in self._stream_anthropic_response(message, context, system_prompt, user_info, **kwargs):
                 yield chunk
+        elif self.llm_config.provider == ModelProvider.GOOGLE: # New case for Google streaming
+            async for chunk in self._stream_google_response(message, context, system_prompt, user_info, **kwargs):
+                yield chunk
         else:
-            # Fall back to non-streaming for unsupported providers
+            # Fall back to non-streaming for unsupported providers if streaming flag was somehow true
+            logger.warning(f"Streaming not implemented for provider {self.llm_config.provider} ({self.llm_config.model_id}), but supports_streaming is True. Falling back to non-streaming.")
             response = await self.generate_response(message, context, system_prompt, user_info, **kwargs)
             yield response
     
@@ -489,6 +529,106 @@ class LLMManager:
             
         except Exception as e:
             logger.error(f"Error streaming Anthropic response: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+    
+    async def _stream_google_response(
+        self,
+        message: str,
+        context: List[Dict[str, str]] = None,
+        system_prompt: str = "",
+        user_info: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> AsyncGenerator[str, None]:
+        """Stream response using Google Gemini API via new GenAI SDK."""
+        try:
+            api_key = LLMConfig.get_api_key(self.llm_config)
+            if not api_key:
+                raise ValueError("Google API key not found")
+
+            # Initialize client with new SDK
+            client = genai.Client(api_key=api_key)
+
+            # Prepare system instruction
+            system_instruction_text = system_prompt
+            if not system_instruction_text and user_info:
+                system_instruction_text = self._build_system_prompt(user_info)
+
+            # Build conversation contents for new SDK
+            contents = []
+            
+            # Add conversation history first
+            if context:
+                for msg_from_frontend in context:
+                    # Fix: Use correct field name that frontend sends
+                    is_user = msg_from_frontend.get("isUser", False)
+                    content = msg_from_frontend.get("content", "")
+                    
+                    if is_user:
+                        contents.append({
+                            "role": "user",
+                            "parts": [{"text": content}]
+                        })
+                    else:
+                        contents.append({
+                            "role": "model", 
+                            "parts": [{"text": content}]
+                        })
+            
+            # Add current user message
+            contents.append({
+                "role": "user",
+                "parts": [{"text": message}]
+            })
+
+            # Prepare generation configuration
+            gen_config_params = self.llm_config.default_params.copy()
+            gen_config_params.update(kwargs)
+
+            # Create request config for new SDK - FIX: Use correct structure
+            request_config = {}
+            if system_instruction_text:
+                request_config["system_instruction"] = system_instruction_text
+            
+            # Map parameters to new SDK format - FIX: Don't nest in generation_config
+            if "temperature" in gen_config_params:
+                request_config["temperature"] = gen_config_params.get("temperature", 0.7)
+            if "max_tokens" in gen_config_params:
+                request_config["max_output_tokens"] = gen_config_params.get("max_tokens", 1000)
+            elif "maxOutputTokens" in gen_config_params:
+                request_config["max_output_tokens"] = gen_config_params.get("maxOutputTokens", 1000)
+            else:
+                request_config["max_output_tokens"] = 1000
+            if "top_p" in gen_config_params:
+                request_config["top_p"] = gen_config_params.get("top_p", 1.0)
+            if "top_k" in gen_config_params:
+                request_config["top_k"] = gen_config_params.get("top_k")
+
+            logger.debug(f"Streaming from Google Gemini: model={self.llm_config.model_id}, system_instruction_present={bool(system_instruction_text)}, contents_length={len(contents)}")
+
+            # Stream response using new SDK
+            stream = client.models.generate_content_stream(
+                model=self.llm_config.model_id,
+                contents=contents,
+                config=request_config
+            )
+
+            async for chunk in stream:
+                # Extract text from streaming chunk
+                if hasattr(chunk, 'text') and chunk.text:
+                    yield chunk.text
+                elif hasattr(chunk, 'candidates') and chunk.candidates:
+                    candidate = chunk.candidates[0]
+                    if hasattr(candidate, 'content') and candidate.content:
+                        if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    yield part.text
+                        elif hasattr(candidate.content, 'text') and candidate.content.text:
+                            yield candidate.content.text
+
+        except Exception as e:
+            logger.error(f"Error streaming Google response using new SDK: {str(e)}")
             logger.error(traceback.format_exc())
             raise
     

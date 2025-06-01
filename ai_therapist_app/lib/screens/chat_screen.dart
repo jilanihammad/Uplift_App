@@ -28,7 +28,7 @@ import '../services/audio_generator.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../utils/list_extensions.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import '../services/native_wakelock_service.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
@@ -37,7 +37,7 @@ import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
-  const ChatScreen({Key? key, this.sessionId}) : super(key: key);
+  const ChatScreen({super.key, this.sessionId});
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +45,10 @@ class ChatScreen extends StatelessWidget {
       create: (context) => VoiceSessionBloc(
         voiceService: serviceLocator<VoiceService>(),
         vadManager: serviceLocator<VADManager>(),
+        memoryService: null,
+        therapyGraphService: null,
+        notificationService: null,
+        conversationHistory: null,
       ),
       child: _ChatScreenBody(sessionId: sessionId),
     );
@@ -53,14 +57,14 @@ class ChatScreen extends StatelessWidget {
 
 class _ChatScreenBody extends StatefulWidget {
   final String? sessionId;
-  const _ChatScreenBody({Key? key, this.sessionId}) : super(key: key);
+  const _ChatScreenBody({super.key, this.sessionId});
 
   @override
   State<_ChatScreenBody> createState() => _ChatScreenBodyState();
 }
 
 class _ChatScreenBodyState extends State<_ChatScreenBody>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -84,11 +88,88 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Timer? _sessionTimer;
   int _previousMessageCount = 0;
 
+  // Wakelock management - simplified and safe
+  Future<void> _enableWakelock() async {
+    try {
+      await NativeWakelockService.enable();
+
+      // Sanity check - verify wakelock is actually enabled
+      final enabled = await NativeWakelockService.isEnabled;
+      debugPrint(
+          '[ChatScreen] Wakelock enabled successfully - KEEP_SCREEN_ON = $enabled');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to enable wakelock: $e');
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // Only manage wakelock if we're in an active therapy session
+    final bloc = context.read<VoiceSessionBloc>();
+    final sessionState = bloc.state;
+    final isActiveSession = !sessionState.showMoodSelector &&
+        !sessionState.showDurationSelector &&
+        !sessionState.isInitializing &&
+        sessionState.messages.isNotEmpty;
+
+    if (!isActiveSession) {
+      debugPrint(
+          '[ChatScreen] Not in active session, skipping wakelock management');
+      return;
+    }
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // Re-enable wakelock when app comes back to foreground (engine is attached)
+        debugPrint(
+            '[ChatScreen] App resumed, re-enabling wakelock for active session');
+        _enableWakelock();
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        // Keep wakelock active during therapy session - do NOT disable
+        // Screen should stay on even when notification shade is pulled down,
+        // proximity sensor triggers, or other brief interruptions occur
+        debugPrint(
+            '[ChatScreen] App lifecycle changed to $state, keeping wakelock active for session');
+        break;
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+
+    // Only re-apply wakelock if we're in an active therapy session
+    final bloc = context.read<VoiceSessionBloc>();
+    final sessionState = bloc.state;
+    final isActiveSession = !sessionState.showMoodSelector &&
+        !sessionState.showDurationSelector &&
+        !sessionState.isInitializing &&
+        sessionState.messages.isNotEmpty;
+
+    if (isActiveSession) {
+      // Called on rotation, PiP, split-screen, etc. - re-apply wakelock
+      debugPrint(
+          '[ChatScreen] Metrics changed, re-enabling wakelock for active session');
+      _enableWakelock();
+    } else {
+      debugPrint(
+          '[ChatScreen] Metrics changed, but not in active session - skipping wakelock');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     debugPrint('[ChatScreen] initState called');
-    WakelockPlus.enable(); // Keep screen awake during session
+    WidgetsBinding.instance.addObserver(this);
+
+    // Don't enable wakelock here - only enable during active therapy session
 
     // Set up microphone animation
     _micAnimationController = AnimationController(
@@ -106,7 +187,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Initialize session after the build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      print('[ChatScreen] PostFrameCallback: calling _initSession');
+      debugPrint('[ChatScreen] PostFrameCallback: calling _initSession');
       _initSession();
     });
   }
@@ -114,7 +195,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   void dispose() {
     debugPrint('[ChatScreen] dispose called');
-    WakelockPlus.disable(); // Allow screen to sleep after session
+
+    // Disable wakelock immediately in dispose (fire and forget)
+    NativeWakelockService.disable().then((_) {
+      debugPrint('[ChatScreen] Wakelock disabled successfully in dispose');
+    }).catchError((e) {
+      debugPrint('[ChatScreen] Failed to disable wakelock in dispose: $e');
+    });
+
+    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
     _micAnimationController.dispose();
@@ -159,8 +248,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         }
 
         // Main chat interface
-        return WillPopScope(
-          onWillPop: () async => _handleBackPress(state),
+        return PopScope(
+          canPop: true,
+          onPopInvoked: (didPop) async {
+            if (!didPop) return;
+            final shouldPop = await _handleBackPress(state);
+            if (!shouldPop && mounted) {
+              // Prevent pop if not allowed
+              // You may want to use Navigator.of(context).maybePop() or similar if needed
+            }
+          },
           child: Scaffold(
             appBar: _buildAppBar(state),
             body: state.isVoiceMode
@@ -204,7 +301,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.lightBlue.withOpacity(0.2),
+                  color: Colors.lightBlue.withAlpha(51),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.lightBlue, width: 1),
                 ),
@@ -214,7 +311,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                     final minutes = (seconds / 60).floor();
                     final secs = seconds % 60;
                     return Text(
-                      '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}',
+                      "${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}",
                       style: const TextStyle(
                         color: Colors.lightBlue,
                         fontWeight: FontWeight.bold,
@@ -231,9 +328,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         Padding(
           padding: const EdgeInsets.only(right: 8.0),
           child: ElevatedButton(
-            onPressed: state.isProcessing || state.isEndingSession
-                ? null
-                : _endSession,
+            onPressed: state.isEndingSession ? null : _endSession,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
@@ -249,7 +344,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<bool> _handleBackPress(VoiceSessionState state) async {
-    print('[ChatScreen] onWillPop called');
+    debugPrint('[ChatScreen] onWillPop called');
     final hasMessages = state.messages.isNotEmpty;
 
     if (hasMessages &&
@@ -274,21 +369,27 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                  ({bool rec, double amp})>(
-                selector: (blocState) =>
-                    (rec: blocState.isRecording, amp: blocState.amplitude),
+                  ({bool rec, double amp, bool listening})>(
+                selector: (blocState) => (
+                  rec: blocState.isRecording,
+                  amp: blocState.amplitude,
+                  listening: blocState.isListeningForVoice,
+                ),
                 builder: (context, data) {
                   // Mic animation logic
-                  if (data.rec && !_micAnimationController.isAnimating) {
+                  if ((data.rec || data.listening) &&
+                      !_micAnimationController.isAnimating) {
                     _micAnimationController.repeat(reverse: true);
-                  } else if (!data.rec && _micAnimationController.isAnimating) {
+                  } else if (!data.rec &&
+                      !data.listening &&
+                      _micAnimationController.isAnimating) {
                     _micAnimationController.stop();
                     _micAnimationController.reset();
                   }
                   return Container(
                     width: 120,
                     height: 120,
-                    child: data.rec
+                    child: (data.rec || data.listening)
                         ? Lottie.asset(
                             'assets/animations/Microphone Animation.json',
                             width: 120,
@@ -319,11 +420,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           ),
         ),
         BlocSelector<VoiceSessionBloc, VoiceSessionState,
-            ({bool rec, bool proc, bool muted})>(
+            ({bool rec, bool proc, bool muted, bool listening})>(
           selector: (state) => (
             rec: state.isRecording,
             proc: state.isProcessing,
-            muted: state.isSpeakerMuted
+            muted: state.isSpeakerMuted,
+            listening: state.isListeningForVoice,
           ),
           builder: (context, data) => VoiceControls(
             isRecording: data.rec,
@@ -452,7 +554,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _therapyService.setTherapistStyle(_therapistStyle!.systemPrompt);
 
     if (kDebugMode) {
-      print('Loaded therapist style: ${_therapistStyle!.name}');
+      debugPrint('Loaded therapist style: ${_therapistStyle!.name}');
     }
   }
 
@@ -481,7 +583,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       _currentSessionId = const Uuid().v4();
 
       if (kDebugMode) {
-        print('Generated session ID: $_currentSessionId');
+        debugPrint('Generated session ID: $_currentSessionId');
       }
 
       // For new sessions, show duration selector first
@@ -508,6 +610,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     });
     bloc.add(ShowMoodSelector(false));
     debugPrint('Mood selected: $selectedMood, session is now active');
+
+    // Hide bottom navigation bar during therapy session to prevent accidental navigation
+    _navigationService.hideBottomNav();
+
+    // Ensure speaker is unmuted for new session (in case previous session ended with mute)
+    bloc.add(SetSpeakerMuted(false));
+
+    // Enable wakelock now that therapy session is starting
+    _enableWakelock();
+
     _addInitialAIMessage(selectedMood);
     _startSessionTimer();
   }
@@ -516,11 +628,11 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     switch (mood) {
       case Mood.happy:
         return [
-          "Heyyy! That's wonderful to hear! What's keeping your spirits high today?",
+          "Heyyy! What's keeping your spirits high today?",
           "Hello hello! Your positivity is contagious! What's on your mind?",
           "Hey there! Glad you're feeling upbeat! How can I support you today?",
           "Heyyy! Hearing you're happy makes me happy! Anything special you'd like to talk about?",
-          "Hello hello! That's great news! Would you like to share more about what's brightening your day?"
+          "Hello hello! Would you like to share more about what's brightening your day?"
         ].random();
       case Mood.sad:
         return [
@@ -557,10 +669,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       default:
         return [
           "Hey there! Thanks for opening up about how you're feeling. What should we explore today?",
-          "Hello hello! I appreciate your honesty. What would you like to talk about?",
+          "Hello hello! What would you like to talk about?",
           "Heyyy! Thanks for sharing with me. How can I best support you today?",
-          "Hey there! I'm glad you shared that. What's the main thing you'd like to discuss right now?",
-          "Hello hello! Thanks for letting me know. Where should we start our conversation today?"
+          "Hey there! What brings you here today?",
+          "Hello hello! I'm glad you're here. Where should we start our conversation today?"
         ].random();
     }
   }
@@ -574,6 +686,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       content: welcomeMessage,
       isUser: false,
       timestamp: DateTime.now(),
+      sequence: 1,
     );
 
     // Add message to Bloc
@@ -603,6 +716,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         context.read<VoiceSessionBloc>().add(UpdateSessionTimer());
+
+        // Timer continues - no wakelock refresh needed here
       }
     });
   }
@@ -632,12 +747,31 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     final bloc = context.read<VoiceSessionBloc>();
     final state = bloc.state;
 
+    // Mute speaker immediately to stop any ongoing TTS
+    bloc.add(SetSpeakerMuted(true));
+
+    // Disable wakelock immediately since session is ending
+    try {
+      await NativeWakelockService.disable();
+      debugPrint('[ChatScreen] Wakelock disabled successfully in _endSession');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
+    }
+
     // Prevent multiple end session calls
-    if (state.isEndingSession || state.isProcessing) {
+    if (state.isEndingSession) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Session ending in progress...')),
       );
       return;
+    }
+
+    // Explicitly stop VAD immediately to prevent it from continuing to run
+    try {
+      await serviceLocator<VADManager>().stopListening();
+      debugPrint('[ChatScreen] VAD explicitly stopped in _endSession');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to stop VAD in _endSession: $e');
     }
 
     // Don't generate a summary if the session didn't actually start
@@ -645,7 +779,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         state.showDurationSelector ||
         state.showMoodSelector) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             'Session not properly started, skipping session summary generation');
       }
       _navigationService.showBottomNav();
@@ -751,7 +885,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       bloc.add(SetProcessing(false));
 
       if (kDebugMode) {
-        print('Error ending session: $e');
+        debugPrint('Error ending session: $e');
       }
 
       if (mounted) {
@@ -770,24 +904,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
   }
 
-  Future<void> _cleanupSessionResources() async {
+  Future<void> _reregisterServices() {
     if (kDebugMode) {
-      print('🛑 Ending session: stopping and disposing VoiceService');
-    }
-
-    await _voiceService.autoListeningCoordinator.disableAutoMode();
-    await _voiceService.stopRecording();
-    await _voiceService.stopAudio();
-    _micAnimationController.stop();
-    _micAnimationController.reset();
-
-    // Re-register services for fresh instance
-    _reregisterServices();
-  }
-
-  void _reregisterServices() {
-    if (kDebugMode) {
-      print('🔄 Re-registering VoiceService and AudioGenerator');
+      debugPrint('🔄 Re-registering VoiceService and AudioGenerator');
     }
 
     // Unregister existing services
@@ -816,13 +935,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Update local reference
     _voiceService = serviceLocator<VoiceService>();
-    _initializeServices();
+    return _initializeServices();
   }
 
   Future<Map<String, dynamic>> _generateSessionSummary(
       List<TherapyMessage> messages) async {
     if (kDebugMode) {
-      print('Ending session with ID: $_currentSessionId');
+      debugPrint('Ending session with ID: $_currentSessionId');
     }
 
     // Log mood
@@ -834,7 +953,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     final messageList = messages.map((m) => m.toJson()).toList();
 
     if (kDebugMode) {
-      print('Ending therapy session with ${messageList.length} messages');
+      debugPrint('Ending therapy session with ${messageList.length} messages');
     }
 
     // Get session summary from therapy service
@@ -866,7 +985,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         await sessionRepository.getSession(_currentSessionId);
       } catch (e) {
         if (kDebugMode) {
-          print('Session not found in repository, creating it now');
+          debugPrint('Session not found in repository, creating it now');
         }
         // Create the session if it doesn't exist
         final sessionTitle =
@@ -893,11 +1012,11 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       );
 
       if (kDebugMode) {
-        print('Session saved to repository successfully');
+        debugPrint('Session saved to repository successfully');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error saving session to repository: $e');
+        debugPrint('Error saving session to repository: $e');
       }
       // Continue anyway - we don't want to block the user
     }
@@ -933,8 +1052,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             icon: Icon(Icons.mic_off, color: Colors.grey),
             onPressed: null,
           );
-        } else if (state.isRecording) {
-          // Recording: show active/recording mic
+        } else if (state.isRecording || state.isListeningForVoice) {
+          // Recording or listening: show active/recording mic
           return ScaleTransition(
             scale: _micAnimation,
             child: IconButton(
@@ -944,14 +1063,18 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                 height: 24,
                 fit: BoxFit.contain,
               ),
-              color: Colors.red,
+              color: state.isRecording ? Colors.red : Colors.blue,
               onPressed: () {
-                context.read<VoiceSessionBloc>().add(StopListening());
+                if (state.isRecording) {
+                  context.read<VoiceSessionBloc>().add(StopListening());
+                } else {
+                  context.read<VoiceSessionBloc>().add(StartListening());
+                }
               },
             ),
           );
         } else {
-          // VAD is on, not recording: show listening/pulse mic
+          // VAD is on, not recording or listening: show listening/pulse mic
           return ScaleTransition(
             scale: _micAnimation,
             child: IconButton(

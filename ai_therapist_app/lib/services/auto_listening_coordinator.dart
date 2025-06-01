@@ -50,6 +50,9 @@ class AutoListeningCoordinator {
   // Callback for when recording is stopped due to silence detection
   Function(String audioPath)? onRecordingCompleteCallback;
 
+  // Guard flag to prevent duplicate stopRecording calls
+  bool _isStoppingRecording = false;
+
   // Constructor
   AutoListeningCoordinator({
     required AudioPlayerManager audioPlayerManager,
@@ -386,26 +389,20 @@ class AutoListeningCoordinator {
 
   // Stop recording and process the audio
   Future<void> _stopRecording() async {
-    if (kDebugMode) {
-      print(
-          '[AutoListeningCoordinator][DEBUG] _stopRecording called. Current state: \x1B[36m[36m[0m');
-      print(StackTrace.current);
+    if (_isStoppingRecording) {
+      if (kDebugMode)
+        print(
+            '[AutoListeningCoordinator][DEBUG] _stopRecording ignored: already stopping');
+      return;
     }
-    if (_currentState == AutoListeningState.userSpeaking) {
-      try {
-        // Minimum speech duration check
-        const minSpeechDuration = Duration(milliseconds: 600);
-        final elapsed = _recordingManager.elapsed;
-        if (elapsed < minSpeechDuration) {
-          if (kDebugMode) {
-            print(
-                '[AutoListeningCoordinator][DEBUG] Discarded recording shorter than 600 ms (actual: [33m${elapsed.inMilliseconds}ms[0m)');
-          }
-          await _recordingManager.stopRecording(); // Stop and discard file
-          // Optionally delete the file if needed
-          _startListeningAfterDelay(); // Go back to listening
-          return;
-        }
+    _isStoppingRecording = true;
+    try {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] _stopRecording called. Current state: $_currentState, _isStoppingRecording=$_isStoppingRecording');
+        print(StackTrace.current);
+      }
+      if (_currentState == AutoListeningState.userSpeaking) {
         if (kDebugMode) {
           print(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
@@ -431,17 +428,17 @@ class AutoListeningCoordinator {
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _updateState(processing)');
         }
         _updateState(AutoListeningState.processing);
-      } catch (e) {
-        _errorController.add('Failed to stop recording: $e');
+      } else {
         if (kDebugMode) {
-          print('❌ AutoListening stop recording error: $e');
+          print(
+              '[AutoListeningCoordinator][DEBUG] _stopRecording called but not in userSpeaking state or already stopping, skipping.');
         }
       }
-    } else {
-      if (kDebugMode) {
+    } finally {
+      if (kDebugMode)
         print(
-            '[AutoListeningCoordinator][DEBUG] _stopRecording called but not in userSpeaking state, skipping.');
-      }
+            '[AutoListeningCoordinator][DEBUG] _isStoppingRecording reset to false');
+      _isStoppingRecording = false;
     }
   }
 

@@ -67,14 +67,16 @@ def add_message_to_session(
     session_id: int,
     content: str,
     is_user_message: bool = True,
-    audio_url: str = None
+    audio_url: str = None,
+    sequence: int = None
 ) -> Message:
     """Add a message to a session."""
     message = Message(
         session_id=session_id,
         content=content,
         is_user_message=is_user_message,
-        audio_url=audio_url
+        audio_url=audio_url,
+        sequence=sequence
     )
     db.add(message)
     db.commit()
@@ -99,7 +101,8 @@ def add_messages_batch(
             session_id=session_id,
             content=msg.get("content", ""),
             is_user_message=msg.get("is_user_message", True),
-            audio_url=msg.get("audio_url")
+            audio_url=msg.get("audio_url"),
+            sequence=msg.get("sequence")
         )
         db.add(message)
         message_objects.append(message)

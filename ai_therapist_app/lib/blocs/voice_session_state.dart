@@ -4,129 +4,218 @@
 
 import 'package:equatable/equatable.dart';
 import '../models/therapy_message.dart';
-import '../widgets/mood_selector.dart';
+import 'package:ai_therapist_app/widgets/mood_selector.dart';
+import 'package:flutter/foundation.dart'; // Required for kDebugMode
+import 'package:ai_therapist_app/models/therapist_style.dart'; // Corrected filename
+
+enum VoiceSessionStatus {
+  initial,
+  loading,
+  listening, // Actively listening for user speech via mic
+  processing, // User speech captured, STT in progress, or AI response generation
+  speaking, // AI is speaking (TTS playback)
+  error,
+  idle, // Waiting for user to speak or AI to respond, mic might be open (VAD) or closed
+  ended,
+  selectingDuration,
+  selectingMood,
+  voiceModeActive,
+  textModeActive,
+}
 
 class VoiceSessionState extends Equatable {
-  final bool isListening;
-  final bool isRecording;
-  final double amplitude;
-  final bool isVADActive;
-  final bool isVoiceMode;
-  final bool isAudioPlaying;
-  final Mood? selectedMood;
-  final int sessionDurationMinutes;
-  final int sessionTimerSeconds;
-  final bool isProcessing;
-  final String? error;
+  final VoiceSessionStatus status;
   final List<TherapyMessage> messages;
-  final bool showMoodSelector;
+  final String? errorMessage;
+  final String? currentSessionId;
+  final bool isListening; // General listening state (mic active)
+  final bool isRecording; // Specifically if audio is being captured to a file
+  final bool
+      isProcessingAudio; // True if STT or other audio processing is happening
+  final bool isAiSpeaking; // True if TTS is active
+  final bool hasError;
+  final String? transcribedText;
+  final bool showMicButton;
+  final bool showSendButton;
+  final Duration? selectedDuration;
   final bool showDurationSelector;
-  final bool isMicMuted;
-  final bool isSpeakerMuted;
-  final bool isTtsSpeaking;
-  final bool hasInitialTtsPlayed;
-  final bool welcomeMessageCompleted;
-  final bool isInitializing;
-  final bool isEndingSession;
+  final bool showMoodSelector;
+  final Mood? selectedMood;
+  final String? currentSystemPrompt;
+  final bool isMicEnabled; // User permission for mic
+  final bool isVoiceMode; // True if in voice interaction mode
+  final bool
+      isInitialGreetingPlayed; // Tracks if the initial greeting TTS has been played
+  final String? activeTherapyStyleName;
+  final bool isAutoListeningEnabled; // From AutoListeningCoordinator
+  final int currentMessageSequence; // Added for message sequencing
+  final bool speakerMuted; // Track speaker mute state
 
   const VoiceSessionState({
+    required this.status,
+    required this.messages,
+    this.errorMessage,
+    this.currentSessionId,
     this.isListening = false,
     this.isRecording = false,
-    this.amplitude = 0.0,
-    this.isVADActive = false,
-    this.isVoiceMode = true,
-    this.isAudioPlaying = false,
-    this.selectedMood,
-    this.sessionDurationMinutes = 15,
-    this.sessionTimerSeconds = 0,
-    this.isProcessing = false,
-    this.error,
-    this.messages = const [],
+    this.isProcessingAudio = false,
+    this.isAiSpeaking = false,
+    this.hasError = false,
+    this.transcribedText,
+    this.showMicButton = true, // Default to true, adjust based on mode
+    this.showSendButton = false, // Default to false, adjust based on mode
+    this.selectedDuration,
+    this.showDurationSelector = false, // Initialize to false
     this.showMoodSelector = false,
-    this.showDurationSelector = false,
-    this.isMicMuted = false,
-    this.isSpeakerMuted = false,
-    this.isTtsSpeaking = false,
-    this.hasInitialTtsPlayed = false,
-    this.welcomeMessageCompleted = false,
-    this.isInitializing = true,
-    this.isEndingSession = false,
+    this.selectedMood,
+    this.currentSystemPrompt,
+    this.isMicEnabled = true, // Assume enabled until checked
+    this.isVoiceMode = true, // Default to voice mode
+    this.isInitialGreetingPlayed = false,
+    this.activeTherapyStyleName,
+    this.isAutoListeningEnabled = false,
+    required this.currentMessageSequence, // Added
+    this.speakerMuted = false,
   });
 
-  VoiceSessionState copyWith({
-    bool? isListening,
-    bool? isRecording,
-    double? amplitude,
-    bool? isVADActive,
-    bool? isVoiceMode,
-    bool? isAudioPlaying,
-    Mood? selectedMood,
-    int? sessionDurationMinutes,
-    int? sessionTimerSeconds,
-    bool? isProcessing,
-    String? error,
-    List<TherapyMessage>? messages,
-    bool? showMoodSelector,
-    bool? showDurationSelector,
-    bool? isMicMuted,
-    bool? isSpeakerMuted,
-    bool? isTtsSpeaking,
-    bool? hasInitialTtsPlayed,
-    bool? welcomeMessageCompleted,
-    bool? isInitializing,
-    bool? isEndingSession,
+  factory VoiceSessionState.initial({
+    String? sessionId,
+    String? systemPrompt,
+    String? therapyStyleName,
   }) {
     return VoiceSessionState(
+      status: VoiceSessionStatus.initial,
+      messages: [],
+      errorMessage: null,
+      currentSessionId: sessionId,
+      isListening: false,
+      isRecording: false,
+      isProcessingAudio: false,
+      isAiSpeaking: false,
+      hasError: false,
+      transcribedText: null,
+      showMicButton: true, // Show mic button in initial voice mode
+      showSendButton: false, // Don't show send in initial voice mode
+      selectedDuration: null,
+      showDurationSelector: false, // Start by showing duration selector
+      showMoodSelector: false,
+      selectedMood: null,
+      currentSystemPrompt: systemPrompt,
+      isMicEnabled: true, // Assuming enabled, will be updated
+      isVoiceMode: true, // Default to voice mode
+      isInitialGreetingPlayed: false,
+      activeTherapyStyleName: therapyStyleName,
+      isAutoListeningEnabled: false,
+      currentMessageSequence: 0, // Initialize sequence
+      speakerMuted: false,
+    );
+  }
+
+  VoiceSessionState copyWith({
+    VoiceSessionStatus? status,
+    List<TherapyMessage>? messages,
+    String? errorMessage,
+    bool? clearErrorMessage,
+    String? currentSessionId,
+    bool? isListening,
+    bool? isRecording,
+    bool? isProcessingAudio,
+    bool? isAiSpeaking,
+    bool? hasError,
+    String? transcribedText,
+    bool? clearTranscribedText,
+    bool? showMicButton,
+    bool? showSendButton,
+    Duration? selectedDuration,
+    bool? showDurationSelector,
+    bool? showMoodSelector,
+    Mood? selectedMood,
+    String? currentSystemPrompt,
+    bool? isMicEnabled,
+    bool? isVoiceMode,
+    bool? isInitialGreetingPlayed,
+    String? activeTherapyStyleName,
+    bool? isAutoListeningEnabled,
+    int? currentMessageSequence, // Added
+    bool? speakerMuted,
+  }) {
+    return VoiceSessionState(
+      status: status ?? this.status,
+      messages: messages ?? this.messages,
+      errorMessage:
+          clearErrorMessage == true ? null : errorMessage ?? this.errorMessage,
+      currentSessionId: currentSessionId ?? this.currentSessionId,
       isListening: isListening ?? this.isListening,
       isRecording: isRecording ?? this.isRecording,
-      amplitude: amplitude ?? this.amplitude,
-      isVADActive: isVADActive ?? this.isVADActive,
-      isVoiceMode: isVoiceMode ?? this.isVoiceMode,
-      isAudioPlaying: isAudioPlaying ?? this.isAudioPlaying,
-      selectedMood: selectedMood ?? this.selectedMood,
-      sessionDurationMinutes:
-          sessionDurationMinutes ?? this.sessionDurationMinutes,
-      sessionTimerSeconds: sessionTimerSeconds ?? this.sessionTimerSeconds,
-      isProcessing: isProcessing ?? this.isProcessing,
-      error: error,
-      messages: messages ?? this.messages,
-      showMoodSelector: showMoodSelector ?? this.showMoodSelector,
+      isProcessingAudio: isProcessingAudio ?? this.isProcessingAudio,
+      isAiSpeaking: isAiSpeaking ?? this.isAiSpeaking,
+      hasError: hasError ?? this.hasError,
+      transcribedText: clearTranscribedText == true
+          ? null
+          : transcribedText ?? this.transcribedText,
+      showMicButton: showMicButton ?? this.showMicButton,
+      showSendButton: showSendButton ?? this.showSendButton,
+      selectedDuration: selectedDuration ?? this.selectedDuration,
       showDurationSelector: showDurationSelector ?? this.showDurationSelector,
-      isMicMuted: isMicMuted ?? this.isMicMuted,
-      isSpeakerMuted: isSpeakerMuted ?? this.isSpeakerMuted,
-      isTtsSpeaking: isTtsSpeaking ?? this.isTtsSpeaking,
-      hasInitialTtsPlayed: hasInitialTtsPlayed ?? this.hasInitialTtsPlayed,
-      welcomeMessageCompleted:
-          welcomeMessageCompleted ?? this.welcomeMessageCompleted,
-      isInitializing: isInitializing ?? this.isInitializing,
-      isEndingSession: isEndingSession ?? this.isEndingSession,
+      showMoodSelector: showMoodSelector ?? this.showMoodSelector,
+      selectedMood: selectedMood ?? this.selectedMood,
+      currentSystemPrompt: currentSystemPrompt ?? this.currentSystemPrompt,
+      isMicEnabled: isMicEnabled ?? this.isMicEnabled,
+      isVoiceMode: isVoiceMode ?? this.isVoiceMode,
+      isInitialGreetingPlayed:
+          isInitialGreetingPlayed ?? this.isInitialGreetingPlayed,
+      activeTherapyStyleName:
+          activeTherapyStyleName ?? this.activeTherapyStyleName,
+      isAutoListeningEnabled:
+          isAutoListeningEnabled ?? this.isAutoListeningEnabled,
+      currentMessageSequence:
+          currentMessageSequence ?? this.currentMessageSequence, // Added
+      speakerMuted: speakerMuted ?? this.speakerMuted,
     );
   }
 
   @override
   List<Object?> get props => [
+        status,
+        messages,
+        errorMessage,
+        currentSessionId,
         isListening,
         isRecording,
-        amplitude,
-        isVADActive,
-        isVoiceMode,
-        isAudioPlaying,
-        selectedMood,
-        sessionDurationMinutes,
-        sessionTimerSeconds,
-        isProcessing,
-        error,
-        messages,
-        showMoodSelector,
+        isProcessingAudio,
+        isAiSpeaking,
+        hasError,
+        transcribedText,
+        showMicButton,
+        showSendButton,
+        selectedDuration,
         showDurationSelector,
-        isMicMuted,
-        isSpeakerMuted,
-        isTtsSpeaking,
-        hasInitialTtsPlayed,
-        welcomeMessageCompleted,
-        isInitializing,
-        isEndingSession,
+        showMoodSelector,
+        selectedMood,
+        currentSystemPrompt,
+        isMicEnabled,
+        isVoiceMode,
+        isInitialGreetingPlayed,
+        activeTherapyStyleName,
+        isAutoListeningEnabled,
+        currentMessageSequence, // Added
+        speakerMuted,
       ];
 
-  bool get canSend => !isProcessing && !isVoiceMode;
+  bool get canSend => !isProcessingAudio && !isVoiceMode;
+
+  // Add missing getters for UI compatibility
+  bool get isInitializing => status == VoiceSessionStatus.loading;
+  int get sessionDurationMinutes => selectedDuration?.inMinutes ?? 0;
+  int get sessionTimerSeconds =>
+      0; // TODO: Implement actual timer logic if needed
+  bool get isEndingSession => status == VoiceSessionStatus.ended;
+  double get amplitude =>
+      0.0; // TODO: Implement if amplitude is tracked elsewhere
+  bool get isProcessing => isProcessingAudio;
+  bool get isSpeakerMuted => speakerMuted;
+  bool get isVADActive => isAutoListeningEnabled;
+  // Returns true when VAD is active, not recording, not processing, and not AI speaking
+  bool get isListeningForVoice =>
+      isVADActive && !isRecording && !isProcessing && !isAiSpeaking;
 }
