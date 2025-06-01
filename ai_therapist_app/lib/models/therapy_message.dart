@@ -5,6 +5,7 @@ class TherapyMessage {
   final bool isUser;
   final DateTime timestamp;
   final String? audioUrl;
+  final int sequence;
 
   TherapyMessage({
     required this.id,
@@ -12,6 +13,7 @@ class TherapyMessage {
     required this.isUser,
     required this.timestamp,
     this.audioUrl,
+    required this.sequence,
   });
 
   // Create a copy of this message with modified fields
@@ -21,6 +23,7 @@ class TherapyMessage {
     bool? isUser,
     DateTime? timestamp,
     String? audioUrl,
+    int? sequence,
   }) {
     return TherapyMessage(
       id: id ?? this.id,
@@ -28,6 +31,7 @@ class TherapyMessage {
       isUser: isUser ?? this.isUser,
       timestamp: timestamp ?? this.timestamp,
       audioUrl: audioUrl ?? this.audioUrl,
+      sequence: sequence ?? this.sequence,
     );
   }
 
@@ -39,6 +43,7 @@ class TherapyMessage {
       'isUser': isUser,
       'timestamp': timestamp.toIso8601String(),
       'audioUrl': audioUrl,
+      'sequence': sequence,
     };
   }
 
@@ -50,6 +55,7 @@ class TherapyMessage {
       isUser: json['isUser'],
       timestamp: DateTime.parse(json['timestamp']),
       audioUrl: json['audioUrl'],
+      sequence: json['sequence'],
     );
   }
-} 
+}

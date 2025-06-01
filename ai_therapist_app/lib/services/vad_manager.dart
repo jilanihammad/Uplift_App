@@ -23,14 +23,14 @@ class VADManager {
 
   // Amplitude thresholds
   final double _speechStartThreshold =
-      -25.0; // dB (higher means more sensitive)
-  final double _speechEndThreshold = -35.0; // dB (made less strict - was -45.0)
+      -15.0; // dB (higher means more sensitive)
+  final double _speechEndThreshold = -25.0; // dB (made less strict - was -45.0)
 
   // Processing options
   final int _consecutiveLoudFramesRequired =
       2; // More responsive speech detection
   final int _consecutiveQuietFramesRequired =
-      6; // Faster speech end detection (was 10)
+      10; // Faster speech end detection (was 10)
 
   // Silence timeouts (ms)
   final int _maxSilenceDuration =

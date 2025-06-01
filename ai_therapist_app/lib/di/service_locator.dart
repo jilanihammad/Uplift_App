@@ -1,28 +1,27 @@
 // lib/di/service_locator.dart
 import 'package:get_it/get_it.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/datasources/remote/api_client.dart';
 import '../data/datasources/local/prefs_manager.dart';
 import '../data/datasources/local/app_database.dart';
-import '../data/datasources/local/database_helper.dart';
-
 import '../data/repositories/auth_repository.dart';
 import '../data/repositories/user_repository.dart';
+import '../services/langchain/custom_langchain.dart';
 import '../data/repositories/session_repository.dart';
 import '../data/repositories/message_repository.dart';
 
 import '../services/auth_service.dart';
-import '../services/notification_service.dart';
+import '../services/notification_service.dart' as service_ns;
 import '../services/voice_service.dart';
 import '../services/therapy_service.dart';
+import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
 import '../services/preferences_service.dart';
 import '../services/progress_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/onboarding_service.dart';
-import '../services/memory_service.dart';
-import '../services/therapy_graph_service.dart';
+import '../services/memory_service.dart' as service_ms;
+import '../services/therapy_graph_service.dart' as service_tgs;
 import '../services/config_service.dart';
 import '../services/firebase_service.dart';
 import '../services/backend_service.dart';
@@ -34,7 +33,6 @@ import '../data/datasources/local/database_provider.dart';
 import '../services/memory_manager.dart';
 import '../services/message_processor.dart';
 import '../services/audio_generator.dart';
-import '../services/conversation_flow_manager.dart';
 import 'package:ai_therapist_app/utils/database_helper.dart';
 import '../services/groq_service.dart';
 import '../services/vad_manager.dart';
@@ -152,9 +150,9 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered ConnectivityChecker');
     }
 
-    if (!serviceLocator.isRegistered<NotificationService>()) {
-      serviceLocator.registerLazySingleton<NotificationService>(
-          () => NotificationService());
+    if (!serviceLocator.isRegistered<service_ns.NotificationService>()) {
+      serviceLocator.registerLazySingleton<service_ns.NotificationService>(
+          () => service_ns.NotificationService());
       debugPrint('Registered NotificationService');
     }
 
@@ -172,10 +170,11 @@ Future<void> setupServiceLocator() async {
     // ===== SIMPLE DOMAIN SERVICES =====
     // These services have minimal dependencies but may need initialization later
 
-    if (!serviceLocator.isRegistered<MemoryService>()) {
-      serviceLocator.registerLazySingleton<MemoryService>(() => MemoryService(
-            databaseProvider: serviceLocator<DatabaseProvider>(),
-          ));
+    if (!serviceLocator.isRegistered<service_ms.MemoryService>()) {
+      serviceLocator.registerLazySingleton<service_ms.MemoryService>(
+          () => service_ms.MemoryService(
+                databaseProvider: serviceLocator<DatabaseProvider>(),
+              ));
       debugPrint('Registered MemoryService with constructor injection');
     }
 
@@ -184,7 +183,7 @@ Future<void> setupServiceLocator() async {
       serviceLocator.registerLazySingleton<MemoryManager>(() {
         debugPrint('Creating MemoryManager instance (lazy initialization)');
         final manager = MemoryManager(
-          memoryService: serviceLocator<MemoryService>(),
+          memoryService: serviceLocator<service_ms.MemoryService>(),
         );
 
         // Initialize only if needed when first accessed
@@ -198,19 +197,64 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered MemoryManager with true lazy initialization');
     }
 
+    // ===== REGISTER ConversationBufferMemory (if not already done elsewhere) =====
+    // This is a dependency for MessageProcessor
+    if (!serviceLocator.isRegistered<ConversationBufferMemory>()) {
+      serviceLocator.registerLazySingleton<ConversationBufferMemory>(
+        // This will now unambiguously refer to the one from custom_langchain.dart
+        () => ConversationBufferMemory(maxMessages: 20),
+      );
+      debugPrint('Registered ConversationBufferMemory');
+    }
+
+    // ===== REGISTER TherapyService (BEFORE MessageProcessor) =====
+    // This is a dependency for MessageProcessor
+    // Ensure its own dependencies (AudioGenerator, MemoryManager, ApiClient) are resolvable
+    if (!serviceLocator.isRegistered<TherapyService>()) {
+      serviceLocator.registerLazySingleton<TherapyService>(() {
+        debugPrint('Creating TherapyService instance (lazy initialization)');
+        return TherapyService(
+          // Ensure these are registered or resolvable by serviceLocator
+          // ConfigService will be needed by ApiClient if ApiClient is created here or passed
+          // For now, assuming ApiClient is registered elsewhere (e.g. in registerApiDependentServices)
+          // and that ConfigService is also available to ApiClient when it's created.
+          messageProcessor: serviceLocator<
+              MessageProcessor>(), // This creates a circular dependency if MessageProcessor needs TherapyService. Re-evaluate.
+          audioGenerator: serviceLocator<AudioGenerator>(),
+          memoryManager: serviceLocator<MemoryManager>(),
+          apiClient:
+              serviceLocator<ApiClient>(), // ApiClient needs ConfigService
+        );
+      });
+      debugPrint('Registered TherapyService');
+    }
+
+    // ===== CORRECTED MessageProcessor REGISTRATION =====
     if (!serviceLocator.isRegistered<MessageProcessor>()) {
       serviceLocator.registerLazySingleton<MessageProcessor>(() {
         debugPrint('Creating MessageProcessor instance (lazy initialization)');
+
+        VoiceSessionBloc? vsBloc;
+        try {
+          vsBloc = serviceLocator<VoiceSessionBloc>();
+        } catch (e) {
+          debugPrint(
+              'VoiceSessionBloc not found in serviceLocator for MessageProcessor. This might be an issue if MessageProcessor strictly requires it at instantiation.');
+        }
+
         final processor = MessageProcessor(
-          apiClient: serviceLocator<ApiClient>(),
+          voiceSessionBloc: vsBloc,
+          conversationHistory: serviceLocator<
+              ConversationBufferMemory>(), // This should now be unambiguous
+          configService: serviceLocator<ConfigService>(),
         );
 
-        // Nothing to initialize for MessageProcessor
         DependencyStatus.markInitialized('MessageProcessor');
-
+        debugPrint('MessageProcessor instance created and marked initialized.');
         return processor;
       });
-      debugPrint('Registered MessageProcessor with constructor injection');
+      debugPrint(
+          'Registered MessageProcessor with correct constructor injection');
     }
 
     if (!serviceLocator.isRegistered<AudioGenerator>()) {
@@ -251,16 +295,17 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered VoiceService with true lazy initialization');
     }
 
-    if (!serviceLocator.isRegistered<TherapyGraphService>()) {
-      serviceLocator.registerLazySingleton<TherapyGraphService>(
-          () => TherapyGraphService());
+    if (!serviceLocator.isRegistered<service_tgs.TherapyGraphService>()) {
+      serviceLocator.registerLazySingleton<service_tgs.TherapyGraphService>(
+          () => service_tgs.TherapyGraphService());
       debugPrint('Registered TherapyGraphService');
     }
 
     if (!serviceLocator.isRegistered<ProgressService>()) {
       serviceLocator.registerLazySingleton<ProgressService>(() =>
           ProgressService(
-              notificationService: serviceLocator<NotificationService>()));
+              notificationService:
+                  serviceLocator<service_ns.NotificationService>()));
       debugPrint('Registered ProgressService');
     }
 

@@ -6,16 +6,19 @@ import '../data/datasources/remote/api_client.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import '../config/llm_config.dart'; // Import LLM Configuration
+import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
+import './langchain/custom_langchain.dart'; // Added for ConversationBufferMemory
+import './config_service.dart'; // Added for ConfigService
 
 /// Handles processing of user messages and generating AI responses
 class MessageProcessor {
-  // API client for making requests
-  final ApiClient _apiClient;
+  final VoiceSessionBloc? _voiceSessionBloc;
+  final ConversationBufferMemory _conversationHistory;
+  final ConfigService _configService;
+  final ApiClient apiClient;
 
-  // Flag to control whether to use direct LLM calls or backend proxy
-  // Set this to true to bypass backend and call LLM providers directly
-  static const bool _useDirectLLMCalls =
-      false; // Change to true to enable direct calls
+  bool _directLLMEnabled = false;
+  static const String _directLLMLogTag = '[MessageProcessorDirectLLM]';
 
   // Cache for API responses to avoid redundant processing
   final Map<String, String> _responseCache = {};
@@ -54,45 +57,71 @@ class MessageProcessor {
     ]
   };
 
-  // Constructor
-  MessageProcessor({required ApiClient apiClient}) : _apiClient = apiClient;
+  MessageProcessor({
+    required VoiceSessionBloc? voiceSessionBloc,
+    required ConversationBufferMemory conversationHistory,
+    required ConfigService configService,
+  })  : _voiceSessionBloc = voiceSessionBloc,
+        _conversationHistory = conversationHistory,
+        _configService = configService,
+        apiClient = ApiClient(configService: configService) {
+    _init();
+    debugPrint(
+        '[MessageProcessor] Initialized. ApiClient hash: ${apiClient.hashCode}');
+  }
+
+  Future<void> _init() async {
+    // Initialize _directLLMEnabled, perhaps from _configService or AppConfig
+    // Assuming ConfigService holds this mode flag or can derive it
+    _directLLMEnabled = _configService.directLLMModeEnabled;
+    debugPrint(
+        '[MessageProcessor] _init complete. Direct LLM Mode: $_directLLMEnabled');
+  }
 
   /// Process a user message and get an AI response
-  Future<String> processMessage(String userMessage, String systemPrompt,
-      Map<String, dynamic> graphResult) async {
+  Future<String> processMessage(
+    String userMessage,
+    String systemPrompt,
+    Map<String, dynamic> graphResult, {
+    List<Map<String, String>>? history,
+  }) async {
     try {
-      // Check if the message is empty
       if (userMessage.trim().isEmpty) {
         return "I didn't catch that. Could you please repeat?";
       }
 
       log.d(
           'Processing message with graph state: ${graphResult['state'] ?? 'unknown'}');
+      if (history != null && history.isNotEmpty) {
+        log.d('MessageProcessor received history of length: ${history.length}');
+        // Log the actual history content for debugging if needed (be mindful of PII in production logs)
+        // history.forEach((msg) => log.d('History: Role: ${msg["role"]}, Content: ${msg["content"]?.substring(0, min(msg["content"]?.length ?? 0, 50))}...'));
+      } else {
+        log.d('MessageProcessor received no history or empty history.');
+      }
 
-      // Check cache for existing response
-      if (_responseCache.containsKey(userMessage)) {
-        log.d('Cache hit! Using cached response');
-        return _responseCache[userMessage]!;
+      final cacheKey =
+          '$userMessage-${systemPrompt.hashCode}-${graphResult.toString()}-${history?.toString().hashCode ?? 0}';
+      if (_responseCache.containsKey(cacheKey)) {
+        log.d('Cache hit! Using cached response for key: $cacheKey');
+        return _responseCache[cacheKey]!;
       }
 
       String response;
 
-      if (_useDirectLLMCalls) {
-        // Make direct LLM API call
+      if (_directLLMEnabled) {
         response = await _processMessageDirectLLM(
-            userMessage, systemPrompt, graphResult);
+            userMessage, systemPrompt, graphResult,
+            history: history);
       } else {
-        // Use backend proxy (original behavior)
         response = await _processMessageViaBackend(
-            userMessage, systemPrompt, graphResult);
+            userMessage, systemPrompt, graphResult,
+            history: history);
       }
 
-      // Cache the response for future use
-      _responseCache[userMessage] = response;
+      _responseCache[cacheKey] = response;
 
-      // Limit cache size to avoid memory issues
       if (_responseCache.length > 100) {
-        // Remove oldest entries when cache gets too large
         final oldestKey = _responseCache.keys.first;
         _responseCache.remove(oldestKey);
       }
@@ -105,20 +134,28 @@ class MessageProcessor {
   }
 
   /// Process message using direct LLM API calls
-  Future<String> _processMessageDirectLLM(String userMessage,
-      String systemPrompt, Map<String, dynamic> graphResult) async {
+  Future<String> _processMessageDirectLLM(
+    String userMessage,
+    String systemPrompt,
+    Map<String, dynamic> graphResult, {
+    List<Map<String, String>>? history,
+  }) async {
     try {
       log.d(
           'Using direct LLM calls (${LLMConfig.activeLLMProvider} - ${LLMConfig.activeLLMModelId})');
 
-      // Build the effective system prompt with context
       final effectiveSystemPrompt =
           _buildSystemPrompt(systemPrompt, graphResult);
 
-      // Make direct LLM call
-      final response = await _apiClient.callLLMDirect(
+      // Use the internal conversation history
+      final currentLLMHistory = _conversationHistory.getMessages();
+      log.d(
+          '[MessageProcessorDirectLLM] Using internal history of length: ${currentLLMHistory.length}');
+
+      final response = await apiClient.callLLMDirect(
         effectiveSystemPrompt,
         userMessage,
+        conversationHistory: currentLLMHistory,
         additionalParams: {
           'temperature': 0.7,
           'max_tokens': 1000,
@@ -130,44 +167,67 @@ class MessageProcessor {
 
         if (kDebugMode) {
           print(
-              '[MessageProcessor] Direct LLM response received: ${responseText.length} characters');
+              '$_directLLMLogTag Direct LLM response received: ${responseText.length} characters');
           if (response.containsKey('usage')) {
-            print('[MessageProcessor] Token usage: ${response['usage']}');
+            print('$_directLLMLogTag Token usage: ${response['usage']}');
           }
         }
 
         return responseText.trim();
       } else {
-        log.w('Invalid response format from direct LLM call');
+        log.w('$_directLLMLogTag Invalid response format from direct LLM call');
         throw Exception('Invalid response format from LLM');
       }
     } catch (e) {
-      log.e('Error with direct LLM call, falling back to local response', e);
+      log.e(
+          '$_directLLMLogTag Error with direct LLM call, falling back to local response',
+          e);
       return _generateFallbackResponseLocally(userMessage);
     }
   }
 
   /// Process message using backend proxy (original behavior)
-  Future<String> _processMessageViaBackend(String userMessage,
-      String systemPrompt, Map<String, dynamic> graphResult) async {
+  Future<String> _processMessageViaBackend(
+    String userMessage,
+    String systemPrompt,
+    Map<String, dynamic> graphResult, {
+    List<Map<String, String>>? history,
+  }) async {
     try {
-      // Build the request payload
       final effectiveSystemPrompt =
           _buildSystemPrompt(systemPrompt, graphResult);
+
+      // Use the internal conversation history
+      final currentLLMHistory = _conversationHistory.getMessages();
+      log.d(
+          '[MessageProcessorBackend] Using internal history of length: ${currentLLMHistory.length}');
+      if (history != null) {
+        log.d(
+            '[MessageProcessorBackend] Received history parameter with length: ${history.length}');
+      } else {
+        log.d('[MessageProcessorBackend] Received null history parameter.');
+      }
+
       final payload = {
         'message': userMessage,
         'system_prompt': effectiveSystemPrompt,
         'conversation_state': graphResult['state'] ?? 'exploration',
         'emotion': graphResult['analysis']?['emotion'] ?? 'neutral',
         'topics': graphResult['analysis']?['topics'] ?? [],
+        'history': history ??
+            currentLLMHistory, // Ensure we use the passed-in history if available
       };
 
-      // Make the API call
       try {
-        log.d('Preparing to call API endpoint: /ai/response');
-        log.d('Using API URL: ${AppConfig().backendUrl}/ai/response');
+        log.d(
+            'Preparing to call API endpoint: /ai/response with payload: ${json.encode(payload)}');
+        // The AppConfig().backendUrl might be slightly different from _configService.llmApiEndpoint
+        // if directLLMMode is true, but for backend calls, this should be fine.
+        // ApiClient will use the correct base URL from ConfigService.llmApiEndpoint getter.
+        // REMOVED: final backendApiUrl = _configService.backendBaseUrl;
+        // log.d('Using API URL: $backendApiUrl/ai/response');
 
-        final response = await _apiClient.post('/ai/response', body: payload);
+        final response = await apiClient.post('/ai/response', body: payload);
 
         if (response != null && response.containsKey('response')) {
           log.d('API call successful. Response received.');
@@ -179,7 +239,7 @@ class MessageProcessor {
       } catch (e, stackTrace) {
         log.e('Backend API Error', e, stackTrace);
         _logDetailedError(e);
-        throw e; // Re-throw to be caught by outer try-catch
+        throw e; // Re-throw to be caught by the outer try-catch
       }
     } catch (e) {
       log.w('Backend call failed, generating fallback response');
@@ -327,7 +387,7 @@ class MessageProcessor {
     try {
       log.i('Generating session summary for ${messages.length} messages');
 
-      if (_useDirectLLMCalls) {
+      if (_directLLMEnabled) {
         // Use direct LLM call for session summary
         return await _generateSessionSummaryDirectLLM(messages, systemPrompt);
       } else {
@@ -379,7 +439,7 @@ Conversation:
 $conversationText''';
 
       // Make direct LLM call
-      final response = await _apiClient.callLLMDirect(
+      final response = await apiClient.callLLMDirect(
         'You are an expert therapist creating session summaries. Provide thoughtful, actionable insights.',
         summaryPrompt,
         additionalParams: {
@@ -441,7 +501,7 @@ $conversationText''';
           })}');
 
       // Make API call to end session and get summary
-      final response = await _apiClient.post('/therapy/end_session',
+      final response = await apiClient.post('/therapy/end_session',
           body: {'messages': messages, 'system_prompt': systemPrompt});
 
       if (response != null) {
@@ -538,7 +598,7 @@ $conversationText''';
       try {
         // Make a request to the service status endpoint
         log.d('Making request to ${backendUrl}/llm/status');
-        final response = await _apiClient.get('/llm/status');
+        final response = await apiClient.get('/llm/status');
 
         if (response != null) {
           log.d('Service status response: $response');

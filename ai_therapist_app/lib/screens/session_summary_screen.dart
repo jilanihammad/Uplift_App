@@ -1,3 +1,5 @@
+// Screen for displaying the summary of a therapy session immediately after it ends
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
@@ -30,61 +32,157 @@ class SessionSummaryScreen extends StatelessWidget {
         : Duration.zero;
 
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Session Summary'),
+        title: const Text('Session Complete'),
         automaticallyImplyLeading: false,
-        actions: [
-          // Removed share button as requested
-        ],
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        titleTextStyle: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).primaryColor,
+            ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Session summary
-            const SizedBox(height: 8),
-            SessionSummaryCard(summary: summary),
-
-            const SizedBox(height: 24),
-
-            // Action items
-            const Text(
-              'Recommended Action Items',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+            // Success indicator
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(50),
+                ),
+                child: Icon(
+                  Icons.check_circle,
+                  color: Colors.green,
+                  size: 48,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            ActionItemsCard(actionItems: actionItems),
+
+            const SizedBox(height: 16),
+
+            Center(
+              child: Column(
+                children: [
+                  Text(
+                    'Great Session!',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Duration: ${_formatDuration(sessionDuration)}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                  ),
+                ],
+              ),
+            ),
 
             const SizedBox(height: 32),
 
-            // Buttons
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            // Session summary
+            SessionSummaryCard(summary: summary),
+
+            const SizedBox(height: 32),
+
+            // Action items
+            ActionItemsCard(actionItems: actionItems),
+
+            const SizedBox(height: 40),
+
+            // Action buttons
+            Column(
               children: [
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.calendar_month),
-                  label: const Text('Schedule Next'),
-                  onPressed: () {
-                    // Show calendar dialog for scheduling next session
-                    _showScheduleDialog(context);
-                  },
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.calendar_month),
+                    label: const Text('Schedule Next Session'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    onPressed: () {
+                      _showScheduleDialog(context);
+                    },
+                  ),
                 ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.home),
-                  label: const Text('Back to Home'),
-                  onPressed: () {
-                    // Navigate back to home
-                    context.go('/home');
-                  },
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.home),
+                    label: const Text('Back to Home'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(context).primaryColor,
+                      side: BorderSide(
+                        color: Theme.of(context).primaryColor,
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      context.go('/home');
+                    },
+                  ),
                 ),
               ],
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
+
+            // Additional insights or feedback section (if needed)
+            if (actionItems.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.blue.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.blue[600],
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Remember, small steps lead to big changes. Take your time with these action items.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.blue[700],
+                              fontStyle: FontStyle.italic,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 32),
           ],
         ),
       ),
