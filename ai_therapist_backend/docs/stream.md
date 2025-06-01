@@ -586,6 +586,8 @@ async def put_with_memory_tracking(packet, size_bytes):
 - ❌ **Voice consistency with seed parameters**
 - ❌ **Sequence tracking with monotonic IDs**
 - ❌ **Backpressure handling with non-blocking puts**
+- ❌ **Integration with existing LLMManager.stream_chat_completion()**
+- ❌ **Provider-agnostic implementation using LLMConfig**
 
 ### **Step 4: Streaming TTS Processor** ❌ PENDING ❌ NOT TESTED ⭐ **CRITICAL**
 **Duration:** ❌ PENDING
@@ -599,6 +601,9 @@ async def put_with_memory_tracking(packet, size_bytes):
 - ❌ **Voice consistency with seed parameters**
 - ❌ **Sequence preservation and jitter buffer support**
 - ❌ **Graceful TTS error handling**
+- ❌ **Integration with existing LLMManager.stream_text_to_speech()**
+- ❌ **Uses LLMConfig.get_active_model_config(ModelType.TTS)**
+- ❌ **Supports all configured TTS providers (OpenAI, Groq, etc.)**
 
 ### **Step 5: Client Sender with Jitter Buffer Support** ❌ PENDING ❌ NOT TESTED
 **Duration:** ❌ PENDING
@@ -628,6 +633,8 @@ async def put_with_memory_tracking(packet, size_bytes):
 - ❌ **New streaming endpoint: `/api/v1/voice/ws/tts/streaming`**
 - ❌ **Backward compatibility maintained**
 - ❌ **Performance monitoring and cleanup**
+- ❌ **Provider-agnostic: Works with any LLMConfig provider**
+- ❌ **Uses existing LLMManager instance**
 
 ### **Steps 7-10: Error Handling, Optimization, Testing, Deployment** ❌ PENDING ❌ NOT TESTED
 **Duration:** ❌ PENDING
@@ -725,3 +732,64 @@ _recordingStateSub = voiceService.recordingState.listen((recState) {
 ## 🏆 **BACKEND STATUS: READY TO START DEVELOPMENT** ❌
 **All backend implementation steps have been reset to pending.**
 **Ready to begin fresh implementation of streaming TTS architecture.**
+
+### 🔧 **PROVIDER-AGNOSTIC IMPLEMENTATION REQUIREMENTS**
+
+### **🎯 Core Principle: Use Existing LLMManager & LLMConfig**
+The streaming implementation must respect your flexible model provider system:
+
+```python
+# ✅ CORRECT - Use existing LLMManager
+from app.services.llm_manager import LLMManager
+from app.core.llm_config import LLMConfig, ModelType
+
+class StreamingPipeline:
+    def __init__(self):
+        self.llm_manager = LLMManager()
+        
+    async def get_llm_stream(self, message: str, **kwargs):
+        """Use existing LLMManager for streaming responses"""
+        async for chunk in self.llm_manager.stream_chat_completion(
+            message=message, **kwargs
+        ):
+            yield chunk
+    
+    async def get_tts_audio(self, text: str, **kwargs):
+        """Use existing LLMManager for TTS (provider-agnostic)"""
+        # Get active TTS config
+        tts_config = LLMConfig.get_active_model_config(ModelType.TTS)
+        if not tts_config:
+            raise ValueError("No TTS provider configured")
+            
+        # Use LLMManager's TTS method
+        return await self.llm_manager.stream_text_to_speech(
+            text=text, **kwargs
+        )
+```
+
+### **🚨 AVOID: Hardcoded Provider Assumptions**
+```python
+# ❌ WRONG - Don't hardcode providers
+client = OpenAI(api_key="...")  # Bad!
+anthropic_client = Anthropic()  # Bad!
+
+# ✅ CORRECT - Use LLMManager
+llm_manager = LLMManager()  # Automatically uses configured provider
+```
+
+### **🔄 Provider Compatibility Matrix**
+Based on your `LLMConfig`, streaming TTS must work with:
+
+| Provider | LLM Streaming | TTS Support | Transcription |
+|----------|---------------|-------------|---------------|
+| OpenAI | ✅ | ✅ | ✅ |
+| Groq | ✅ | ✅ | ✅ |
+| Anthropic | ✅ | ❌ (Use fallback) | ❌ |
+| Google | ✅ | ❌ (Use fallback) | ❌ |
+| Azure OpenAI | ✅ | ✅ | ✅ |
+| DeepSeek | ✅ | ❌ (Use fallback) | ❌ |
+
+**Implementation Strategy:**
+- For providers without TTS: Use OpenAI as TTS fallback
+- Maintain voice consistency across provider switches
+- Test provider switching mid-conversation
