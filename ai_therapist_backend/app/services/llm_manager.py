@@ -336,11 +336,11 @@ class LLMManager:
             if "temperature" in gen_config_params:
                 request_config["temperature"] = gen_config_params.get("temperature", 0.7)
             if "max_tokens" in gen_config_params:
-                request_config["max_output_tokens"] = gen_config_params.get("max_tokens", 1000)
+                request_config["max_output_tokens"] = gen_config_params.get("max_tokens", 2000)
             elif "maxOutputTokens" in gen_config_params:
-                request_config["max_output_tokens"] = gen_config_params.get("maxOutputTokens", 1000)
+                request_config["max_output_tokens"] = gen_config_params.get("maxOutputTokens", 2000)
             else:
-                request_config["max_output_tokens"] = 1000
+                request_config["max_output_tokens"] = 2000
             if "top_p" in gen_config_params:
                 request_config["top_p"] = gen_config_params.get("top_p", 1.0)
             if "top_k" in gen_config_params:
@@ -361,13 +361,48 @@ class LLMManager:
             elif hasattr(response, 'candidates') and response.candidates:
                 # Try to extract from candidates structure
                 candidate = response.candidates[0]
+                
+                # Check for finish_reason indicating issues
+                if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
+                    finish_reason = str(candidate.finish_reason)
+                    if finish_reason == 'MAX_TOKENS':
+                        logger.warning(f"Google Gemini hit token limit. Consider reducing input length or increasing max_output_tokens.")
+                        # Try to get partial response if available
+                        if hasattr(candidate, 'content') and candidate.content:
+                            if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                                partial_text = candidate.content.parts[0].text
+                                if partial_text and partial_text.strip():
+                                    logger.info(f"Returning partial response due to token limit: {len(partial_text)} characters")
+                                    return partial_text
+                        
+                        # If no partial content, return a helpful message
+                        return "I apologize, but my response was too long. Could you please ask a shorter or more specific question?"
+                    
+                    elif finish_reason in ['SAFETY', 'BLOCKED']:
+                        logger.warning(f"Google Gemini blocked response due to safety filters: {finish_reason}")
+                        return "I apologize, but I cannot provide a response to that request due to safety guidelines."
+                    
+                    elif finish_reason == 'RECITATION':
+                        logger.warning(f"Google Gemini blocked response due to recitation concerns: {finish_reason}")
+                        return "I apologize, but I cannot provide that specific information. Could you rephrase your question?"
+                
+                # Normal content extraction
                 if hasattr(candidate, 'content') and candidate.content:
                     if hasattr(candidate.content, 'parts') and candidate.content.parts:
                         return candidate.content.parts[0].text
                     elif hasattr(candidate.content, 'text'):
                         return candidate.content.text
             
+            # Log detailed response structure for debugging
             logger.error(f"Could not extract text from Google response. Response structure: {response}")
+            
+            # Check if response has usage metadata to provide more context
+            if hasattr(response, 'usage_metadata'):
+                usage = response.usage_metadata
+                logger.error(f"Token usage - Prompt: {getattr(usage, 'prompt_token_count', 'unknown')}, "
+                           f"Candidates: {getattr(usage, 'candidates_token_count', 'unknown')}, "
+                           f"Total: {getattr(usage, 'total_token_count', 'unknown')}")
+            
             raise ValueError("Failed to extract text from Google Gemini response")
 
         except Exception as e:
@@ -594,11 +629,11 @@ class LLMManager:
             if "temperature" in gen_config_params:
                 request_config["temperature"] = gen_config_params.get("temperature", 0.7)
             if "max_tokens" in gen_config_params:
-                request_config["max_output_tokens"] = gen_config_params.get("max_tokens", 1000)
+                request_config["max_output_tokens"] = gen_config_params.get("max_tokens", 2000)
             elif "maxOutputTokens" in gen_config_params:
-                request_config["max_output_tokens"] = gen_config_params.get("maxOutputTokens", 1000)
+                request_config["max_output_tokens"] = gen_config_params.get("maxOutputTokens", 2000)
             else:
-                request_config["max_output_tokens"] = 1000
+                request_config["max_output_tokens"] = 2000
             if "top_p" in gen_config_params:
                 request_config["top_p"] = gen_config_params.get("top_p", 1.0)
             if "top_k" in gen_config_params:
