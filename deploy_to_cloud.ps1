@@ -33,11 +33,7 @@ if (-not $openai_api_key.StartsWith("sk-")) {
 Write-Host "Please enter your Google API key: " -ForegroundColor Yellow -NoNewline
 $google_api_key = Read-Host
 
-<<<<<<< HEAD
-# Validate the Google key format (basic validation - not empty)
-=======
 # Validate the Google key is not empty
->>>>>>> dad21a18eefa2d4c3158206a18a21d00473734bd
 if ([string]::IsNullOrWhiteSpace($google_api_key)) {
     Write-Host "Error: Google API key cannot be empty" -ForegroundColor Red
     exit 1

@@ -461,7 +461,7 @@ class VoiceService {
   Future<String?> streamAndPlayTTS({
     required String text,
     String voice = 'sage',
-    String responseFormat = 'opus',
+    String responseFormat = 'wav',
     void Function(double progress)? onProgress,
     void Function()? onDone,
     void Function(String error)? onError,
@@ -500,7 +500,12 @@ class VoiceService {
             // Write buffer to temp file
             try {
               final tempDir = await getTemporaryDirectory();
-              final ext = responseFormat == 'opus' ? 'ogg' : 'mp3';
+              // Updated file extension logic for WAV format
+              final ext = responseFormat == 'wav'
+                  ? 'wav'
+                  : responseFormat == 'opus'
+                      ? 'ogg'
+                      : 'mp3';
               filePath =
                   '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.$ext';
               tempFile = io.File(filePath!);
@@ -595,7 +600,8 @@ class VoiceService {
   Future<String?> generateAudio(
     String text, {
     String voice = 'sage',
-    String responseFormat = 'opus',
+    String responseFormat =
+        'wav', // Changed from 'opus' to 'wav' for lowest latency
     void Function()? onDone,
     void Function(String error)? onError,
   }) async {
@@ -610,7 +616,7 @@ class VoiceService {
     bool anErrorOccurred = false;
 
     try {
-      // Attempt primary format (e.g., opus)
+      // Attempt primary format (now WAV for lowest latency)
       if (kDebugMode)
         print(
             '[VoiceService] generateAudio: Attempting primary TTS format: $responseFormat');
@@ -630,8 +636,8 @@ class VoiceService {
             print(
                 '[VoiceService] generateAudio: Primary TTS streaming error ($responseFormat): $err');
           }
-          // If primary was opus and it failed, try mp3 as a fallback
-          if (responseFormat == 'opus') {
+          // If primary was WAV and it failed, try mp3 as a fallback
+          if (responseFormat == 'wav') {
             if (kDebugMode) {
               print(
                   '[VoiceService] generateAudio: Retrying TTS streaming with mp3 fallback...');
@@ -664,7 +670,7 @@ class VoiceService {
               // Don't call main onError here yet.
             }
           } else {
-            // If it wasn't opus, or no fallback defined
+            // If it wasn't WAV, or no fallback defined
             anErrorOccurred = true;
           }
         },
@@ -675,7 +681,7 @@ class VoiceService {
         onDone?.call();
         return finalFilePath;
       } else {
-        // If an error occurred in any path (primary non-opus fail, or fallback fail)
+        // If an error occurred in any path (primary non-WAV fail, or fallback fail)
         // and we haven't already returned a successful path from primary.
         // The original onError (from streamAndPlayTTS) should have been specific.
         // Let's use a generic error if finalFilePath is null and an error occurred.
