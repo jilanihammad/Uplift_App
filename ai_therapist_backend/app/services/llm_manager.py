@@ -639,28 +639,35 @@ class LLMManager:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def text_to_speech(self, text: str, output_file: str, response_format: Optional[str] = None, voice: Optional[str] = None, **kwargs):
         """
-        Convert text to speech using the active TTS provider.
+        Convert text to speech and save to file.
         Args:
             text: Text to convert to speech
             output_file: Path to save the audio file
-            response_format: Audio format to return (e.g., 'mp3', 'opus'). Defaults to 'opus'.
+            response_format: Audio format to return (e.g., 'wav', 'mp3'). Defaults to 'wav' for lowest latency.
             voice: Voice to use (optional)
             **kwargs: Additional parameters to override defaults
         Returns:
             True if successful, False otherwise
         """
-        response_format = response_format or "opus"
+        response_format = response_format or "wav"  # Default to WAV for lowest latency streaming
+        
         # Ensure file extension matches format
-        if response_format in ["opus", "ogg_opus"]:
-            if not output_file.endswith(".ogg"):
-                output_file = output_file.rsplit(".", 1)[0] + ".ogg"
-        elif response_format == "mp3":
+        if response_format == "mp3":
             if not output_file.endswith(".mp3"):
                 output_file = output_file.rsplit(".", 1)[0] + ".mp3"
+        elif response_format == "wav":
+            if not output_file.endswith(".wav"):
+                output_file = output_file.rsplit(".", 1)[0] + ".wav"
+        # Support other formats if explicitly requested
+        elif response_format in ["opus", "ogg_opus"]:
+            if not output_file.endswith(".ogg"):
+                output_file = output_file.rsplit(".", 1)[0] + ".ogg"
+        
         if not self.tts_config:
             raise ValueError("No TTS configuration available")
         if not LLMConfig.is_model_available(ModelType.TTS):
             raise ValueError("TTS service unavailable - API key not set")
+        
         # Route to appropriate provider
         if self.tts_config.provider in [ModelProvider.OPENAI, ModelProvider.GROQ]:
             return await self._openai_text_to_speech(text, voice=voice, response_format=response_format, **kwargs)
@@ -704,16 +711,18 @@ class LLMManager:
         Args:
             text: Text to convert to speech
             voice: Voice to use (optional)
-            response_format: Audio format to return (e.g., 'mp3', 'opus'). Defaults to 'opus'.
+            response_format: Audio format to return (e.g., 'wav', 'mp3'). Defaults to 'wav' for lowest latency.
             **kwargs: Additional parameters to override defaults
         Yields:
             Base64-encoded audio chunks
         """
-        response_format = response_format or "opus"
+        response_format = response_format or "wav"  # Default to WAV for lowest latency streaming
+        
         if not self.tts_config:
             raise ValueError("No TTS configuration available")
         if not LLMConfig.is_model_available(ModelType.TTS):
             raise ValueError("TTS service unavailable - API key not set")
+        
         if self.tts_config.provider == ModelProvider.OPENAI:
             # Use httpx for streaming since OpenAI SDK may not support TTS streaming yet
             api_key = LLMConfig.get_api_key(self.tts_config)
@@ -722,6 +731,7 @@ class LLMManager:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
+            
             params = self.tts_config.default_params.copy()
             params.update(kwargs)
             if voice:
@@ -729,7 +739,8 @@ class LLMManager:
             if response_format:
                 params['response_format'] = response_format
             else:
-                response_format = params.get('response_format', 'mp3')
+                response_format = params.get('response_format', 'wav')  # Default to WAV
+            
             payload = {
                 "model": self.tts_config.model_id,
                 "input": text,
@@ -737,6 +748,7 @@ class LLMManager:
                 "response_format": response_format,
                 "stream": True
             }
+            
             import httpx
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream("POST", url, headers=headers, json=payload, timeout=120.0) as resp:

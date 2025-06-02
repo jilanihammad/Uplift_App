@@ -1,6 +1,6 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request, Form, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request, Form, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, Dict, Any
 import logging
 import base64
 import json
@@ -8,13 +8,352 @@ import os
 import aiofiles
 import time
 import tempfile
+import asyncio
+import weakref
+from datetime import datetime, timezone
 
 # Use unified LLM manager instead of individual services
 from app.services.llm_manager import llm_manager
 
+# Import our enhanced streaming pipeline
+from app.services.streaming_pipeline import (
+    EnhancedAsyncPipeline, 
+    StreamingMessage, 
+    FlowControlConfig,
+    create_pipeline
+)
+
+# JWT authentication
+from jose import jwt, JWTError
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Global pipeline instances for connection pooling
+_pipeline_pool: Dict[str, weakref.ReferenceType] = {}
+_pool_lock = asyncio.Lock()
+
+class ConnectionManager:
+    """Manage WebSocket connections with JWT authentication and connection pooling"""
+    
+    def __init__(self):
+        self.active_connections: Dict[str, Dict[str, Any]] = {}
+        self.pipeline_sessions: Dict[str, str] = {}  # session_id -> pipeline_id
+        
+    async def authenticate_websocket(self, websocket: WebSocket, token: str) -> Optional[Dict[str, Any]]:
+        """Authenticate WebSocket connection using JWT token"""
+        try:
+            # Decode and verify JWT token
+            payload = jwt.decode(
+                token, 
+                settings.SECRET_KEY, 
+                algorithms=["HS256"]
+            )
+            
+            # Extract user information
+            user_id = payload.get("sub")
+            if not user_id:
+                logger.warning("JWT token missing user ID")
+                return None
+                
+            # Check token expiration
+            exp = payload.get("exp")
+            if exp and datetime.now(timezone.utc).timestamp() > exp:
+                logger.warning("JWT token expired")
+                return None
+                
+            logger.info(f"WebSocket authentication successful for user: {user_id}")
+            return {
+                "user_id": user_id,
+                "payload": payload
+            }
+            
+        except JWTError as e:
+            logger.warning(f"JWT authentication failed: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Authentication error: {str(e)}")
+            return None
+            
+    async def connect(self, websocket: WebSocket, client_id: str, user_info: Dict[str, Any]):
+        """Accept WebSocket connection and register client"""
+        await websocket.accept()
+        
+        self.active_connections[client_id] = {
+            "websocket": websocket,
+            "user_info": user_info,
+            "connected_at": datetime.now(),
+            "last_activity": datetime.now()
+        }
+        
+        logger.info(f"WebSocket client {client_id} connected for user {user_info['user_id']}")
+        
+    async def disconnect(self, client_id: str):
+        """Remove client from active connections"""
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
+            logger.info(f"WebSocket client {client_id} disconnected")
+            
+        # Clean up pipeline session if exists
+        if client_id in self.pipeline_sessions:
+            pipeline_id = self.pipeline_sessions[client_id]
+            del self.pipeline_sessions[client_id]
+            
+            # Clean up pipeline if no more clients using it
+            await self._cleanup_unused_pipeline(pipeline_id)
+            
+    async def _cleanup_unused_pipeline(self, pipeline_id: str):
+        """Clean up pipeline if no clients are using it"""
+        clients_using_pipeline = [
+            client_id for client_id, pid in self.pipeline_sessions.items() 
+            if pid == pipeline_id
+        ]
+        
+        if not clients_using_pipeline:
+            async with _pool_lock:
+                if pipeline_id in _pipeline_pool:
+                    pipeline_ref = _pipeline_pool[pipeline_id]
+                    pipeline = pipeline_ref()
+                    if pipeline:
+                        try:
+                            await pipeline.stop()
+                            logger.info(f"Cleaned up unused pipeline: {pipeline_id}")
+                        except Exception as e:
+                            logger.error(f"Error cleaning up pipeline {pipeline_id}: {e}")
+                    del _pipeline_pool[pipeline_id]
+                    
+    async def get_or_create_pipeline(self, client_id: str, config: Optional[FlowControlConfig] = None) -> EnhancedAsyncPipeline:
+        """Get existing pipeline or create new one for client"""
+        # Use user-based pipeline pooling to share across sessions
+        user_info = self.active_connections.get(client_id, {}).get("user_info", {})
+        user_id = user_info.get("user_id", "anonymous")
+        pipeline_id = f"pipeline_{user_id}"
+        
+        async with _pool_lock:
+            # Check if pipeline exists and is still valid
+            if pipeline_id in _pipeline_pool:
+                pipeline_ref = _pipeline_pool[pipeline_id]
+                pipeline = pipeline_ref()
+                if pipeline and pipeline.state.value != "error":
+                    self.pipeline_sessions[client_id] = pipeline_id
+                    logger.info(f"Reusing existing pipeline {pipeline_id} for client {client_id}")
+                    return pipeline
+                else:
+                    # Clean up dead reference
+                    del _pipeline_pool[pipeline_id]
+                    
+            # Create new pipeline
+            pipeline = await create_pipeline(config)
+            await pipeline.start()
+            
+            # Store weak reference to allow garbage collection
+            _pipeline_pool[pipeline_id] = weakref.ref(pipeline)
+            self.pipeline_sessions[client_id] = pipeline_id
+            
+            logger.info(f"Created new pipeline {pipeline_id} for client {client_id}")
+            return pipeline
+
+# Global connection manager
+connection_manager = ConnectionManager()
+
+@router.get("/ping")
+async def ping_endpoint():
+    """
+    Cold-start prevention endpoint to keep containers warm
+    Returns server status and readiness information
+    """
+    try:
+        # Test LLM manager availability
+        llm_available = hasattr(llm_manager, 'get_completion') and callable(getattr(llm_manager, 'get_completion'))
+        
+        # Check pipeline creation capability
+        try:
+            test_config = FlowControlConfig()
+            pipeline_ready = True
+        except Exception:
+            pipeline_ready = False
+            
+        status = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "services": {
+                "llm_manager": llm_available,
+                "streaming_pipeline": pipeline_ready,
+                "websocket_ready": True
+            },
+            "cold_start_prevention": True
+        }
+        
+        logger.info("Ping endpoint accessed - cold start prevented")
+        return JSONResponse(content=status)
+        
+    except Exception as e:
+        logger.error(f"Ping endpoint error: {str(e)}")
+        return JSONResponse(
+            content={
+                "status": "degraded", 
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }, 
+            status_code=503
+        )
+
+@router.websocket("/ws/tts/speech")
+async def websocket_streaming_tts(
+    websocket: WebSocket,
+    token: str = Query(..., description="JWT authentication token"),
+    conversation_id: str = Query(..., description="Unique conversation identifier"),
+    voice: str = Query(default="sage", description="TTS voice to use"),
+    format: str = Query(default="wav", description="Audio format (wav for lowest latency)")
+):
+    """
+    Enhanced WebSocket endpoint for real-time streaming TTS speech generation
+    Integrates with the enhanced pipeline for sub-400ms latency
+    
+    Features:
+    - JWT authentication
+    - Connection pooling and reuse
+    - Flow control and backpressure
+    - Jitter buffer support
+    - Sequence preservation
+    - Performance monitoring
+    """
+    client_id = f"client_{int(time.time() * 1000)}_{id(websocket)}"
+    
+    try:
+        # Authenticate WebSocket connection
+        user_info = await connection_manager.authenticate_websocket(websocket, token)
+        if not user_info:
+            await websocket.close(code=1008, reason="Authentication failed")
+            return
+            
+        # Connect client
+        await connection_manager.connect(websocket, client_id, user_info)
+        
+        # Get or create pipeline for this client
+        config = FlowControlConfig()
+        pipeline = await connection_manager.get_or_create_pipeline(client_id, config)
+        
+        # Register client with pipeline
+        init_frame = await pipeline.register_client(client_id, websocket)
+        
+        # Send initialization frame with jitter buffer guidance
+        await websocket.send_text(json.dumps(init_frame))
+        
+        logger.info(f"Streaming WebSocket client {client_id} ready for conversation {conversation_id}")
+        
+        # Main message processing loop
+        while True:
+            try:
+                # Receive message from client
+                data = await websocket.receive_text()
+                message_data = json.loads(data)
+                
+                message_type = message_data.get("type", "text")
+                
+                if message_type == "text":
+                    # Process text message through pipeline
+                    text_content = message_data.get("message", "")
+                    priority = message_data.get("priority", 1)
+                    
+                    if not text_content.strip():
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "error": "Empty message content"
+                        }))
+                        continue
+                        
+                    # Create streaming message
+                    streaming_message = StreamingMessage(
+                        message_id=f"msg_{int(time.time() * 1000)}",
+                        conversation_id=conversation_id,
+                        user_message=text_content,
+                        priority=priority,
+                        metadata={
+                            "client_id": client_id,
+                            "voice": voice,
+                            "format": format,
+                            "user_id": user_info["user_id"]
+                        }
+                    )
+                    
+                    # Add message to pipeline
+                    success = await pipeline.add_message(streaming_message)
+                    
+                    if not success:
+                        await websocket.send_text(json.dumps({
+                            "type": "error", 
+                            "error": "Pipeline queue full - please try again"
+                        }))
+                        continue
+                        
+                    # Send acknowledgment
+                    await websocket.send_text(json.dumps({
+                        "type": "message_received",
+                        "message_id": streaming_message.message_id,
+                        "timestamp": streaming_message.timestamp.isoformat()
+                    }))
+                    
+                elif message_type == "ping":
+                    # Handle ping/pong for connection keepalive
+                    await websocket.send_text(json.dumps({
+                        "type": "pong",
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                    
+                elif message_type == "interrupt":
+                    # Handle client interruption (future enhancement)
+                    logger.info(f"Client {client_id} requested interruption")
+                    await websocket.send_text(json.dumps({
+                        "type": "interrupted",
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                    
+                else:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "error": f"Unknown message type: {message_type}"
+                    }))
+                    
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "error": "Invalid JSON format"
+                }))
+                continue
+            except Exception as e:
+                logger.error(f"Error processing WebSocket message for {client_id}: {str(e)}")
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "error": f"Processing error: {str(e)}"
+                }))
+                continue
+                
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client {client_id} disconnected normally")
+    except Exception as e:
+        logger.error(f"WebSocket error for client {client_id}: {str(e)}")
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except:
+            pass  # WebSocket might already be closed
+    finally:
+        # Clean up client connection and pipeline session
+        await connection_manager.disconnect(client_id)
+        
+        # Unregister from pipeline if it exists
+        if client_id in connection_manager.pipeline_sessions:
+            pipeline_id = connection_manager.pipeline_sessions[client_id]
+            if pipeline_id in _pipeline_pool:
+                pipeline_ref = _pipeline_pool[pipeline_id]
+                pipeline = pipeline_ref()
+                if pipeline:
+                    try:
+                        await pipeline.unregister_client(client_id)
+                    except Exception as e:
+                        logger.error(f"Error unregistering client {client_id}: {e}")
 
 @router.post("/synthesize", response_class=JSONResponse)
 async def synthesize_voice(request: Request):

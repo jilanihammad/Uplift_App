@@ -19,7 +19,8 @@ class TTSStreamingService {
   Future<void> connectAndRequestTTS({
     required String text,
     String voice = 'sage',
-    String responseFormat = 'opus',
+    String responseFormat =
+        'wav', // Changed from 'opus' to 'wav' for lowest latency streaming
     void Function(double progress)? onProgress,
     void Function()? onDone,
     void Function(String error)? onError,
@@ -68,8 +69,14 @@ class TTSStreamingService {
     try {
       // Write buffer to a temporary file and play from file
       final tempDir = await getTemporaryDirectory();
+      // Updated file extension logic for WAV format
+      final ext = format == 'wav'
+          ? 'wav'
+          : format == 'opus'
+              ? 'ogg'
+              : 'mp3';
       final tempFile = File(
-          '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.${format == 'opus' ? 'ogg' : 'mp3'}');
+          '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.$ext');
       await tempFile.writeAsBytes(_audioBuffer);
 
       await _player.setFilePath(tempFile.path);
