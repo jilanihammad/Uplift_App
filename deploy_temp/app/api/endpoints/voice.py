@@ -296,12 +296,14 @@ class JWTSecurityManager:
         self.invalidated_tokens: Set[str] = set()
         # Track active WebSocket sessions
         self.active_sessions: Dict[str, Dict[str, Any]] = {}
+        # Track client sequence numbers for replay attack prevention
+        self.client_sequences: Dict[str, int] = {}
         # Maximum session lifetime (8 hours)
         self.max_session_lifetime_seconds = 8 * 60 * 60
         # Token refresh grace period (5 minutes)
         self.token_refresh_grace_period = 5 * 60
-        # Maximum concurrent sessions
-        self.max_concurrent_sessions = 3
+        # Maximum concurrent sessions (reduced from 3 to 2 per engineer recommendation)
+        self.max_concurrent_sessions = 2
         # Session lifetime in hours
         self.session_lifetime_hours = 8
         
@@ -349,6 +351,9 @@ class JWTSecurityManager:
             logger.warning(f"Session limit reached for user {user_id}, rejecting new session {client_id}")
             return False
         
+        # Initialize client sequence tracking
+        self.client_sequences[client_id] = 0
+        
         # Register new session
         self.active_sessions[client_id] = {
             "client_id": client_id,
@@ -363,6 +368,47 @@ class JWTSecurityManager:
         
         logger.info(f"Registered WebSocket session {client_id} for user {user_id}")
         return True
+        
+    def validate_client_sequence(self, client_id: str, sequence: int) -> bool:
+        """
+        Validate client sequence number to prevent replay attacks
+        
+        Args:
+            client_id: Client identifier
+            sequence: Sequence number from client frame
+            
+        Returns:
+            bool: True if sequence is valid, False if replay detected
+        """
+        if client_id not in self.client_sequences:
+            logger.warning(f"No sequence tracking for client {client_id}")
+            return False
+            
+        last_seen = self.client_sequences[client_id]
+        
+        # Sequence must be strictly increasing
+        if sequence <= last_seen:
+            logger.warning(f"Replay attack detected: client {client_id} sent sequence {sequence}, last seen {last_seen}")
+            return False
+            
+        # Update last seen sequence
+        self.client_sequences[client_id] = sequence
+        logger.debug(f"Client {client_id} sequence validated: {sequence}")
+        return True
+        
+    def reset_client_sequence(self, client_id: str) -> None:
+        """Reset client sequence counter (e.g., on reconnection)"""
+        if client_id in self.client_sequences:
+            self.client_sequences[client_id] = 0
+            logger.info(f"Client {client_id} sequence reset")
+            
+    def get_client_sequence_status(self, client_id: str) -> Dict[str, Any]:
+        """Get sequence tracking status for client"""
+        return {
+            "client_id": client_id,
+            "last_seen_sequence": self.client_sequences.get(client_id, 0),
+            "tracking_active": client_id in self.client_sequences
+        }
         
     def validate_session_lifetime(self, client_id: str) -> bool:
         """
@@ -403,6 +449,11 @@ class JWTSecurityManager:
             del self.active_sessions[client_id]
             logger.info(f"Session terminated: {client_id}")
             
+        # Clean up sequence tracking
+        if client_id in self.client_sequences:
+            del self.client_sequences[client_id]
+            logger.debug(f"Sequence tracking cleaned up for client {client_id}")
+            
     def cleanup_expired_sessions(self):
         """Remove expired sessions from active tracking"""
         current_time = datetime.now(timezone.utc)
@@ -421,6 +472,9 @@ class JWTSecurityManager:
         for client_id in expired_clients:
             logger.info(f"Cleaning up expired session: {client_id}")
             del self.active_sessions[client_id]
+            # Clean up sequence tracking
+            if client_id in self.client_sequences:
+                del self.client_sequences[client_id]
 
 # Global JWT security manager
 jwt_security = JWTSecurityManager()
@@ -730,6 +784,64 @@ async def websocket_streaming_tts(
                 message_data = json.loads(data)
                 
                 message_type = message_data.get("type", "text")
+                
+                # Handle init message for protocol versioning (Issue #5)
+                if message_type == "init":
+                    client_protocol_version = message_data.get("proto_version", 1)
+                    server_protocol_version = 2  # Current server protocol version
+                    
+                    # Version compatibility check
+                    if client_protocol_version < 1 or client_protocol_version > server_protocol_version:
+                        await websocket.send_text(json.dumps({
+                            "type": "protocol_error",
+                            "error": f"Unsupported protocol version {client_protocol_version}",
+                            "supported_versions": [1, 2],
+                            "server_version": server_protocol_version
+                        }))
+                        break
+                    
+                    # Store negotiated protocol version for this client
+                    websocket._protocol_version = client_protocol_version
+                    
+                    # Send init response with version confirmation
+                    await websocket.send_text(json.dumps({
+                        "type": "init_response",
+                        "proto_version": client_protocol_version,
+                        "server_version": server_protocol_version,
+                        "features": {
+                            "binary_frames": supports_binary,
+                            "sequence_validation": True,
+                            "rate_limiting": True,
+                            "origin_validation": True
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                    
+                    logger.info(f"Protocol version {client_protocol_version} negotiated for client {client_id}")
+                    continue
+                
+                # For protocol version 2+, validate client sequence numbers (Issue #2)
+                if hasattr(websocket, '_protocol_version') and websocket._protocol_version >= 2:
+                    client_seq = message_data.get("client_seq")
+                    if client_seq is None:
+                        await websocket.send_text(json.dumps({
+                            "type": "sequence_error",
+                            "error": "Missing client_seq field in frame",
+                            "protocol_version": websocket._protocol_version
+                        }))
+                        continue
+                        
+                    # Validate sequence number
+                    if not jwt_security.validate_client_sequence(client_id, client_seq):
+                        await websocket.send_text(json.dumps({
+                            "type": "replay_attack_detected",
+                            "error": "Invalid sequence number - possible replay attack",
+                            "client_seq": client_seq,
+                            "expected_greater_than": jwt_security.client_sequences.get(client_id, 0)
+                        }))
+                        # Log security incident
+                        logger.warning(f"SECURITY: Replay attack detected from client {client_id}, user {user_info['user_id']}")
+                        break
                 
                 if message_type == "text":
                     # Step 12: Check rate limiting before processing text message
