@@ -17,7 +17,7 @@ import time
 import logging
 import weakref
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, AsyncGenerator, List, Callable
+from typing import Dict, Any, Optional, AsyncGenerator, List, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
@@ -44,6 +44,8 @@ class FlowControlState(Enum):
     THROTTLED = "throttled"
     PAUSED = "paused"
     RECOVERING = "recovering"
+    INTERRUPTING = "interrupting"  # New state for interrupt handling
+    DRAINING = "draining"          # New state for pipeline drainage
 
 
 @dataclass
@@ -110,6 +112,16 @@ class FlowControlConfig:
     jitter_buffer_min_ms: int = 100      # Minimum buffer for smooth playback
     jitter_buffer_max_ms: int = 500      # Maximum buffer to avoid latency
     jitter_buffer_target_ms: int = 200   # Target buffer size
+    
+    # Multi-format TTS support
+    supported_formats: List[str] = field(default_factory=lambda: ["wav", "opus", "aac"])
+    default_format: str = "wav"          # Lowest latency format
+    fallback_format: str = "opus"        # High compression for poor networks
+    high_quality_format: str = "aac"     # High quality for good networks
+    
+    # Network quality thresholds for format negotiation
+    poor_network_threshold_ms: int = 800   # >800ms latency = poor network
+    good_network_threshold_ms: int = 200   # <200ms latency = good network
 
 
 @dataclass
@@ -138,15 +150,17 @@ class AudioChunk:
 
 class EnhancedAsyncPipeline:
     """
-    Enhanced async pipeline with intelligent backpressure and flow control.
+    Enhanced async pipeline with comprehensive flow control, jitter buffer support,
+    performance monitoring, memory management, interrupt handling, and production optimizations.
     
     Features:
-    - Smart backpressure with stale chunk detection
-    - Flow control that pauses upstream when queues are full
-    - Jitter buffer guidance for mobile optimization
-    - Comprehensive error isolation and recovery
-    - Resource management with memory limits
-    - Performance monitoring and metrics
+    - Real-time TTS streaming with sub-400ms latency
+    - Flow control and backpressure management  
+    - Jitter buffer guidance for mobile clients
+    - Performance metrics and monitoring
+    - Memory management and cleanup
+    - Interrupt acknowledgment protocol
+    - Multi-format TTS support with network adaptation
     """
     
     def __init__(self, config: Optional[FlowControlConfig] = None):
@@ -193,6 +207,12 @@ class EnhancedAsyncPipeline:
         # Flow control state tracking
         self.backpressure_start_time: Optional[float] = None
         self.stale_chunk_timestamps: Dict[str, float] = {}
+        
+        # Interrupt handling state
+        self.interrupt_requested = False
+        self.interrupt_client_id: Optional[str] = None
+        self.draining_start_time: Optional[float] = None
+        self.pending_chunks_before_interrupt: int = 0
         
     async def start(self) -> None:
         """Start the async pipeline with all components"""
@@ -358,42 +378,295 @@ class EnhancedAsyncPipeline:
             self.logger.info(f"Client unregistered: {client_id}")
     
     def get_metrics(self) -> Dict[str, Any]:
-        """Get comprehensive pipeline metrics"""
+        """Get comprehensive pipeline metrics for monitoring and optimization"""
         return {
             "pipeline_state": self.state.value,
             "flow_control_state": self.flow_state.value,
-            "queue_sizes": {
-                "llm": self.llm_queue.qsize(),
-                "tts": self.tts_queue.qsize(),
-                "client": self.client_queue.qsize()
-            },
-            "performance": {
+            "throughput": {
                 "messages_processed": self.metrics.messages_processed,
                 "chunks_generated": self.metrics.chunks_generated,
-                "audio_chunks_sent": self.metrics.audio_chunks_sent,
-                "avg_llm_latency_ms": round(self.metrics.avg_llm_latency_ms, 2),
-                "avg_tts_latency_ms": round(self.metrics.avg_tts_latency_ms, 2),
-                "avg_end_to_end_ms": round(self.metrics.avg_end_to_end_ms, 2),
-                "time_to_first_audio_ms": round(self.metrics.time_to_first_audio_ms, 2)
+                "audio_chunks_sent": self.metrics.audio_chunks_sent
             },
-            "backpressure": {
+            "timing": {
+                "avg_llm_latency_ms": self.metrics.avg_llm_latency_ms,
+                "avg_tts_latency_ms": self.metrics.avg_tts_latency_ms,
+                "avg_end_to_end_ms": self.metrics.avg_end_to_end_ms,
+                "time_to_first_audio_ms": self.metrics.time_to_first_audio_ms
+            },
+            "queues": {
+                "llm_queue_size": self.llm_queue.qsize(),
+                "tts_queue_size": self.tts_queue.qsize(),
+                "client_queue_size": self.client_queue.qsize(),
+                "max_sizes": {
+                    "llm": self.config.max_llm_queue_size,
+                    "tts": self.config.max_tts_queue_size,
+                    "client": self.config.max_client_queue_size
+                }
+            },
+            "performance": {
                 "backpressure_events": self.metrics.backpressure_events,
                 "stale_chunks_dropped": self.metrics.stale_chunks_dropped,
-                "flow_control_pauses": self.metrics.flow_control_pauses
-            },
-            "memory": {
-                "current_bytes": self.metrics.memory_usage_bytes,
-                "peak_bytes": self.metrics.peak_memory_bytes,
-                "limit_bytes": self.config.max_memory_bytes
+                "flow_control_pauses": self.metrics.flow_control_pauses,
+                "memory_usage_bytes": self.metrics.memory_usage_bytes,
+                "peak_memory_bytes": self.metrics.peak_memory_bytes
             },
             "errors": {
                 "llm_errors": self.metrics.llm_errors,
                 "tts_errors": self.metrics.tts_errors,
                 "client_errors": self.metrics.client_errors
             },
-            "active_clients": len(self.active_clients),
-            "last_activity": self.last_activity_time
+            "targets": {
+                "target_ttfa_ms": self.metrics.target_ttfa_ms,
+                "target_latency_ms": self.metrics.target_latency_ms
+            },
+            "active_clients": len(self.active_clients)
         }
+    
+    def assess_network_quality(self, client_metrics: Dict[str, Any]) -> str:
+        """
+        Assess network quality based on client metrics for adaptive format selection
+        
+        Args:
+            client_metrics: Dictionary containing client network metrics
+            
+        Returns:
+            str: Network quality assessment ("poor", "fair", "good", "excellent")
+        """
+        # Extract key metrics
+        rtt_ms = client_metrics.get("rtt_ms", 0)
+        packet_loss = client_metrics.get("packet_loss_percent", 0)
+        bandwidth_kbps = client_metrics.get("bandwidth_kbps", 0)
+        jitter_ms = client_metrics.get("jitter_ms", 0)
+        
+        # Network quality scoring
+        quality_score = 100
+        
+        # RTT penalties
+        if rtt_ms > self.config.poor_network_threshold_ms:
+            quality_score -= 40
+        elif rtt_ms > self.config.good_network_threshold_ms:
+            quality_score -= 20
+        
+        # Packet loss penalties
+        if packet_loss > 5:
+            quality_score -= 30
+        elif packet_loss > 1:
+            quality_score -= 15
+        
+        # Bandwidth considerations
+        if bandwidth_kbps < 128:  # Very low bandwidth
+            quality_score -= 25
+        elif bandwidth_kbps < 256:  # Low bandwidth
+            quality_score -= 10
+        
+        # Jitter penalties
+        if jitter_ms > 100:
+            quality_score -= 15
+        elif jitter_ms > 50:
+            quality_score -= 8
+        
+        # Classify network quality
+        if quality_score >= 80:
+            return "excellent"
+        elif quality_score >= 60:
+            return "good"
+        elif quality_score >= 40:
+            return "fair"
+        else:
+            return "poor"
+    
+    def select_optimal_format(self, network_quality: str, client_capabilities: Dict[str, Any]) -> str:
+        """
+        Select optimal audio format based on network quality and client capabilities
+        
+        Args:
+            network_quality: Network quality assessment ("poor", "fair", "good", "excellent")
+            client_capabilities: Client capability information
+            
+        Returns:
+            str: Selected audio format
+        """
+        supported_formats = client_capabilities.get("supported_formats", ["wav"])
+        
+        # Format selection logic based on network quality
+        if network_quality == "poor":
+            # Poor network: prioritize compression
+            if "opus" in supported_formats:
+                return "opus"  # Best compression for poor networks
+            elif "aac" in supported_formats:
+                return "aac"   # Good compression alternative
+            else:
+                return "wav"   # Fallback to default
+                
+        elif network_quality == "fair":
+            # Fair network: balance between quality and compression
+            if "aac" in supported_formats:
+                return "aac"   # Good balance of quality and compression
+            elif "opus" in supported_formats:
+                return "opus"  # Good compression
+            else:
+                return "wav"   # Fallback to default
+                
+        elif network_quality in ["good", "excellent"]:
+            # Good/excellent network: prioritize quality and low latency
+            if "wav" in supported_formats:
+                return "wav"   # Lowest latency, highest quality
+            elif "aac" in supported_formats:
+                return "aac"   # High quality alternative
+            else:
+                return "opus"  # Fallback
+        
+        # Default fallback
+        return self.config.default_format
+    
+    def get_format_parameters(self, audio_format: str) -> Dict[str, Any]:
+        """
+        Get optimized parameters for specific audio format
+        
+        Args:
+            audio_format: Audio format name
+            
+        Returns:
+            Dict: Format-specific parameters
+        """
+        format_configs = {
+            "wav": {
+                "response_format": "wav",
+                "sample_rate": 16000,
+                "channels": 1,
+                "bit_depth": 16,
+                "estimated_bitrate_kbps": 256,  # 16kHz * 16bit * 1ch
+                "latency_category": "lowest"
+            },
+            "opus": {
+                "response_format": "opus",
+                "sample_rate": 24000,
+                "channels": 1,
+                "bitrate": "24k",
+                "estimated_bitrate_kbps": 24,
+                "latency_category": "low"
+            },
+            "aac": {
+                "response_format": "aac",
+                "sample_rate": 48000,
+                "channels": 1,
+                "bitrate": "64k",
+                "estimated_bitrate_kbps": 64,
+                "latency_category": "medium"
+            }
+        }
+        
+        return format_configs.get(audio_format, format_configs["wav"])
+    
+    async def request_interrupt(self, client_id: str) -> bool:
+        """
+        Request pipeline interruption for new user input
+        
+        Args:
+            client_id: Client requesting the interruption
+            
+        Returns:
+            bool: True if interrupt was processed successfully
+        """
+        if self.interrupt_requested:
+            self.logger.info(f"Interrupt already in progress, ignoring request from {client_id}")
+            return False
+            
+        self.logger.info(f"Interrupt requested by client {client_id}")
+        
+        # Set interrupt state
+        self.interrupt_requested = True
+        self.interrupt_client_id = client_id
+        self.draining_start_time = time.time()
+        
+        # Count pending chunks in queues
+        self.pending_chunks_before_interrupt = (
+            self.llm_queue.qsize() + 
+            self.tts_queue.qsize() + 
+            self.client_queue.qsize()
+        )
+        
+        # Change flow state to interrupting
+        async with self.flow_control_lock:
+            self.flow_state = FlowControlState.INTERRUPTING
+            
+        # Start draining pipeline
+        await self.drain_pipeline()
+        
+        return True
+        
+    async def drain_pipeline(self) -> None:
+        """
+        Drain the pipeline of pending chunks to prepare for new input
+        """
+        self.logger.info("Starting pipeline drainage for interrupt")
+        
+        async with self.flow_control_lock:
+            self.flow_state = FlowControlState.DRAINING
+            
+        # Clear all queues
+        await self._clear_queues()
+        
+        # Wait a brief moment for any in-flight processing to complete
+        await asyncio.sleep(0.1)
+        
+        # Send interrupt acknowledgment
+        await self.send_interrupt_ack()
+        
+    async def send_interrupt_ack(self) -> None:
+        """
+        Send interrupt acknowledgment after pipeline drainage is complete
+        """
+        if not self.interrupt_requested or not self.interrupt_client_id:
+            return
+            
+        client_id = self.interrupt_client_id
+        drain_time_ms = (time.time() - self.draining_start_time) * 1000 if self.draining_start_time else 0
+        
+        # Create interrupt acknowledgment frame
+        interrupt_ack = {
+            "type": "interrupt_ack",
+            "client_id": client_id,
+            "timestamp": datetime.now().isoformat(),
+            "drainage_info": {
+                "chunks_cleared": self.pending_chunks_before_interrupt,
+                "drain_time_ms": round(drain_time_ms, 2),
+                "pipeline_ready": True
+            },
+            "pipeline_state": {
+                "flow_state": "ready_for_input",
+                "queue_sizes": {
+                    "llm": self.llm_queue.qsize(),
+                    "tts": self.tts_queue.qsize(),
+                    "client": self.client_queue.qsize()
+                }
+            }
+        }
+        
+        # Send acknowledgment to requesting client
+        if client_id in self.active_clients:
+            try:
+                websocket = self.active_clients[client_id]
+                await websocket.send(json.dumps(interrupt_ack))
+                self.logger.info(f"Interrupt acknowledgment sent to {client_id} (drain time: {drain_time_ms:.1f}ms)")
+            except Exception as e:
+                self.logger.warning(f"Failed to send interrupt ack to {client_id}: {e}")
+        
+        # Reset interrupt state
+        self.interrupt_requested = False
+        self.interrupt_client_id = None
+        self.draining_start_time = None
+        self.pending_chunks_before_interrupt = 0
+        
+        # Reset flow state to flowing
+        async with self.flow_control_lock:
+            self.flow_state = FlowControlState.FLOWING
+            
+        self.logger.info("Pipeline interrupt handling completed, ready for new input")
+        
+    def is_interrupting(self) -> bool:
+        """Check if pipeline is currently handling an interrupt"""
+        return self.interrupt_requested or self.flow_state in [FlowControlState.INTERRUPTING, FlowControlState.DRAINING]
     
     # Private methods for pipeline implementation
     
@@ -764,46 +1037,47 @@ class EnhancedAsyncPipeline:
     
     async def _process_tts_chunk(self, text_chunk: TextChunk, conversation_voices: Dict[str, str]) -> None:
         """
-        Process a single text chunk for TTS conversion.
+        Process text chunk through TTS generation with adaptive format selection
         
         Args:
-            text_chunk: The text chunk to convert to audio
-            conversation_voices: Dictionary tracking voice consistency per conversation
+            text_chunk: Text chunk to process
+            conversation_voices: Voice assignments for conversations
         """
+        chunk_timestamp = time.time()
+        sentence_id = text_chunk.metadata.get("sentence_id", "unknown")
+        conversation_id = text_chunk.metadata.get("conversation_id", "unknown")
+        voice = self._get_consistent_voice(conversation_id, text_chunk.metadata.get("voice_seed", "default"), conversation_voices)
+        
+        # Get client capabilities and network metrics for format selection
+        client_metadata = text_chunk.metadata
+        client_capabilities = client_metadata.get("client_capabilities", {"supported_formats": ["wav"]})
+        network_metrics = client_metadata.get("network_metrics", {})
+        
+        # Assess network quality and select optimal format
+        network_quality = self.assess_network_quality(network_metrics) if network_metrics else "good"
+        optimal_format = self.select_optimal_format(network_quality, client_capabilities)
+        format_params = self.get_format_parameters(optimal_format)
+        
+        self.logger.info(f"TTS processing: format={optimal_format}, network={network_quality}, text='{text_chunk.text[:50]}...'")
+        
         try:
-            # Extract metadata for processing
-            conversation_id = text_chunk.metadata.get("conversation_id", "default")
-            sentence_id = text_chunk.metadata.get("sentence_id", "unknown")
-            voice_seed = text_chunk.metadata.get("voice_consistency_seed", "")
-            
-            # Check for stale chunks (older than threshold)
-            chunk_timestamp = text_chunk.metadata.get("timestamp", time.time())
-            current_time = time.time()
-            
-            if isinstance(chunk_timestamp, str):
-                # Convert ISO string to timestamp if needed
-                from datetime import datetime
-                chunk_timestamp = datetime.fromisoformat(chunk_timestamp.replace('Z', '+00:00')).timestamp()
-            
-            chunk_age_ms = (current_time - chunk_timestamp) * 1000
-            
-            if chunk_age_ms > self.config.stale_chunk_threshold_ms:
-                self.logger.warning(f"Dropping stale chunk {sentence_id} (age: {chunk_age_ms:.0f}ms)")
-                self.metrics.stale_chunks_dropped += 1
-                return
-            
-            # Determine voice for consistency
-            voice = self._get_consistent_voice(conversation_id, voice_seed, conversation_voices)
-            
-            # TTS generation parameters
+            # TTS generation parameters with adaptive format
             tts_params = {
                 "voice": voice,
                 "conversation_id": conversation_id,
-                "response_format": "wav",  # Lowest latency format per OpenAI documentation
+                "response_format": format_params["response_format"],
                 "stream": True,
                 "chunk_size": 1024,
                 "real_time": True
             }
+            
+            # Add format-specific parameters
+            if optimal_format == "opus":
+                tts_params["bitrate"] = format_params.get("bitrate", "24k")
+                tts_params["sample_rate"] = format_params.get("sample_rate", 24000)
+            elif optimal_format == "aac":
+                tts_params["bitrate"] = format_params.get("bitrate", "64k")
+                tts_params["sample_rate"] = format_params.get("sample_rate", 48000)
             
             # Add metadata for audio chunks
             audio_metadata = {
@@ -812,7 +1086,9 @@ class EnhancedAsyncPipeline:
                 "is_sentence_end": text_chunk.boundary_type in [BoundaryType.SENTENCE_END, BoundaryType.PARAGRAPH_BREAK],
                 "boundary_type": text_chunk.boundary_type.value,
                 "conversation_id": conversation_id,
-                "audio_format": "wav",
+                "audio_format": optimal_format,
+                "network_quality": network_quality,
+                "format_params": format_params
             }
             
             # Stream TTS audio using existing LLMManager
@@ -830,7 +1106,7 @@ class EnhancedAsyncPipeline:
                     self.logger.warning(f"Failed to decode audio chunk: {e}")
                     continue
                 
-                # Create audio chunk with metadata
+                # Create audio chunk with adaptive format metadata
                 audio_chunk = AudioChunk(
                     chunk_id=f"{sentence_id}_{audio_chunks_generated}",
                     sentence_id=sentence_id,
@@ -840,62 +1116,104 @@ class EnhancedAsyncPipeline:
                     boundary_type=text_chunk.boundary_type,
                     metadata={
                         **text_chunk.metadata,
-                        "audio_format": "wav",
+                        "audio_format": optimal_format,
                         "voice_used": voice,
                         "chunk_index": audio_chunks_generated,
                         "total_chunks": "unknown",  # Will be updated when stream completes
                         "tts_processing_time_ms": (time.time() - chunk_timestamp) * 1000,
                         "is_realtime": True,
                         "streaming": True,
-                        "boundary_type": text_chunk.boundary_type.value  # Add boundary_type to metadata
+                        "boundary_type": text_chunk.boundary_type.value,
+                        "network_quality": network_quality,
+                        "format_params": format_params,
+                        "estimated_bitrate_kbps": format_params["estimated_bitrate_kbps"]
                     }
                 )
                 
                 # Try to add to client queue with flow control
                 success = await self._add_to_client_queue(audio_chunk)
+                
                 if success:
                     audio_chunks_generated += 1
-                    self.metrics.audio_chunks_sent += 1
+                    self.metrics.chunks_generated += 1
+                    
+                    # Update timing metrics for first audio chunk
+                    if audio_chunks_generated == 1:
+                        ttfa_ms = (time.time() - chunk_timestamp) * 1000
+                        self.metrics.update_timing("time_to_first_audio_ms", ttfa_ms)
+                        self.logger.info(f"Time to first audio: {ttfa_ms:.1f}ms (format: {optimal_format})")
                 else:
-                    self.logger.warning(f"Failed to queue audio chunk for client: {audio_chunk.chunk_id}")
-                    break  # Stop processing this text chunk if client queue is full
+                    self.logger.warning(f"Failed to queue audio chunk {audio_chunks_generated} for {sentence_id}")
+                    break
             
-            # Update metadata for the last chunk to mark sentence end
-            if audio_chunks_generated > 0:
-                # The last chunk should be marked as sentence end
-                # This is handled by the client when no more chunks come for this sentence_id
-                pass
+            # Update TTS latency timing
+            total_latency = (time.time() - chunk_timestamp) * 1000
+            self.metrics.update_timing("avg_tts_latency_ms", total_latency)
             
-            self.logger.debug(f"TTS processing complete for {sentence_id}: {audio_chunks_generated} audio chunks generated")
+            self.logger.info(f"TTS completed for '{text_chunk.text[:30]}...': {audio_chunks_generated} chunks, {total_latency:.1f}ms, format: {optimal_format}")
             
         except Exception as e:
-            self.logger.error(f"Error in TTS chunk processing: {e}")
+            self.logger.error(f"TTS processing error for text '{text_chunk.text[:50]}...': {str(e)}")
             self.metrics.tts_errors += 1
             
-            # Generate fallback silent audio chunk for continuity
-            try:
-                fallback_chunk = AudioChunk(
-                    chunk_id=f"{text_chunk.metadata.get('sentence_id', 'fallback')}_error",
-                    sentence_id=text_chunk.metadata.get("sentence_id", "fallback"),
-                    sequence=text_chunk.sequence_id,
-                    audio_data=b'',  # Empty audio data
-                    is_sentence_end=True,
-                    boundary_type=text_chunk.boundary_type,
-                    metadata={
-                        **text_chunk.metadata,
-                        "is_fallback": True,
-                        "error": str(e),
-                        "timestamp": time.time(),
-                        "audio_format": "silent"
+            # Try fallback to default format if adaptive format failed
+            if optimal_format != self.config.default_format:
+                self.logger.info(f"Retrying with fallback format: {self.config.default_format}")
+                try:
+                    fallback_params = self.get_format_parameters(self.config.default_format)
+                    fallback_tts_params = {
+                        "voice": voice,
+                        "conversation_id": conversation_id,
+                        "response_format": fallback_params["response_format"],
+                        "stream": True,
+                        "chunk_size": 1024,
+                        "real_time": True
                     }
-                )
-                
-                await self._add_to_client_queue(fallback_chunk)
-                self.logger.info("Fallback silent chunk generated due to TTS error")
-            except Exception as fallback_error:
-                self.logger.error(f"Failed to generate fallback audio chunk: {fallback_error}")
-                
-            raise
+                    
+                    # Retry with fallback format
+                    audio_chunks_generated = 0
+                    async for audio_chunk_b64 in self._stream_tts_audio(text_chunk.text, fallback_tts_params):
+                        if self.shutdown_event.is_set():
+                            break
+                        
+                        try:
+                            import base64
+                            audio_data = base64.b64decode(audio_chunk_b64)
+                            
+                            audio_chunk = AudioChunk(
+                                chunk_id=f"{sentence_id}_fallback_{audio_chunks_generated}",
+                                sentence_id=sentence_id,
+                                sequence=text_chunk.sequence_id,
+                                audio_data=audio_data,
+                                is_sentence_end=(audio_chunks_generated == 0),
+                                boundary_type=text_chunk.boundary_type,
+                                metadata={
+                                    **text_chunk.metadata,
+                                    "audio_format": self.config.default_format,
+                                    "voice_used": voice,
+                                    "chunk_index": audio_chunks_generated,
+                                    "is_fallback": True,
+                                    "original_format_failed": optimal_format,
+                                    "tts_processing_time_ms": (time.time() - chunk_timestamp) * 1000,
+                                    "boundary_type": text_chunk.boundary_type.value
+                                }
+                            )
+                            
+                            success = await self._add_to_client_queue(audio_chunk)
+                            if success:
+                                audio_chunks_generated += 1
+                            else:
+                                break
+                                
+                        except Exception as decode_error:
+                            self.logger.warning(f"Failed to decode fallback audio chunk: {decode_error}")
+                            continue
+                    
+                    self.logger.info(f"Fallback TTS completed: {audio_chunks_generated} chunks")
+                    
+                except Exception as fallback_error:
+                    self.logger.error(f"Fallback TTS also failed: {str(fallback_error)}")
+                    raise
     
     async def _stream_tts_audio(self, text: str, tts_params: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """
@@ -1048,10 +1366,10 @@ class EnhancedAsyncPipeline:
                     continue
                 
                 # Prepare audio frame with jitter buffer metadata
-                audio_frame = self._prepare_audio_frame(audio_chunk, sequence_counter)
+                audio_frame, binary_data = self._prepare_audio_frame(audio_chunk, sequence_counter)
                 
                 # Send to all active clients with error handling
-                sent_count = await self._send_to_active_clients(audio_frame, audio_chunk.chunk_id)
+                sent_count = await self._send_to_active_clients(audio_frame, audio_chunk.chunk_id, binary_data)
                 
                 if sent_count > 0:
                     chunks_sent += 1
@@ -1081,25 +1399,28 @@ class EnhancedAsyncPipeline:
         await self._handle_clean_disconnection(sequence_counter, chunks_sent)
         self.logger.info("Client sender stopped")
     
-    def _prepare_audio_frame(self, audio_chunk: AudioChunk, sequence_counter: int) -> Dict[str, Any]:
+    def _prepare_audio_frame(self, audio_chunk: AudioChunk, sequence_counter: int, use_binary: bool = False) -> Tuple[Dict[str, Any], bytes]:
         """
         Prepare audio frame with complete jitter buffer metadata
+        Supports both JSON and binary WebSocket frame formats
         
         Args:
             audio_chunk: The audio chunk to send
             sequence_counter: Current sequence number for ordering
+            use_binary: Whether to prepare binary frame format
             
         Returns:
-            Dict: Complete audio frame with metadata
+            Tuple[Dict, bytes]: (metadata_frame, binary_audio_data) for binary mode
+                               or (complete_frame, None) for JSON mode
         """
         import base64
         
-        return {
+        # Common metadata structure
+        metadata = {
             "type": "audio",
             "chunk_id": audio_chunk.chunk_id,
-            "sentence_id": audio_chunk.sentence_id,  # For clean interruption
-            "sequence": sequence_counter,  # Sequence preservation
-            "audio_data": base64.b64encode(audio_chunk.audio_data).decode(),
+            "sentence_id": audio_chunk.sentence_id,
+            "sequence": sequence_counter,
             "is_sentence_end": audio_chunk.is_sentence_end,
             "boundary_type": audio_chunk.boundary_type.value if audio_chunk.boundary_type else "unknown",
             "timestamp": audio_chunk.timestamp.isoformat(),
@@ -1109,7 +1430,7 @@ class EnhancedAsyncPipeline:
                 "sequence_id": sequence_counter,
                 "buffer_hint_ms": self.config.jitter_buffer_target_ms,
                 "is_realtime": True,
-                "max_age_ms": 500  # Drop if older than 500ms
+                "max_age_ms": 500
             },
             
             # Performance metadata
@@ -1134,14 +1455,28 @@ class EnhancedAsyncPipeline:
                 "flow_control_state": self.flow_state.value
             }
         }
-    
-    async def _send_to_active_clients(self, audio_frame: Dict[str, Any], chunk_id: str) -> int:
+        
+        if use_binary:
+            # Binary frame format: 32-bit audio length + raw audio data
+            # Client receives metadata via initial frame, then binary audio
+            metadata["audio_length"] = len(audio_chunk.audio_data)
+            metadata["frame_format"] = "binary"
+            return metadata, audio_chunk.audio_data
+        else:
+            # JSON frame format (existing)
+            metadata["audio_data"] = base64.b64encode(audio_chunk.audio_data).decode()
+            metadata["frame_format"] = "json"
+            return metadata, None
+
+    async def _send_to_active_clients(self, audio_frame: Dict[str, Any], chunk_id: str, binary_data: Optional[bytes] = None) -> int:
         """
         Send audio frame to all active clients with clean error handling
+        Supports both JSON and binary WebSocket frame formats
         
         Args:
-            audio_frame: The audio frame to send
+            audio_frame: The audio frame metadata to send
             chunk_id: Chunk identifier for logging
+            binary_data: Optional binary audio data for binary frame mode
             
         Returns:
             int: Number of clients successfully sent to
@@ -1154,7 +1489,20 @@ class EnhancedAsyncPipeline:
         
         for client_id, websocket in self.active_clients.items():
             try:
-                await websocket.send(json.dumps(audio_frame))
+                # Check if client supports binary frames (based on client capabilities)
+                client_supports_binary = getattr(websocket, '_supports_binary_frames', False)
+                
+                if binary_data and client_supports_binary:
+                    # Send binary frame: metadata + binary audio
+                    # First send metadata as JSON
+                    await websocket.send(json.dumps(audio_frame))
+                    # Then send raw binary audio data
+                    await websocket.send(binary_data)
+                    self.logger.debug(f"Sent binary frame to client {client_id}: {len(binary_data)} bytes")
+                else:
+                    # Send JSON frame (fallback and default)
+                    await websocket.send(json.dumps(audio_frame))
+                    
                 sent_count += 1
                 
             except Exception as e:
@@ -1193,7 +1541,7 @@ class EnhancedAsyncPipeline:
         }
         
         # Send to all active clients
-        await self._send_to_active_clients(checkpoint_frame, f"checkpoint-{sequence_counter}")
+        await self._send_to_active_clients(checkpoint_frame, f"checkpoint-{sequence_counter}", None)
     
     async def _log_performance_metrics(self, chunks_sent: int, sequence_counter: int) -> None:
         """
@@ -1249,7 +1597,7 @@ class EnhancedAsyncPipeline:
         }
         
         # Send to all clients with error handling
-        await self._send_to_active_clients(completion_frame, "completion")
+        await self._send_to_active_clients(completion_frame, "completion", None)
         
         # Log final session statistics
         self.logger.info(

@@ -19,6 +19,30 @@ class Settings(BaseSettings):
     # Default CORS allows all in development, restrict in production
     BACKEND_CORS_ORIGINS: List[str] = ["*"] if not env_settings.is_production else []
 
+    # WebSocket Security Configuration
+    WEBSOCKET_ALLOWED_ORIGINS: List[str] = [
+        "https://localhost:*",  # Local development
+        "https://127.0.0.1:*",  # Local development
+        "https://*.vercel.app",  # Vercel deployments
+        "https://*.netlify.app",  # Netlify deployments
+        "capacitor://localhost",  # Capacitor/Ionic apps
+        "ionic://localhost",  # Ionic apps
+        "http://localhost:*"  # Development only - remove in production
+    ] if not env_settings.is_production else [
+        "capacitor://localhost",  # Production Capacitor apps
+        "ionic://localhost"  # Production Ionic apps
+    ]
+    
+    WEBSOCKET_ALLOWED_SUBPROTOCOLS: List[str] = [
+        "ai-therapist-v1",  # Primary protocol for the app
+        "streaming-tts",    # TTS streaming protocol
+        "therapist-chat"    # Chat protocol
+    ]
+    
+    # WebSocket rate limiting (requests per minute per user)
+    WEBSOCKET_RATE_LIMIT_PER_MINUTE: int = 30
+    WEBSOCKET_RATE_LIMIT_WINDOW_SECONDS: int = 60
+
     # Groq API settings
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_API_BASE_URL: str = os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
@@ -70,6 +94,27 @@ class Settings(BaseSettings):
         elif isinstance(v, list):
             return v
         return ["*"]  # Default to allow all in case of any errors
+
+    @field_validator("WEBSOCKET_ALLOWED_ORIGINS", mode="before")
+    def assemble_websocket_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        """Parse and validate WebSocket allowed origins"""
+        if not v:
+            return ["*"] if not env_settings.is_production else []
+        if isinstance(v, str):
+            if v == "*":
+                return ["*"]
+            try:
+                if v.startswith("["):
+                    import json
+                    return json.loads(v)
+                else:
+                    return [i.strip() for i in v.split(",")]
+            except Exception as e:
+                print(f"Error parsing WebSocket origins: {e}, using defaults")
+                return ["*"] if not env_settings.is_production else []
+        elif isinstance(v, list):
+            return v
+        return ["*"] if not env_settings.is_production else []
 
     # Database settings based on environment
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
