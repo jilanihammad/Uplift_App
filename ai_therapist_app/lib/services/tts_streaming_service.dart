@@ -479,8 +479,10 @@ class TTSStreamingService {
     ));
 
     if (kDebugMode) {
+      final chunkType =
+          _isWavFile(Uint8List.fromList(chunkData)) ? 'WAV' : 'RAW';
       debugPrint(
-          'TTSStreaming: 📥 Added chunk $sequenceNumber (${chunkData.length} bytes)');
+          'TTSStreaming: 📥 Chunk $sequenceNumber ($chunkType, ${chunkData.length}B) - Buffer: ${_audioBuffer.length} total');
       debugPrint(
           'TTSStreaming: 📊 Buffer state - Total chunks: ${_audioBuffer.length}, Last played: $_lastPlayedChunkIndex, Currently playing: $_isPlaying');
 
@@ -560,73 +562,66 @@ class TTSStreamingService {
     _handleError('Server error: $errorMessage');
   }
 
-  /// 🎯 FIXED: Progressive playback with correct index management
+  /// 🎯 FIXED: Progressive playback with atomic buffer snapshots
   Future<void> _startProgressivePlayback() async {
     if (_isPlaying || _audioBuffer.isEmpty) return;
 
-    // Calculate available chunks BEFORE marking as playing
-    final availableChunks = _audioBuffer.length - (_lastPlayedChunkIndex + 1);
+    // 🔧 CRITICAL FIX: Snapshot the buffer state atomically
+    final bufferSnapshot = List<AudioChunk>.from(_audioBuffer);
+    final snapshotStartIndex = _lastPlayedChunkIndex + 1;
+    final snapshotEndIndex = bufferSnapshot.length;
+
+    final availableChunks = snapshotEndIndex - snapshotStartIndex;
     if (availableChunks <= 0) {
       if (kDebugMode) {
-        debugPrint(
-            'TTSStreaming: No new chunks to play (available: $availableChunks, buffer: ${_audioBuffer.length}, lastPlayed: $_lastPlayedChunkIndex)');
+        debugPrint('TTSStreaming: No chunks to play in snapshot');
       }
       return;
     }
 
     _isPlaying = true;
 
-    // 🎯 CRITICAL: Calculate the index range BEFORE processing
-    final startIndex = _lastPlayedChunkIndex + 1;
-    final endIndex = _audioBuffer.length;
-
     if (kDebugMode) {
       debugPrint(
-          'TTSStreaming: Starting progressive playback for chunks $startIndex to ${endIndex - 1} ($availableChunks chunks)');
+          'TTSStreaming: 📸 SNAPSHOT - Playing chunks $snapshotStartIndex to ${snapshotEndIndex - 1} ($availableChunks chunks)');
     }
 
     try {
-      final audioData = _concatenateAudioChunks(_audioBuffer);
+      // 🔧 FIX: Use snapshot instead of live buffer
+      final audioData = _concatenateAudioChunks(
+          bufferSnapshot, snapshotStartIndex, snapshotEndIndex);
 
       if (audioData.isEmpty) {
         if (kDebugMode) {
-          debugPrint(
-              'TTSStreaming: No audio data extracted from chunks $startIndex to ${endIndex - 1}');
+          debugPrint('TTSStreaming: No audio data in snapshot range');
         }
         _isPlaying = false;
         return;
       }
 
-      // Create and play audio
       final completeWavFile = _createWavFile(audioData);
       final tempFile = await _createTempAudioFile(completeWavFile);
 
       if (kDebugMode) {
         debugPrint(
-            'TTSStreaming: Created WAV file with ${completeWavFile.length} bytes for progressive playback');
+            'TTSStreaming: 🎵 Created ${completeWavFile.length} byte WAV from snapshot');
       }
 
       await _audioPlayer.setFilePath(tempFile.path);
       await _audioPlayer.play();
 
-      // 🎯 CRITICAL: Only update index AFTER successful playback start
-      // This ensures we don't lose chunks if playback fails
-      final previousIndex = _lastPlayedChunkIndex;
-      _lastPlayedChunkIndex =
-          endIndex - 1; // Set to last chunk that will be played
+      // 🔧 CRITICAL: Only update index AFTER successful playback start
+      _lastPlayedChunkIndex = snapshotEndIndex - 1;
 
       if (kDebugMode) {
         debugPrint(
-            'TTSStreaming: Progressive playback started successfully, updated index from $previousIndex to $_lastPlayedChunkIndex');
+            'TTSStreaming: ✅ Index updated to $_lastPlayedChunkIndex after snapshot playback');
       }
 
       // Set up completion listener
       await _playerStateSubscription?.cancel();
       _playerStateSubscription = _audioPlayer.playerStateStream.listen((state) {
         if (state.processingState == ProcessingState.completed) {
-          if (kDebugMode) {
-            debugPrint('TTSStreaming: Progressive playback segment completed');
-          }
           _cleanupTempFile(tempFile);
           _handleProgressiveCompletion();
         }
@@ -711,77 +706,75 @@ class TTSStreamingService {
     }
   }
 
-  /// 🎯 ENHANCED: Better chunk concatenation with comprehensive debugging
-  Uint8List _concatenateAudioChunks(List<AudioChunk> chunks) {
-    final startIndex = _lastPlayedChunkIndex + 1;
-    final endIndex = chunks.length;
-
+  /// 🎯 Enhanced concatenation with explicit range and detailed logging
+  Uint8List _concatenateAudioChunks(
+      List<AudioChunk> chunks, int startIndex, int endIndex) {
     if (kDebugMode) {
       debugPrint(
-          'TTSStreaming: Concatenating chunks from index $startIndex to ${endIndex - 1}');
-      debugPrint('TTSStreaming: Total chunks in buffer: ${chunks.length}');
-      debugPrint(
-          'TTSStreaming: Last played chunk index: $_lastPlayedChunkIndex');
-      debugPrint('TTSStreaming: Chunks to process: ${endIndex - startIndex}');
+          'TTSStreaming: 🔧 Concatenating chunks $startIndex to ${endIndex - 1}');
+      debugPrint('TTSStreaming: Chunk buffer size: ${chunks.length}');
     }
 
-    if (startIndex >= endIndex) {
+    if (startIndex >= endIndex || startIndex >= chunks.length) {
       if (kDebugMode) {
-        debugPrint(
-            'TTSStreaming: ⚠️  WARNING - No chunks to concatenate! startIndex ($startIndex) >= endIndex ($endIndex)');
-        debugPrint('TTSStreaming: This indicates the index management bug!');
+        debugPrint('TTSStreaming: ⚠️ Invalid range - no chunks to concatenate');
       }
       return Uint8List(0);
     }
 
     final List<int> pureAudioData = [];
     int totalProcessedBytes = 0;
+    int wavChunks = 0;
+    int rawChunks = 0;
+    int malformedChunks = 0;
 
-    for (int i = startIndex; i < endIndex; i++) {
+    for (int i = startIndex; i < endIndex && i < chunks.length; i++) {
       final chunkData = chunks[i].data;
 
-      if (kDebugMode && i == startIndex) {
-        // Log format detection for first chunk being processed
-        final formatInfo =
-            _isWavFile(chunkData) ? 'WAV format' : 'Raw audio format';
-        debugPrint(
-            'TTSStreaming: Processing chunk $i (${chunkData.length} bytes, $formatInfo)');
-      }
-
       if (_isWavFile(chunkData)) {
-        // Skip WAV header if present (first 44 bytes)
+        wavChunks++;
         if (chunkData.length > 44) {
+          // Extract pure audio data (skip 44-byte WAV header)
           final audioOnly = chunkData.sublist(44);
           pureAudioData.addAll(audioOnly);
           totalProcessedBytes += audioOnly.length;
 
           if (kDebugMode && i == startIndex) {
             debugPrint(
-                'TTSStreaming: Extracted ${audioOnly.length} bytes from WAV chunk (skipped 44-byte header)');
+                'TTSStreaming: 🎵 WAV chunk - extracted ${audioOnly.length} bytes (skipped header)');
           }
         } else {
+          // Malformed WAV chunk - log warning but continue
+          malformedChunks++;
           if (kDebugMode) {
             debugPrint(
-                'TTSStreaming: WAV chunk $i too small (${chunkData.length} bytes), using all data');
+                'TTSStreaming: ⚠️ Malformed WAV chunk $i (${chunkData.length} bytes < 44)');
           }
+          // Use what we have
           pureAudioData.addAll(chunkData);
           totalProcessedBytes += chunkData.length;
         }
       } else {
+        rawChunks++;
         // Raw audio data - use directly
         pureAudioData.addAll(chunkData);
         totalProcessedBytes += chunkData.length;
 
         if (kDebugMode && i == startIndex) {
           debugPrint(
-              'TTSStreaming: Using raw audio data directly (${chunkData.length} bytes)');
+              'TTSStreaming: 🎵 Raw audio chunk - using ${chunkData.length} bytes directly');
         }
       }
     }
 
     if (kDebugMode) {
-      debugPrint(
-          'TTSStreaming: ✅ Concatenated ${endIndex - startIndex} chunks into $totalProcessedBytes bytes of audio data');
+      debugPrint('TTSStreaming: ✅ Audio extraction complete:');
+      debugPrint('  📊 Processed ${endIndex - startIndex} chunks');
+      debugPrint('  🎵 $wavChunks WAV chunks + $rawChunks raw chunks');
+      if (malformedChunks > 0) {
+        debugPrint('  ⚠️ $malformedChunks malformed chunks');
+      }
+      debugPrint('  📦 Total audio data: $totalProcessedBytes bytes');
     }
 
     return Uint8List.fromList(pureAudioData);
