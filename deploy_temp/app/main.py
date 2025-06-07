@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, Request, status, HTTPException, APIRouter, UploadFile, File
+from fastapi import FastAPI, Request, status, HTTPException, APIRouter, UploadFile, File, WebSocket, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 import logging
@@ -1107,15 +1107,23 @@ async def root_add_session_messages_batch(session_id: str, messages: List[dict])
 # Include the root router
 app.include_router(root_router)
 
-# Also add this to the API v1 router
-@app.post(f"{settings.API_V1_STR}/voice/synthesize")
-async def api_v1_voice_synthesize(request: VoiceRequest):
-    """API v1 endpoint for text-to-speech requests."""
-    return await voice_synthesize(request)
+# API version routing - include routers with proper error handling
+try:
+    from app.api.api_v1.api import api_router
+    app.include_router(api_router, prefix=settings.API_V1_STR)
+    logger.info(f"Successfully mounted API router at {settings.API_V1_STR}")
+except Exception as e:
+    logger.error(f"Failed to mount API router: {str(e)}")
+    fallback_app = True
 
-# Include the voice router
-from app.api.endpoints import voice
-app.include_router(voice.router, prefix="/voice", tags=["voice"])
+# Include voice router at root level for backward compatibility
+try:
+    from app.api.endpoints import voice
+    app.include_router(voice.router, prefix="/voice", tags=["voice"])
+    logger.info("Successfully mounted voice router at /voice")
+except Exception as e:
+    logger.error(f"Failed to mount voice router: {str(e)}")
+    fallback_app = True
 
 # Replace old service imports with unified LLM manager
 try:
@@ -1306,6 +1314,41 @@ async def _generate_conversation_based_summary(messages: List[Dict[str, Any]], t
         "action_items": action_items,
         "insights": insights
     }
+
+# Add WebSocket endpoints at root level (without /voice prefix) for direct access
+@app.websocket("/ws/tts/speech")
+async def root_websocket_streaming_tts(
+    websocket: WebSocket,
+    token: str = Query(..., description="JWT authentication token"),
+    conversation_id: str = Query(..., description="Unique conversation identifier"),
+    voice: str = Query(default="sage", description="TTS voice to use"),
+    format: str = Query(default="wav", description="Audio format (wav for lowest latency)")
+):
+    """Root-level WebSocket endpoint for streaming TTS"""
+    try:
+        # Import the websocket function from voice module
+        from app.api.endpoints.voice import websocket_streaming_tts
+        return await websocket_streaming_tts(websocket, token, conversation_id, voice, format)
+    except Exception as e:
+        logger.error(f"Root WebSocket TTS error: {str(e)}")
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except:
+            pass
+
+@app.websocket("/ws/tts")
+async def root_websocket_tts(websocket: WebSocket):
+    """Root-level WebSocket endpoint for basic TTS"""
+    try:
+        # Import the websocket function from voice module
+        from app.api.endpoints.voice import websocket_tts
+        return await websocket_tts(websocket)
+    except Exception as e:
+        logger.error(f"Root WebSocket basic TTS error: {str(e)}")
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except:
+            pass
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

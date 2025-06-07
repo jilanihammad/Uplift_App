@@ -30,6 +30,7 @@ import 'vad_manager.dart';
 import 'audio_player_manager.dart';
 import 'recording_manager.dart';
 import 'base_voice_service.dart' as base_voice;
+import 'tts_streaming_service.dart'; // Import the new enhanced TTS service
 
 // Recording states
 // enum RecordingState { ready, recording, stopped, paused, error } // Now defined in base_voice_service.dart or RecordingManager
@@ -457,10 +458,10 @@ class VoiceService {
     }
   }
 
-  /// Stream TTS audio from backend and play it
+  /// Stream TTS audio from backend and play it using enhanced streaming service
   Future<String?> streamAndPlayTTS({
     required String text,
-    String voice = 'sage',
+    String voice = 'nova',
     String responseFormat = 'wav',
     void Function(double progress)? onProgress,
     void Function()? onDone,
@@ -471,135 +472,91 @@ class VoiceService {
       print('[VoiceService] [TTS] isAiSpeaking set to true (streamAndPlayTTS)');
     _ttsSpeakingStateController.add(true);
     if (kDebugMode) print('[VoiceService] [TTS] TTS state stream set to true');
-    String? filePath;
-    io.File? tempFile; // Keep a reference to the file
+
+    // Use the enhanced TTS streaming service with session management
+    final ttsService = TTSStreamingService();
 
     try {
-      final wsUrl =
-          'wss://ai-therapist-backend-385290373302.us-central1.run.app/voice/ws/tts';
-      final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
-      final List<int> audioBuffer = [];
-      StreamSubscription? subscription;
-
-      final request = jsonEncode({
-        'text': text,
-        'voice': voice,
-        'params': {'response_format': responseFormat},
-      });
-
       final completer = Completer<String?>();
 
-      subscription = channel.stream.listen((event) async {
-        try {
-          final data = jsonDecode(event);
-          if (data['type'] == 'audio_chunk') {
-            final chunk = base64Decode(data['data']);
-            audioBuffer.addAll(chunk);
-            // Optionally, call onProgress
-          } else if (data['type'] == 'done') {
-            // Write buffer to temp file
-            try {
-              final tempDir = await getTemporaryDirectory();
-              // Updated file extension logic for WAV format
-              final ext = responseFormat == 'wav'
-                  ? 'wav'
-                  : responseFormat == 'opus'
-                      ? 'ogg'
-                      : 'mp3';
-              filePath =
-                  '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.$ext';
-              tempFile = io.File(filePath!);
-              await tempFile!.writeAsBytes(audioBuffer);
+      // Monitor performance for debugging
+      final startTime = DateTime.now();
 
-              if (kDebugMode) {
-                final fileSize = await tempFile!.length();
-                print('TTS audio written to $filePath (size: $fileSize bytes)');
-              }
+      // Generate a conversation ID for this TTS session
+      final conversationId =
+          'tts_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}';
 
-              // Use AudioPlayerManager to play the audio and await its completion
-              await _audioPlayerManager.playAudio(filePath!);
-              // Playback is complete here
-
-              // Immediately update TTS state to false so listening can start promptly
-              isAiSpeaking = false;
-              _ttsSpeakingStateController.add(false);
-              if (kDebugMode) {
-                print(
-                    '[VoiceService] [TTS] isAiSpeaking set to false (immediately after playback)');
-                print(
-                    '[VoiceService] [TTS] TTS state stream set to false (immediately after playback)');
-              }
-
-              onDone?.call();
-              if (kDebugMode)
-                print(
-                    '[VoiceService] [TTS] TTS stream done, audio played by manager');
-
-              // Clean up temp file AFTER playback is fully complete
-              // The explicit await _audioPlayerManager.playAudio() handles completion.
-              // No need for player.playerStateStream.listen here for deletion.
-
-              completer.complete(filePath);
-            } catch (e) {
-              onError?.call('Playback error: $e');
-              completer.complete(null);
-            }
-            await subscription?.cancel();
-            await channel.sink.close();
-          } else if (data['type'] == 'error') {
-            if (kDebugMode)
-              print(
-                  '[VoiceService] [TTS] TTS stream error: ${data['detail'] ?? 'Unknown error'}');
-            onError?.call(data['detail'] ?? 'Unknown error');
-            completer.complete(null);
-            await subscription?.cancel();
-            await channel.sink.close();
+      await ttsService.streamAndPlay(
+        text: text,
+        conversationId: conversationId,
+        voice: voice,
+        format: responseFormat,
+        onProgress: (progress) {
+          if (kDebugMode) {
+            print(
+                '[VoiceService] [TTS] Progress: ${(progress * 100).toStringAsFixed(1)}%');
           }
-        } catch (e) {
-          if (kDebugMode)
-            print('[VoiceService] [TTS] Failed to process TTS stream: $e');
-          onError?.call('Failed to process TTS stream: $e');
+          onProgress?.call(progress);
+        },
+        onComplete: () async {
+          final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+          if (kDebugMode) {
+            print(
+                '[VoiceService] [TTS] Enhanced streaming completed in ${totalTime}ms');
+          }
+
+          // Immediately update TTS state to false so listening can start promptly
+          isAiSpeaking = false;
+          _ttsSpeakingStateController.add(false);
+          if (kDebugMode) {
+            print(
+                '[VoiceService] [TTS] isAiSpeaking set to false (enhanced streaming complete)');
+            print(
+                '[VoiceService] [TTS] TTS state stream set to false (enhanced streaming complete)');
+          }
+
+          // Clean up the TTS service now that it's complete
+          ttsService.dispose();
+
+          onDone?.call();
+          completer.complete('enhanced_streaming_complete');
+        },
+        onError: (error) {
+          if (kDebugMode) {
+            print('[VoiceService] [TTS] Enhanced streaming error: $error');
+          }
+
+          // Reset TTS state on error
+          isAiSpeaking = false;
+          _ttsSpeakingStateController.add(false);
+
+          // Clean up the TTS service on error
+          ttsService.dispose();
+
+          onError?.call(error);
           completer.complete(null);
-          await subscription?.cancel();
-          await channel.sink.close();
-        }
-      }, onError: (err) async {
-        if (kDebugMode) print('[VoiceService] [TTS] WebSocket error: $err');
-        onError?.call('WebSocket error: $err');
-        completer.complete(null);
-        await subscription?.cancel();
-        await channel.sink.close();
-      }, onDone: () async {
-        if (kDebugMode) print('[VoiceService] [TTS] WebSocket stream closed');
-        await subscription?.cancel();
-        await channel.sink.close();
-      });
+        },
+      );
 
-      // Send the TTS request
-      channel.sink.add(request);
       return await completer.future;
-    } finally {
-      // No longer set isAiSpeaking = false here, already done immediately after playback
-
-      // Ensure file deletion even if errors occurred before playback completion,
-      // or if playback itself errored (handled by playAudio returning Future.error)
-      if (tempFile != null && await tempFile!.exists()) {
-        try {
-          await tempFile!.delete();
-          if (kDebugMode)
-            print('Deleted temp TTS file (finally block): $filePath');
-        } catch (e) {
-          if (kDebugMode)
-            print('Error deleting temp TTS file (finally block): $e');
-        }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceService] [TTS] Enhanced streaming exception: $e');
       }
+
+      // Reset TTS state on exception
+      isAiSpeaking = false;
+      _ttsSpeakingStateController.add(false);
+
+      onError?.call('Enhanced TTS streaming failed: $e');
+      return null;
     }
   }
 
   // Refactor generateAudio to use WebSocket streaming with automatic mp3 fallback
   Future<String?> generateAudio(
     String text, {
-    String voice = 'sage',
+    String voice = 'nova',
     String responseFormat =
         'wav', // Changed from 'opus' to 'wav' for lowest latency
     void Function()? onDone,

@@ -197,7 +197,7 @@ class TherapyService {
       // Measure performance
       final stopwatch = Stopwatch()..start();
 
-      // Get text response
+      // Get text response ONLY - don't use old TTS system
       final textResponse =
           await processUserMessage(userMessage, history: history);
       final textProcessingTime = stopwatch.elapsedMilliseconds;
@@ -212,16 +212,22 @@ class TherapyService {
         };
       }
 
-      // Generate audio and play it with streaming for faster response
+      // Use NEW streaming TTS service instead of old audio generator
       String? audioPath;
       try {
-        audioPath = await _audioGenerator.generateAndStreamAudio(
-          textResponse,
+        // Use the enhanced TTS streaming service
+        final voiceService = serviceLocator<VoiceService>();
+        audioPath = await voiceService.streamAndPlayTTS(
+          text: textResponse,
+          voice: 'sage',
+          responseFormat: 'wav',
           onDone: onTTSPlaybackComplete,
           onError: onTTSError,
         );
+
+        log.i('[TherapyService] Enhanced streaming TTS completed');
       } catch (e) {
-        log.w('Warning: Could not generate/stream audio', e);
+        log.w('Warning: Could not generate/stream audio with new service', e);
         onTTSError('Failed to generate/stream audio: ${e.toString()}');
         // audioPath will remain null
       }

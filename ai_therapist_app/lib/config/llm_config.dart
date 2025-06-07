@@ -72,7 +72,7 @@ class LLMConfig {
   static const String _activeTTSModelId = 'gpt-4o-mini-tts';
 
   /// Active TTS Voice
-  static const String _activeTTSVoice = 'sage';
+  static const String _activeTTSVoice = 'nova';
 
   // =================================================================
   // PROVIDER CONFIGURATIONS - Add new providers here

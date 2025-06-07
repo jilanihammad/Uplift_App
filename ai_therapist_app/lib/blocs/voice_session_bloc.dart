@@ -311,23 +311,34 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
         emit(state.copyWith(isAiSpeaking: true));
 
-        await therapyService.processUserMessageWithStreamingAudio(
-          transcription,
-          history,
-          onTTSPlaybackComplete: () async {
-            debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
-            emit(state.copyWith(isProcessingAudio: false, isAiSpeaking: false));
-            voiceService.autoListeningCoordinator.onProcessingComplete();
-          },
-          onTTSError: (error) async {
-            debugPrint('[VoiceSessionBloc] TTS error: $error');
-            emit(state.copyWith(
-                isProcessingAudio: false,
-                errorMessage: error.toString(),
-                isAiSpeaking: false));
-            voiceService.autoListeningCoordinator.onProcessingComplete();
-          },
-        );
+        try {
+          await voiceService.streamAndPlayTTS(
+            text: mayaResponseText,
+            voice: 'sage',
+            responseFormat: 'wav',
+            onDone: () async {
+              debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
+              emit(state.copyWith(
+                  isProcessingAudio: false, isAiSpeaking: false));
+              this.voiceService.autoListeningCoordinator.onProcessingComplete();
+            },
+            onError: (error) async {
+              debugPrint('[VoiceSessionBloc] TTS error: $error');
+              emit(state.copyWith(
+                  isProcessingAudio: false,
+                  errorMessage: error.toString(),
+                  isAiSpeaking: false));
+              this.voiceService.autoListeningCoordinator.onProcessingComplete();
+            },
+          );
+        } catch (e) {
+          debugPrint('[VoiceSessionBloc] TTS streaming failed: $e');
+          emit(state.copyWith(
+              isProcessingAudio: false,
+              errorMessage: 'TTS failed: $e',
+              isAiSpeaking: false));
+          this.voiceService.autoListeningCoordinator.onProcessingComplete();
+        }
       } else {
         emit(state.copyWith(isProcessingAudio: false));
       }

@@ -12,6 +12,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.request_records: Dict[str, Tuple[int, float]] = {}  # IP: (count, start_time)
     
     async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for WebSocket connections
+        if request.url.path.startswith("/ws/") or "websocket" in request.headers.get("upgrade", "").lower():
+            # WebSocket connections should be handled by their own rate limiting
+            return await call_next(request)
+        
         # Get client IP
         client_ip = request.client.host if request.client else "unknown"
         
