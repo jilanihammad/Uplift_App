@@ -759,13 +759,8 @@ class LLMManager:
             raise ValueError("TTS service unavailable - API key not set")
         
         if self.tts_config.provider == ModelProvider.OPENAI:
-            # Use httpx for streaming since OpenAI SDK may not support TTS streaming yet
-            api_key = LLMConfig.get_api_key(self.tts_config)
-            url = f"{self.tts_config.base_url}/audio/speech"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
+            # Use the correct OpenAI SDK streaming method
+            client = self._get_openai_client(self.tts_config)
             
             params = self.tts_config.default_params.copy()
             params.update(kwargs)
@@ -776,24 +771,42 @@ class LLMManager:
             else:
                 response_format = params.get('response_format', 'wav')  # Default to WAV
             
-            payload = {
-                "model": self.tts_config.model_id,
-                "input": text,
-                "voice": params['voice'],
-                "response_format": response_format,
-                "stream": True
-            }
+            # Remove model from params if it exists to avoid duplicate parameter error
+            params.pop('model', None)
             
-            import httpx
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream("POST", url, headers=headers, json=payload, timeout=120.0) as resp:
-                    if resp.status_code != 200:
-                        detail = await resp.aread()
-                        raise Exception(f"TTS streaming failed: {resp.status_code} {detail}")
-                    async for chunk in resp.aiter_bytes():
+            # Use OpenAI SDK's proper streaming method
+            try:
+                logger.info(f"🎤 OpenAI TTS: Starting streaming for text='{text[:50]}...' (length: {len(text)} chars), voice={params['voice']}, format={response_format}")
+                
+                total_chunks = 0
+                total_bytes = 0
+                
+                with client.audio.speech.with_streaming_response.create(
+                    model=self.tts_config.model_id,
+                    input=text,
+                    voice=params['voice'],
+                    response_format=response_format,
+                ) as response:
+                    if response.status_code != 200:
+                        raise Exception(f"TTS streaming failed: {response.status_code}")
+                    
+                    logger.info(f"🎤 OpenAI TTS: Stream started, status={response.status_code}")
+                    
+                    # Stream chunks as they arrive
+                    for chunk in response.iter_bytes(chunk_size=4096):
                         if chunk:
+                            total_chunks += 1
+                            total_bytes += len(chunk)
                             b64_chunk = base64.b64encode(chunk).decode('utf-8')
+                            logger.debug(f"🎤 OpenAI TTS: Chunk {total_chunks}, size={len(chunk)} bytes")
                             yield b64_chunk
+                
+                logger.info(f"🎤 OpenAI TTS: Completed - generated {total_chunks} chunks, {total_bytes} total bytes for text: '{text[:50]}...'")
+                
+            except Exception as e:
+                logger.error(f"OpenAI TTS streaming error: {str(e)}")
+                logger.error(traceback.format_exc())
+                raise
         else:
             raise ValueError(f"Streaming TTS not implemented for provider: {self.tts_config.provider}")
     

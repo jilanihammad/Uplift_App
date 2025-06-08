@@ -47,7 +47,7 @@ class LLMConfig:
     ACTIVE_TRANSCRIPTION_MODEL = None  # e.g., "whisper-1" to override default
 
     # Default TTS voice (change here to update default voice)
-    DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "sage")
+    DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "nova")  # Nova is OpenAI-supported, good substitute for sage
     # =============================================================================
     # MODEL CONFIGURATIONS - Add new models/providers here
     # =============================================================================
@@ -77,7 +77,7 @@ class LLMConfig:
             api_key_env="OPENAI_API_KEY",
             default_params={
                 "voice": os.getenv("OPENAI_TTS_VOICE", DEFAULT_TTS_VOICE),
-                "response_format": "mp3",
+                "response_format": "wav",
                 "speed": 1.0
             },
             supports_streaming=False
@@ -117,8 +117,8 @@ class LLMConfig:
             base_url=os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1"),
             api_key_env="GROQ_API_KEY",
             default_params={
-                "voice": "sage",
-                "response_format": "mp3"
+                "voice": "nova",
+                "response_format": "wav"
             },
             supports_streaming=False
         ),
