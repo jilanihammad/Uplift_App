@@ -272,46 +272,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       final history = _buildConversationHistory(messagesWithUser);
 
-      debugPrint('[VoiceSessionBloc] Getting Maya\'s text response...');
-      final therapyService = serviceLocator<TherapyService>();
-      final mayaResponseText = await therapyService.processUserMessage(
-        transcription,
-        history: history,
-      );
-
-      if (mayaResponseText.trim().isEmpty) {
-        debugPrint('[VoiceSessionBloc] Empty response from Maya');
-        emit(state.copyWith(
-            isProcessingAudio: false,
-            errorMessage: 'Failed to get response from Maya'));
-        return;
-      }
-
-      debugPrint(
-          '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
-
-      final nextAISequence = state.currentMessageSequence + 1;
-
-      final mayaMessage = TherapyMessage(
-        id: const Uuid().v4(),
-        content: mayaResponseText,
-        isUser: false,
-        timestamp: DateTime.now(),
-        sequence: nextAISequence,
-      );
-
-      final finalMessages = List.of(messagesWithUser)..add(mayaMessage);
-      emit(state.copyWith(
-        messages: finalMessages,
-        currentMessageSequence: nextAISequence,
-      ));
-
       if (state.isVoiceMode) {
-        debugPrint('[VoiceSessionBloc] Generating TTS for Maya\'s response...');
-
+        debugPrint(
+            '[VoiceSessionBloc] Voice mode - generating TTS response...');
         emit(state.copyWith(isAiSpeaking: true));
 
-        await therapyService.processUserMessageWithStreamingAudio(
+        final therapyService = serviceLocator<TherapyService>();
+        final responseData =
+            await therapyService.processUserMessageWithStreamingAudio(
           transcription,
           history,
           onTTSPlaybackComplete: () async {
@@ -328,7 +296,65 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             voiceService.autoListeningCoordinator.onProcessingComplete();
           },
         );
+
+        final mayaResponseText = responseData['text'] as String? ??
+            'I\'m having trouble responding right now.';
+
+        debugPrint(
+            '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
+
+        final nextAISequence = state.currentMessageSequence + 1;
+
+        final mayaMessage = TherapyMessage(
+          id: const Uuid().v4(),
+          content: mayaResponseText,
+          isUser: false,
+          timestamp: DateTime.now(),
+          sequence: nextAISequence,
+        );
+
+        final finalMessages = List.of(messagesWithUser)..add(mayaMessage);
+        emit(state.copyWith(
+          messages: finalMessages,
+          currentMessageSequence: nextAISequence,
+        ));
       } else {
+        // Text mode - only get text response without TTS
+        debugPrint(
+            '[VoiceSessionBloc] Text mode - getting text response only...');
+        final therapyService = serviceLocator<TherapyService>();
+        final mayaResponseText = await therapyService.processUserMessage(
+          transcription,
+          history: history,
+        );
+
+        if (mayaResponseText.trim().isEmpty) {
+          debugPrint('[VoiceSessionBloc] Empty response from Maya');
+          emit(state.copyWith(
+              isProcessingAudio: false,
+              errorMessage: 'Failed to get response from Maya'));
+          return;
+        }
+
+        debugPrint(
+            '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
+
+        final nextAISequence = state.currentMessageSequence + 1;
+
+        final mayaMessage = TherapyMessage(
+          id: const Uuid().v4(),
+          content: mayaResponseText,
+          isUser: false,
+          timestamp: DateTime.now(),
+          sequence: nextAISequence,
+        );
+
+        final finalMessages = List.of(messagesWithUser)..add(mayaMessage);
+        emit(state.copyWith(
+          messages: finalMessages,
+          currentMessageSequence: nextAISequence,
+        ));
+
         emit(state.copyWith(isProcessingAudio: false));
       }
     } catch (e) {
