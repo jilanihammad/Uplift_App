@@ -4,8 +4,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:rxdart/rxdart.dart';
+import 'path_manager.dart';
 
 /// Manages voice activity detection (VAD) functionality
 ///
@@ -126,12 +126,9 @@ class VADManager {
       _recorder = AudioRecorder();
       if (kDebugMode) print('[VADManager] New AudioRecorder instance created.');
 
-      if (kDebugMode)
-        print('[VADManager] Requesting temp dir for monitor file');
+      if (kDebugMode) print('[VADManager] Creating monitor file path');
       // Create a temporary file path for monitoring
-      final Directory tempDir = await getTemporaryDirectory();
-      final String monitorFilePath =
-          '${tempDir.path}/vad_monitor_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final String monitorFilePath = PathManager.instance.vadMonitorFile();
 
       if (kDebugMode) print('[VADManager] Starting recorder for VAD');
       // Start recording with monitoring mode
