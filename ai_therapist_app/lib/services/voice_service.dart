@@ -30,6 +30,8 @@ import 'vad_manager.dart';
 import 'audio_player_manager.dart';
 import 'recording_manager.dart';
 import 'base_voice_service.dart' as base_voice;
+import 'path_manager.dart';
+import 'dart:io'; // ← Add this for File operations
 
 // Recording states
 // enum RecordingState { ready, recording, stopped, paused, error } // Now defined in base_voice_service.dart or RecordingManager
@@ -466,6 +468,15 @@ class VoiceService {
     void Function()? onDone,
     void Function(String error)? onError,
   }) async {
+    // START TIMING DIAGNOSTICS
+    final totalStopwatch = Stopwatch()..start();
+    final wsConnectStopwatch = Stopwatch();
+    final firstChunkStopwatch = Stopwatch();
+
+    if (kDebugMode)
+      print(
+          '🔍 [TTS TIMING] Starting TTS for text length: ${text.length} chars');
+
     isAiSpeaking = true;
     if (kDebugMode)
       print('[VoiceService] [TTS] isAiSpeaking set to true (streamAndPlayTTS)');
@@ -477,7 +488,13 @@ class VoiceService {
     try {
       final wsUrl =
           'wss://ai-therapist-backend-385290373302.us-central1.run.app/voice/ws/tts';
+
+      wsConnectStopwatch.start();
       final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      wsConnectStopwatch.stop();
+      if (kDebugMode)
+        print(
+            '🔍 [TTS TIMING] WebSocket connect took: ${wsConnectStopwatch.elapsedMilliseconds}ms');
       final List<int> audioBuffer = [];
       StreamSubscription? subscription;
 
@@ -488,26 +505,35 @@ class VoiceService {
       });
 
       final completer = Completer<String?>();
+      bool firstChunkReceived = false;
+      firstChunkStopwatch.start();
 
       subscription = channel.stream.listen((event) async {
         try {
           final data = jsonDecode(event);
           if (data['type'] == 'audio_chunk') {
+            if (!firstChunkReceived) {
+              firstChunkStopwatch.stop();
+              if (kDebugMode)
+                print(
+                    '🔍 [TTS TIMING] First audio chunk received after: ${firstChunkStopwatch.elapsedMilliseconds}ms');
+              firstChunkReceived = true;
+            }
             final chunk = base64Decode(data['data']);
             audioBuffer.addAll(chunk);
             // Optionally, call onProgress
           } else if (data['type'] == 'done') {
             // Write buffer to temp file
             try {
-              final tempDir = await getTemporaryDirectory();
               // Updated file extension logic for WAV format
               final ext = responseFormat == 'wav'
                   ? 'wav'
                   : responseFormat == 'opus'
                       ? 'ogg'
                       : 'mp3';
-              filePath =
-                  '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.$ext';
+              // NEW CODE (collision-resistant with cleaner API):
+              final baseId = DateTime.now().microsecondsSinceEpoch.toString();
+              filePath = PathManager.instance.ttsFile(baseId, ext);
               tempFile = io.File(filePath!);
               await tempFile!.writeAsBytes(audioBuffer);
 
@@ -528,6 +554,17 @@ class VoiceService {
                     '[VoiceService] [TTS] isAiSpeaking set to false (immediately after playback)');
                 print(
                     '[VoiceService] [TTS] TTS state stream set to false (immediately after playback)');
+              }
+
+              totalStopwatch.stop();
+              if (kDebugMode) {
+                print('🔍 [TTS TIMING] === TOTAL BREAKDOWN ===');
+                print(
+                    '🔍 [TTS TIMING] WebSocket connect: ${wsConnectStopwatch.elapsedMilliseconds}ms');
+                print(
+                    '🔍 [TTS TIMING] First chunk wait: ${firstChunkStopwatch.elapsedMilliseconds}ms');
+                print(
+                    '🔍 [TTS TIMING] TOTAL TIME: ${totalStopwatch.elapsedMilliseconds}ms');
               }
 
               onDone?.call();

@@ -6,8 +6,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import '../data/datasources/remote/api_client.dart';
+import 'path_manager.dart';
 import '../services/voice_service.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
@@ -214,9 +214,9 @@ class AudioGenerator {
   }
 
   /// Get the file path for an audio file
-  Future<String> _getAudioFilePath(String fileName) async {
-    final tempDir = await getTemporaryDirectory();
-    return '${tempDir.path}/$fileName';
+  String _getAudioFilePath(String fileName) {
+    // Use PathManager to get cache directory and join with filename
+    return '${PathManager.instance.cacheDir}/$fileName';
   }
 
   /// Generate audio without playing it
@@ -289,8 +289,7 @@ class AudioGenerator {
 
       // If received a URL from voice service, download it to a local file
       if (audioPath != null && audioPath.startsWith('http')) {
-        final tempDir = await getTemporaryDirectory();
-        final localPath = '${tempDir.path}/$audioFileName';
+        final localPath = _getAudioFilePath(audioFileName);
 
         // Download the audio file
         final response = await http.get(Uri.parse(audioPath));
@@ -549,10 +548,9 @@ class AudioGenerator {
         final audioBytes = response.bodyBytes;
 
         // Save to temporary file
-        final tempDir = await getTemporaryDirectory();
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final audioFileName = 'direct_tts_${timestamp}.mp3';
-        final audioFile = File('${tempDir.path}/$audioFileName');
+        final audioFile = File(_getAudioFilePath(audioFileName));
 
         await audioFile.writeAsBytes(audioBytes);
 

@@ -64,6 +64,7 @@ import 'package:ai_therapist_app/utils/firestore_helpers.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/data/datasources/local/database_provider.dart';
+import 'services/path_manager.dart';
 
 // Import the shared Firebase initialization utility
 import 'package:ai_therapist_app/utils/firebase_init.dart';
@@ -144,6 +145,10 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize PathManager early - ADD THIS BLOCK
+  await PathManager.instance.init();
+
   if (kDebugMode) print('[Main] App initialization starting...');
   // Set zone error fatal to false to avoid Flutter zone binding errors
   BindingBase.debugZoneErrorsAreFatal = false;

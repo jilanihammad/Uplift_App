@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
 import 'base_voice_service.dart';
+import 'path_manager.dart';
 
 // Add at the very top of the file, before RecordingManager
 class NotRecordingException implements Exception {
@@ -94,9 +93,8 @@ class RecordingManager {
 
     try {
       // Create a unique file path for the recording
-      final Directory tempDir = await getTemporaryDirectory();
       final String uuid = const Uuid().v4();
-      final String filePath = '${tempDir.path}/$uuid.m4a';
+      final String filePath = PathManager.instance.recordingFile(uuid);
 
       // Configure recording
       await _recorder.start(

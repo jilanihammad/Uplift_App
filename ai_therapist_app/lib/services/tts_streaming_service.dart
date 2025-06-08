@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'path_manager.dart';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:just_audio/just_audio.dart';
@@ -68,15 +67,14 @@ class TTSStreamingService {
   Future<void> _playBufferedAudio(String format) async {
     try {
       // Write buffer to a temporary file and play from file
-      final tempDir = await getTemporaryDirectory();
       // Updated file extension logic for WAV format
       final ext = format == 'wav'
           ? 'wav'
           : format == 'opus'
               ? 'ogg'
               : 'mp3';
-      final tempFile = File(
-          '${tempDir.path}/tts_stream_${DateTime.now().millisecondsSinceEpoch}.$ext');
+      final baseId = DateTime.now().microsecondsSinceEpoch.toString();
+      final tempFile = File(PathManager.instance.ttsFile(baseId, ext));
       await tempFile.writeAsBytes(_audioBuffer);
 
       await _player.setFilePath(tempFile.path);
