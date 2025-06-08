@@ -30,6 +30,7 @@ from app.services.streaming_pipeline import (
     FlowControlConfig,
     StreamingMessage,
     AudioChunk,
+    CompletionSentinel,
     PipelineState,
     FlowControlState,
     BoundaryType,

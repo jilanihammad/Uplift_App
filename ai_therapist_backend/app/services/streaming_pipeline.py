@@ -17,10 +17,11 @@ import time
 import logging
 import weakref
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, AsyncGenerator, List, Callable, Tuple
+from typing import Dict, Any, Optional, AsyncGenerator, List, Callable, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
+from queue import Empty
 
 # Import existing LLM infrastructure
 from app.services.llm_manager import LLMManager
@@ -318,6 +319,16 @@ class AudioChunk:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class CompletionSentinel:
+    """Completion sentinel to signal end of TTS generation for a specific request"""
+    request_id: str
+    conversation_id: str
+    total_chunks: int
+    completion_timestamp: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
 class EnhancedAsyncPipeline:
     """
     Enhanced async pipeline with comprehensive flow control, jitter buffer support,
@@ -333,19 +344,31 @@ class EnhancedAsyncPipeline:
     - Multi-format TTS support with network adaptation
     """
     
-    def __init__(self, config: Optional[FlowControlConfig] = None):
+    def __init__(self, config: FlowControlConfig, llm_manager: LLMManager):
         """
         Initialize the enhanced streaming pipeline.
         
         Args:
-            config: Flow control configuration (uses defaults if None)
+            config: Configuration for flow control and performance tuning
+            llm_manager: LLM manager for TTS and text generation
         """
-        self.config = config or FlowControlConfig()
+        self.config = config
+        self.llm_manager = llm_manager
+        self.logger = logging.getLogger(__name__)
+        
+        # Validate LLMManager
+        self._validate_llm_manager()
+        
+        # SIMPLIFIED: Let LLMManager handle all validation
+        # Removed: TTSConfigValidator, TTSErrorCoordinator (they don't exist)
+        
         self.state = PipelineState.IDLE
         self.flow_state = FlowControlState.FLOWING
         
+        # CRITICAL FIX: Add missing pipeline_id attribute
+        self.pipeline_id = f"pipeline_{int(time.time() * 1000)}_{id(self)}"
+        
         # Core components
-        self.llm_manager = LLMManager()
         self.text_processor = SmartTextProcessor()
         
         # Async queues for pipeline stages
@@ -355,7 +378,7 @@ class EnhancedAsyncPipeline:
         self.tts_queue: asyncio.Queue[TextChunk] = asyncio.Queue(
             maxsize=self.config.max_tts_queue_size
         )
-        self.client_queue: asyncio.Queue[AudioChunk] = asyncio.Queue(
+        self.client_queue: asyncio.Queue[Union[AudioChunk, CompletionSentinel]] = asyncio.Queue(
             maxsize=self.config.max_client_queue_size
         )
         
@@ -371,9 +394,6 @@ class EnhancedAsyncPipeline:
         # Client connections (weak references to avoid memory leaks)
         self.active_clients: Dict[str, Any] = {}  # client_id -> websocket
         
-        # Logger
-        self.logger = logging.getLogger(__name__)
-        
         # Flow control state tracking
         self.backpressure_start_time: Optional[float] = None
         self.stale_chunk_timestamps: Dict[str, float] = {}
@@ -384,6 +404,89 @@ class EnhancedAsyncPipeline:
         self.draining_start_time: Optional[float] = None
         self.pending_chunks_before_interrupt: int = 0
         
+        # Performance monitoring
+        self._setup_performance_monitoring()
+        
+        # Success logging with enhanced details
+        self.logger.info(f"Pipeline {self.pipeline_id} initialized successfully with {self.config.max_client_queue_size} client queue size")
+        
+    def _validate_llm_manager(self):
+        """Simple validation that LLMManager is properly configured."""
+        try:
+            if not self.llm_manager:
+                raise ValueError("LLMManager is None")
+            
+            if not self.llm_manager.tts_config:
+                raise ValueError("LLMManager has no TTS configuration")
+            
+            # Check if LLM is available
+            if not hasattr(self.llm_manager, 'llm_config') or not self.llm_manager.llm_config:
+                self.logger.warning("LLMManager has no LLM configuration - TTS-only mode")
+            
+            # Log configuration
+            self.logger.info(f"LLM validation passed: TTS provider = {self.llm_manager.tts_config.provider}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"LLMManager validation failed: {e}")
+            raise
+
+    def _setup_performance_monitoring(self):
+        """
+        Initialize performance monitoring components and metrics tracking
+        
+        Sets up:
+        - Performance metrics collection
+        - Production monitoring integration
+        - Timing trackers and counters
+        - Memory and resource monitoring
+        """
+        try:
+            # Initialize performance tracking timers
+            self.performance_timers = {
+                "llm_start_time": None,
+                "tts_start_time": None,
+                "request_start_time": None,
+                "first_audio_time": None
+            }
+            
+            # Initialize counter tracking
+            self.performance_counters = {
+                "requests_processed": 0,
+                "audio_chunks_sent": 0,
+                "errors_encountered": 0,
+                "backpressure_events": 0
+            }
+            
+            # Initialize memory tracking
+            self.memory_tracker = {
+                "peak_usage": 0,
+                "current_usage": 0,
+                "last_check": time.time()
+            }
+            
+            # Initialize production metrics integration
+            self.production_metrics_enabled = production_metrics.is_metrics_enabled()
+            
+            # Set up periodic performance reporting
+            self.last_performance_report = time.time()
+            self.performance_report_interval = 30  # seconds
+            
+            # Initialize latency targets for monitoring
+            self.performance_targets = {
+                "time_to_first_audio_ms": 400,  # Sub-400ms target
+                "avg_end_to_end_ms": 300,       # 300ms average latency
+                "max_queue_wait_ms": 100        # Max queue wait time
+            }
+            
+            self.logger.info("Performance monitoring initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize performance monitoring: {str(e)}")
+            # Don't fail initialization if performance monitoring setup fails
+            self.production_metrics_enabled = False
+    
     async def start(self) -> None:
         """Start the async pipeline with all components"""
         if self.state != PipelineState.IDLE:
@@ -921,6 +1024,30 @@ class EnhancedAsyncPipeline:
         ttfa_start_time = time.time()  # Time to first audio tracking
         
         try:
+            # ===============================================================================
+            # 🎯 CRITICAL: USER vs AI MESSAGE DIFFERENTIATION IN PIPELINE
+            # ===============================================================================
+            # This check determines whether we're processing:
+            #
+            # 1. USER MESSAGE (is_tts_only = False):
+            #    - Contains user's actual input: "Hello Maya!"
+            #    - Needs full LLM processing to generate Maya's response
+            #    - Flow: User text → LLM streaming → TTS → Audio chunks
+            #
+            # 2. AI RESPONSE (is_tts_only = True):
+            #    - Contains Maya's pre-generated response: "Hi there! How are you?"
+            #    - Skips LLM entirely, goes straight to TTS conversion
+            #    - Flow: Maya's text → TTS → Audio chunks (NO LLM)
+            #
+            # This prevents infinite loops where Maya's responses would be re-processed by LLM
+            # ===============================================================================
+            
+            # Check if this is a TTS-only request (Maya's response already generated)
+            if message.metadata.get("is_tts_only", False):
+                self.logger.info(f"Processing TTS-only request for message {message.message_id}")
+                await self._process_tts_only_message(message, conversation_sequence)
+                return
+            
             # Prepare conversation context for voice consistency
             conversation_context = {
                 "conversation_id": message.conversation_id,
@@ -992,27 +1119,116 @@ class EnhancedAsyncPipeline:
             self.logger.error(f"Error in LLM message processing: {e}")
             self.metrics.llm_errors += 1
             
-            # Generate fallback response for better user experience
+            # Generate fallback response for better user experience using safer approach
             try:
-                fallback_chunk = TextChunk(
-                    text="I apologize, but I'm having trouble generating a response. Please try again.",
-                    boundary_type=BoundaryType.SENTENCE_END,
-                    sequence_id=0,
+                # Create a simple StreamingMessage for fallback (engineer's recommended approach)
+                fallback_message = StreamingMessage(
+                    message_id=f"{message.message_id}_fallback",
+                    conversation_id=message.conversation_id,
+                    user_message="I apologize, but I'm having trouble generating a response. Please try again.",
                     metadata={
+                        "is_tts_only": True,
                         "is_fallback": True,
-                        "original_message_id": message.message_id,
-                        "error": str(e),
-                        "timestamp": time.time()
-                    },
-                    processing_time_ms=0.0,
-                    character_count=len("I apologize, but I'm having trouble generating a response. Please try again.")
+                        "original_error": str(e),
+                        "voice": "nova"  # Safe fallback voice
+                    }
                 )
                 
-                await self._add_to_tts_queue(fallback_chunk)
-                self.logger.info("Fallback response generated due to LLM error")
-            except Exception as fallback_error:
-                self.logger.error(f"Failed to generate fallback response: {fallback_error}")
+                # Process as TTS-only message
+                await self._process_tts_only_message(fallback_message, conversation_sequence)
+                self.logger.info("Fallback response generated via TTS-only path")
                 
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback response generation failed: {fallback_error}")
+                # At this point, just log the error and continue
+    
+    async def _process_tts_only_message(self, message: StreamingMessage, conversation_sequence: int) -> None:
+        """
+        Process a TTS-only message (Maya's response already generated, just needs speech synthesis).
+        
+        🎯 CRITICAL DIFFERENTIATION: This method handles AI responses, NOT user messages
+        
+        - Input: Maya's pre-generated response text (e.g., "Hi there! How are you?")
+        - Purpose: Convert Maya's text directly to speech without LLM processing
+        - Key difference: Skips LLM to prevent infinite loops where Maya's response 
+          would be treated as a new user message requiring another AI response
+        
+        Args:
+            message: The streaming message containing Maya's response text
+            conversation_sequence: Monotonic sequence ID for the conversation
+        """
+        sentence_id = 0
+        ttfa_start_time = time.time()
+        
+        try:
+            # Prepare conversation context for voice consistency
+            conversation_context = {
+                "conversation_id": message.conversation_id,
+                "message_id": message.message_id,
+                "sequence": conversation_sequence,
+                "voice_seed": self._get_voice_seed(message.conversation_id),
+                "timestamp": message.timestamp.isoformat(),
+                "is_tts_only": True
+            }
+            
+            # Process the Maya's response text directly with smart text processor
+            self.text_processor.reset()  # Clear any previous buffer
+            sentences = self.text_processor.add_text(message.user_message)
+            
+            # Process complete sentences
+            for text_chunk in sentences:
+                if text_chunk.text.strip():  # Skip empty sentences
+                    # Update text chunk with conversation metadata
+                    text_chunk.metadata.update({
+                        **conversation_context,
+                        "sentence_id": f"{message.message_id}_{sentence_id}",
+                        "sequence": sentence_id,
+                        "is_sentence_end": True,
+                        "voice_consistency_seed": conversation_context["voice_seed"],
+                        "interruption_safe": True,
+                        "prosody_complete": True,
+                        "tts_voice": message.metadata.get("voice", "nova"),
+                        "tts_params": message.metadata.get("tts_params", {})
+                    })
+                    
+                    # Try to add to TTS queue with flow control
+                    success = await self._add_to_tts_queue(text_chunk)
+                    if success:
+                        sentence_id += 1
+                        self.metrics.chunks_generated += 1
+                        
+                        # Update time to first audio metric (only for first chunk)
+                        if sentence_id == 1:
+                            ttfa_ms = (time.time() - ttfa_start_time) * 1000
+                            self.metrics.update_timing("time_to_first_audio_ms", ttfa_ms)
+                    else:
+                        self.logger.warning(f"Failed to queue TTS sentence: {text_chunk.metadata['sentence_id']}")
+            
+            # Process any remaining text in buffer
+            final_chunk = self.text_processor.flush_buffer()
+            if final_chunk and final_chunk.text.strip():
+                final_chunk.metadata.update({
+                    **conversation_context,
+                    "sentence_id": f"{message.message_id}_{sentence_id}",
+                    "sequence": sentence_id,
+                    "is_sentence_end": True,
+                    "is_response_end": True,
+                    "voice_consistency_seed": conversation_context["voice_seed"],
+                    "interruption_safe": True,
+                    "prosody_complete": True,
+                    "tts_voice": message.metadata.get("voice", "nova"),
+                    "tts_params": message.metadata.get("tts_params", {})
+                })
+                
+                await self._add_to_tts_queue(final_chunk)
+                sentence_id += 1
+                self.metrics.chunks_generated += 1
+            
+            self.logger.info(f"TTS-only message processed: {sentence_id} sentences generated for {message.message_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Error in TTS-only message processing: {e}")
+            self.metrics.llm_errors += 1  # Still count as LLM error for metrics consistency
             raise
     
     async def _stream_llm_response(self, message: StreamingMessage) -> AsyncGenerator[str, None]:
@@ -1026,13 +1242,26 @@ class EnhancedAsyncPipeline:
             str: Text chunks from the LLM response
         """
         try:
-            # Use existing LLMManager for streaming chat completion
+            # Extract context and other parameters from metadata
+            context = message.metadata.get('context', [])
+            system_prompt = message.metadata.get('system_prompt', '')
+            user_info = message.metadata.get('user_info')
+            
+            # Filter out parameters that LLMManager expects
+            llm_kwargs = {}
+            valid_params = ['temperature', 'max_tokens', 'top_p', 'top_k', 'frequency_penalty', 'presence_penalty']
+            for param in valid_params:
+                if param in message.metadata:
+                    llm_kwargs[param] = message.metadata[param]
+            
+            # Use correct LLMManager method signature
             async for chunk in self.llm_manager.stream_chat_completion(
                 message=message.user_message,
-                conversation_id=message.conversation_id,
-                **message.metadata  # Pass through any additional parameters
+                context=context,
+                system_prompt=system_prompt,
+                user_info=user_info,
+                **llm_kwargs
             ):
-                # Extract text content from chunk (format may vary by provider)
                 chunk_text = self._extract_chunk_text(chunk)
                 if chunk_text:
                     yield chunk_text
@@ -1216,21 +1445,35 @@ class EnhancedAsyncPipeline:
         chunk_timestamp = time.time()
         sentence_id = text_chunk.metadata.get("sentence_id", "unknown")
         conversation_id = text_chunk.metadata.get("conversation_id", "unknown")
-        voice = self._get_consistent_voice(conversation_id, text_chunk.metadata.get("voice_seed", "default"), conversation_voices)
         
-        # Get client capabilities and network metrics for format selection
-        client_metadata = text_chunk.metadata
-        client_capabilities = client_metadata.get("client_capabilities", {"supported_formats": ["wav"]})
-        network_metrics = client_metadata.get("network_metrics", {})
+        # Voice selection using validated configuration
+        voice = self._select_voice(
+            client_voice=text_chunk.metadata.get("voice"),
+            conversation_id=conversation_id
+        )
         
-        # Assess network quality and select optimal format
-        network_quality = self.assess_network_quality(network_metrics) if network_metrics else "good"
-        optimal_format = self.select_optimal_format(network_quality, client_capabilities)
-        format_params = self.get_format_parameters(optimal_format)
-        
-        self.logger.info(f"TTS processing: format={optimal_format}, network={network_quality}, text='{text_chunk.text[:50]}...'")
+        self.logger.debug(f"Selected voice '{voice}' for text: '{text_chunk.text[:50]}...'")
         
         try:
+            # Use validated format from configuration
+            response_format = self._get_validated_format(text_chunk.metadata.get("format", "wav"))
+            
+            # Stream TTS audio chunks
+            audio_chunks_generated = 0
+            sentence_id = f"{conversation_id}_{text_chunk.sequence_id}"
+            
+            # Get client capabilities and network metrics for format selection
+            client_metadata = text_chunk.metadata
+            client_capabilities = client_metadata.get("client_capabilities", {"supported_formats": ["wav"]})
+            network_metrics = client_metadata.get("network_metrics", {})
+            
+            # Assess network quality and select optimal format
+            network_quality = self.assess_network_quality(network_metrics) if network_metrics else "good"
+            optimal_format = self.select_optimal_format(network_quality, client_capabilities)
+            format_params = self.get_format_parameters(optimal_format)
+            
+            self.logger.info(f"TTS processing: format={optimal_format}, network={network_quality}, text='{text_chunk.text[:50]}...'")
+            
             # TTS generation parameters with adaptive format
             tts_params = {
                 "voice": voice,
@@ -1249,21 +1492,7 @@ class EnhancedAsyncPipeline:
                 tts_params["bitrate"] = format_params.get("bitrate", "64k")
                 tts_params["sample_rate"] = format_params.get("sample_rate", 48000)
             
-            # Add metadata for audio chunks
-            audio_metadata = {
-                "sentence_id": text_chunk.metadata.get("sentence_id"),
-                "sequence": text_chunk.sequence_id,
-                "is_sentence_end": text_chunk.boundary_type in [BoundaryType.SENTENCE_END, BoundaryType.PARAGRAPH_BREAK],
-                "boundary_type": text_chunk.boundary_type.value,
-                "conversation_id": conversation_id,
-                "audio_format": optimal_format,
-                "network_quality": network_quality,
-                "format_params": format_params
-            }
-            
             # Stream TTS audio using existing LLMManager
-            audio_chunks_generated = 0
-            
             async for audio_chunk_b64 in self._stream_tts_audio(text_chunk.text, tts_params):
                 if self.shutdown_event.is_set():
                     break
@@ -1322,68 +1551,37 @@ class EnhancedAsyncPipeline:
             
             self.logger.info(f"TTS completed for '{text_chunk.text[:30]}...': {audio_chunks_generated} chunks, {total_latency:.1f}ms, format: {optimal_format}")
             
+            # TTS processing completed for this text chunk - send completion sentinel
+            completion_sentinel = CompletionSentinel(
+                request_id=text_chunk.metadata.get("message_id", sentence_id),
+                conversation_id=conversation_id,
+                total_chunks=audio_chunks_generated,
+                metadata={
+                    "sentence_id": sentence_id,
+                    "text_processed": text_chunk.text[:50] + "..." if len(text_chunk.text) > 50 else text_chunk.text,
+                    "total_latency_ms": total_latency,
+                    "audio_format": optimal_format,
+                    "voice_used": voice,
+                    "sequence": text_chunk.sequence_id,
+                    "processing_timestamp": datetime.now().isoformat()
+                }
+            )
+            
+            # Add completion sentinel to client queue
+            success = await self._add_completion_sentinel_to_queue(completion_sentinel)
+            if success:
+                self.logger.debug(f"Added completion sentinel for request {completion_sentinel.request_id}")
+            else:
+                self.logger.warning(f"Failed to add completion sentinel for {completion_sentinel.request_id}")
+        
         except Exception as e:
             self.logger.error(f"TTS processing error for text '{text_chunk.text[:50]}...': {str(e)}")
             self.metrics.tts_errors += 1
             
-            # Try fallback to default format if adaptive format failed
-            if optimal_format != self.config.default_format:
-                self.logger.info(f"Retrying with fallback format: {self.config.default_format}")
-                try:
-                    fallback_params = self.get_format_parameters(self.config.default_format)
-                    fallback_tts_params = {
-                        "voice": voice,
-                        "conversation_id": conversation_id,
-                        "response_format": fallback_params["response_format"],
-                        "stream": True,
-                        "chunk_size": 1024,
-                        "real_time": True
-                    }
-                    
-                    # Retry with fallback format
-                    audio_chunks_generated = 0
-                    async for audio_chunk_b64 in self._stream_tts_audio(text_chunk.text, fallback_tts_params):
-                        if self.shutdown_event.is_set():
-                            break
-                        
-                        try:
-                            import base64
-                            audio_data = base64.b64decode(audio_chunk_b64)
-                            
-                            audio_chunk = AudioChunk(
-                                chunk_id=f"{sentence_id}_fallback_{audio_chunks_generated}",
-                                sentence_id=sentence_id,
-                                sequence=text_chunk.sequence_id,
-                                audio_data=audio_data,
-                                is_sentence_end=(audio_chunks_generated == 0),
-                                boundary_type=text_chunk.boundary_type,
-                                metadata={
-                                    **text_chunk.metadata,
-                                    "audio_format": self.config.default_format,
-                                    "voice_used": voice,
-                                    "chunk_index": audio_chunks_generated,
-                                    "is_fallback": True,
-                                    "original_format_failed": optimal_format,
-                                    "tts_processing_time_ms": (time.time() - chunk_timestamp) * 1000,
-                                    "boundary_type": text_chunk.boundary_type.value
-                                }
-                            )
-                            
-                            success = await self._add_to_client_queue(audio_chunk)
-                            if success:
-                                audio_chunks_generated += 1
-                            else:
-                                break
-                                
-                        except Exception as decode_error:
-                            self.logger.warning(f"Failed to decode fallback audio chunk: {decode_error}")
-                            continue
-                    
-                    self.logger.info(f"Fallback TTS completed: {audio_chunks_generated} chunks")
-                    
-                except Exception as fallback_error:
-                    self.logger.error(f"Fallback TTS also failed: {str(fallback_error)}")
-                    raise
+            # SIMPLIFIED error handling - just log and re-raise
+            # Removed complex error coordinator logic that didn't exist
+            self.logger.warning(f"TTS failed for chunk {sentence_id}, will retry upstream if needed")
+            raise  # Let calling code handle retry logic
     
     async def _stream_tts_audio(self, text: str, tts_params: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """
@@ -1397,10 +1595,24 @@ class EnhancedAsyncPipeline:
             str: Base64-encoded audio chunks from the TTS response
         """
         try:
-            # Use existing LLMManager for streaming TTS
+            # Filter out parameters that LLMManager TTS expects
+            valid_tts_params = {}
+            expected_params = ['voice', 'response_format', 'speed', 'pitch']
+            
+            for param in expected_params:
+                if param in tts_params:
+                    valid_tts_params[param] = tts_params[param]
+            
+            # Remove conversation_id and other pipeline-specific params
+            valid_tts_params.pop('conversation_id', None)
+            valid_tts_params.pop('stream', None)
+            valid_tts_params.pop('chunk_size', None)
+            valid_tts_params.pop('real_time', None)
+            
+            # Use LLMManager TTS streaming
             async for chunk_b64 in self.llm_manager.stream_text_to_speech(
                 text=text,
-                **tts_params
+                **valid_tts_params
             ):
                 yield chunk_b64
                     
@@ -1428,8 +1640,30 @@ class EnhancedAsyncPipeline:
             if conversation_id in conversation_voices:
                 return conversation_voices[conversation_id]
             
-            # Available OpenAI TTS voices
-            available_voices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+            # Get default voice from LLM configuration only
+            default_voice = 'nova'  # Safe fallback - OpenAI supported
+            available_voices = []
+            
+            if hasattr(self, 'llm_manager') and self.llm_manager and self.llm_manager.tts_config:
+                # Get default voice from TTS config
+                config_voice = self.llm_manager.tts_config.default_params.get('voice', 'nova')
+                default_voice = config_voice
+                
+                # Get available voices from config
+                if self.llm_manager.tts_config.provider.value in ['openai', 'groq']:
+                    # Get from config if available, otherwise use OpenAI standard voices
+                    config_voices = getattr(self.llm_manager.tts_config, 'available_voices', None)
+                    if config_voices:
+                        available_voices = config_voices
+                    else:
+                        # Provider-specific standard voices as absolute fallback
+                        available_voices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+                else:
+                    # For non-OpenAI providers, must be defined in config
+                    available_voices = getattr(self.llm_manager.tts_config, 'available_voices', [default_voice])
+            else:
+                # Absolute emergency fallback if no config available
+                available_voices = [default_voice]
             
             # Use voice seed to deterministically select a voice
             if voice_seed:
@@ -1438,8 +1672,8 @@ class EnhancedAsyncPipeline:
                 voice_index = int(seed_hash[:2], 16) % len(available_voices)
                 selected_voice = available_voices[voice_index]
             else:
-                # Default to first voice if no seed
-                selected_voice = available_voices[0]
+                # Use default voice from config if no seed
+                selected_voice = default_voice
             
             # Store voice for conversation consistency
             conversation_voices[conversation_id] = selected_voice
@@ -1449,8 +1683,15 @@ class EnhancedAsyncPipeline:
             
         except Exception as e:
             self.logger.warning(f"Error selecting voice: {e}")
-            # Fallback to default voice
-            fallback_voice = "alloy"
+            # Fallback to default voice from LLMConfig
+            try:
+                if hasattr(self, 'llm_manager') and self.llm_manager and self.llm_manager.tts_config:
+                    fallback_voice = self.llm_manager.tts_config.default_params.get('voice', 'nova')
+                else:
+                    fallback_voice = "nova"
+            except:
+                fallback_voice = "nova"
+                
             conversation_voices[conversation_id] = fallback_voice
             return fallback_voice
     
@@ -1488,6 +1729,40 @@ class EnhancedAsyncPipeline:
             self.logger.error(f"Error adding to client queue: {e}")
             return False
     
+    async def _add_completion_sentinel_to_queue(self, completion_sentinel: CompletionSentinel) -> bool:
+        """
+        Add completion sentinel to client queue with flow control and backpressure handling.
+        
+        Args:
+            completion_sentinel: The completion sentinel to add to client processing
+            
+        Returns:
+            bool: True if successfully added, False if rejected due to backpressure
+        """
+        try:
+            # Check flow control state
+            if self.flow_state == FlowControlState.PAUSED:
+                self.logger.warning("Completion sentinel add rejected - pipeline paused")
+                return False
+            
+            # Use timeout to avoid blocking indefinitely
+            timeout = 2.0 if self.flow_state == FlowControlState.FLOWING else 0.5
+            
+            await asyncio.wait_for(
+                self.client_queue.put(completion_sentinel),
+                timeout=timeout
+            )
+            
+            return True
+            
+        except asyncio.TimeoutError:
+            self.logger.warning(f"Client queue timeout for completion sentinel: {completion_sentinel.request_id}")
+            self.metrics.backpressure_events += 1
+            return False
+        except Exception as e:
+            self.logger.error(f"Error adding completion sentinel to client queue: {e}")
+            return False
+    
     async def _client_sender(self) -> None:
         """
         Client sender with jitter buffer support - Step 5 Implementation
@@ -1517,7 +1792,7 @@ class EnhancedAsyncPipeline:
             try:
                 # Get audio chunk from queue with timeout
                 try:
-                    audio_chunk = await asyncio.wait_for(
+                    queue_item = await asyncio.wait_for(
                         self.client_queue.get(),
                         timeout=1.0
                     )
@@ -1529,6 +1804,33 @@ class EnhancedAsyncPipeline:
                         sequence_counter, chunks_sent
                     )
                     continue
+                
+                # Handle completion sentinels
+                if isinstance(queue_item, CompletionSentinel):
+                    # Send completion signal to all active clients
+                    completion_frame = {
+                        "type": "tts_complete",  # Changed from "complete" to match Flutter client
+                        "request_id": queue_item.request_id,
+                        "conversation_id": queue_item.conversation_id,
+                        "total_chunks": queue_item.total_chunks,
+                        "completion_timestamp": queue_item.completion_timestamp.isoformat(),
+                        "status": "success",  # Added status field for client compatibility
+                        "metadata": queue_item.metadata
+                    }
+                    
+                    # Send completion signal to all clients
+                    completion_sent_count = await self._send_to_active_clients(completion_frame, f"completion_{queue_item.request_id}")
+                    
+                    if completion_sent_count > 0:
+                        self.logger.info(f"Sent completion signal for request {queue_item.request_id} to {completion_sent_count} clients")
+                    else:
+                        self.logger.warning(f"Failed to send completion signal for request {queue_item.request_id}")
+                    
+                    # Continue to next queue item (don't process as audio chunk)
+                    continue
+                
+                # Handle audio chunks (existing logic)
+                audio_chunk = queue_item
                 
                 # Flow control reset check - Skip sending if paused
                 if self.flow_state == FlowControlState.PAUSED:
@@ -1585,6 +1887,9 @@ class EnhancedAsyncPipeline:
         """
         import base64
         
+        # CRITICAL FIX: Ensure metadata is always a dictionary
+        chunk_metadata = audio_chunk.metadata if isinstance(audio_chunk.metadata, dict) else {}
+        
         # Common metadata structure
         metadata = {
             "type": "audio",
@@ -1618,9 +1923,9 @@ class EnhancedAsyncPipeline:
                 "bit_depth": 16
             },
             
-            # Complete metadata forwarding
+            # Complete metadata forwarding - FIXED: Safe unpacking of metadata
             "metadata": {
-                **audio_chunk.metadata,
+                **chunk_metadata,  # Now guaranteed to be a dictionary
                 "pipeline_sequence": sequence_counter,
                 "flow_control_state": self.flow_state.value
             }
@@ -1641,7 +1946,7 @@ class EnhancedAsyncPipeline:
     async def _send_to_active_clients(self, audio_frame: Dict[str, Any], chunk_id: str, binary_data: Optional[bytes] = None) -> int:
         """
         Send audio frame to all active clients with clean error handling
-        Supports both JSON and binary WebSocket frame formats
+        Supports both JSON and binary WebSocket frame formats with improved compatibility
         
         Args:
             audio_frame: The audio frame metadata to send
@@ -1659,20 +1964,30 @@ class EnhancedAsyncPipeline:
         
         for client_id, websocket in self.active_clients.items():
             try:
-                # Check if client supports binary frames (based on client capabilities)
-                client_supports_binary = getattr(websocket, '_supports_binary_frames', False)
+                # Convert frame to JSON string
+                frame_json = json.dumps(audio_frame)
                 
-                if binary_data and client_supports_binary:
-                    # Send binary frame: metadata + binary audio
-                    # First send metadata as JSON
-                    await websocket.send(json.dumps(audio_frame))
-                    # Then send raw binary audio data
-                    await websocket.send(binary_data)
-                    self.logger.debug(f"Sent binary frame to client {client_id}: {len(binary_data)} bytes")
+                if binary_data:
+                    # For binary WebSocket libraries that support it
+                    if hasattr(websocket, 'send_text') and hasattr(websocket, 'send_bytes'):
+                        await websocket.send_text(frame_json)
+                        await websocket.send_bytes(binary_data)
+                    elif hasattr(websocket, 'send'):
+                        # Fallback: send JSON only (most common case)
+                        await websocket.send(frame_json)
+                    else:
+                        # Last resort: try direct send
+                        await websocket.send(frame_json)
                 else:
-                    # Send JSON frame (fallback and default)
-                    await websocket.send(json.dumps(audio_frame))
-                    
+                    # JSON-only sending
+                    if hasattr(websocket, 'send_text'):
+                        await websocket.send_text(frame_json)
+                    elif hasattr(websocket, 'send'):
+                        await websocket.send(frame_json)
+                    else:
+                        # Try calling websocket directly
+                        await websocket(frame_json)
+                
                 sent_count += 1
                 
             except Exception as e:
@@ -2014,21 +2329,118 @@ class EnhancedAsyncPipeline:
                     queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
+    
+    def _select_voice(self, client_voice: Optional[str] = None, conversation_id: Optional[str] = None) -> str:
+        """
+        SIMPLIFIED voice selection - let LLMManager handle validation
+        
+        Args:
+            client_voice: Voice requested by client (optional)
+            conversation_id: Conversation ID for voice consistency (optional)
+            
+        Returns:
+            Selected voice name (LLMManager will validate)
+        """
+        try:
+            # Get default voice from LLMManager TTS config
+            if self.llm_manager and hasattr(self.llm_manager, 'tts_config') and self.llm_manager.tts_config:
+                default_voice = self.llm_manager.tts_config.default_params.get('voice', 'nova')
+            else:
+                default_voice = 'nova'  # Safe fallback
+            
+            # Use client voice if provided, otherwise use default
+            voice = client_voice if client_voice else default_voice
+            
+            self.logger.debug(f"Selected voice: {voice} (LLMManager will validate)")
+            return voice
+            
+        except Exception as e:
+            self.logger.warning(f"Error in voice selection: {str(e)}, using fallback")
+            return 'nova'  # Ultimate fallback
+    
+    def _get_validated_format(self, requested_format: str) -> str:
+        """
+        SIMPLIFIED format validation - let LLMManager handle it
+        
+        Args:
+            requested_format: Format requested by client
+            
+        Returns:
+            Format (LLMManager will validate)
+        """
+        try:
+            # Get default from LLMManager if available
+            if self.llm_manager and hasattr(self.llm_manager, 'tts_config') and self.llm_manager.tts_config:
+                default_format = self.llm_manager.tts_config.default_params.get('response_format', 'wav')
+            else:
+                default_format = 'wav'
+            
+            # Use requested format or fallback to default
+            format_to_use = requested_format if requested_format else default_format
+            
+            self.logger.debug(f"Using format: {format_to_use} (LLMManager will validate)")
+            return format_to_use
+            
+        except Exception as e:
+            self.logger.warning(f"Error in format selection: {str(e)}, using wav")
+            return 'wav'  # Safe fallback
+
+    def _get_conversation_consistent_voice(self, conversation_id: str, available_voices: list, default_voice: str) -> str:
+        """Get consistent voice for conversation using deterministic selection."""
+        if not available_voices:
+            return default_voice
+        
+        try:
+            # Simple deterministic selection based on conversation ID
+            import hashlib
+            hash_value = int(hashlib.md5(conversation_id.encode()).hexdigest()[:8], 16)
+            voice_index = hash_value % len(available_voices)
+            selected_voice = available_voices[voice_index]
+            
+            self.logger.debug(f"Conversation {conversation_id} assigned voice: {selected_voice}")
+            return selected_voice
+            
+        except Exception as e:
+            self.logger.warning(f"Error in conversation voice selection: {e}")
+            return default_voice
+
+    def _get_voice_seed(self, conversation_id: str) -> str:
+        """
+        Generate consistent voice seed for conversation.
+        
+        Args:
+            conversation_id: Unique conversation identifier
+            
+        Returns:
+            str: Consistent voice seed for TTS voice consistency
+        """
+        # Generate deterministic seed based on conversation ID
+        # This ensures voice consistency across sentences in same conversation
+        import hashlib
+        
+        seed_input = f"{conversation_id}_voice_consistency"
+        return hashlib.md5(seed_input.encode()).hexdigest()[:8]
 
 
 # Utility functions for pipeline management
 
-async def create_pipeline(config: Optional[FlowControlConfig] = None) -> EnhancedAsyncPipeline:
+async def create_pipeline(config: Optional[FlowControlConfig] = None, llm_manager: Optional[LLMManager] = None) -> EnhancedAsyncPipeline:
     """
     Factory function to create and start a new pipeline.
     
     Args:
         config: Optional flow control configuration
+        llm_manager: LLM manager instance for TTS and text generation
         
     Returns:
         Started EnhancedAsyncPipeline instance
     """
-    pipeline = EnhancedAsyncPipeline(config)
+    # Import here to avoid circular imports
+    if llm_manager is None:
+        from app.services.llm_manager import llm_manager as default_llm_manager
+        llm_manager = default_llm_manager
+    
+    pipeline = EnhancedAsyncPipeline(config, llm_manager)
     await pipeline.start()
     return pipeline
 
