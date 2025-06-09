@@ -6,9 +6,11 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path/path.dart' as p;
 import '../data/datasources/remote/api_client.dart';
 import 'path_manager.dart';
 import '../services/voice_service.dart';
+import '../services/tts_streaming_service.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import '../config/llm_config.dart';
@@ -18,8 +20,11 @@ class AudioGenerator {
   // Singleton instance
   static AudioGenerator? _instance;
 
-  // Voice service for audio generation and playback
+  // Voice service for audio playback only
   final VoiceService _voiceService;
+
+  // TTS streaming service for audio generation
+  final TTSStreamingService _ttsService;
 
   // API client for direct API calls
   final ApiClient _apiClient;
@@ -42,6 +47,7 @@ class AudioGenerator {
   factory AudioGenerator({
     required VoiceService voiceService,
     required ApiClient apiClient,
+    required TTSStreamingService ttsService,
   }) {
     // Return existing instance if already created
     if (_instance != null) {
@@ -53,7 +59,9 @@ class AudioGenerator {
 
     // Create new instance if first time
     _instance = AudioGenerator._internal(
-        voiceService: voiceService, apiClient: apiClient);
+        voiceService: voiceService,
+        apiClient: apiClient,
+        ttsService: ttsService);
 
     return _instance!;
   }
@@ -62,8 +70,10 @@ class AudioGenerator {
   AudioGenerator._internal({
     required VoiceService voiceService,
     required ApiClient apiClient,
+    required TTSStreamingService ttsService,
   })  : _voiceService = voiceService,
-        _apiClient = apiClient {
+        _apiClient = apiClient,
+        _ttsService = ttsService {
     if (kDebugMode) {
       print('AudioGenerator initialized with constructor injection');
     }
@@ -215,8 +225,8 @@ class AudioGenerator {
 
   /// Get the file path for an audio file
   String _getAudioFilePath(String fileName) {
-    // Use PathManager to get cache directory and join with filename
-    return '${PathManager.instance.cacheDir}/$fileName';
+    // Use PathManager to get cache directory and join with filename using path package
+    return p.join(PathManager.instance.cacheDir, fileName);
   }
 
   /// Generate audio without playing it
@@ -271,44 +281,47 @@ class AudioGenerator {
     }
   }
 
-  /// Generate audio using backend proxy (original behavior)
+  /// Generate audio using TTSStreamingService (NEW clean approach)
   Future<String?> _generateAudioViaBackend(String text,
       {bool isAiSpeaking = true}) async {
     try {
-      // Generate a unique filename with OGG extension for opus format
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final hash = text.hashCode.abs();
-      final audioFileName = 'audio_${timestamp}_$hash.ogg';
-
-      // Generate audio using voice service
       final generationStopwatch = Stopwatch()..start();
-      final audioPath = await _voiceService.generateAudio(text);
-      generationStopwatch.stop();
-      _performanceMetrics['generate_audio'] =
-          generationStopwatch.elapsedMilliseconds;
+      final completer = Completer<String?>();
 
-      // If received a URL from voice service, download it to a local file
-      if (audioPath != null && audioPath.startsWith('http')) {
-        final localPath = _getAudioFilePath(audioFileName);
+      // Use TTSStreamingService for clean TTS generation without auto-play
+      await _ttsService.connectAndRequestTTS(
+        text: text,
+        voice: isAiSpeaking ? 'sage' : 'onyx',
+        responseFormat: 'wav', // Use WAV for lowest latency
+        autoPlay: false, // Don't auto-play, let AudioGenerator control playback
+        onFileReady: (filePath) {
+          generationStopwatch.stop();
+          _performanceMetrics['generate_audio'] =
+              generationStopwatch.elapsedMilliseconds;
 
-        // Download the audio file
-        final response = await http.get(Uri.parse(audioPath));
-        if (response.statusCode == 200) {
-          final file = File(localPath);
-          await file.writeAsBytes(response.bodyBytes);
-          return localPath;
-        }
-      }
+          log.i('TTSStreamingService generated file: $filePath');
+          if (!completer.isCompleted) {
+            completer.complete(filePath);
+          }
+        },
+        onDone: () {
+          // File should already be ready at this point
+          if (!completer.isCompleted) {
+            completer.complete(null); // Fallback if onFileReady wasn't called
+          }
+        },
+        onError: (error) {
+          generationStopwatch.stop();
+          log.e('TTSStreamingService error: $error');
+          if (!completer.isCompleted) {
+            completer.complete(null);
+          }
+        },
+      );
 
-      // If it's a local file path already, just use it
-      if (audioPath != null && !audioPath.startsWith('http')) {
-        return audioPath;
-      }
-
-      // Return whatever we got from voice service
-      return audioPath;
+      return await completer.future;
     } catch (e) {
-      log.e('Error generating audio via backend', e);
+      log.e('Error generating audio via TTSStreamingService', e);
       return null;
     }
   }
@@ -456,22 +469,31 @@ class AudioGenerator {
       return cachedAudioPath;
     }
 
-    // Not in cache, generate new audio using VoiceService.generateAudio, which handles TTS and callbacks
+    // Not in cache, generate new audio using TTSStreamingService with playback via VoiceService
     log.i(
-        'Audio not cached for: "${text.substring(0, min(20, text.length))}...". Generating anew via VoiceService.generateAudio.');
+        'Audio not cached for: "${text.substring(0, min(20, text.length))}...". Generating via TTSStreamingService.');
     final genStopwatch = Stopwatch()..start();
     String? audioPath;
     try {
-      audioPath = await _voiceService.generateAudio(text,
-          onDone: onDone, onError: onError);
+      // Generate audio without auto-play
+      audioPath = await _generateAudioViaBackend(text, isAiSpeaking: true);
+      genStopwatch.stop();
+      _performanceMetrics['generate_audio_via_tts_service'] =
+          genStopwatch.elapsedMilliseconds;
+
+      // If generation succeeded, play via VoiceService
+      if (audioPath != null) {
+        await _voiceService.playAudioWithCallbacks(audioPath,
+            onDone: onDone, onError: onError);
+      } else {
+        onError?.call('Failed to generate audio file');
+      }
     } catch (e) {
-      log.e('Error calling _voiceService.generateAudio: $e');
+      genStopwatch.stop();
+      log.e('Error calling TTSStreamingService: $e');
       onError?.call('Failed during TTS generation: ${e.toString()}');
       // audioPath will remain null
     }
-    genStopwatch.stop();
-    _performanceMetrics['generate_audio_via_voice_service'] =
-        genStopwatch.elapsedMilliseconds;
 
     if (audioPath != null) {
       // Cache the result
@@ -632,5 +654,11 @@ class AudioGenerator {
   /// Get the current cache size
   int getCacheSize() {
     return _audioCache.length;
+  }
+
+  /// Dispose of resources
+  void dispose() {
+    _ttsService.dispose();
+    clearCache();
   }
 }

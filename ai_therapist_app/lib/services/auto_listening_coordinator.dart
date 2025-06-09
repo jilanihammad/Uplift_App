@@ -423,6 +423,9 @@ class AutoListeningCoordinator {
             print('🎤 AutoListening: Stopped recording, file at: $audioPath');
           }
         }
+        // Cancel backup timer since recording stopped successfully
+        _cancelSpeechEndTimer(reason: 'Recording stopped successfully');
+
         if (kDebugMode) {
           print(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _updateState(processing)');

@@ -25,6 +25,7 @@ import '../models/therapy_message.dart';
 import '../data/repositories/session_repository.dart';
 import '../services/navigation_service.dart';
 import '../services/audio_generator.dart';
+import '../services/tts_streaming_service.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../utils/list_extensions.dart';
@@ -928,6 +929,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       final generator = AudioGenerator(
         voiceService: serviceLocator<VoiceService>(),
         apiClient: serviceLocator<ApiClient>(),
+        ttsService: serviceLocator<TTSStreamingService>(),
       );
       generator.initializeOnlyIfNeeded();
       return generator;

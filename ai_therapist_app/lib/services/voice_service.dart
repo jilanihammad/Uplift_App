@@ -12,9 +12,9 @@ import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
+
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as path;
+import 'package:path/path.dart' as p;
 import 'package:ai_therapist_app/config/api.dart';
 import 'package:ai_therapist_app/data/models/log_entry.dart';
 import 'package:ai_therapist_app/data/repositories/log_repo.dart';
@@ -939,10 +939,10 @@ class VoiceService {
         return null;
       }
 
-      // Get temporary directory for caching
-      final tempDir = await getTemporaryDirectory();
+      // Get temporary directory for caching using PathManager
       final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.mp3';
-      final filePath = '${tempDir.path}/$fileName';
+      final cacheDir = PathManager.instance.cacheDir;
+      final filePath = p.join(cacheDir, fileName);
 
       // Write the audio data to a file
       final file = io.File(filePath);
