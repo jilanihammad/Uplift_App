@@ -96,6 +96,9 @@ class RecordingManager {
       final String uuid = const Uuid().v4();
       final String filePath = PathManager.instance.recordingFile(uuid);
 
+      // 🚨 CORRUPTION DIAGNOSTIC - Verify path is still clean after PathManager
+      print('🛡️ RecordingManager.startRecording() received path: $filePath');
+
       // Configure recording
       await _recorder.start(
         RecordConfig(
@@ -107,6 +110,11 @@ class RecordingManager {
       );
 
       _lastRecordedPath = filePath;
+
+      // 🚨 CORRUPTION DIAGNOSTIC - Check if path corrupted after storing
+      print(
+          '🛡️ RecordingManager._lastRecordedPath stored as: $_lastRecordedPath');
+
       _recordingStartTime = DateTime.now(); // Track start time
       _updateState(RecordingState.recording);
 
@@ -140,14 +148,22 @@ class RecordingManager {
     try {
       _updateState(RecordingState.processing);
 
-      // Stop recording
-      final path = await _recorder.stop();
+      // 🚨 CORRUPTION DIAGNOSTIC - Check path before stopping
+      print(
+          '🛡️ RecordingManager.stopRecording() _lastRecordedPath BEFORE stop: $_lastRecordedPath');
 
-      if (path == null) {
-        throw Exception('Recording path is null after stopping recorder');
+      // Stop recording - but don't trust the returned path as it may be corrupted
+      await _recorder.stop();
+
+      // 🚨 CORRUPTION DIAGNOSTIC - Check path after stopping
+      print(
+          '🛡️ RecordingManager.stopRecording() _lastRecordedPath AFTER stop: $_lastRecordedPath');
+
+      // Use our stored clean path from PathManager instead of the returned path
+      if (_lastRecordedPath == null) {
+        throw Exception('No recording path available - this should not happen');
       }
 
-      _lastRecordedPath = path;
       _updateState(RecordingState.stopped);
       _recordingStartTime = null; // Reset start time
 

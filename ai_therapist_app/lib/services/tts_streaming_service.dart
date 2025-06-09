@@ -20,9 +20,11 @@ class TTSStreamingService {
     String voice = 'sage',
     String responseFormat =
         'wav', // Changed from 'opus' to 'wav' for lowest latency streaming
+    bool autoPlay = true, // Add option to disable auto-playback
     void Function(double progress)? onProgress,
     void Function()? onDone,
     void Function(String error)? onError,
+    void Function(String filePath)? onFileReady, // Callback when file is saved
   }) async {
     _audioBuffer.clear();
     _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
@@ -42,7 +44,12 @@ class TTSStreamingService {
           _audioBuffer.addAll(chunk);
           // Optionally, call onProgress with percent complete (if available)
         } else if (data['type'] == 'done') {
-          await _playBufferedAudio(responseFormat);
+          final filePath = await _saveBufferedAudio(responseFormat);
+          onFileReady?.call(filePath);
+
+          if (autoPlay) {
+            await _playFromFile(filePath);
+          }
           onDone?.call();
           await close();
         } else if (data['type'] == 'error') {
@@ -64,9 +71,12 @@ class TTSStreamingService {
     _channel!.sink.add(request);
   }
 
-  Future<void> _playBufferedAudio(String format) async {
+  Future<String> _saveBufferedAudio(String format) async {
     try {
-      // Write buffer to a temporary file and play from file
+      // Ensure PathManager is initialized before creating paths
+      await PathManager.instance.init();
+
+      // Write buffer to a temporary file using PathManager
       // Updated file extension logic for WAV format
       final ext = format == 'wav'
           ? 'wav'
@@ -74,16 +84,27 @@ class TTSStreamingService {
               ? 'ogg'
               : 'mp3';
       final baseId = DateTime.now().microsecondsSinceEpoch.toString();
-      final tempFile = File(PathManager.instance.ttsFile(baseId, ext));
+      // Use PathManager properly - both parameters are positional in the method signature
+      final filePath = PathManager.instance.ttsFile(baseId, ext);
+      final tempFile = File(filePath);
       await tempFile.writeAsBytes(_audioBuffer);
 
-      await _player.setFilePath(tempFile.path);
+      return tempFile.path;
+    } catch (e) {
+      // Handle save errors
+      rethrow;
+    }
+  }
+
+  Future<void> _playFromFile(String filePath) async {
+    try {
+      await _player.setFilePath(filePath);
       await _player.play();
 
       // Clean up temp file after playback
       _player.playerStateStream.listen((state) {
         if (state.processingState == ProcessingState.completed) {
-          tempFile.delete().catchError((_) {});
+          File(filePath).delete().catchError((_) {});
         }
       });
     } catch (e) {

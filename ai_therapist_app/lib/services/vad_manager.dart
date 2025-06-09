@@ -15,11 +15,15 @@ class VADManager {
   // Singleton instance
   static VADManager? _instance;
 
-  // Audio recorder for capturing audio levels
-  AudioRecorder _recorder = AudioRecorder();
+  // Audio recorder for capturing audio levels (AudioRecorder is the concrete implementation)
+  AudioRecorder _recorder =
+      AudioRecorder(); // AudioRecorder works, Record() is abstract
 
   // Timer for polling amplitude
   Timer? _amplitudeTimer;
+
+  // Track recorder disposal to prevent double-dispose
+  bool _recorderDisposed = false;
 
   // Amplitude thresholds
   final double _speechStartThreshold =
@@ -43,9 +47,7 @@ class VADManager {
   Timer? _silenceTimer;
   DateTime? _speechStartTime;
 
-  // Debounce timers (to avoid flickering)
-  Timer? _speechStartDebounceTimer;
-  Timer? _speechEndDebounceTimer;
+  // Removed unused debounce timers to avoid confusion
 
   // Counter for consecutive frames below/above threshold
   int _consecutiveQuietFrames = 0;
@@ -124,7 +126,12 @@ class VADManager {
 
     try {
       _recorder = AudioRecorder();
+      _recorderDisposed = false; // Reset disposal flag
       if (kDebugMode) print('[VADManager] New AudioRecorder instance created.');
+
+      // Ensure PathManager is initialized before creating paths
+      if (kDebugMode) print('[VADManager] Ensuring PathManager is initialized');
+      await PathManager.instance.init();
 
       if (kDebugMode) print('[VADManager] Creating monitor file path');
       // Create a temporary file path for monitoring
@@ -186,9 +193,21 @@ class VADManager {
         // Process the amplitude
         _processAmplitude(level);
       } catch (e) {
-        // Ignore errors during amplitude polling
+        // Handle errors during amplitude polling
         if (kDebugMode) {
           print('⚠️ VAD amplitude polling error: $e');
+        }
+        // For critical errors (permissions, recorder issues), stop gracefully
+        if (e.toString().contains('permission') ||
+            e.toString().contains('recording') ||
+            e.toString().contains('disposed')) {
+          if (kDebugMode) {
+            print('⚠️ VAD: Critical error, stopping speech detection');
+          }
+          _stopSpeechDetection().catchError((e2) {
+            if (kDebugMode)
+              print('⚠️ Error in emergency _stopSpeechDetection: $e2');
+          });
         }
       }
     });
@@ -224,16 +243,18 @@ class VADManager {
               ? now.difference(_speechStartTime!).inMilliseconds
               : 0;
 
-          if (speechDuration > 800) {
-            // Reduced from 1000ms to 800ms
+          if (speechDuration > 200) {
+            // Handle very short utterances (was 800ms, now 200ms for edge cases)
             if (kDebugMode) {
               print(
                   '🎙️ VAD: Speech ended after ${speechDuration}ms (quiet frames)');
             }
-            _stopSpeechDetection();
+            _stopSpeechDetection().catchError((e) {
+              if (kDebugMode) print('⚠️ Error in _stopSpeechDetection: $e');
+            });
           } else if (kDebugMode) {
             print(
-                '🎙️ VAD: Ignoring brief speech fragment (${speechDuration}ms)');
+                '🎙️ VAD: Ignoring very brief speech fragment (${speechDuration}ms < 200ms)');
             // Reset counters to continue listening
             _consecutiveQuietFrames = 0;
           }
@@ -261,7 +282,9 @@ class VADManager {
               print(
                   '🎙️ VAD: Speech ended due to silence timeout after ${speechDuration}ms');
             }
-            _stopSpeechDetection();
+            _stopSpeechDetection().catchError((e) {
+              if (kDebugMode) print('⚠️ Error in _stopSpeechDetection: $e');
+            });
           }
         });
       }
@@ -291,86 +314,85 @@ class VADManager {
       _speechStartTime = DateTime.now();
       _speechStartController.add(null);
 
-      // Start the max silence timer
-      _silenceTimer = Timer(Duration(milliseconds: _maxSilenceDuration), () {
-        if (_isSpeechDetected) {
-          if (kDebugMode) {
-            print('🎙️ VAD: Speech ended due to silence timeout');
-          }
-          _stopSpeechDetection();
-        }
-      });
+      // Note: Silence timer is handled in _processAmplitude, not here
+      // This avoids duplicate timers and timer overlap issues
     }
   }
 
-  // Stop speech detection
-  void _stopSpeechDetection() {
-    if (_isSpeechDetected) {
-      if (kDebugMode) {
-        print(
-            '[VADManager][DEBUG] _stopSpeechDetection: Emitting onSpeechEnd. _isSpeechDetected=$_isSpeechDetected');
-        print(StackTrace.current);
+  // Stop speech detection *and* tear down recording
+  Future<void> _stopSpeechDetection() async {
+    // OPTION ➋: Removed guard condition - always perform full teardown
+    // if (!_isSpeechDetected) return;  // <-- REMOVED: This was preventing proper cleanup
+    if (kDebugMode) {
+      print(
+          '[VADManager][DEBUG] _stopSpeechDetection: Tearing down recorder and state (unconditional)');
+      print(StackTrace.current);
+    }
+
+    // Cancel any queued silence timeouts
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
+
+    // Stop polling amplitude
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
+
+    // Actually stop and dispose the recorder (with double-dispose protection)
+    try {
+      if (await _recorder.isRecording()) {
+        await _recorder.stop();
+        if (kDebugMode) print('🎙️ VAD: Recorder stopped during speech end');
       }
-      _silenceTimer?.cancel();
-      _silenceTimer = null;
-      _isSpeechDetected = false;
-      _speechEndController.add(null);
+      if (!_recorderDisposed) {
+        await _recorder.dispose();
+        _recorderDisposed = true;
+        if (kDebugMode) print('🎙️ VAD: Recorder disposed during speech end');
+      } else if (kDebugMode) {
+        print('🎙️ VAD: Recorder already disposed, skipping');
+      }
+    } catch (e) {
+      if (kDebugMode) print('⚠️ Error shutting down recorder: $e');
     }
+
+    // Flip all state flags
+    _isSpeechDetected = false;
+    _isListening = false;
+    _consecutiveLoudFrames = 0;
+    _consecutiveQuietFrames = 0;
+
+    // Debounce timers removed for simplicity
+
+    if (kDebugMode) {
+      print(
+          '🎙️ VAD: Complete teardown finished, emitting onSpeechEnd with debounce');
+    }
+
+    // Add a tiny post-speech debounce to batch any quick amplitude bounces
+    await Future.delayed(Duration(milliseconds: 50));
+
+    // Finally, emit the end event
+    _speechEndController.add(null);
   }
 
-  // Cancel all debounce timers
-  void _cancelDebounceTimers() {
-    _speechStartDebounceTimer?.cancel();
-    _speechStartDebounceTimer = null;
-    _speechEndDebounceTimer?.cancel();
-    _speechEndDebounceTimer = null;
-  }
-
-  // Cancel just the speech end timer
-  void _cancelSpeechEndTimer() {
-    _speechEndDebounceTimer?.cancel();
-    _speechEndDebounceTimer = null;
-  }
+  // Removed debounce timer methods (unused)
 
   // Stop listening for voice activity
   Future<void> stopListening() async {
     if (kDebugMode) print('[VADManager] stopListening() called.');
-    if (!_isListening) {
+
+    // FIX A: Always cancel the amplitude timer FIRST, before any early returns
+    // This prevents the "smoking gun" bug where timer keeps running after we think we stopped
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
+
+    // Safe-guard: if we haven't even started, nothing to do
+    if (!_isListening && !_isSpeechDetected) {
       if (kDebugMode) print('[VADManager] Not listening, nothing to stop.');
       return;
     }
 
-    _isListening = false;
-    _isSpeechDetected = false;
-    _consecutiveLoudFrames = 0;
-    _consecutiveQuietFrames = 0;
-
-    _amplitudeTimer?.cancel();
-    _silenceTimer?.cancel();
-    _speechStartDebounceTimer?.cancel();
-    _speechEndDebounceTimer?.cancel();
-
-    try {
-      if (await _recorder.isRecording()) {
-        await _recorder.stop();
-        await _recorder.dispose();
-        if (kDebugMode) {
-          print('🎙️ VAD: Recorder stopped and disposed.');
-        }
-      } else {
-        // If not recording, still dispose it to be safe for next start
-        await _recorder.dispose();
-        if (kDebugMode) {
-          print(
-              '🎙️ VAD: Recorder was not recording, but disposed for safety.');
-        }
-      }
-    } catch (e) {
-      _errorController.add('Error stopping/disposing VAD recorder: $e');
-      if (kDebugMode) {
-        print('❌ VAD recorder stop/dispose error: $e');
-      }
-    }
+    // Let _stopSpeechDetection handle all the teardown
+    await _stopSpeechDetection();
 
     if (kDebugMode) {
       print('🎙️ VAD: Stopped listening for voice activity');
@@ -385,15 +407,18 @@ class VADManager {
       }
 
       _amplitudeTimer?.cancel();
-      _cancelDebounceTimers();
+      // Debounce timers removed for simplicity
 
       await _speechStartController.close();
       await _speechEndController.close();
       await _errorController.close();
       await _amplitudeController.close();
 
+      // Reset disposal flag for potential re-initialization
+      _recorderDisposed = false;
+
       if (kDebugMode) {
-        print('🎙️ VAD manager disposed');
+        print('🎙️ VAD manager disposed and ready for re-init');
       }
     } catch (e) {
       if (kDebugMode) {
