@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
+
 import 'path_manager.dart';
 
 /// Manages voice activity detection (VAD) functionality
@@ -15,12 +16,14 @@ class VADManager {
   // Singleton instance
   static VADManager? _instance;
 
-  // Audio recorder for capturing audio levels (AudioRecorder is the concrete implementation)
-  AudioRecorder _recorder =
-      AudioRecorder(); // AudioRecorder works, Record() is abstract
+  // Single recorder instance - never null after initialize (Option B)
+  late final AudioRecorder _recorder;
 
   // Timer for polling amplitude
   Timer? _amplitudeTimer;
+
+  // Simple lock for mutual exclusion to prevent race conditions
+  bool _operationInProgress = false;
 
   // Track recorder disposal to prevent double-dispose
   bool _recorderDisposed = false;
@@ -95,9 +98,13 @@ class VADManager {
         return;
       }
 
+      // Create single recorder instance (Option B: Single Recorder Instance)
+      _recorder = AudioRecorder();
+      _recorderDisposed = false;
+
       _isInitialized = true;
       if (kDebugMode) {
-        print('🎙️ VAD manager initialized');
+        print('🎙️ VAD manager initialized with single recorder instance');
       }
     } catch (e) {
       _errorController.add('Error initializing VAD: $e');
@@ -107,27 +114,47 @@ class VADManager {
     }
   }
 
-  // Start listening for voice activity
+  // Start listening for voice activity (Option B: Single Recorder Instance)
   Future<bool> startListening() async {
     if (kDebugMode)
       print(
           '[VADManager] startListening() called. _isInitialized=$_isInitialized, _isListening=$_isListening');
-    if (!_isInitialized) {
-      await initialize();
+
+    // Prevent race conditions with simple lock
+    if (_operationInProgress) {
+      if (kDebugMode) print('[VADManager] Operation in progress, waiting...');
+      await Future.delayed(Duration(milliseconds: 10));
+      return startListening(); // Retry
     }
 
-    if (_isListening) {
-      if (kDebugMode) print('[VADManager] Already listening, returning true');
-      if (kDebugMode) {
-        print('🎙️ VAD is already listening');
-      }
-      return true;
-    }
+    _operationInProgress = true;
 
     try {
-      _recorder = AudioRecorder();
-      _recorderDisposed = false; // Reset disposal flag
-      if (kDebugMode) print('[VADManager] New AudioRecorder instance created.');
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      if (_isListening) {
+        if (kDebugMode) print('[VADManager] Already listening, returning true');
+        if (kDebugMode) {
+          print('🎙️ VAD is already listening');
+        }
+        return true;
+      }
+
+      // Option B: Reuse existing recorder instead of creating new one
+      if (await _recorder.isRecording()) {
+        // Edge case: still recording from previous session - reuse it
+        if (kDebugMode)
+          print(
+              '[VADManager] Recorder still active from previous session, reusing');
+        _isListening = true;
+        _isSpeechDetected = false;
+        _consecutiveLoudFrames = 0;
+        _consecutiveQuietFrames = 0;
+        _startAmplitudePolling();
+        return true;
+      }
 
       // Ensure PathManager is initialized before creating paths
       if (kDebugMode) print('[VADManager] Ensuring PathManager is initialized');
@@ -137,8 +164,9 @@ class VADManager {
       // Create a temporary file path for monitoring
       final String monitorFilePath = PathManager.instance.vadMonitorFile();
 
-      if (kDebugMode) print('[VADManager] Starting recorder for VAD');
-      // Start recording with monitoring mode
+      if (kDebugMode)
+        print('[VADManager] Starting recorder for VAD (reusing instance)');
+      // Start recording with monitoring mode using existing recorder
       await _recorder.start(
         RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -171,6 +199,8 @@ class VADManager {
         print('[VADManager] ERROR in startListening: $e');
       }
       return false;
+    } finally {
+      _operationInProgress = false;
     }
   }
 
@@ -337,21 +367,17 @@ class VADManager {
     _amplitudeTimer?.cancel();
     _amplitudeTimer = null;
 
-    // Actually stop and dispose the recorder (with double-dispose protection)
+    // Stop the recorder but keep it alive for reuse (Option B: Single Recorder Instance)
     try {
       if (await _recorder.isRecording()) {
         await _recorder.stop();
-        if (kDebugMode) print('🎙️ VAD: Recorder stopped during speech end');
+        if (kDebugMode)
+          print(
+              '🎙️ VAD: Recorder stopped during speech end (keeping instance alive)');
       }
-      if (!_recorderDisposed) {
-        await _recorder.dispose();
-        _recorderDisposed = true;
-        if (kDebugMode) print('🎙️ VAD: Recorder disposed during speech end');
-      } else if (kDebugMode) {
-        print('🎙️ VAD: Recorder already disposed, skipping');
-      }
+      // NOTE: No longer disposing recorder here - reuse the instance!
     } catch (e) {
-      if (kDebugMode) print('⚠️ Error shutting down recorder: $e');
+      if (kDebugMode) print('⚠️ Error stopping recorder: $e');
     }
 
     // Flip all state flags
@@ -399,7 +425,7 @@ class VADManager {
     }
   }
 
-  // Clean up resources
+  // Clean up resources (Option B: Single final disposal)
   Future<void> dispose() async {
     try {
       if (_isListening) {
@@ -409,16 +435,29 @@ class VADManager {
       _amplitudeTimer?.cancel();
       // Debounce timers removed for simplicity
 
+      // OPTION B: Only dispose recorder here, at final cleanup
+      if (!_recorderDisposed && _isInitialized) {
+        try {
+          if (await _recorder.isRecording()) {
+            await _recorder.stop();
+          }
+          await _recorder.dispose();
+          _recorderDisposed = true;
+          if (kDebugMode) {
+            print('🎙️ VAD: Recorder finally disposed during full cleanup');
+          }
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Error disposing recorder: $e');
+        }
+      }
+
       await _speechStartController.close();
       await _speechEndController.close();
       await _errorController.close();
       await _amplitudeController.close();
 
-      // Reset disposal flag for potential re-initialization
-      _recorderDisposed = false;
-
       if (kDebugMode) {
-        print('🎙️ VAD manager disposed and ready for re-init');
+        print('🎙️ VAD manager disposed completely');
       }
     } catch (e) {
       if (kDebugMode) {
