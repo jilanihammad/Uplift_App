@@ -61,6 +61,19 @@ Future<Map<String, dynamic>> processAudioFileInIsolate(
 }
 
 class VoiceService {
+  // 🚀 SMART TIMEOUT STRATEGY: Progressive timeouts for TTS scenarios
+  // Normal timeout: 5-8s expected + buffer = 12s
+  static const Duration _ttsNormalTimeout = Duration(seconds: 12);
+  // Edge case timeout: 20-25s expected + buffer = 35s
+  static const Duration _ttsEdgeCaseTimeout = Duration(seconds: 35);
+  // Warning threshold: When to warn about slow response
+  static const Duration _ttsWarningThreshold = Duration(seconds: 10);
+
+  // Other timeouts for completeness
+  static const Duration _transcriptionTimeout = Duration(seconds: 60);
+  static const Duration _audioLoadTimeout = Duration(seconds: 15);
+  static const Duration _connectivityTimeout = Duration(seconds: 8);
+
   // Singleton instance
   static VoiceService? _instance;
 
@@ -457,7 +470,336 @@ class VoiceService {
     }
   }
 
+<<<<<<< Updated upstream
   /// Stream TTS audio from backend and play it
+=======
+  /// 🚀 PROGRESSIVE TIMEOUT: Smart timeout strategy for TTS with edge case detection
+  Future<String?> streamAndPlayTTSWithProgressiveTimeout({
+    required String text,
+    String voice = 'nova',
+    String responseFormat = 'wav',
+    void Function(double progress)? onProgress,
+    void Function()? onDone,
+    void Function(String error)? onError,
+  }) async {
+    isAiSpeaking = true;
+    _ttsSpeakingStateController.add(true);
+
+    final startTime = DateTime.now();
+    final isLikelyEdgeCase = _detectPotentialEdgeCase(text);
+    final timeout = isLikelyEdgeCase ? _ttsEdgeCaseTimeout : _ttsNormalTimeout;
+
+    if (kDebugMode) {
+      print(
+          '[VoiceService] [TTS] Starting TTS - Expected: ${isLikelyEdgeCase ? "20-25s (edge case)" : "5-8s (normal)"}, Timeout: ${timeout.inSeconds}s');
+    }
+
+    final ttsService = TTSStreamingService();
+    bool warningShown = false;
+
+    try {
+      final completer = Completer<String?>();
+      final conversationId =
+          'tts_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}';
+
+      // Warning timer for slow responses
+      Timer? warningTimer;
+      if (!isLikelyEdgeCase) {
+        warningTimer = Timer(_ttsWarningThreshold, () {
+          final elapsed = DateTime.now().difference(startTime).inSeconds;
+          if (!warningShown && !completer.isCompleted) {
+            warningShown = true;
+            if (kDebugMode) {
+              print(
+                  '[VoiceService] [TTS] ⚠️  Slow response (${elapsed}s) - this might be an edge case');
+            }
+            // Could show user feedback here: "Processing complex response..."
+          }
+        });
+      }
+
+      // Main timeout
+      Timer? timeoutTimer = Timer(timeout, () {
+        final elapsed = DateTime.now().difference(startTime).inSeconds;
+        if (!completer.isCompleted) {
+          if (kDebugMode) {
+            print(
+                '[VoiceService] [TTS] ⏰ TTS timed out after ${elapsed}s (expected: ${isLikelyEdgeCase ? "20-25s" : "5-8s"})');
+          }
+          warningTimer?.cancel();
+
+          if (elapsed > 25) {
+            // Definitely hung, not just slow
+            onError?.call('TTS response failed - please try again.');
+          } else if (isLikelyEdgeCase) {
+            // Edge case that took too long
+            onError?.call(
+                'Complex response took too long to generate. Please try again.');
+          } else {
+            // Normal case that became edge case
+            onError?.call(
+                'Response is taking longer than expected. Please try again.');
+          }
+
+          completer.complete(null);
+        }
+      });
+
+      await ttsService.streamAndPlay(
+        text: text,
+        conversationId: conversationId,
+        voice: voice,
+        format: responseFormat,
+        onProgress: (progress) {
+          final elapsed = DateTime.now().difference(startTime).inSeconds;
+          if (kDebugMode) {
+            print(
+                '[VoiceService] [TTS] Progress: ${(progress * 100).toStringAsFixed(1)}% (${elapsed}s)');
+          }
+          onProgress?.call(progress);
+        },
+        onComplete: () async {
+          final totalTime = DateTime.now().difference(startTime).inSeconds;
+          timeoutTimer?.cancel();
+          warningTimer?.cancel();
+
+          if (kDebugMode) {
+            final category = totalTime <= 8
+                ? "normal"
+                : totalTime <= 25
+                    ? "edge case"
+                    : "unusually slow";
+            print(
+                '[VoiceService] [TTS] ✅ Completed in ${totalTime}s ($category)');
+          }
+
+          isAiSpeaking = false;
+          _ttsSpeakingStateController.add(false);
+          ttsService.dispose();
+          onDone?.call();
+          completer.complete('completed');
+        },
+        onError: (error) {
+          final totalTime = DateTime.now().difference(startTime).inSeconds;
+          timeoutTimer?.cancel();
+          warningTimer?.cancel();
+
+          if (kDebugMode) {
+            print('[VoiceService] [TTS] ❌ Error after ${totalTime}s: $error');
+          }
+
+          isAiSpeaking = false;
+          _ttsSpeakingStateController.add(false);
+          ttsService.dispose();
+          onError?.call(error);
+          completer.complete(null);
+        },
+      );
+
+      return await completer.future;
+    } catch (e) {
+      final elapsed = DateTime.now().difference(startTime).inSeconds;
+      if (kDebugMode) {
+        print('[VoiceService] [TTS] Exception after ${elapsed}s: $e');
+      }
+
+      isAiSpeaking = false;
+      _ttsSpeakingStateController.add(false);
+      return null;
+    }
+  }
+
+  /// 🧠 EDGE CASE DETECTION: Detect potential edge cases that might take 20-25s
+  bool _detectPotentialEdgeCase(String text) {
+    // Heuristics for detecting edge cases that might take 20-25s
+    final wordCount = text.split(' ').length;
+    final charCount = text.length;
+
+    // Long text
+    if (wordCount > 100 || charCount > 800) {
+      if (kDebugMode)
+        print(
+            '[TTS] Detected long text edge case: ${wordCount} words, ${charCount} chars');
+      return true;
+    }
+
+    // Complex punctuation/formatting (might slow down TTS processing)
+    final complexPunctuation =
+        RegExp(r'[(){}\[\]<>""' '…–—]').allMatches(text).length;
+    if (complexPunctuation > 10) {
+      if (kDebugMode)
+        print(
+            '[TTS] Detected complex formatting edge case: ${complexPunctuation} special chars');
+      return true;
+    }
+
+    // Multiple sentences (might require more processing)
+    final sentenceCount =
+        text.split(RegExp(r'[.!?]+')).where((s) => s.trim().isNotEmpty).length;
+    if (sentenceCount > 8) {
+      if (kDebugMode)
+        print(
+            '[TTS] Detected multi-sentence edge case: ${sentenceCount} sentences');
+      return true;
+    }
+
+    // Technical terms or special characters (might slow TTS)
+    final technicalTerms = RegExp(r'[A-Z]{2,}|[0-9]{4,}|\b[a-z]+[A-Z][a-z]*\b')
+        .allMatches(text)
+        .length;
+    if (technicalTerms > 5) {
+      if (kDebugMode)
+        print(
+            '[TTS] Detected technical content edge case: ${technicalTerms} technical terms');
+      return true;
+    }
+
+    return false;
+  }
+
+  /// 📊 ADAPTIVE TIMEOUT: Calculate adaptive timeout based on text analysis
+  Duration _calculateAdaptiveTTSTimeout(String text) {
+    final isEdgeCase = _detectPotentialEdgeCase(text);
+
+    if (isEdgeCase) {
+      return _ttsEdgeCaseTimeout;
+    }
+
+    // For normal cases, calculate based on text length
+    final wordCount = text.split(' ').length;
+    final estimatedSeconds = (wordCount / 4.0) + 3; // ~4 words/sec + 3s buffer
+    final timeout =
+        estimatedSeconds.clamp(8.0, 12.0); // Between 8-12s for normal cases
+
+    return Duration(seconds: timeout.round());
+  }
+
+  /// 🔍 DEBUG: Debug timeout issues - measure actual completion times
+  Future<String?> debugCurrentTimeouts({
+    required String text,
+    String voice = 'nova',
+    String responseFormat = 'wav',
+    void Function(double progress)? onProgress,
+    void Function()? onDone,
+    void Function(String error)? onError,
+  }) async {
+    final startTime = DateTime.now();
+
+    // Test with NO timeout to see actual completion time
+    if (kDebugMode) {
+      print(
+          '[VoiceService] [TTS] 🐞 DEBUG: Running TTS with NO timeout to measure actual duration');
+    }
+
+    try {
+      isAiSpeaking = true;
+      _ttsSpeakingStateController.add(true);
+
+      final ttsService = TTSStreamingService();
+      final completer = Completer<String?>();
+      final conversationId = 'debug_${DateTime.now().millisecondsSinceEpoch}';
+
+      await ttsService.streamAndPlay(
+        text: text,
+        conversationId: conversationId,
+        voice: voice,
+        format: responseFormat,
+        onProgress: (progress) {
+          final elapsed = DateTime.now().difference(startTime).inSeconds;
+          if (kDebugMode) {
+            print(
+                '[TTS] 🐞 DEBUG Progress: ${(progress * 100).toStringAsFixed(1)}% at ${elapsed}s');
+          }
+          onProgress?.call(progress);
+        },
+        onComplete: () async {
+          final totalTime = DateTime.now().difference(startTime).inSeconds;
+          if (kDebugMode) {
+            print('[TTS] 🐞 DEBUG: ✅ ACTUAL completion time: ${totalTime}s');
+            if (totalTime > 8) {
+              print(
+                  '[TTS] 🐞 DEBUG: ⚠️  This was an edge case (>${totalTime}s)');
+            }
+          }
+
+          isAiSpeaking = false;
+          _ttsSpeakingStateController.add(false);
+          ttsService.dispose();
+          onDone?.call();
+          completer.complete('debug_complete');
+        },
+        onError: (error) {
+          final totalTime = DateTime.now().difference(startTime).inSeconds;
+          if (kDebugMode) {
+            print('[TTS] 🐞 DEBUG: ❌ Error at ${totalTime}s: $error');
+          }
+
+          isAiSpeaking = false;
+          _ttsSpeakingStateController.add(false);
+          ttsService.dispose();
+          onError?.call(error);
+          completer.complete(null);
+        },
+      );
+
+      return await completer.future;
+    } catch (e) {
+      final elapsed = DateTime.now().difference(startTime).inSeconds;
+      if (kDebugMode) {
+        print('[TTS] 🐞 DEBUG: Exception at ${elapsed}s: $e');
+      }
+
+      isAiSpeaking = false;
+      _ttsSpeakingStateController.add(false);
+      return null;
+    }
+  }
+
+  /// 🚨 EMERGENCY FALLBACK: Emergency timeout with very generous limits
+  Future<String?> streamAndPlayTTSWithEmergencyTimeout({
+    required String text,
+    String voice = 'nova',
+    String responseFormat = 'wav',
+    void Function(double progress)? onProgress,
+    void Function()? onDone,
+    void Function(String error)? onError,
+  }) async {
+    // Use a very generous timeout to ensure edge cases complete
+    const emergencyTimeout = Duration(seconds: 45);
+
+    if (kDebugMode) {
+      print(
+          '[VoiceService] [TTS] 🚨 Using emergency timeout: ${emergencyTimeout.inSeconds}s');
+    }
+
+    final startTime = DateTime.now();
+
+    try {
+      final result = await streamAndPlayTTSWithProgressiveTimeout(
+        text: text,
+        voice: voice,
+        responseFormat: responseFormat,
+        onProgress: onProgress,
+        onDone: onDone,
+        onError: onError,
+      ).timeout(emergencyTimeout);
+
+      return result;
+    } on TimeoutException catch (e) {
+      final elapsed = DateTime.now().difference(startTime).inSeconds;
+      if (kDebugMode) {
+        print(
+            '[VoiceService] [TTS] 🚨 Even emergency timeout failed at ${elapsed}s - connection likely hung');
+      }
+
+      onError?.call(
+          'Connection appears to be hung. Please check your internet connection.');
+      return null;
+    }
+  }
+
+  /// Stream TTS audio from backend and play it using enhanced streaming service
+>>>>>>> Stashed changes
   Future<String?> streamAndPlayTTS({
     required String text,
     String voice = 'sage',
@@ -466,6 +808,7 @@ class VoiceService {
     void Function()? onDone,
     void Function(String error)? onError,
   }) async {
+<<<<<<< Updated upstream
     isAiSpeaking = true;
     if (kDebugMode)
       print('[VoiceService] [TTS] isAiSpeaking set to true (streamAndPlayTTS)');
@@ -589,6 +932,23 @@ class VoiceService {
         }
       }
     }
+=======
+    // 🚀 PRODUCTION: Use progressive timeout strategy
+    return await streamAndPlayTTSWithProgressiveTimeout(
+      text: text,
+      voice: voice,
+      responseFormat: responseFormat,
+      onProgress: onProgress,
+      onDone: onDone,
+      onError: onError,
+    );
+
+    // 🔍 DEBUG: For debugging premature timeouts, uncomment this line:
+    // return await debugCurrentTimeouts(text: text, voice: voice, responseFormat: responseFormat, onProgress: onProgress, onDone: onDone, onError: onError);
+
+    // 🚨 EMERGENCY: For emergency fallback with very generous timeouts, uncomment this line:
+    // return await streamAndPlayTTSWithEmergencyTimeout(text: text, voice: voice, responseFormat: responseFormat, onProgress: onProgress, onDone: onDone, onError: onError);
+>>>>>>> Stashed changes
   }
 
   // Refactor generateAudio to use WebSocket streaming with automatic mp3 fallback

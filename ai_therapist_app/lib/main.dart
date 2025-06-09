@@ -1,6 +1,7 @@
 // lib/main.dart
 // Trivial change to trigger linter
 import 'dart:async';
+import 'dart:async' show unawaited;
 import 'dart:io';
 import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
@@ -145,30 +146,19 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kDebugMode) print('[Main] App initialization starting...');
-  // Set zone error fatal to false to avoid Flutter zone binding errors
-  BindingBase.debugZoneErrorsAreFatal = false;
 
+  BindingBase.debugZoneErrorsAreFatal = false;
   logger.info('[Main] Starting app initialization.');
 
-  // Run the entire app in a single guarded zone to avoid zone mismatches
   runZonedGuarded(() async {
     debugPrint('[main.dart] Entered runZonedGuarded');
-    // 0. Initialize LoggingService first - enables proper logging for the rest of initialization
+
+    // CRITICAL: Initialize only essential services first
     _initializeLogging();
-    debugPrint('[main.dart] Logging initialized');
-
-    // 1. Ensure Flutter bindings are initialized first - inside the same zone as runApp
-    final binding = WidgetsFlutterBinding.ensureInitialized();
-    debugPrint('[main.dart] Flutter bindings initialized');
-    logger.info(
-        '[Main] Flutter bindings initialized in the same zone as runApp.');
-
-    // 1.5. Initialize AppConfig to load environment variables
     await AppConfig.initialize();
     AppConfig().logConfig();
-    debugPrint('[main.dart] AppConfig initialized');
-    logger.info('[Main] AppConfig initialized with environment variables.');
 
+<<<<<<< Updated upstream
     // CRITICAL CHANGE: DISABLE FIREBASE APP CHECK COMPLETELY
     try {
       await Firebase.initializeApp(
@@ -206,87 +196,57 @@ Future<void> main() async {
     // 4. Setup error handling
     debugPrint('[main.dart] Setting up error handlers.');
     logger.info('[Main] Setting up error handlers.');
+=======
+    final firebaseApp = await ensureFirebaseInitialized();
+
+    // Setup error handling
+>>>>>>> Stashed changes
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       _handleGlobalError(
           details.exception, details.stack ?? StackTrace.current);
     };
 
-    // 5. Setup Bloc observer for debugging
     if (kDebugMode) {
       Bloc.observer = SimpleBlocObserver();
-      debugPrint('[main.dart] Set up Bloc observer for debugging.');
-      logger.debug('[Main] Set up Bloc observer for debugging.');
     }
 
-    // 6. Initialize service locator (GetIt)
-    debugPrint('[main.dart] Setting up service locator...');
-    logger.info('[Main] Setting up service locator...');
+    // Setup service locator
+    await setupServiceLocator();
+
+    // 🚨 CRITICAL CHANGE: Initialize audio services FIRST, before database
+    debugPrint('[main.dart] Initializing CRITICAL audio services...');
     try {
-      await setupServiceLocator();
-      debugPrint('[main.dart] Service locator setup complete.');
-      logger.info('[Main] Service locator setup complete.');
+      await _initializeCriticalAudioServices();
+      debugPrint('[main.dart] ✅ Critical audio services ready');
     } catch (e) {
-      debugPrint('[main.dart] ERROR during service locator setup: $e');
-      logger.error('[Main] ERROR during service locator setup', error: e);
+      debugPrint('[main.dart] 🚨 CRITICAL: Audio services failed: $e');
     }
 
-    // 7. Initialize database connection only (defer table checks/optimizations)
-    debugPrint('[main.dart] Initializing app database connection...');
-    logger.info('[Main] Initializing app database connection...');
+    // Initialize basic database connection only (no heavy operations)
     try {
       final appDatabase = serviceLocator<AppDatabase>();
       await appDatabase.database;
-      debugPrint('[main.dart] Database connection established.');
-      logger.info('[Main] Database connection established.');
+      debugPrint('[main.dart] ✅ Database connection established.');
     } catch (e) {
-      debugPrint('[main.dart] ERROR initializing database connection: $e');
-      logger.error('[Main] ERROR initializing database connection', error: e);
+      debugPrint('[main.dart] Database connection error: $e');
     }
 
-    // 8. Initialize theme and auth (needed for first screen)
-    // (ThemeService and AuthService are registered in service locator)
-
-    // 9. Start the UI as soon as possible
+    // START UI IMMEDIATELY
     debugPrint('[main.dart] Starting app UI...');
-    logger.info('[Main] Starting app UI...');
-    try {
-      debugPrint('[main.dart] Running app...');
-      logger.debug('[Main] Running app in same zone.');
-      runApp(const AiTherapistApp());
-      debugPrint('[main.dart] App should now be visible!');
-      logger.info('[Main] App should now be visible!');
-    } catch (e) {
-      debugPrint('[main.dart] Critical error in final app startup: $e');
-      logger.error('[Main] Critical error in final app startup', error: e);
-      runApp(MaterialApp(
-        home: Scaffold(
-          appBar: AppBar(title: const Text('Error')),
-          body: Center(child: Text('Error starting app: $e')),
-        ),
-      ));
-    }
+    runApp(const AiTherapistApp());
+    debugPrint('[main.dart] ✅ App UI started');
 
-    // 10. Defer heavy service initializations and notification permissions until after UI is visible
+    // 🚨 CRITICAL CHANGE: Single PostFrameCallback for all background work
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      debugPrint('[main.dart] PostFrameCallback: initializeHeavyServices');
-      await initializeHeavyServices();
-    });
-
-    // After UI is visible, run DB health check in background
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      debugPrint('[main.dart] PostFrameCallback: DB health check');
-      final dbProvider = DatabaseProvider();
-      final dbHealthChecker = DatabaseHealthChecker(dbProvider);
-      await dbHealthChecker.runHealthCheck();
+      debugPrint(
+          '[main.dart] PostFrameCallback: Starting background initialization...');
+      await _initializeBackgroundServices();
     });
   }, (error, stack) {
     debugPrint('[main.dart] Uncaught error in runZonedGuarded: $error');
-    debugPrint('[main.dart] Stack trace: $stack');
-    logger.error('[Main] Uncaught error in runZonedGuarded');
     _handleGlobalError(error, stack);
   });
-  if (kDebugMode) print('[Main] App initialization complete. Running app...');
 }
 
 // Initialize the logging service
@@ -662,126 +622,8 @@ Future<void> _initializeFirebaseServices() async {
   }
 }
 
-// Helper method for initializing ConfigService and ApiClient
-Future<void> _initializeConfigAndApi() async {
-  try {
-    logger.debug('[Main] Initializing ConfigService...');
-
-    _configService = ConfigService();
-    await _configService!.init();
-
-    logger.debug('ConfigService initialized successfully');
-
-    // Create and initialize ApiClient with correct parameters
-    logger.debug('[Main] Creating ApiClient with ConfigService');
-
-    _apiClient = ApiClient(configService: _configService!);
-
-    // Register dependencies that require ConfigService and ApiClient
-    await registerApiDependentServices(_configService!, _apiClient!);
-
-    // Initialize database operations manager first
-    try {
-      logger.debug('[Main] Getting DatabaseOperationManager...');
-      final dbOpManager = serviceLocator<DatabaseOperationManager>();
-      final appDatabase = serviceLocator<AppDatabase>();
-
-      // Check and repair database health
-      await dbOpManager.checkAndRepairDatabaseHealth(appDatabase);
-      logger.debug('[Main] Database health check complete');
-
-      // Small delay to allow any pending database operations to complete
-      await Future.delayed(const Duration(milliseconds: 200));
-    } catch (e) {
-      logger.error('[Main] Error checking database health', error: e);
-    }
-
-    // Initialize all the refactored components in the right order
-    logger.debug(
-        '[Main] Initializing refactored service components sequentially...');
-
-    // Initialize services in a specific order to avoid conflicts
-    // 1. First initialize services that don't depend on the database
-    try {
-      logger.debug('[Main] Initializing VoiceService...');
-      final voiceService = serviceLocator<VoiceService>();
-      await voiceService.initialize();
-      logger.debug('[Main] VoiceService initialized ✓');
-
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e) {
-      logger.error('[Main] Error initializing VoiceService', error: e);
-    }
-
-    try {
-      logger.debug('[Main] Initializing AudioGenerator...');
-      final audioGenerator = serviceLocator<AudioGenerator>();
-      await audioGenerator.initialize();
-      logger.debug('[Main] AudioGenerator initialized ✓');
-
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e) {
-      logger.error('[Main] Error initializing AudioGenerator', error: e);
-    }
-
-    // 2. Initialize database-dependent services
-    try {
-      logger.debug('[Main] Initializing MemoryService (database tables)...');
-      final memoryService = serviceLocator<MemoryService>();
-      await memoryService.init();
-      logger.debug('[Main] MemoryService initialized ✓');
-
-      // Important: Add a delay after MemoryService initialization
-      // to allow database operations to complete
-      await Future.delayed(const Duration(milliseconds: 300));
-    } catch (e) {
-      logger.error('[Main] Error initializing MemoryService', error: e);
-    }
-
-    // Memory manager depends on memory service
-    try {
-      logger.debug('[Main] Initializing MemoryManager...');
-      final memoryManager = serviceLocator<MemoryManager>();
-      await memoryManager.init();
-      logger.debug('[Main] MemoryManager initialized ✓');
-
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e) {
-      logger.error('[Main] Error initializing MemoryManager', error: e);
-    }
-
-    try {
-      logger.debug('[Main] Initializing ConversationFlowManager...');
-      final conversationFlowManager = serviceLocator<ConversationFlowManager>();
-      await conversationFlowManager.init();
-      logger.debug('[Main] ConversationFlowManager initialized ✓');
-
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e) {
-      logger.error('[Main] Error initializing ConversationFlowManager',
-          error: e);
-    }
-
-    // Initialize the TherapyService last (depends on most other services)
-    if (serviceLocator.isRegistered<TherapyService>()) {
-      final therapyService = serviceLocator<TherapyService>();
-      await therapyService.init();
-      logger.debug('[Main] TherapyService initialized successfully');
-    }
-
-    // Validate that all dependencies are registered
-    final allDepsValid = validateDependencies();
-    logger.info(
-        '[Main] All required dependencies validated successfully ${allDepsValid ? '✅' : '❌'}');
-  } catch (e) {
-    logger.error('[Main] Error initializing config and API',
-        error: e, stackTrace: StackTrace.current);
-  }
-}
+// LEGACY: This method was replaced by the new priority-based initialization
+// Keeping for reference but should not be called
 
 // New: Heavy service initializations and notification permissions
 Future<void> initializeHeavyServices() async {
@@ -841,12 +683,11 @@ Future<void> initializeHeavyServices() async {
       logger.error('[Main] ERROR in deferred database checks', error: e);
     }
 
-    // Initialize heavy services sequentially (as before)
+    // Initialize Firebase services only (ConfigService/ApiClient handled elsewhere now)
     try {
       await _initializeFirebaseServices();
-      await _initializeConfigAndApi();
     } catch (e) {
-      logger.error('[Main] ERROR initializing heavy services', error: e);
+      logger.error('[Main] ERROR initializing Firebase services', error: e);
     }
 
     // Request notification permissions (deferred)
@@ -860,5 +701,237 @@ Future<void> initializeHeavyServices() async {
     logger.info('[Main] Heavy services initialized in background.');
   } catch (e) {
     logger.error('[Main] ERROR in initializeHeavyServices', error: e);
+  }
+}
+
+// 🔧 PATCH 2: Add this new method for critical audio services
+Future<void> _initializeCriticalAudioServices() async {
+  logger.info(
+      '[Main] Initializing CRITICAL audio services (no database dependency)');
+
+  try {
+    // VoiceService first - completely independent
+    if (serviceLocator.isRegistered<VoiceService>()) {
+      final voiceService = serviceLocator<VoiceService>();
+      await voiceService.initialize();
+      logger.info('[Main] ✅ VoiceService initialized (CRITICAL)');
+    }
+
+    // AudioGenerator second - also independent
+    if (serviceLocator.isRegistered<AudioGenerator>()) {
+      final audioGenerator = serviceLocator<AudioGenerator>();
+      await audioGenerator.initialize();
+      logger.info('[Main] ✅ AudioGenerator initialized (CRITICAL)');
+    }
+
+    // Ensure API client is ready for immediate TTS requests
+    if (serviceLocator.isRegistered<ApiClient>()) {
+      // ApiClient should be ready from service locator setup
+      logger.info('[Main] ✅ ApiClient ready for TTS requests (CRITICAL)');
+    }
+
+    logger.info(
+        '[Main] 🎵 All critical audio services ready - TTS should work immediately');
+  } catch (e) {
+    logger.error('[Main] 🚨 CRITICAL: Audio service initialization failed',
+        error: e);
+    throw e; // Re-throw so we know audio won't work
+  }
+}
+
+// 🔧 PATCH 3: Replace initializeHeavyServices with this
+Future<void> _initializeBackgroundServices() async {
+  logger.info('[Main] Starting background service initialization...');
+
+  try {
+    // Background database operations (don't block TTS)
+    unawaited(_runDatabaseOperationsInBackground());
+
+    // Initialize remaining services that aren't critical for TTS
+    await _initializeNonCriticalServices();
+
+    // Firebase services
+    await _initializeFirebaseServices();
+
+    // Notification permissions
+    await _requestNotificationPermissions();
+
+    logger.info('[Main] Background service initialization complete');
+  } catch (e) {
+    logger.error(
+        '[Main] Background service initialization error (non-critical)',
+        error: e);
+  }
+}
+
+// 🔧 PATCH 4: Move heavy database work to true background
+Future<void> _runDatabaseOperationsInBackground() async {
+  try {
+    logger.debug('[Main] Running database operations in background...');
+
+    // Small delay to let app settle
+    await Future.delayed(Duration(seconds: 2));
+
+    if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
+      final dbManager = serviceLocator<DatabaseOperationManager>();
+      final appDatabase = serviceLocator<AppDatabase>();
+
+      await dbManager.checkAndRepairDatabaseHealth(appDatabase);
+      logger.debug('[Main] Background: Database health check complete');
+
+      // Delay optimization even more to not interfere with user interaction
+      await Future.delayed(Duration(seconds: 10));
+      await dbManager.optimizeDatabase(appDatabase);
+      logger.debug('[Main] Background: Database optimization complete');
+    }
+  } catch (e) {
+    logger.error('[Main] Background database operations failed (non-critical)',
+        error: e);
+  }
+}
+
+// 🔧 PATCH 5: Initialize services that can wait
+Future<void> _initializeNonCriticalServices() async {
+  try {
+    // These services can be initialized after TTS is working
+    if (serviceLocator.isRegistered<MemoryService>()) {
+      final memoryService = serviceLocator<MemoryService>();
+      await memoryService.init();
+      logger.debug('[Main] MemoryService initialized (background)');
+    }
+
+    if (serviceLocator.isRegistered<MemoryManager>()) {
+      final memoryManager = serviceLocator<MemoryManager>();
+      await memoryManager.init();
+      logger.debug('[Main] MemoryManager initialized (background)');
+    }
+
+    if (serviceLocator.isRegistered<ConversationFlowManager>()) {
+      final conversationFlowManager = serviceLocator<ConversationFlowManager>();
+      await conversationFlowManager.init();
+      logger.debug('[Main] ConversationFlowManager initialized (background)');
+    }
+
+    if (serviceLocator.isRegistered<TherapyService>()) {
+      final therapyService = serviceLocator<TherapyService>();
+      await therapyService.init();
+      logger.debug('[Main] TherapyService initialized (background)');
+    }
+  } catch (e) {
+    logger.warning('[Main] Some non-critical services failed to initialize',
+        error: e);
+  }
+}
+
+// 🔧 CRITICAL FIX: Priority-based service initialization with safety checks
+Future<void> initializeCriticalAudioServices() async {
+  logger.info('[Main] 🎵 Initializing CRITICAL audio services...');
+
+  try {
+    // Add a small delay to ensure UI is fully started
+    await Future.delayed(Duration(milliseconds: 100));
+
+    // 1. VoiceService FIRST - no database dependencies
+    if (serviceLocator.isRegistered<VoiceService>()) {
+      try {
+        final voiceService = serviceLocator<VoiceService>();
+        await voiceService.initialize().timeout(Duration(seconds: 10));
+        logger.info('[Main] ✅ VoiceService initialized (CRITICAL)');
+      } catch (e) {
+        logger.error('[Main] ❌ VoiceService failed', error: e);
+        // Continue with other services
+      }
+    } else {
+      logger.warning('[Main] ⚠️ VoiceService not registered');
+    }
+
+    // 2. AudioGenerator SECOND - no database dependencies
+    if (serviceLocator.isRegistered<AudioGenerator>()) {
+      try {
+        final audioGenerator = serviceLocator<AudioGenerator>();
+        await audioGenerator.initialize().timeout(Duration(seconds: 10));
+        logger.info('[Main] ✅ AudioGenerator initialized (CRITICAL)');
+      } catch (e) {
+        logger.error('[Main] ❌ AudioGenerator failed', error: e);
+        // Continue with other services
+      }
+    } else {
+      logger.warning('[Main] ⚠️ AudioGenerator not registered');
+    }
+
+    // 3. ApiClient for TTS - no database needed
+    if (serviceLocator.isRegistered<ApiClient>()) {
+      logger.info('[Main] ✅ ApiClient ready for TTS (CRITICAL)');
+    } else {
+      logger.warning('[Main] ⚠️ ApiClient not registered');
+    }
+
+    logger.info('[Main] 🎵 CRITICAL audio services initialization complete');
+  } catch (e) {
+    logger.error('[Main] 🚨 CRITICAL: Audio services failed', error: e);
+    // Don't throw - let app continue
+  }
+}
+
+// 🔧 CRITICAL FIX: Separate background initialization without delays
+Future<void> initializeNonCriticalServicesInBackground() async {
+  logger.info('[Main] Starting background initialization...');
+
+  // Run database operations completely in background
+  unawaited(_backgroundDatabaseOperations());
+
+  // Initialize remaining services that TTS doesn't need
+  try {
+    await _initializeNonCriticalServices();
+  } catch (e) {
+    logger.error('[Main] Non-critical services failed (continuing)', error: e);
+  }
+}
+
+Future<void> _backgroundDatabaseOperations() async {
+  try {
+    logger.debug('[Main] Running database operations in background...');
+
+    // All heavy database operations - don't block TTS
+    if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
+      final dbManager = serviceLocator<DatabaseOperationManager>();
+      final appDatabase = serviceLocator<AppDatabase>();
+
+      await dbManager.checkAndRepairDatabaseHealth(appDatabase);
+      logger.debug('[Main] Background: Database health check complete');
+
+      // Wait before optimization to avoid competing with user actions
+      await Future.delayed(Duration(seconds: 5));
+      await dbManager.optimizeDatabase(appDatabase);
+      logger.debug('[Main] Background: Database optimization complete');
+    }
+  } catch (e) {
+    logger.error('[Main] Background database operations failed', error: e);
+  }
+}
+
+// 🔧 CRITICAL FIX: TTS health check
+Future<bool> checkTTSHealth() async {
+  try {
+    if (!serviceLocator.isRegistered<VoiceService>()) {
+      logger.error('[TTS Health] VoiceService not registered');
+      return false;
+    }
+
+    if (!serviceLocator.isRegistered<AudioGenerator>()) {
+      logger.error('[TTS Health] AudioGenerator not registered');
+      return false;
+    }
+
+    if (!serviceLocator.isRegistered<ApiClient>()) {
+      logger.error('[TTS Health] ApiClient not registered');
+      return false;
+    }
+
+    logger.info('[TTS Health] ✅ All TTS services registered and ready');
+    return true;
+  } catch (e) {
+    logger.error('[TTS Health] Health check failed', error: e);
+    return false;
   }
 }
