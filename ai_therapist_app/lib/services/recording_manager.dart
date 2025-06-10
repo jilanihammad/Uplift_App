@@ -6,6 +6,94 @@ import 'package:uuid/uuid.dart';
 import 'base_voice_service.dart';
 import 'path_manager.dart';
 
+/// Shared recorder manager to prevent dual AudioRecorder instances
+/// Used by both RecordingManager and VADManager to avoid conflicts
+class SharedRecorderManager {
+  static final SharedRecorderManager _instance =
+      SharedRecorderManager._internal();
+  static SharedRecorderManager get instance => _instance;
+
+  late final AudioRecorder _recorder;
+  bool _isInitialized = false;
+  String? _currentUser; // Track which service is using the recorder
+
+  SharedRecorderManager._internal();
+
+  /// Initialize the shared recorder
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    _recorder = AudioRecorder();
+    _isInitialized = true;
+
+    if (kDebugMode) {
+      print(
+          '🎙️ SharedRecorderManager: Initialized single AudioRecorder instance');
+    }
+  }
+
+  /// Request exclusive access to the recorder
+  Future<bool> requestAccess(String userId) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    // Check if already in use by someone else
+    if (_currentUser != null && _currentUser != userId) {
+      if (await _recorder.isRecording()) {
+        if (kDebugMode) {
+          print(
+              '🎙️ SharedRecorderManager: Recorder busy with $_currentUser, denying $userId');
+        }
+        return false;
+      } else {
+        // Previous user finished, allow new user
+        _currentUser = userId;
+        if (kDebugMode) {
+          print(
+              '🎙️ SharedRecorderManager: Previous session ended, granting access to $userId');
+        }
+        return true;
+      }
+    }
+
+    // Grant access
+    _currentUser = userId;
+    if (kDebugMode) {
+      print('🎙️ SharedRecorderManager: Granted access to $userId');
+    }
+    return true;
+  }
+
+  /// Release access to the recorder
+  void releaseAccess(String userId) {
+    if (_currentUser == userId) {
+      _currentUser = null;
+      if (kDebugMode) {
+        print('🎙️ SharedRecorderManager: Released access from $userId');
+      }
+    }
+  }
+
+  /// Get the shared recorder instance (only if you have access)
+  AudioRecorder? getRecorder(String userId) {
+    if (_currentUser != userId) {
+      if (kDebugMode) {
+        print(
+            '🎙️ SharedRecorderManager: Access denied to $userId, current user: $_currentUser');
+      }
+      return null;
+    }
+    return _recorder;
+  }
+
+  /// Check if recorder is currently in use
+  bool get isInUse => _currentUser != null;
+
+  /// Get current user
+  String? get currentUser => _currentUser;
+}
+
 // Add at the very top of the file, before RecordingManager
 class NotRecordingException implements Exception {
   final String message;
@@ -19,8 +107,10 @@ class NotRecordingException implements Exception {
 /// Responsible for starting/stopping recording, handling permissions,
 /// and managing recording state
 class RecordingManager {
-  // Recording instance
-  final AudioRecorder _recorder = AudioRecorder();
+  // Use shared recorder instead of creating our own
+  static const String _userId = 'RecordingManager';
+  AudioRecorder? get _recorder =>
+      SharedRecorderManager.instance.getRecorder(_userId);
 
   // Stream controllers
   final StreamController<RecordingState> _recordingStateController =
@@ -77,13 +167,30 @@ class RecordingManager {
 
   // Start recording audio
   Future<void> startRecording() async {
-    if (await _recorder.hasPermission() == false) {
-      _errorController.add('Microphone permission not granted');
+    // Request access to shared recorder
+    final hasAccess =
+        await SharedRecorderManager.instance.requestAccess(_userId);
+    if (!hasAccess) {
+      _errorController.add('Cannot access recorder - already in use');
       _updateState(RecordingState.error);
       return;
     }
 
-    final isRecording = await _recorder.isRecording();
+    final recorder = _recorder;
+    if (recorder == null) {
+      _errorController.add('Recorder not available');
+      _updateState(RecordingState.error);
+      return;
+    }
+
+    if (await recorder.hasPermission() == false) {
+      _errorController.add('Microphone permission not granted');
+      _updateState(RecordingState.error);
+      SharedRecorderManager.instance.releaseAccess(_userId);
+      return;
+    }
+
+    final isRecording = await recorder.isRecording();
     if (isRecording) {
       if (kDebugMode) {
         print('Already recording, ignoring startRecording call');
@@ -100,7 +207,7 @@ class RecordingManager {
       print('🛡️ RecordingManager.startRecording() received path: $filePath');
 
       // Configure recording
-      await _recorder.start(
+      await recorder.start(
         RecordConfig(
           encoder: AudioEncoder.aacLc,
           bitRate: 128000,
@@ -135,13 +242,20 @@ class RecordingManager {
   /// Returns the path to the recorded file, or null if not recording.
   /// Throws [NotRecordingException] if called when not recording.
   Future<String?> stopRecording() async {
-    final isRecording = await _recorder.isRecording();
+    final recorder = _recorder;
+    if (recorder == null) {
+      _errorController.add('Recorder not available');
+      throw NotRecordingException('Recorder not available');
+    }
+
+    final isRecording = await recorder.isRecording();
     if (!isRecording) {
       _errorController.add('Recorder is not recording');
       if (kDebugMode) {
         print('⚠️ Stop recording called but recorder was not recording');
       }
-      // Throw a typed error and return null
+      // Release access and throw error
+      SharedRecorderManager.instance.releaseAccess(_userId);
       throw NotRecordingException();
     }
 
@@ -153,7 +267,10 @@ class RecordingManager {
           '🛡️ RecordingManager.stopRecording() _lastRecordedPath BEFORE stop: $_lastRecordedPath');
 
       // Stop recording - but don't trust the returned path as it may be corrupted
-      await _recorder.stop();
+      await recorder.stop();
+
+      // Release access to shared recorder
+      SharedRecorderManager.instance.releaseAccess(_userId);
 
       // 🚨 CORRUPTION DIAGNOSTIC - Check path after stopping
       print(
@@ -196,7 +313,17 @@ class RecordingManager {
 
   // Clean up resources
   Future<void> dispose() async {
-    await _recorder.stop();
+    final recorder = _recorder;
+    if (recorder != null) {
+      try {
+        await recorder.stop();
+      } catch (e) {
+        // Ignore errors on dispose
+      }
+    }
+    // Release access to shared recorder
+    SharedRecorderManager.instance.releaseAccess(_userId);
+
     await _recordingStateController.close();
     await _errorController.close();
   }

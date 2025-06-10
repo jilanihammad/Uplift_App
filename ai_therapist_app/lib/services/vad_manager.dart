@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
 
 import 'path_manager.dart';
+import 'recording_manager.dart'; // For SharedRecorderManager
 
 /// Manages voice activity detection (VAD) functionality
 ///
@@ -120,6 +121,16 @@ class VADManager {
       print(
           '[VADManager] startListening() called. _isInitialized=$_isInitialized, _isListening=$_isListening');
 
+    // Check if RecordingManager is using the recorder
+    final sharedRecorder = SharedRecorderManager.instance;
+    if (sharedRecorder.isInUse && sharedRecorder.currentUser != 'VADManager') {
+      if (kDebugMode) {
+        print(
+            '🎙️ VAD: Cannot start - recorder in use by ${sharedRecorder.currentUser}');
+      }
+      return false;
+    }
+
     // Prevent race conditions with simple lock
     if (_operationInProgress) {
       if (kDebugMode) print('[VADManager] Operation in progress, waiting...');
@@ -166,6 +177,10 @@ class VADManager {
 
       if (kDebugMode)
         print('[VADManager] Starting recorder for VAD (reusing instance)');
+
+      // Register VADManager as the current user for coordination
+      await sharedRecorder.requestAccess('VADManager');
+
       // Start recording with monitoring mode using existing recorder
       await _recorder.start(
         RecordConfig(
@@ -405,6 +420,9 @@ class VADManager {
   // Stop listening for voice activity
   Future<void> stopListening() async {
     if (kDebugMode) print('[VADManager] stopListening() called.');
+
+    // Release access to shared recorder
+    SharedRecorderManager.instance.releaseAccess('VADManager');
 
     // FIX A: Always cancel the amplitude timer FIRST, before any early returns
     // This prevents the "smoking gun" bug where timer keeps running after we think we stopped

@@ -120,7 +120,8 @@ class AutoListeningCoordinator {
       return;
     }
     try {
-      await _safeStartRecording();
+      await _recordingManager.startRecording();
+      _isRecordingActive = true;
       if (kDebugMode)
         print('[AutoListeningCoordinator] Recording started successfully');
     } catch (e) {

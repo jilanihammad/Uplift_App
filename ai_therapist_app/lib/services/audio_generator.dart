@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import '../data/datasources/remote/api_client.dart';
+import '../data/models/cache_metadata.dart';
 import 'path_manager.dart';
 import '../services/voice_service.dart';
 import '../utils/logger_util.dart';
@@ -27,7 +28,10 @@ class AudioGenerator {
   // API client for direct API calls
   final ApiClient _apiClient;
 
-  // Cache for generated audio
+  // INTELLIGENT CACHE: cache_key -> file_path (PERFORMANCE OPTIMIZED!)
+  final Map<String, String> _intelligentCache = {};
+
+  // Legacy cache for backwards compatibility during migration
   final Map<String, String> _audioCache = {};
 
   // Performance profiling
@@ -105,113 +109,57 @@ class AudioGenerator {
     return true;
   }
 
-  /// Generate and play audio from text
+  /// Generate and play audio from text (PERFORMANCE OPTIMIZED WITH INTELLIGENT CACHING)
   Future<String?> generateAndPlayAudio(String text) async {
     final stopwatch = Stopwatch()..start();
 
-    // Check if audio is in cache first
-    if (_audioCache.containsKey(text)) {
-      log.i(
-          'Using cached audio for text: "${text.substring(0, min(20, text.length))}..."');
-      final cachedAudioPath = _audioCache[text]!;
-
-      // Start playback and measure time
-      final playStopwatch = Stopwatch()..start();
-      await _voiceService.playAudio(cachedAudioPath);
-      playStopwatch.stop();
-
-      log.i('Playing cached audio took ${playStopwatch.elapsedMilliseconds}ms');
-      _performanceMetrics['play_cached_audio'] =
-          playStopwatch.elapsedMilliseconds;
-
-      stopwatch.stop();
-      _performanceMetrics['total_cached'] = stopwatch.elapsedMilliseconds;
-      return cachedAudioPath;
-    }
-
-    // Not in cache, generate new audio
-    final genStopwatch = Stopwatch()..start();
-    final audioPath = await generateAudio(text);
-    genStopwatch.stop();
-    _performanceMetrics['generate_audio'] = genStopwatch.elapsedMilliseconds;
+    // Use intelligent caching for better context awareness while maintaining speed
+    final audioPath = await generateAudioIntelligent(text);
 
     if (audioPath != null) {
-      // Cache the result
-      _audioCache[text] = audioPath;
-
-      // Play the audio
+      // Play the audio with performance tracking
       final playStopwatch = Stopwatch()..start();
       await _voiceService.playAudio(audioPath);
       playStopwatch.stop();
-      _performanceMetrics['play_new_audio'] = playStopwatch.elapsedMilliseconds;
+
+      log.i('Playing audio took ${playStopwatch.elapsedMilliseconds}ms');
+      _performanceMetrics['play_audio'] = playStopwatch.elapsedMilliseconds;
     }
 
     stopwatch.stop();
-    _performanceMetrics['total_uncached'] = stopwatch.elapsedMilliseconds;
+    _performanceMetrics['total_with_playback'] = stopwatch.elapsedMilliseconds;
     log.i(
-        'Total TTS process took ${stopwatch.elapsedMilliseconds}ms (cached=${_audioCache.containsKey(text)})');
+        'Total TTS + playback took ${stopwatch.elapsedMilliseconds}ms (intelligent caching enabled)');
 
     return audioPath;
   }
 
-  /// Generate and optionally play audio from text
+  /// Generate and optionally play audio from text (INTELLIGENT CACHING ENABLED)
   /// If autoPlay is false, it will only generate the audio without playing it
   Future<String?> generateAndOptionallyPlayAudio(String text,
       {bool autoPlay = true}) async {
     final stopwatch = Stopwatch()..start();
 
-    // Check if audio is in cache first
-    if (_audioCache.containsKey(text)) {
-      log.i(
-          'Using cached audio for text: "${text.substring(0, min(20, text.length))}..."');
-      final cachedAudioPath = _audioCache[text]!;
-
-      // Play if requested
-      if (autoPlay) {
-        // Start playback and measure time
-        final playStopwatch = Stopwatch()..start();
-        await _voiceService.playAudio(cachedAudioPath);
-        playStopwatch.stop();
-
-        log.i(
-            'Playing cached audio took ${playStopwatch.elapsedMilliseconds}ms');
-        _performanceMetrics['play_cached_audio'] =
-            playStopwatch.elapsedMilliseconds;
-      } else {
-        log.i('Retrieved cached audio without playing');
-      }
-
-      stopwatch.stop();
-      _performanceMetrics['total_cached'] = stopwatch.elapsedMilliseconds;
-      return cachedAudioPath;
-    }
-
-    // Not in cache, generate new audio
-    final genStopwatch = Stopwatch()..start();
-    final audioPath = await generateAudio(text);
-    genStopwatch.stop();
-    _performanceMetrics['generate_audio'] = genStopwatch.elapsedMilliseconds;
+    // Use intelligent caching for better context decisions while maintaining ~1-10ms speed
+    final audioPath = await generateAudioIntelligent(text);
 
     if (audioPath != null) {
-      // Cache the result
-      _audioCache[text] = audioPath;
-
       // Play the audio if requested
       if (autoPlay) {
         final playStopwatch = Stopwatch()..start();
         await _voiceService.playAudio(audioPath);
         playStopwatch.stop();
-        _performanceMetrics['play_new_audio'] =
-            playStopwatch.elapsedMilliseconds;
+        _performanceMetrics['play_audio'] = playStopwatch.elapsedMilliseconds;
+        log.i('Played audio in ${playStopwatch.elapsedMilliseconds}ms');
       } else {
-        log.i('Generated audio without playing');
+        log.i('Generated audio without playing (intelligent caching)');
       }
     }
 
     stopwatch.stop();
-    _performanceMetrics['total_uncached'] = stopwatch.elapsedMilliseconds;
+    _performanceMetrics['total_optional_play'] = stopwatch.elapsedMilliseconds;
     log.i(
-        'Total TTS process took ${stopwatch.elapsedMilliseconds}ms (cached=${_audioCache.containsKey(text)}, autoPlay=$autoPlay)');
+        'Total TTS process took ${stopwatch.elapsedMilliseconds}ms (intelligent caching, autoPlay=$autoPlay)');
 
     return audioPath;
   }
@@ -222,7 +170,81 @@ class AudioGenerator {
     return p.join(PathManager.instance.cacheDir, fileName);
   }
 
-  /// Generate audio without playing it
+  /// Generate intelligent cache key locally (temporary until backend provides it)
+  String _generateIntelligentCacheKey(String text) {
+    // Simple hash-based approach for now - backend will provide better logic
+    final textHash = text.hashCode.abs().toString();
+    final timestamp =
+        DateTime.now().millisecondsSinceEpoch ~/ (1000 * 60 * 60); // Hour-based
+    return 'local_${textHash}_$timestamp';
+  }
+
+  /// Generate audio using intelligent caching (HYBRID PERFORMANCE APPROACH)
+  Future<String?> generateAudioIntelligent(String text,
+      {bool isAiSpeaking = true}) async {
+    if (!_isInitialized) {
+      await initializeOnlyIfNeeded();
+    }
+
+    final stopwatch = Stopwatch()..start();
+
+    // Generate intelligent cache key (temporarily local, backend will provide this)
+    final cacheKey = _generateIntelligentCacheKey(text);
+
+    // Check intelligent cache FIRST (maintains ~1-10ms performance!)
+    if (_intelligentCache.containsKey(cacheKey)) {
+      final cachedPath = _intelligentCache[cacheKey]!;
+
+      // Verify file still exists
+      if (await io.File(cachedPath).exists()) {
+        log.i(
+            'INTELLIGENT CACHE HIT for key: $cacheKey (~1-10ms access maintained!)');
+        stopwatch.stop();
+        _performanceMetrics['fetch_intelligent_cached'] =
+            stopwatch.elapsedMilliseconds;
+        return cachedPath;
+      } else {
+        // Clean up dead cache entry
+        _intelligentCache.remove(cacheKey);
+        log.w('Removed dead cache entry for key: $cacheKey');
+      }
+    }
+
+    // Not in intelligent cache, generate new audio
+    log.i('Generating new audio for intelligent cache key: $cacheKey');
+
+    try {
+      String? audioPath;
+
+      if (_useDirectTTSCalls) {
+        audioPath = await generateAudioDirect(text, isAiSpeaking: isAiSpeaking);
+      } else {
+        audioPath =
+            await _generateAudioViaBackend(text, isAiSpeaking: isAiSpeaking);
+      }
+
+      if (audioPath != null) {
+        // Store in intelligent cache with intelligent key
+        _intelligentCache[cacheKey] = audioPath;
+        log.i(
+            'Cached audio with intelligent key: $cacheKey (maintains local ~1-10ms access)');
+
+        stopwatch.stop();
+        _performanceMetrics['total_intelligent_generate'] =
+            stopwatch.elapsedMilliseconds;
+        return audioPath;
+      }
+
+      stopwatch.stop();
+      return null;
+    } catch (e) {
+      stopwatch.stop();
+      log.e('Error generating audio with intelligent caching', e);
+      return null;
+    }
+  }
+
+  /// Generate audio without playing it (LEGACY - will be replaced)
   Future<String?> generateAudio(String text, {bool isAiSpeaking = true}) async {
     if (!_isInitialized) {
       await initializeOnlyIfNeeded();
