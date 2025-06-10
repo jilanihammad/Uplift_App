@@ -36,7 +36,10 @@ import '../services/audio_generator.dart';
 import 'package:ai_therapist_app/utils/database_helper.dart';
 import '../services/groq_service.dart';
 import '../services/vad_manager.dart';
-import '../services/tts_streaming_service.dart';
+import '../services/recording_manager.dart';
+import '../services/auto_listening_coordinator.dart';
+import '../services/audio_player_manager.dart';
+import '../services/path_manager.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -258,16 +261,6 @@ Future<void> setupServiceLocator() async {
           'Registered MessageProcessor with correct constructor injection');
     }
 
-    // Register TTSStreamingService first
-    if (!serviceLocator.isRegistered<TTSStreamingService>()) {
-      serviceLocator.registerLazySingleton<TTSStreamingService>(() {
-        debugPrint(
-            'Creating TTSStreamingService instance (lazy initialization)');
-        return TTSStreamingService();
-      });
-      debugPrint('Registered TTSStreamingService');
-    }
-
     if (!serviceLocator.isRegistered<AudioGenerator>()) {
       // Use lazy singleton to prevent immediate initialization
       serviceLocator.registerLazySingleton<AudioGenerator>(() {
@@ -275,7 +268,6 @@ Future<void> setupServiceLocator() async {
         final generator = AudioGenerator(
           voiceService: serviceLocator<VoiceService>(),
           apiClient: serviceLocator<ApiClient>(),
-          ttsService: serviceLocator<TTSStreamingService>(),
         );
 
         // Initialize only if needed when first accessed

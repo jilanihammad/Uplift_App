@@ -25,7 +25,6 @@ import '../models/therapy_message.dart';
 import '../data/repositories/session_repository.dart';
 import '../services/navigation_service.dart';
 import '../services/audio_generator.dart';
-import '../services/tts_streaming_service.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../utils/list_extensions.dart';
@@ -35,6 +34,7 @@ import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
+import '../services/auto_listening_coordinator.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
@@ -929,7 +929,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       final generator = AudioGenerator(
         voiceService: serviceLocator<VoiceService>(),
         apiClient: serviceLocator<ApiClient>(),
-        ttsService: serviceLocator<TTSStreamingService>(),
       );
       generator.initializeOnlyIfNeeded();
       return generator;
