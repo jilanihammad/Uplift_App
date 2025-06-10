@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' as io;
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
@@ -10,10 +10,11 @@ import 'package:path/path.dart' as p;
 import '../data/datasources/remote/api_client.dart';
 import 'path_manager.dart';
 import '../services/voice_service.dart';
-import '../services/tts_streaming_service.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import '../config/llm_config.dart';
+import 'package:logger/logger.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// Handles generation of audio from text
 class AudioGenerator {
@@ -22,9 +23,6 @@ class AudioGenerator {
 
   // Voice service for audio playback only
   final VoiceService _voiceService;
-
-  // TTS streaming service for audio generation
-  final TTSStreamingService _ttsService;
 
   // API client for direct API calls
   final ApiClient _apiClient;
@@ -47,7 +45,6 @@ class AudioGenerator {
   factory AudioGenerator({
     required VoiceService voiceService,
     required ApiClient apiClient,
-    required TTSStreamingService ttsService,
   }) {
     // Return existing instance if already created
     if (_instance != null) {
@@ -59,9 +56,7 @@ class AudioGenerator {
 
     // Create new instance if first time
     _instance = AudioGenerator._internal(
-        voiceService: voiceService,
-        apiClient: apiClient,
-        ttsService: ttsService);
+        voiceService: voiceService, apiClient: apiClient);
 
     return _instance!;
   }
@@ -70,10 +65,8 @@ class AudioGenerator {
   AudioGenerator._internal({
     required VoiceService voiceService,
     required ApiClient apiClient,
-    required TTSStreamingService ttsService,
   })  : _voiceService = voiceService,
-        _apiClient = apiClient,
-        _ttsService = ttsService {
+        _apiClient = apiClient {
     if (kDebugMode) {
       print('AudioGenerator initialized with constructor injection');
     }
@@ -288,40 +281,26 @@ class AudioGenerator {
       final generationStopwatch = Stopwatch()..start();
       final completer = Completer<String?>();
 
-      // Use TTSStreamingService for clean TTS generation without auto-play
-      await _ttsService.connectAndRequestTTS(
-        text: text,
+      // Use VoiceService for TTS generation instead of TTSStreamingService
+      final filePath = await _voiceService.generateAudio(
+        text,
         voice: isAiSpeaking ? 'sage' : 'onyx',
         responseFormat: 'wav', // Use WAV for lowest latency
-        autoPlay: false, // Don't auto-play, let AudioGenerator control playback
-        onFileReady: (filePath) {
+        onDone: () {
           generationStopwatch.stop();
           _performanceMetrics['generate_audio'] =
               generationStopwatch.elapsedMilliseconds;
-
-          log.i('TTSStreamingService generated file: $filePath');
-          if (!completer.isCompleted) {
-            completer.complete(filePath);
-          }
-        },
-        onDone: () {
-          // File should already be ready at this point
-          if (!completer.isCompleted) {
-            completer.complete(null); // Fallback if onFileReady wasn't called
-          }
+          log.i('VoiceService TTS generation completed');
         },
         onError: (error) {
           generationStopwatch.stop();
-          log.e('TTSStreamingService error: $error');
-          if (!completer.isCompleted) {
-            completer.complete(null);
-          }
+          log.e('VoiceService TTS error: $error');
         },
       );
 
-      return await completer.future;
+      return filePath;
     } catch (e) {
-      log.e('Error generating audio via TTSStreamingService', e);
+      log.e('Error generating audio via VoiceService', e);
       return null;
     }
   }
@@ -572,7 +551,7 @@ class AudioGenerator {
         // Save to temporary file
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final audioFileName = 'direct_tts_${timestamp}.mp3';
-        final audioFile = File(_getAudioFilePath(audioFileName));
+        final audioFile = io.File(_getAudioFilePath(audioFileName));
 
         await audioFile.writeAsBytes(audioBytes);
 
@@ -658,7 +637,6 @@ class AudioGenerator {
 
   /// Dispose of resources
   void dispose() {
-    _ttsService.dispose();
     clearCache();
   }
 }

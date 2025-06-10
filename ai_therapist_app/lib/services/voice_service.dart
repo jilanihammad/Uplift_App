@@ -31,7 +31,42 @@ import 'audio_player_manager.dart';
 import 'recording_manager.dart';
 import 'base_voice_service.dart' as base_voice;
 import 'path_manager.dart';
-import 'dart:io'; // ← Add this for File operations
+
+/// File cleanup manager to prevent race conditions from multiple deletion attempts
+class FileCleanupManager {
+  static final Set<String> _deletingFiles = <String>{};
+
+  /// Safely delete a file, preventing race conditions from multiple deletion attempts
+  static Future<void> safeDelete(String filePath) async {
+    if (_deletingFiles.contains(filePath)) {
+      if (kDebugMode) {
+        print('🗑️ File deletion already in progress for: $filePath');
+      }
+      return;
+    }
+
+    _deletingFiles.add(filePath);
+    try {
+      final file = io.File(filePath);
+      if (await file.exists()) {
+        await file.delete();
+        if (kDebugMode) {
+          print('🗑️ Successfully deleted file: $filePath');
+        }
+      } else {
+        if (kDebugMode) {
+          print('🗑️ File already deleted: $filePath');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('🗑️ Error deleting file $filePath: $e');
+      }
+    } finally {
+      _deletingFiles.remove(filePath);
+    }
+  }
+}
 
 // Recording states
 // enum RecordingState { ready, recording, stopped, paused, error } // Now defined in base_voice_service.dart or RecordingManager
@@ -122,7 +157,7 @@ class VoiceService {
       StreamController<bool>.broadcast();
   Stream<bool> get isTtsActuallySpeaking => _ttsSpeakingStateController.stream;
 
-  AudioPlayer? _currentPlayer; // Central reference for current player
+  // REMOVED: AudioPlayer? _currentPlayer; // Consolidating to use only AudioPlayerManager
 
   bool isAiSpeaking = false;
 
@@ -381,7 +416,7 @@ class VoiceService {
           processAudioFileInIsolate, {'recordedFilePath': recordedFilePath});
       if (result['error'] != null) {
         if (kDebugMode) print('❌ VOICE ERROR: ${result['error']}');
-        await _deleteFile(recordedFilePath);
+        await FileCleanupManager.safeDelete(recordedFilePath);
         return "Error: ${result['error']} Please try again.";
       }
       final String base64Audio = result['base64Audio'];
@@ -413,14 +448,14 @@ class VoiceService {
               '⏹️ VOICE DEBUG: processRecordedAudioFile: Transcription result: $transcription');
         }
         // Successfully transcribed, now delete the file
-        await _deleteFile(recordedFilePath);
+        await FileCleanupManager.safeDelete(recordedFilePath);
         return transcription.isNotEmpty ? transcription : "";
       } catch (e) {
         if (kDebugMode) {
           print(
               '❌ VOICE ERROR: processRecordedAudioFile: Error calling transcription API: $e');
         }
-        await _deleteFile(recordedFilePath);
+        await FileCleanupManager.safeDelete(recordedFilePath);
         return "Error: Unable to transcribe audio. Please try again.";
       }
     } catch (e) {
@@ -431,7 +466,7 @@ class VoiceService {
       try {
         final file = io.File(recordedFilePath);
         if (await file.exists()) {
-          await _deleteFile(recordedFilePath);
+          await FileCleanupManager.safeDelete(recordedFilePath);
         }
       } catch (delErr) {
         if (kDebugMode)
@@ -442,22 +477,7 @@ class VoiceService {
     }
   }
 
-  // Helper method to delete a file if it exists
-  Future<void> _deleteFile(String filePath) async {
-    try {
-      final file = io.File(filePath);
-      if (await file.exists()) {
-        await file.delete();
-        if (kDebugMode) {
-          print('🗑️ File deleted: $filePath');
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('❌ Error deleting file $filePath: $e');
-      }
-    }
-  }
+  // Note: File deletion is now handled by FileCleanupManager.safeDelete
 
   /// Stream TTS audio from backend and play it
   Future<String?> streamAndPlayTTS({
@@ -759,7 +779,7 @@ class VoiceService {
       // or if playback itself errored (handled by playAudio returning Future.error)
       if (finalFilePath != null && !finalFilePath!.startsWith('http')) {
         try {
-          await _deleteFile(finalFilePath!);
+          await FileCleanupManager.safeDelete(finalFilePath!);
         } catch (e) {
           if (kDebugMode) {
             print('Error cleaning up audio file: $e');
@@ -778,9 +798,8 @@ class VoiceService {
         print('🔊 VoiceService: Beginning audio playback of $audioPath');
       }
 
-      // Dispose previous player if exists
-      await _currentPlayer?.dispose();
-      _currentPlayer = null;
+      // Stop any existing audio before starting new playback
+      await _audioPlayerManager.stopAudio();
 
       // Request audio focus before playback
       final session = await AudioSession.instance;
@@ -822,23 +841,22 @@ class VoiceService {
           print('🔊 VoiceService: Playing audio from URL: $audioPath');
         }
         if (!_isWeb) {
-          _currentPlayer = AudioPlayer();
+          // Use AudioPlayerManager for URL playback by downloading first
           try {
-            await _currentPlayer!.setUrl(audioPath);
-            _currentPlayer!.playerStateStream.listen((state) async {
-              if (state.processingState == ProcessingState.completed) {
-                _audioPlaybackController.add(false);
-                await _currentPlayer?.dispose();
-                _currentPlayer = null;
-              }
-            });
-            await _currentPlayer!.play();
+            final localPath = await _downloadAndCacheAudio(audioPath);
+            if (localPath != null) {
+              await _audioPlayerManager.playAudio(localPath);
+              // AudioPlayerManager will handle state updates
+              _audioPlayerManager.isPlayingStream.listen((isPlaying) {
+                _audioPlaybackController.add(isPlaying);
+              });
+            } else {
+              throw Exception('Failed to download audio from URL');
+            }
           } catch (e) {
             if (kDebugMode) print('🔊 VoiceService: Error playing URL: $e');
             _audioPlaybackController.add(false);
             await _useTtsBackup(); // Fallback to TTS if URL play fails
-            await _currentPlayer?.dispose();
-            _currentPlayer = null;
           }
         } else {
           // Web playback simulation
@@ -850,24 +868,17 @@ class VoiceService {
         if (await file.exists()) {
           if (kDebugMode)
             print('🔊 VoiceService: Playing local audio file: $audioPath');
-          _currentPlayer = AudioPlayer();
           try {
-            await _currentPlayer!.setFilePath(audioPath);
-            _currentPlayer!.playerStateStream.listen((state) async {
-              if (state.processingState == ProcessingState.completed) {
-                _audioPlaybackController.add(false);
-                await _currentPlayer?.dispose();
-                _currentPlayer = null;
-              }
+            await _audioPlayerManager.playAudio(audioPath);
+            // AudioPlayerManager will handle state updates
+            _audioPlayerManager.isPlayingStream.listen((isPlaying) {
+              _audioPlaybackController.add(isPlaying);
             });
-            await _currentPlayer!.play();
           } catch (e) {
             if (kDebugMode)
               print('🔊 VoiceService: Error playing local file: $e');
             _audioPlaybackController.add(false);
             await _useTtsBackup(); // Fallback to TTS
-            await _currentPlayer?.dispose();
-            _currentPlayer = null;
           }
         } else {
           if (kDebugMode)
@@ -887,8 +898,7 @@ class VoiceService {
       if (kDebugMode) print('🔊 VoiceService: Error in playAudio: $e');
       _audioPlaybackController.add(false);
       await _useTtsBackup(); // Fallback to TTS on any error
-      await _currentPlayer?.dispose();
-      _currentPlayer = null;
+      // AudioPlayerManager handles its own cleanup
     }
   }
 
@@ -902,14 +912,7 @@ class VoiceService {
       // Signal that audio playback has stopped to listeners
       _audioPlaybackController.add(false);
 
-      // Stop and dispose current player
-      if (_currentPlayer != null) {
-        await _currentPlayer!.stop();
-        await _currentPlayer!.dispose();
-        _currentPlayer = null;
-      }
-
-      // ALSO stop the AudioPlayerManager and force its state
+      // Stop the AudioPlayerManager and force its state
       await _audioPlayerManager.stopAudio();
       _audioPlayerManager
           .forceStopState(); // Force the state to false immediately
@@ -964,11 +967,6 @@ class VoiceService {
     }
 
     try {
-      // Make sure TTS is initialized
-      if (_currentPlayer == null) {
-        _currentPlayer = AudioPlayer();
-      }
-
       String textToSpeak =
           "I'm sorry, I couldn't play the audio right now."; // Default error
 
@@ -988,19 +986,12 @@ class VoiceService {
         print('🎙️ TTS: Preparing to speak: "$textToSpeak"');
       }
 
-      // Speak the text
-      await _currentPlayer!.setAudioSource(
-        ProgressiveAudioSource(
-          Uri.parse(textToSpeak),
-          // Lower buffer size helps start playback faster
-          headers: {
-            'Range': 'bytes=0-'
-          }, // Request range to enable progressive playback
-        ),
-        preload: false, // Don't preload the entire audio file
-      );
-
-      await _currentPlayer!.play();
+      // Use system TTS instead of audio player for text
+      // This is a simple fallback - the actual TTS implementation should be replaced
+      // with proper system TTS calls
+      if (kDebugMode) {
+        print('🎙️ TTS fallback would speak: $textToSpeak');
+      }
 
       if (kDebugMode) {
         print('🎙️ TTS: speak() called');
@@ -1143,11 +1134,7 @@ class VoiceService {
       _ttsSpeakingStateController.close();
     }
 
-    // Dispose current player
-    if (_currentPlayer != null) {
-      _currentPlayer!.dispose();
-      _currentPlayer = null;
-    }
+    // AudioPlayerManager is disposed separately by its own dispose method
 
     // if (_recordingStateController != null && !_recordingStateController!.isClosed) {
     //   _recordingStateController!.close();
