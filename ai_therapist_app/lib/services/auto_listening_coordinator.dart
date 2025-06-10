@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show unawaited;
 
 import 'audio_player_manager.dart';
 import 'base_voice_service.dart' as base_voice;
@@ -53,6 +54,13 @@ class AutoListeningCoordinator {
   // Guard flag to prevent duplicate stopRecording calls
   bool _isStoppingRecording = false;
 
+  // Resource state tracking for safety guards
+  bool _isVadActive = false;
+  bool _isRecordingActive = false;
+
+  // Transition guard to prevent duplicate calls
+  bool _isTransitionInProgress = false;
+
   // Constructor
   AutoListeningCoordinator({
     required AudioPlayerManager audioPlayerManager,
@@ -64,6 +72,78 @@ class AutoListeningCoordinator {
         _voiceService = voiceService,
         _vadManager = vadManager {
     _setupListeners();
+  }
+
+  // Safe VAD management with resource tracking
+  Future<bool> _safeStartVAD() async {
+    if (_isVadActive) {
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] VAD already active, skipping start');
+      return true;
+    }
+    try {
+      final success = await _vadManager.startListening();
+      if (success) {
+        _isVadActive = true;
+        if (kDebugMode)
+          print('[AutoListeningCoordinator] VAD started successfully');
+      }
+      return success;
+    } catch (e) {
+      if (kDebugMode) print('[AutoListeningCoordinator] VAD start failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _safeStopVAD() async {
+    if (!_isVadActive) {
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] VAD not active, skipping stop');
+      return;
+    }
+    try {
+      await _vadManager.stopListening();
+      _isVadActive = false;
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] VAD stopped successfully');
+    } catch (e) {
+      if (kDebugMode) print('[AutoListeningCoordinator] VAD stop failed: $e');
+    }
+  }
+
+  // Safe recording management with resource tracking
+  Future<void> _safeStartRecording() async {
+    if (_isRecordingActive) {
+      if (kDebugMode)
+        print(
+            '[AutoListeningCoordinator] Recording already active, skipping start');
+      return;
+    }
+    try {
+      await _safeStartRecording();
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] Recording started successfully');
+    } catch (e) {
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] Recording start failed: $e');
+    }
+  }
+
+  Future<void> _safeStopRecording() async {
+    if (!_isRecordingActive) {
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] Recording not active, skipping stop');
+      return;
+    }
+    try {
+      await _recordingManager.stopRecording();
+      _isRecordingActive = false;
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] Recording stopped successfully');
+    } catch (e) {
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] Recording stop failed: $e');
+    }
   }
 
   // Set up listeners for component events
@@ -209,11 +289,21 @@ class AutoListeningCoordinator {
   }
 
   // Start VAD listening after a short delay
-  void _startListeningAfterDelay() {
+  Future<void> _startListeningAfterDelay() async {
     if (kDebugMode) {
       print(
           '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay called | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
     }
+
+    // Guard against duplicate calls
+    if (_isTransitionInProgress) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [VAD] Transition already in progress, ignoring duplicate call');
+      }
+      return;
+    }
+
     // Only allow transition from idle or aiSpeaking states to prevent infinite loops
     if (!(_currentState == AutoListeningState.idle ||
         _currentState == AutoListeningState.aiSpeaking)) {
@@ -224,37 +314,54 @@ class AutoListeningCoordinator {
       return;
     }
 
-    // Update state immediately
-    _updateState(AutoListeningState.listeningForVoice);
+    // Set transition flag
+    _isTransitionInProgress = true;
 
-    // Cancel any existing stuck state timer
-    _stuckStateTimer?.cancel();
+    try {
+      // Update state - use different transition based on current state
+      if (_currentState == AutoListeningState.idle) {
+        // From idle, go directly to listening (more restrictive transition rules)
+        _updateState(AutoListeningState.listening);
+        // Start listening immediately without the intermediate listeningForVoice state
+        await _executeListeningStart();
+        return;
+      } else {
+        // From aiSpeaking, we can use the intermediate listeningForVoice state
+        _updateState(AutoListeningState.listeningForVoice);
+      }
 
-    // Set a timer to reset if we get stuck
-    _stuckStateTimer = Timer(const Duration(seconds: 1), () {
-      if (_currentState == AutoListeningState.listeningForVoice) {
+      // Cancel any existing stuck state timer
+      _stuckStateTimer?.cancel();
+
+      // Set a timer to reset if we get stuck
+      _stuckStateTimer = Timer(const Duration(seconds: 1), () {
+        if (_currentState == AutoListeningState.listeningForVoice) {
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator] [VAD] Stuck in listeningForVoice state, resetting to idle');
+          }
+          _updateState(AutoListeningState.idle);
+          // Try again
+          _startListeningAfterDelay();
+        }
+      });
+
+      // Execute VAD start logic immediately (no Future.delayed)
+      if (!_autoModeEnabled) {
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator] [VAD] Stuck in listeningForVoice state, resetting to idle');
+              '[AutoListeningCoordinator] [VAD] Auto mode disabled, not starting listening');
         }
-        _updateState(AutoListeningState.idle);
-        // Try again
-        _startListeningAfterDelay();
+        _stuckStateTimer?.cancel();
+        return;
       }
-    });
 
-    // Execute VAD start logic immediately (no Future.delayed)
-    if (!_autoModeEnabled) {
-      if (kDebugMode) {
-        print(
-            '[AutoListeningCoordinator] [VAD] Auto mode disabled, not starting listening');
-      }
-      _stuckStateTimer?.cancel();
-      return;
+      // Start listening immediately
+      await _executeListeningStart();
+    } finally {
+      // Always reset the transition flag
+      _isTransitionInProgress = false;
     }
-
-    // Start listening immediately
-    _executeListeningStart();
   }
 
   // New method to handle the actual listening start
@@ -269,10 +376,18 @@ class AutoListeningCoordinator {
       await _voiceService.stopAudio();
     }
 
-    await _vadManager.startListening();
+    // SERIALIZE RECORDING STARTUP: Start VAD first and let it settle
+    await _safeStartVAD();
     if (kDebugMode) {
       print(
           '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
+    }
+
+    // Wait for VAD to fully initialize before starting recording (prevents dual codec creation)
+    await Future.delayed(Duration(milliseconds: 100));
+    if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator] [VAD] VAD settled, now starting recording pipeline');
     }
 
     // Start the actual recording pipeline as well
@@ -304,7 +419,7 @@ class AutoListeningCoordinator {
     if (_currentState == AutoListeningState.idle ||
         _currentState == AutoListeningState.processing) {
       try {
-        final success = await _vadManager.startListening();
+        final success = await _safeStartVAD();
         if (success) {
           _updateState(AutoListeningState.listening);
           if (kDebugMode) {
@@ -324,7 +439,7 @@ class AutoListeningCoordinator {
   Future<void> _startRecording() async {
     if (_currentState == AutoListeningState.listening) {
       try {
-        await _recordingManager.startRecording();
+        await _safeStartRecording();
 
         // Notify listeners that recording has started
         if (onSpeechDetectedCallback != null) {
@@ -452,7 +567,7 @@ class AutoListeningCoordinator {
       _cancelSpeechEndTimer();
 
       // Stop VAD
-      await _vadManager.stopListening();
+      await _safeStopVAD();
       if (kDebugMode) {
         print('🎤 [Step 1] AutoListening: VAD stopped (mic muted during TTS)');
       }
@@ -570,12 +685,60 @@ class AutoListeningCoordinator {
     }
   }
 
+  // Validate state transitions to prevent race conditions
+  bool _isValidTransition(AutoListeningState from, AutoListeningState to) {
+    const validTransitions = {
+      AutoListeningState.idle: {
+        AutoListeningState.aiSpeaking,
+        AutoListeningState.listening,
+      },
+      AutoListeningState.aiSpeaking: {
+        AutoListeningState.idle,
+        AutoListeningState.listening,
+        AutoListeningState.listeningForVoice,
+      },
+      AutoListeningState.listening: {
+        AutoListeningState.userSpeaking,
+        AutoListeningState.aiSpeaking,
+        AutoListeningState.idle,
+      },
+      AutoListeningState.userSpeaking: {
+        AutoListeningState.processing,
+        AutoListeningState.aiSpeaking, // Emergency transition
+        AutoListeningState.idle,
+      },
+      AutoListeningState.processing: {
+        AutoListeningState.aiSpeaking,
+        AutoListeningState.idle,
+        AutoListeningState.listening,
+      },
+      AutoListeningState.listeningForVoice: {
+        AutoListeningState.listening,
+        AutoListeningState.aiSpeaking,
+        AutoListeningState.idle,
+      },
+    };
+
+    return validTransitions[from]?.contains(to) ?? false;
+  }
+
   // Update the current state and notify listeners
   void _updateState(AutoListeningState newState) {
+    // Validate transition (unless it's the same state)
+    if (newState != _currentState &&
+        !_isValidTransition(_currentState, newState)) {
+      if (kDebugMode) {
+        print(
+            '❌ [AutoListeningCoordinator] INVALID TRANSITION: $_currentState → $newState (BLOCKED)');
+      }
+      return; // Prevent invalid transitions
+    }
+
     if (kDebugMode) {
-      print(
-          '[AutoListeningCoordinator][DEBUG] _updateState: State changing from $_currentState to $newState');
-      print(StackTrace.current);
+      if (newState != _currentState) {
+        print(
+            '✅ [AutoListeningCoordinator] VALID TRANSITION: $_currentState → $newState');
+      }
     }
     _currentState = newState;
     _stateController.add(_currentState);
@@ -585,6 +748,11 @@ class AutoListeningCoordinator {
   Future<void> dispose() async {
     _cancelSpeechEndTimer();
     _stuckStateTimer?.cancel();
+
+    // Reset resource tracking flags
+    _isVadActive = false;
+    _isRecordingActive = false;
+
     await _autoModeEnabledController.close();
     await _stateController.close();
     await _errorController.close();
