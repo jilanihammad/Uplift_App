@@ -29,20 +29,27 @@ class VADManager {
   // Track recorder disposal to prevent double-dispose
   bool _recorderDisposed = false;
 
-  // Amplitude thresholds
-  final double _speechStartThreshold =
-      -15.0; // dB (higher means more sensitive)
-  final double _speechEndThreshold = -25.0; // dB (made less strict - was -45.0)
+  // Adaptive amplitude thresholds (will be calibrated based on ambient noise)
+  double _speechStartThreshold = -20.0; // dB - will be adjusted
+  double _speechEndThreshold = -30.0; // dB - will be adjusted
+  
+  // Noise floor tracking for adaptive thresholds
+  double _noiseFloor = -60.0; // Current ambient noise level
+  final List<double> _noiseCalibrationSamples = [];
+  bool _isCalibrated = false;
+  final int _calibrationSamples = 30; // Collect 3 seconds of ambient noise
+  Timer? _calibrationTimer;
 
-  // Processing options
-  final int _consecutiveLoudFramesRequired =
-      2; // More responsive speech detection
-  final int _consecutiveQuietFramesRequired =
-      10; // Faster speech end detection (was 10)
-
-  // Silence timeouts (ms)
-  final int _maxSilenceDuration =
-      1500; // Stop recording after this much silence (was 700)
+  // Enhanced processing options
+  final int _consecutiveLoudFramesRequired = 3; // More conservative
+  final int _consecutiveQuietFramesRequired = 15; // Require more silence
+  
+  // Silence timeouts (ms) 
+  final int _maxSilenceDuration = 2500; // Longer timeout for noisy environments
+  
+  // Signal quality thresholds
+  final double _minSpeechDuration = 500; // Minimum speech length (ms)
+  final double _maxNoiseFloor = -20.0; // If noise is louder than this, warn user
 
   // State tracking
   bool _isInitialized = false;
@@ -111,6 +118,75 @@ class VADManager {
       _errorController.add('Error initializing VAD: $e');
       if (kDebugMode) {
         print('❌ VAD initialization error: $e');
+      }
+    }
+  }
+
+  // Calibrate noise floor by sampling ambient noise
+  Future<void> _calibrateNoiseFloor() async {
+    if (_isCalibrated) return;
+    
+    if (kDebugMode) {
+      print('🎙️ VAD: Starting noise floor calibration...');
+    }
+    
+    _noiseCalibrationSamples.clear();
+    _calibrationTimer?.cancel();
+    
+    // Collect samples for calibration
+    _calibrationTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (_noiseCalibrationSamples.length >= _calibrationSamples) {
+        timer.cancel();
+        _finalizeCalibraton();
+        return;
+      }
+      
+      // This will be populated by amplitude polling
+    });
+    
+    // Timeout calibration after 5 seconds
+    Timer(const Duration(seconds: 5), () {
+      if (!_isCalibrated) {
+        _calibrationTimer?.cancel();
+        _finalizeCalibraton();
+      }
+    });
+  }
+  
+  // Finalize noise calibration and set adaptive thresholds
+  void _finalizeCalibraton() {
+    if (_noiseCalibrationSamples.isEmpty) {
+      if (kDebugMode) {
+        print('🎙️ VAD: No calibration samples, using default thresholds');
+      }
+      _isCalibrated = true;
+      return;
+    }
+    
+    // Calculate noise floor (average of quietest 70% of samples)
+    _noiseCalibrationSamples.sort();
+    final int quietSamples = (_noiseCalibrationSamples.length * 0.7).round();
+    final quietSamplesList = _noiseCalibrationSamples.take(quietSamples).toList();
+    _noiseFloor = quietSamplesList.reduce((a, b) => a + b) / quietSamplesList.length;
+    
+    // Set adaptive thresholds based on noise floor
+    _speechStartThreshold = _noiseFloor + 10.0; // Speech must be 10dB above noise
+    _speechEndThreshold = _noiseFloor + 5.0; // End when within 5dB of noise
+    
+    // Safety bounds
+    _speechStartThreshold = _speechStartThreshold.clamp(-35.0, -10.0);
+    _speechEndThreshold = _speechEndThreshold.clamp(-45.0, -15.0);
+    
+    _isCalibrated = true;
+    
+    if (kDebugMode) {
+      print('🎙️ VAD: Calibration complete!');
+      print('  Noise floor: ${_noiseFloor.toStringAsFixed(1)} dB');
+      print('  Speech start threshold: ${_speechStartThreshold.toStringAsFixed(1)} dB');
+      print('  Speech end threshold: ${_speechEndThreshold.toStringAsFixed(1)} dB');
+      
+      if (_noiseFloor > _maxNoiseFloor) {
+        print('⚠️ VAD: Environment is very noisy (${_noiseFloor.toStringAsFixed(1)} dB). Consider finding a quieter location.');
       }
     }
   }
@@ -194,8 +270,14 @@ class VADManager {
 
       if (kDebugMode)
         print('[VADManager] Recorder started, starting amplitude polling');
+      
       // Start polling amplitude
       _startAmplitudePolling();
+      
+      // Start noise calibration if not already done
+      if (!_isCalibrated) {
+        _calibrateNoiseFloor();
+      }
 
       _isListening = true;
       _isSpeechDetected = false;
@@ -232,11 +314,18 @@ class VADManager {
         final amplitude = await _recorder.getAmplitude();
         final double level = amplitude.current ?? -60.0;
 
+        // Collect calibration samples if not yet calibrated
+        if (!_isCalibrated && _calibrationTimer != null && _calibrationTimer!.isActive) {
+          _noiseCalibrationSamples.add(level);
+        }
+
         // Emit amplitude for visualization
         _amplitudeController.add(level);
 
-        // Process the amplitude
-        _processAmplitude(level);
+        // Only process for speech detection if calibrated
+        if (_isCalibrated) {
+          _processAmplitude(level);
+        }
       } catch (e) {
         // Handle errors during amplitude polling
         if (kDebugMode) {
@@ -288,8 +377,8 @@ class VADManager {
               ? now.difference(_speechStartTime!).inMilliseconds
               : 0;
 
-          if (speechDuration > 200) {
-            // Handle very short utterances (was 800ms, now 200ms for edge cases)
+          if (speechDuration > _minSpeechDuration) {
+            // Only end speech if it's been long enough
             if (kDebugMode) {
               print(
                   '🎙️ VAD: Speech ended after ${speechDuration}ms (quiet frames)');
@@ -299,7 +388,7 @@ class VADManager {
             });
           } else if (kDebugMode) {
             print(
-                '🎙️ VAD: Ignoring very brief speech fragment (${speechDuration}ms < 200ms)');
+                '🎙️ VAD: Ignoring brief speech fragment (${speechDuration}ms < ${_minSpeechDuration}ms)');
             // Reset counters to continue listening
             _consecutiveQuietFrames = 0;
           }
@@ -443,6 +532,32 @@ class VADManager {
     }
   }
 
+  // Reset calibration (useful when environment changes)
+  void resetCalibration() {
+    _isCalibrated = false;
+    _noiseCalibrationSamples.clear();
+    _calibrationTimer?.cancel();
+    _noiseFloor = -60.0;
+    _speechStartThreshold = -20.0;
+    _speechEndThreshold = -30.0;
+    
+    if (kDebugMode) {
+      print('🎙️ VAD: Calibration reset - will recalibrate on next session');
+    }
+  }
+  
+  // Get current noise environment info (for debugging/UI feedback)
+  Map<String, dynamic> getNoiseInfo() {
+    return {
+      'isCalibrated': _isCalibrated,
+      'noiseFloor': _noiseFloor,
+      'speechStartThreshold': _speechStartThreshold,
+      'speechEndThreshold': _speechEndThreshold,
+      'isVeryNoisy': _noiseFloor > _maxNoiseFloor,
+      'isCalibrating': _calibrationTimer?.isActive ?? false,
+    };
+  }
+
   // Clean up resources (Option B: Single final disposal)
   Future<void> dispose() async {
     try {
@@ -451,7 +566,7 @@ class VADManager {
       }
 
       _amplitudeTimer?.cancel();
-      // Debounce timers removed for simplicity
+      _calibrationTimer?.cancel();
 
       // OPTION B: Only dispose recorder here, at final cleanup
       if (!_recorderDisposed && _isInitialized) {
