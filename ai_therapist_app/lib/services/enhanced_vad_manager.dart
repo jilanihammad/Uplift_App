@@ -32,7 +32,7 @@ class EnhancedVADManager {
   bool _isSpeechDetected = false;
   
   // RNNoise VAD parameters
-  double _speechThreshold = 0.6; // RNNoise VAD confidence threshold
+  double _speechThreshold = 0.8; // RNNoise VAD confidence threshold (raised from 0.6 to reduce false positives)
   int _speechFrames = 0;
   int _silenceFrames = 0;
   final int _minSpeechFrames = 3; // 30ms at 10fps
@@ -134,8 +134,12 @@ class EnhancedVADManager {
       // Reset RNNoise state for new session
       await _rnnoiseService.reset();
       
-      // Set sampling rate for RNNoise (48kHz)
-      AudioStreamer().sampleRate = _sampleRate;
+      // CRITICAL: Set sampling rate to 48kHz for RNNoise (requirement for optimal performance)
+      AudioStreamer().sampleRate = _sampleRate; // 48000 Hz as defined in _sampleRate
+      
+      if (kDebugMode) {
+        print('🎙️ Enhanced VAD: Audio streamer configured for ${_sampleRate}Hz (RNNoise requirement)');
+      }
       
       // Subscribe to audio stream
       _audioSubscription = AudioStreamer().audioStream.listen(
@@ -258,9 +262,10 @@ class EnhancedVADManager {
   void _processRNNoiseAudioFrame(List<double> frame) async {
     try {
       // Convert normalized samples (-1.0 to 1.0) to Int16 for RNNoise
+      // Use full Int16 range (-32768 to 32767) for optimal RNNoise performance
       final Int16List int16Frame = Int16List(frame.length);
       for (int i = 0; i < frame.length; i++) {
-        int16Frame[i] = (frame[i] * 32767).round().clamp(-32768, 32767);
+        int16Frame[i] = (frame[i] * 32767.0).round().clamp(-32768, 32767);
       }
       
       // Process with RNNoise
@@ -274,8 +279,12 @@ class EnhancedVADManager {
         final amplitude = _calculateAmplitudeFromInt16(processedFrame);
         _amplitudeController.add(amplitude);
         
+        // Apply dynamic threshold: base 0.8 + amplitude gate for better noise rejection
+        // Quiet audio (< -50dB) needs higher confidence to be considered speech
+        final dynamicThreshold = amplitude < -50.0 ? _speechThreshold + 0.1 : _speechThreshold;
+        
         // Apply hysteresis-based VAD logic using RNNoise probability
-        if (vadProbability > _speechThreshold) {
+        if (vadProbability > dynamicThreshold) {
           _speechFrames++;
           _silenceFrames = 0;
           
@@ -295,7 +304,7 @@ class EnhancedVADManager {
         
         if (kDebugMode && (vadProbability > 0.1)) {
           print('🎙️ Enhanced VAD (RNNoise): confidence=${vadProbability.toStringAsFixed(3)} | '
-                'frames=S$_speechFrames/Sil$_silenceFrames | amp=${amplitude.toStringAsFixed(1)}dB');
+                'threshold=${dynamicThreshold.toStringAsFixed(2)} | frames=S$_speechFrames/Sil$_silenceFrames | amp=${amplitude.toStringAsFixed(1)}dB');
         }
       } else {
         // RNNoise processing failed, fall back to amplitude

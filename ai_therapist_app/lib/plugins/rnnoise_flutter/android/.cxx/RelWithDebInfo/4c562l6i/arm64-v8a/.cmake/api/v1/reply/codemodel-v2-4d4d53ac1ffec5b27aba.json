@@ -1,0 +1,69 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-RelWithDebInfo-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.6.0"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1
+					]
+				}
+			],
+			"name" : "RelWithDebInfo",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "rnnoise_flutter",
+					"targetIndexes" : 
+					[
+						0,
+						1
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "rnnoise::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-rnnoise-RelWithDebInfo-1c5729b11f5338020305.json",
+					"name" : "rnnoise",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "rnnoise_flutter::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-rnnoise_flutter-RelWithDebInfo-76ce3762e21ea0af24e1.json",
+					"name" : "rnnoise_flutter",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/arm64-v8a",
+		"source" : "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}
