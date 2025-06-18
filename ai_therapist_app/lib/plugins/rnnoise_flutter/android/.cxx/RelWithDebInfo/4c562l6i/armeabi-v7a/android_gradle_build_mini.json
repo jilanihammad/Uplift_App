@@ -1,0 +1,33 @@
+{
+  "buildFiles": [
+    "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/jilani/Android/Sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/jilani/Android/Sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "rnnoise_flutter::@6890427a1f51a3e7e1df": {
+      "artifactName": "rnnoise_flutter",
+      "abi": "armeabi-v7a",
+      "output": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/build/rnnoise_flutter/intermediates/cxx/RelWithDebInfo/4c562l6i/obj/armeabi-v7a/librnnoise_flutter.so",
+      "runtimeFiles": []
+    },
+    "rnnoise::@6890427a1f51a3e7e1df": {
+      "artifactName": "rnnoise",
+      "abi": "armeabi-v7a",
+      "output": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/armeabi-v7a/librnnoise.a",
+      "runtimeFiles": []
+    }
+  }
+}

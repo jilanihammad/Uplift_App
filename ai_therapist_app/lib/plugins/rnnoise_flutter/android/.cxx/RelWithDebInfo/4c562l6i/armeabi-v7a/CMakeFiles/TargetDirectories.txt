@@ -1,0 +1,4 @@
+/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/armeabi-v7a/CMakeFiles/rnnoise.dir
+/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/armeabi-v7a/CMakeFiles/rnnoise_flutter.dir
+/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/armeabi-v7a/CMakeFiles/edit_cache.dir
+/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/armeabi-v7a/CMakeFiles/rebuild_cache.dir

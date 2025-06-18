@@ -1,0 +1,42 @@
+[
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLOAT_APPROX=1 -DHAVE_CONFIG_H=1 -DRNNOISE_BUILD=1 -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise.dir/denoise.c.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/denoise.c",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/denoise.c"
+},
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLOAT_APPROX=1 -DHAVE_CONFIG_H=1 -DRNNOISE_BUILD=1 -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise.dir/celt_lpc.c.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/celt_lpc.c",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/celt_lpc.c"
+},
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLOAT_APPROX=1 -DHAVE_CONFIG_H=1 -DRNNOISE_BUILD=1 -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise.dir/kiss_fft.c.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/kiss_fft.c",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/kiss_fft.c"
+},
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLOAT_APPROX=1 -DHAVE_CONFIG_H=1 -DRNNOISE_BUILD=1 -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise.dir/pitch.c.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/pitch.c",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/pitch.c"
+},
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLOAT_APPROX=1 -DHAVE_CONFIG_H=1 -DRNNOISE_BUILD=1 -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise.dir/rnn.c.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnn.c",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnn.c"
+},
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLOAT_APPROX=1 -DHAVE_CONFIG_H=1 -DRNNOISE_BUILD=1 -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise.dir/rnn_data.c.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnn_data.c",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnn_data.c"
+},
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLOAT_APPROX=1 -DHAVE_CONFIG_H=1 -DRNNOISE_BUILD=1 -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise.dir/rnn_reader.c.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnn_reader.c",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnn_reader.c"
+},
+{
+  "directory": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/RelWithDebInfo/4c562l6i/x86_64",
+  "command": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=x86_64-none-linux-android21 --sysroot=/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -Drnnoise_flutter_EXPORTS -I/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++14 -fexceptions -O2 -g -DNDEBUG -fPIC -O3 -ffast-math -o CMakeFiles/rnnoise_flutter.dir/rnnoise_flutter_jni.cpp.o -c /home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnnoise_flutter_jni.cpp",
+  "file": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/rnnoise_flutter_jni.cpp"
+}
+]
