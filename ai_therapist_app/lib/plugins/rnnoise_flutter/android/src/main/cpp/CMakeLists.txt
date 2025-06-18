@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18.1)
+cmake_minimum_required(VERSION 3.10.2)
 
 project("rnnoise_flutter")
 
@@ -17,6 +17,7 @@ add_library(rnnoise STATIC
 target_compile_definitions(rnnoise PRIVATE
     HAVE_CONFIG_H=1
     RNNOISE_BUILD=1
+    FLOAT_APPROX=1
 )
 
 # JNI wrapper for Flutter
@@ -45,7 +46,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(rnnoise PRIVATE
         -O3
         -ffast-math
-        -march=native
     )
     target_compile_options(rnnoise_flutter PRIVATE
         -O3

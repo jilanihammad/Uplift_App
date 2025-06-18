@@ -135,6 +135,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // Not recording, that's fine
       }
 
+      // Close WebSocket connection to prevent keep-alive pings after session ends
+      await voiceService.closeWebSocketConnection();
+      debugPrint('[VoiceSessionBloc] WebSocket connection closed successfully');
+
       debugPrint('[VoiceSessionBloc] Session cleanup completed successfully');
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error during session cleanup: $e');

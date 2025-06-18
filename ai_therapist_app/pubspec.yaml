@@ -33,7 +33,7 @@ dependencies:
   firebase_messaging: ^15.2.5
   firebase_analytics: ^11.4.5
   google_sign_in: ^6.1.4
-  firebase_app_check: ^0.3.2+5 # Enable App Check for better security
+  # firebase_app_check: ^0.2.2+10 # Enable App Check for better security - temporarily disabled
 
   web_socket_channel: ^3.0.1
   # Local storage
@@ -53,11 +53,16 @@ dependencies:
   lottie: ^3.3.1
 
   # Audio and voice processing
-  permission_handler: ^12.0.0+1
+  permission_handler: ^11.4.0
   path_provider: ^2.1.1
   record: ^5.0.1
   just_audio: ^0.10.0
   flutter_tts: ^4.2.2
+  audio_streamer: ^4.2.0  # Real-time PCM audio streaming
+
+  # Local plugins
+  rnnoise_flutter:
+    path: lib/plugins/rnnoise_flutter
 
   # Utilities
   uuid: ^4.5.1
@@ -76,16 +81,17 @@ dependencies:
   wakelock_plus: ^1.1.4
 
   rxdart: ^0.27.7
+  firebase_app_check: ^0.3.2+7
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   integration_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
-  build_runner: ^2.4.15
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.12
   mockito: ^5.4.6
-  flutter_launcher_icons: ^0.14.3
+  flutter_launcher_icons: ^0.13.1
   bloc_test: ^10.0.0
 
 flutter:
