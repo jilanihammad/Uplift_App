@@ -1,0 +1,46 @@
+{
+  "buildFiles": [
+    "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/jilani/Android/Sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/Debug/y3g9633h/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/jilani/Android/Sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/Debug/y3g9633h/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "rnnoise::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "rnnoise",
+      "output": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/Debug/y3g9633h/arm64-v8a/librnnoise.a"
+    },
+    "rnnoise_flutter::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "rnnoise_flutter",
+      "output": "/home/jilani/MyApps/Uplift_App/ai_therapist_app/build/rnnoise_flutter/intermediates/cxx/Debug/y3g9633h/obj/arm64-v8a/librnnoise_flutter.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/jilani/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

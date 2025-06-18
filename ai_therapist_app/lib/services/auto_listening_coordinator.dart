@@ -6,6 +6,7 @@ import 'audio_player_manager.dart';
 import 'base_voice_service.dart' as base_voice;
 import 'recording_manager.dart';
 import 'vad_manager.dart';
+import 'enhanced_vad_manager.dart';
 import 'voice_service.dart';
 
 /// Coordinates automatic voice detection and recording
@@ -17,7 +18,20 @@ class AutoListeningCoordinator {
   final AudioPlayerManager _audioPlayerManager;
   final RecordingManager _recordingManager;
   final VoiceService _voiceService;
-  final VADManager _vadManager;
+  
+  // VAD configuration - can switch between regular and enhanced VAD
+  static bool _useEnhancedVAD = true; // Configuration flag - ENABLED for RNNoise integration
+  late final dynamic _vadManager; // Can be VADManager or EnhancedVADManager
+  
+  // Configuration method to enable/disable Enhanced VAD
+  static void setEnhancedVAD(bool enabled) {
+    _useEnhancedVAD = enabled;
+    if (kDebugMode) {
+      print('🎙️ AutoListeningCoordinator: Enhanced VAD ${enabled ? 'ENABLED' : 'DISABLED'}');
+    }
+  }
+  
+  static bool get isEnhancedVADEnabled => _useEnhancedVAD;
 
   // Stream controllers
   final StreamController<bool> _autoModeEnabledController =
@@ -66,11 +80,21 @@ class AutoListeningCoordinator {
     required AudioPlayerManager audioPlayerManager,
     required RecordingManager recordingManager,
     required VoiceService voiceService,
-    required VADManager vadManager,
   })  : _audioPlayerManager = audioPlayerManager,
         _recordingManager = recordingManager,
-        _voiceService = voiceService,
-        _vadManager = vadManager {
+        _voiceService = voiceService {
+    // Initialize appropriate VAD manager based on configuration
+    if (_useEnhancedVAD) {
+      _vadManager = EnhancedVADManager();
+      if (kDebugMode) {
+        print('🎙️ AutoListeningCoordinator: Using Enhanced VAD Manager');
+      }
+    } else {
+      _vadManager = VADManager();
+      if (kDebugMode) {
+        print('🎙️ AutoListeningCoordinator: Using Standard VAD Manager');
+      }
+    }
     _setupListeners();
   }
 
@@ -465,11 +489,11 @@ class AutoListeningCoordinator {
 
     if (kDebugMode) {
       print(
-          '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting 2s timer. Current state: $_currentState');
+          '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting 1.5s timer. Current state: $_currentState');
       print(StackTrace.current);
     }
-    // Wait for silence to be detected for X seconds before stopping recording
-    _speechEndDebounceTimer = Timer(const Duration(seconds: 2), () {
+    // Wait for silence to be detected for 1.5 seconds before stopping recording
+    _speechEndDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
       if (kDebugMode) {
         print(
             '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired. Current state: $_currentState');

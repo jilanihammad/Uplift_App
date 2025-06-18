@@ -19,6 +19,7 @@ import '../data/datasources/remote/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
+import 'enhanced_vad_manager.dart';
 
 enum TherapyMood {
   veryHappy,
@@ -140,6 +141,10 @@ class TherapyService {
   final AudioGenerator _audioGenerator;
   final MemoryManager _memoryManager;
   final ConversationFlowManager _conversationFlowManager;
+
+  // Enhanced VAD configuration
+  bool _useEnhancedVAD = false; // Default to false for backwards compatibility
+  EnhancedVADManager? _enhancedVADManager;
 
   // Constructor with injected dependencies
   TherapyService({

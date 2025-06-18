@@ -1,0 +1,11 @@
+# ninja log v5
+4	41	1750224354304986688	CMakeFiles/rnnoise.dir/celt_lpc.c.o	e480851805c2c435
+8	74	1750224354335986588	CMakeFiles/rnnoise.dir/rnn_reader.c.o	3a8dd0c220bad1d0
+7	74	1750224354335986588	CMakeFiles/rnnoise.dir/rnn.c.o	ff7f3a982d8b5a89
+8	74	1750224354337986581	CMakeFiles/rnnoise.dir/rnn_data.c.o	40eaaf0a06880de0
+4	123	1750224354388986416	CMakeFiles/rnnoise.dir/pitch.c.o	ce15d6bfd90b711
+0	160	1750224354424986300	CMakeFiles/rnnoise.dir/denoise.c.o	ab1cd5a730d91dde
+4	237	1750224354502986048	CMakeFiles/rnnoise.dir/kiss_fft.c.o	777c6b35b2598ebd
+238	248	1750224354513986012	librnnoise.a	316c28bb81f66cc0
+8	308	1750224354566985840	CMakeFiles/rnnoise_flutter.dir/rnnoise_flutter_jni.cpp.o	9b78048a8eac90b4
+309	340	1750224354603985721	/home/jilani/MyApps/Uplift_App/ai_therapist_app/build/rnnoise_flutter/intermediates/cxx/Debug/y3g9633h/obj/x86_64/librnnoise_flutter.so	aed7f40bb47daf5f

@@ -256,7 +256,6 @@ class VoiceService {
       audioPlayerManager: _audioPlayerManager,
       recordingManager: _recordingManager,
       voiceService: this,
-      vadManager: _vadManager,
     );
     if (kDebugMode) {
       print('VoiceService initialized with constructor injection');
@@ -622,9 +621,16 @@ class VoiceService {
     if (_reusableChannel != null) {
       try {
         await _reusableChannel!.sink.close();
+        if (kDebugMode) print('🔍 [WS] WebSocket connection closed');
       } catch (_) {}
       _reusableChannel = null;
     }
+  }
+
+  /// Public method to close WebSocket connection (called when session ends)
+  Future<void> closeWebSocketConnection() async {
+    if (kDebugMode) print('🔍 [WS] Closing WebSocket connection for session end');
+    await _cleanupConnection();
   }
 
   /// Start keep-alive mechanism
