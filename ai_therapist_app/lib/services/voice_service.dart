@@ -127,6 +127,10 @@ class VoiceService {
   // Mutex to prevent concurrent TTS operations
   final Mutex _ttsLock = Mutex();
   
+  // NEW: Debounce mechanism to prevent duplicate playback calls
+  String? _lastPlayedFile;
+  Timer? _playbackDebounceTimer;
+  
   // Stream controllers for voice recording states - REMOVED
   // StreamController<RecordingState>? _recordingStateController;
   // Stream<RecordingState>? _recordingStateStream;
@@ -1276,6 +1280,9 @@ class VoiceService {
 
     // Clean up reusable WebSocket connection
     _cleanupConnection();
+    
+    // Clean up debounce timer
+    _playbackDebounceTimer?.cancel();
 
     // if (_recordingStateController != null &&
     //     !_recordingStateController!.isClosed) {
@@ -1332,15 +1339,30 @@ class VoiceService {
     return _recordingManager;
   }
 
-  // ADDED: Method to play an existing audio file and trigger onDone/onError callbacks
+  // CRITICAL FIX: Method to play audio with debounce to prevent duplicate calls
   Future<void> playAudioWithCallbacks(
     String filePath, {
     void Function()? onDone,
     void Function(String error)? onError,
   }) async {
+    // DEBOUNCE: Prevent duplicate calls for the same file within 100ms
+    if (_lastPlayedFile == filePath) {
+      if (kDebugMode) {
+        print('[VoiceService] playAudioWithCallbacks: DEBOUNCED duplicate call for $filePath');
+      }
+      // Still trigger callbacks since caller expects them
+      onDone?.call();
+      return;
+    }
+    
+    // Cancel any pending debounce timer
+    _playbackDebounceTimer?.cancel();
+    
+    _lastPlayedFile = filePath;
     _setAiSpeaking(true);
     if (kDebugMode)
       print('[VoiceService] playAudioWithCallbacks: Playing $filePath');
+    
     try {
       // Ensure the AudioPlayerManager's playAudio method is awaited
       // and it signals completion appropriately for onDone/onError.
@@ -1352,6 +1374,11 @@ class VoiceService {
       onError?.call('Error playing audio: ${e.toString()}');
     } finally {
       _setAiSpeaking(false);
+      
+      // Clear the debounce after a short delay
+      _playbackDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+        _lastPlayedFile = null;
+      });
     }
   }
 

@@ -59,6 +59,10 @@ class AutoListeningCoordinator {
   // Timer to prevent stuck states
   Timer? _stuckStateTimer;
 
+  // NEW: Handle speech events during processing state
+  Timer? _pendingSpeechEndTimer;
+  bool _hasPendingSpeechEnd = false;
+
   // Callback for when speech is detected and recording starts
   Function()? onSpeechDetectedCallback;
 
@@ -257,16 +261,36 @@ class AutoListeningCoordinator {
         print(
             '[AutoListeningCoordinator] [VAD] onSpeechStart emitted | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
-      if (_autoModeEnabled && _currentState == AutoListeningState.listening) {
-        if (kDebugMode) {
+      if (_autoModeEnabled) {
+        if (_currentState == AutoListeningState.listening) {
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator] [VAD] VAD detected speech start, cancelling speech end timer and starting recording');
+          }
+          _cancelSpeechEndTimer();
+          
+          // CRITICAL FIX: Always transition to userSpeaking, even if recording was already active
+          if (!_isRecordingActive) {
+            _startRecording();
+          } else {
+            if (kDebugMode) {
+              print('[AutoListeningCoordinator] [VAD] Recording already active, but transitioning to userSpeaking anyway');
+            }
+          }
+          // Always transition to userSpeaking state to prevent endless loop
+          _updateState(AutoListeningState.userSpeaking);
+          
+        } else if (_currentState == AutoListeningState.processing) {
+          // CRITICAL FIX: Cancel pending speech end if user resumes speaking
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator][DEBUG] Speech started during processing - cancelling pending stop');
+          }
+          _cancelPendingSpeechEnd();
+        } else if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator] [VAD] VAD detected speech start, cancelling speech end timer and starting recording');
+              '[AutoListeningCoordinator] [VAD] Ignored onSpeechStart event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
         }
-        _cancelSpeechEndTimer();
-        _startRecording();
-      } else if (kDebugMode) {
-        print(
-            '[AutoListeningCoordinator] [VAD] Ignored onSpeechStart event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
       }
     });
 
@@ -277,16 +301,33 @@ class AutoListeningCoordinator {
             '[AutoListeningCoordinator][DEBUG] onSpeechEnd event received | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
         print(StackTrace.current);
       }
-      if (_autoModeEnabled &&
-          _currentState == AutoListeningState.userSpeaking) {
-        if (kDebugMode) {
+      if (_autoModeEnabled) {
+        if (_currentState == AutoListeningState.userSpeaking) {
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator][DEBUG] Calling _startSpeechEndTimer() after onSpeechEnd');
+          }
+          _startSpeechEndTimer();
+        } else if (_currentState == AutoListeningState.processing) {
+          // CRITICAL FIX: Handle speech end during processing with debounce
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator][DEBUG] Speech end during processing - scheduling immediate stop with 200ms debounce');
+          }
+          _handleSpeechEndDuringProcessing();
+        } else if (_currentState == AutoListeningState.listening) {
+          // CRITICAL FIX: Handle stray recording when stuck in listening state
+          if (_isRecordingActive) {
+            if (kDebugMode) {
+              print(
+                  '[AutoListeningCoordinator][DEBUG] Speech ended while in listening state but recording is active - cleaning up stray recording');
+            }
+            _stopRecording();
+          }
+        } else if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator][DEBUG] Calling _startSpeechEndTimer() after onSpeechEnd');
+              '[AutoListeningCoordinator][DEBUG] Ignored onSpeechEnd event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
         }
-        _startSpeechEndTimer();
-      } else if (kDebugMode) {
-        print(
-            '[AutoListeningCoordinator][DEBUG] Ignored onSpeechEnd event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
       }
     });
 
@@ -527,6 +568,43 @@ class AutoListeningCoordinator {
     }
   }
 
+  // CRITICAL FIX: Handle speech end during processing with immediate response and debounce
+  void _handleSpeechEndDuringProcessing() {
+    if (kDebugMode) {
+      print(
+          '[AutoListeningCoordinator][DEBUG] _handleSpeechEndDuringProcessing: Setting up 200ms debounce for immediate stop');
+    }
+    
+    // Cancel any existing pending timer
+    _cancelPendingSpeechEnd();
+    
+    // Set flag and start debounce timer
+    _hasPendingSpeechEnd = true;
+    _pendingSpeechEndTimer = Timer(const Duration(milliseconds: 200), () {
+      if (_hasPendingSpeechEnd && _currentState == AutoListeningState.processing) {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately');
+        }
+        // Call stopRecording directly - this bypasses the 1.5s timer
+        _stopRecording();
+        _hasPendingSpeechEnd = false;
+      }
+    });
+  }
+
+  // CRITICAL FIX: Cancel pending speech end (called when user resumes speaking)
+  void _cancelPendingSpeechEnd() {
+    if (_pendingSpeechEndTimer != null && _pendingSpeechEndTimer!.isActive) {
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] _cancelPendingSpeechEnd: User resumed speaking, cancelling pending stop');
+      }
+      _pendingSpeechEndTimer?.cancel();
+    }
+    _hasPendingSpeechEnd = false;
+  }
+
   // Stop recording and process the audio
   Future<void> _stopRecording() async {
     if (_isStoppingRecording) {
@@ -578,10 +656,12 @@ class AutoListeningCoordinator {
         }
       }
     } finally {
+      // CRITICAL FIX: Always clear recording flag, even on error (engineer's fix)
+      _isRecordingActive = false;
+      _isStoppingRecording = false;
       if (kDebugMode)
         print(
-            '[AutoListeningCoordinator][DEBUG] _isStoppingRecording reset to false');
-      _isStoppingRecording = false;
+            '[AutoListeningCoordinator][DEBUG] _isStoppingRecording and _isRecordingActive reset to false');
     }
   }
 
@@ -772,6 +852,7 @@ class AutoListeningCoordinator {
   // Clean up resources
   Future<void> dispose() async {
     _cancelSpeechEndTimer();
+    _cancelPendingSpeechEnd();
     _stuckStateTimer?.cancel();
 
     // Reset resource tracking flags

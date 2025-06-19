@@ -22,6 +22,9 @@ class AudioPlayerManager {
 
   // Track last emitted playing state to prevent duplicate broadcasts
   bool? _lastEmittedPlayingState;
+  
+  // CRITICAL FIX: Mutex to prevent concurrent playAudio calls
+  bool _isPlayingAudio = false;
 
   // Streams for external components to listen to
   Stream<bool> get isPlayingStream => _playingStateController.stream;
@@ -109,12 +112,22 @@ class AudioPlayerManager {
     }
   }
 
-  // Play audio from a file path
+  // CRITICAL FIX: Play audio with mutex to prevent concurrent calls
   Future<void> playAudio(String audioPath) async {
     if (audioPath.isEmpty) {
       _errorController.add('Empty audio path provided for playback');
       return;
     }
+
+    // MUTEX: Prevent concurrent playAudio calls 
+    if (_isPlayingAudio) {
+      if (kDebugMode) {
+        print('🎧 AudioPlayerManager: BLOCKED concurrent playAudio call for: $audioPath');
+      }
+      return;
+    }
+    
+    _isPlayingAudio = true;
 
     final Completer<void> completer = Completer<void>();
 
@@ -141,14 +154,19 @@ class AudioPlayerManager {
       await _audioPlayer.setFilePath(audioPath);
       await _audioPlayer.play();
 
-      // Listen for completion
+      // Listen for completion and all terminal states
       StreamSubscription? subscription;
       subscription = _audioPlayer.processingStateStream.listen((state) {
-        if (state == ProcessingState.completed) {
+        // Release mutex on any terminal state
+        if (state == ProcessingState.completed ||
+            state == ProcessingState.idle ||  // playback aborted
+            (state == ProcessingState.ready && !_audioPlayer.playing)) {
           if (!completer.isCompleted) {
             completer.complete();
           }
           subscription?.cancel();
+          // CRITICAL: Release mutex on any terminal outcome
+          _isPlayingAudio = false;
         }
       });
     } catch (e) {
@@ -159,6 +177,8 @@ class AudioPlayerManager {
       if (!completer.isCompleted) {
         completer.completeError(e);
       }
+      // Release mutex on error
+      _isPlayingAudio = false;
     }
     return completer.future;
   }
@@ -181,6 +201,9 @@ class AudioPlayerManager {
       if (kDebugMode) {
         print('❌ Error stopping audio: $e');
       }
+    } finally {
+      // CRITICAL: Clear mutex when manually stopping audio
+      _isPlayingAudio = false;
     }
   }
 
