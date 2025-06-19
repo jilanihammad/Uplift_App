@@ -582,12 +582,18 @@ class AutoListeningCoordinator {
     _hasPendingSpeechEnd = true;
     _pendingSpeechEndTimer = Timer(const Duration(milliseconds: 200), () {
       if (_hasPendingSpeechEnd && _currentState == AutoListeningState.processing) {
-        if (kDebugMode) {
+        // ENGINEER'S FIX: Only call _stopRecording if actually recording (reduces log noise)
+        if (_isRecordingActive) {
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately');
+          }
+          // Call stopRecording directly - this bypasses the 1.5s timer
+          _stopRecording();
+        } else if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately');
+              '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed but recording not active - skipping no-op _stopRecording()');
         }
-        // Call stopRecording directly - this bypasses the 1.5s timer
-        _stopRecording();
         _hasPendingSpeechEnd = false;
       }
     });
