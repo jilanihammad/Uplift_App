@@ -3,16 +3,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import '../models/user_preferences.dart';
 import '../models/therapist_style.dart';
+import '../di/interfaces/i_preferences_service.dart';
 
 // Mock implementation of user preferences service
-class PreferencesService {
+class PreferencesService implements IPreferencesService {
   // Mock user preferences
   UserPreferences? _preferences;
 
   // Get current preferences
+  @override
   UserPreferences? get preferences => _preferences;
 
   // Method to initialize the preferences service
+  @override
   Future<void> init() async {
     // In a real app, this would load preferences from persistent storage
     // For now, we'll just use default values
@@ -35,6 +38,7 @@ class PreferencesService {
   }
 
   // Update preferences
+  @override
   Future<void> updatePreferences(UserPreferences newPreferences) async {
     _preferences = newPreferences.copyWith(
       lastUpdated: DateTime.now(),
@@ -47,6 +51,7 @@ class PreferencesService {
   }
 
   // Update a single preference
+  @override
   Future<void> updateSinglePreference({
     String? therapistStyleId,
     bool? reminderEnabled,
@@ -84,17 +89,20 @@ class PreferencesService {
   }
 
   // Get available therapist styles
+  @override
   List<TherapistStyle> getAvailableTherapistStyles() {
     return TherapistStyle.availableStyles;
   }
 
   // Get current therapist style
+  @override
   TherapistStyle getCurrentTherapistStyle() {
     final styleId = _preferences?.therapistStyleId ?? 'cbt';
     return TherapistStyle.getById(styleId);
   }
 
   // Set the therapist style
+  @override
   Future<void> setTherapistStyle(String styleId) async {
     await updateSinglePreference(therapistStyleId: styleId);
 
@@ -104,6 +112,7 @@ class PreferencesService {
   }
 
   // Set voice by default option
+  @override
   Future<void> setUseVoiceByDefault(bool enabled) async {
     await updateSinglePreference(useVoiceByDefault: enabled);
 
@@ -113,6 +122,7 @@ class PreferencesService {
   }
 
   // Set daily check-in time
+  @override
   Future<void> setDailyCheckInTime(TimeOfDay? time) async {
     await updateSinglePreference(dailyCheckInTime: time);
 

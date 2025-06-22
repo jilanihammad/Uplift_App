@@ -167,8 +167,10 @@ Future<void> setupServiceLocator() async {
     }
 
     if (!serviceLocator.isRegistered<ThemeService>()) {
-      serviceLocator.registerLazySingleton<ThemeService>(() => ThemeService());
-      debugPrint('Registered ThemeService');
+      serviceLocator.registerLazySingleton<ThemeService>(() => ThemeService(
+        preferencesService: serviceLocator<PreferencesService>(),
+      ));
+      debugPrint('Registered ThemeService with dependency injection');
     }
 
     // ===== SIMPLE DOMAIN SERVICES =====
