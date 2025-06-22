@@ -7,10 +7,16 @@ import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({Key? key}) : super(key: key);
+  final IAuthService? authService;
+  
+  const RegisterScreen({
+    Key? key,
+    this.authService,
+  }) : super(key: key);
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -22,12 +28,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
-  late AuthService _authService;
+  late IAuthService _authService;
 
   @override
   void initState() {
     super.initState();
-    _authService = serviceLocator<AuthService>();
+    // Use dependency injection with fallback to service locator
+    // TODO: Remove fallback when AuthService is migrated to dependency injection
+    _authService = widget.authService ?? serviceLocator<AuthService>() as IAuthService;
   }
 
   @override

@@ -11,6 +11,8 @@ import '../../services/user_profile_service.dart';
 import '../../services/groq_service.dart';
 import '../../services/config_service.dart';
 import '../../data/datasources/remote/api_client.dart';
+import '../../data/datasources/local/app_database.dart';
+import '../../data/repositories/session_repository.dart';
 import '../../services/notification_service.dart' as service_ns;
 
 /// Services dependency module
@@ -89,6 +91,19 @@ class ServicesModule {
     // Register interface for GroqService
     locator.registerLazySingleton<IGroqService>(
       () => locator<GroqService>(),
+    );
+
+    // Register SessionRepository with dependencies from core module
+    locator.registerLazySingleton<SessionRepository>(
+      () => SessionRepository(
+        apiClient: locator<ApiClient>(),
+        appDatabase: locator<AppDatabase>(),
+      ),
+    );
+    
+    // Register interface for SessionRepository
+    locator.registerLazySingleton<ISessionRepository>(
+      () => locator<SessionRepository>(),
     );
   }
 

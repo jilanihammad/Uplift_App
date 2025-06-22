@@ -15,6 +15,7 @@ export 'i_config_service.dart';
 // Data interfaces
 export 'i_database.dart';
 export 'i_memory_manager.dart';
+export 'i_session_repository.dart';
 
 // UI and flow interfaces
 export 'i_onboarding_service.dart';
