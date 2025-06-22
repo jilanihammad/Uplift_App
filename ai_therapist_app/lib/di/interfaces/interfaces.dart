@@ -21,7 +21,9 @@ export 'i_onboarding_service.dart';
 export 'i_theme_service.dart';
 export 'i_preferences_service.dart';
 export 'i_navigation_service.dart';
+export 'i_progress_service.dart';
+export 'i_user_profile_service.dart';
+export 'i_groq_service.dart';
 
 // Additional service interfaces (to be created as needed)
 // export 'i_notification_service.dart';
-// export 'i_progress_service.dart';

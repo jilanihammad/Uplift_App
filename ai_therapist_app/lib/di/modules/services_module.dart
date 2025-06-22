@@ -6,6 +6,12 @@ import '../interfaces/interfaces.dart';
 import '../../services/theme_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/navigation_service.dart';
+import '../../services/progress_service.dart';
+import '../../services/user_profile_service.dart';
+import '../../services/groq_service.dart';
+import '../../services/config_service.dart';
+import '../../data/datasources/remote/api_client.dart';
+import '../../services/notification_service.dart' as service_ns;
 
 /// Services dependency module
 /// Registers application services with proper dependency injection
@@ -48,6 +54,41 @@ class ServicesModule {
     // Register interface for NavigationService
     locator.registerLazySingleton<INavigationService>(
       () => locator<NavigationService>(),
+    );
+
+    // Register ProgressService with dependency injection
+    locator.registerLazySingleton<ProgressService>(
+      () => ProgressService(
+        notificationService: locator<service_ns.NotificationService>(),
+      ),
+    );
+    
+    // Register interface for ProgressService
+    locator.registerLazySingleton<IProgressService>(
+      () => locator<ProgressService>(),
+    );
+
+    // Register UserProfileService (no dependencies)
+    locator.registerLazySingleton<UserProfileService>(
+      () => UserProfileService(),
+    );
+    
+    // Register interface for UserProfileService
+    locator.registerLazySingleton<IUserProfileService>(
+      () => locator<UserProfileService>(),
+    );
+
+    // Register GroqService with dependencies from core module
+    locator.registerLazySingleton<GroqService>(
+      () => GroqService(
+        configService: locator<ConfigService>(),
+        apiClient: locator<ApiClient>(),
+      ),
+    );
+    
+    // Register interface for GroqService
+    locator.registerLazySingleton<IGroqService>(
+      () => locator<GroqService>(),
     );
   }
 
