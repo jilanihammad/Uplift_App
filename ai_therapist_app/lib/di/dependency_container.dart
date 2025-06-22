@@ -70,6 +70,9 @@ class DependencyContainer {
   IThemeService get theme => get<IThemeService>();
   IPreferencesService get preferences => get<IPreferencesService>();
   INavigationService get navigation => get<INavigationService>();
+  IProgressService get progress => get<IProgressService>();
+  IUserProfileService get userProfile => get<IUserProfileService>();
+  IGroqService get groq => get<IGroqService>();
   
   // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;

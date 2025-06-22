@@ -7,8 +7,9 @@ import '../models/user_progress.dart';
 import '../services/notification_service.dart';
 import 'package:flutter/foundation.dart';
 import '../widgets/mood_selector.dart';
+import '../di/interfaces/i_progress_service.dart';
 
-class ProgressService {
+class ProgressService implements IProgressService {
   static const String _progressKey = 'user_progress';
   final NotificationService _notificationService;
   
@@ -16,16 +17,19 @@ class ProgressService {
   UserProgress _currentProgress = UserProgress();
   
   // Getter for current progress (immutable copy)
+  @override
   UserProgress get progress => _currentProgress;
   
   // Value notifier for progress changes
   final _progressChangedController = ValueNotifier<UserProgress>(UserProgress());
   
   // Observable stream of progress changes
+  @override
   ValueNotifier<UserProgress> get progressChanged => _progressChangedController;
   
   // Flag to track if mood log limit has been reached
   bool _moodLogLimitReached = false;
+  @override
   bool get moodLogLimitReached => _moodLogLimitReached;
   
   // Mock mood history data
@@ -43,6 +47,7 @@ class ProgressService {
       : _notificationService = notificationService;
   
   // Initialize progress
+  @override
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final progressString = prefs.getString(_progressKey);
@@ -165,12 +170,14 @@ class ProgressService {
   }
   
   // Get user consistency rate (percentage of active days in the last week)
+  @override
   double getConsistencyRate() {
     // We're now using the getter from UserProgress
     return _currentProgress.activeDaysLastWeek / 7.0;
   }
 
   // Get consistency status
+  @override
   String getConsistencyStatus() {
     final rate = getConsistencyRate();
     if (rate >= 0.75) return 'Very Consistent';
@@ -179,6 +186,7 @@ class ProgressService {
   }
   
   // Get consistency color
+  @override
   Color getConsistencyColor() {
     final rate = getConsistencyRate();
     if (rate >= 0.75) return Colors.green;
@@ -187,6 +195,7 @@ class ProgressService {
   }
   
   // Log a mood entry
+  @override
   Future<bool> logMood(Mood mood, [String? notes]) async {
     try {
       // Check if we've reached the daily limit of 3 entries
@@ -246,6 +255,7 @@ class ProgressService {
   }
   
   // Get mood history for a specific date range
+  @override
   Map<String, List<Map<String, dynamic>>> getMoodHistory({
     DateTime? startDate, 
     DateTime? endDate
@@ -278,17 +288,20 @@ class ProgressService {
   }
   
   // Get a progress metric
+  @override
   int getProgressMetric(String metric) {
     return _progressData[metric] ?? 0;
   }
   
   // Update a progress metric
+  @override
   Future<void> updateProgressMetric(String metric, int value) async {
     _progressData[metric] = value;
     // In a real app, we would save to persistent storage here
   }
   
   // Increment a progress metric
+  @override
   Future<void> incrementProgressMetric(String metric, [int amount = 1]) async {
     final currentValue = _progressData[metric] ?? 0;
     _progressData[metric] = currentValue + amount;
@@ -296,6 +309,7 @@ class ProgressService {
   }
   
   // Log a completed session
+  @override
   Future<void> logSession(int sessionDuration) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -351,6 +365,7 @@ class ProgressService {
   }
   
   // Get mood data for visualization
+  @override
   List<MapEntry<DateTime, int>> getMoodDataForLastDays(int days) {
     final endDate = DateTime.now();
     final startDate = endDate.subtract(Duration(days: days));
@@ -362,6 +377,7 @@ class ProgressService {
   }
   
   // Get session data for visualization
+  @override
   List<MapEntry<DateTime, int>> getSessionDataForLastDays(int days) {
     final endDate = DateTime.now();
     final startDate = endDate.subtract(Duration(days: days));
@@ -373,6 +389,7 @@ class ProgressService {
   }
   
   // Reset all progress data
+  @override
   Future<void> resetProgress() async {
     _currentProgress = UserProgress();
     await _saveProgress();

@@ -3,23 +3,27 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
+import '../di/interfaces/i_user_profile_service.dart';
 
-class UserProfileService {
+class UserProfileService implements IUserProfileService {
   static const String _profileKey = 'user_profile';
   
   // Current profile in memory
   UserProfile? _currentProfile;
   
   // Getter for current profile
+  @override
   UserProfile? get profile => _currentProfile;
   
   // Value notifier for profile changes
   final _profileChangedController = ValueNotifier<UserProfile?>(null);
   
   // Observable stream of profile changes
+  @override
   ValueNotifier<UserProfile?> get profileChanged => _profileChangedController;
   
   // Initialize profile service
+  @override
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final profileString = prefs.getString(_profileKey);
@@ -36,6 +40,7 @@ class UserProfileService {
   }
   
   // Save profile to storage
+  @override
   Future<void> saveProfile(UserProfile profile) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -50,6 +55,7 @@ class UserProfileService {
   }
   
   // Update profile with new data
+  @override
   Future<void> updateProfile({
     String? name,
     String? email,
@@ -108,9 +114,11 @@ class UserProfileService {
   }
   
   // Check if the user has completed the initial setup
+  @override
   bool get hasCompletedOnboarding => _currentProfile != null;
   
   // Reset profile (for testing or account deletion)
+  @override
   Future<void> resetProfile() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_profileKey);

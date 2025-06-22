@@ -9,12 +9,21 @@ import 'package:ai_therapist_app/services/langchain/custom_langchain.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
 import 'dart:async';
+import '../di/interfaces/i_groq_service.dart';
 
 /// Service for handling text completions via Groq LLM
 /// This service is only used for text generation - TTS and transcription are handled by OpenAI
-class GroqService {
-  // API client for making requests to backend
-  late ApiClient _apiClient;
+class GroqService implements IGroqService {
+  // Dependencies
+  final ConfigService _configService;
+  final ApiClient _apiClient;
+
+  // Constructor with dependency injection
+  GroqService({
+    ConfigService? configService,
+    ApiClient? apiClient,
+  }) : _configService = configService ?? serviceLocator<ConfigService>(),
+       _apiClient = apiClient ?? serviceLocator<ApiClient>();
 
   // API connection details
   late String _llmModelId;
@@ -28,22 +37,19 @@ class GroqService {
   String? _sessionId;
 
   // Getter and setter for sessionId
+  @override
   String? get sessionId => _sessionId;
+  @override
   set sessionId(String? value) => _sessionId = value;
 
   // Initialize the service
+  @override
   Future<void> init() async {
     try {
-      // Get configuration service
-      final config = serviceLocator<ConfigService>();
-
       // Set model ID - only care about LLM, not TTS or transcription
-      _llmModelId = config.llmModelId.isNotEmpty
-          ? config.llmModelId
+      _llmModelId = _configService.llmModelId.isNotEmpty
+          ? _configService.llmModelId
           : "llama3-70b-8192"; // Default to Llama 3 if not specified
-
-      // Initialize API client with the backend URL
-      _apiClient = serviceLocator<ApiClient>();
 
       // Initialize LangChain memory
       _memory = ConversationBufferMemory();
@@ -91,6 +97,7 @@ class GroqService {
   }
 
   // Reset conversation memory
+  @override
   void resetConversationMemory() {
     _memory = ConversationBufferMemory();
     if (kDebugMode) {
@@ -99,14 +106,17 @@ class GroqService {
   }
 
   // Get current memory as formatted context
+  @override
   String? get conversationMemory {
     return _memory?.getBuffer();
   }
 
   // Check if service is available
+  @override
   bool get isConfigured => _isAvailable;
 
   // Override isConfigured if needed for testing
+  @override
   void setAvailable(bool available) {
     _isAvailable = available;
     if (kDebugMode) {
@@ -115,9 +125,11 @@ class GroqService {
   }
 
   // Get LLM model ID
+  @override
   String get llmModelId => _llmModelId;
 
   // Generate chat completion using the LLM model
+  @override
   Future<String> generateChatCompletion({
     required String userMessage,
     String systemPrompt = '',
@@ -161,6 +173,7 @@ class GroqService {
   }
 
   // Test the connection to the backend LLM API
+  @override
   Future<Map<String, dynamic>> testConnection() async {
     try {
       // Make API request to test the connection
@@ -188,6 +201,7 @@ class GroqService {
 
   /// Stream chat completion from backend via WebSocket
   /// [history] should be a list of message objects: [{"role": ..., "content": ...}]
+  @override
   Stream<Map<String, dynamic>> streamChatCompletionViaWebSocket({
     required String message,
     List<Map<String, dynamic>> history = const [],
