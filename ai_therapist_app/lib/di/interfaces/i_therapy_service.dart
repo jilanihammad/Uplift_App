@@ -59,11 +59,28 @@ abstract class ITherapyService {
   Future<void> trackMoodChange(String sessionId, String mood);
   Future<Map<String, dynamic>> getProgressMetrics(String userId);
   
+  // Audio processing (specific to current implementation)
+  Future<Map<String, dynamic>> processUserMessageWithStreamingAudio(
+    String userMessage,
+    List<Map<String, String>> history, {
+    required Future<void> Function() onTTSPlaybackComplete,
+    required void Function(String) onTTSError,
+  });
+  
+  Future<String> processUserMessage(String userMessage, {
+    List<Map<String, String>>? history,
+  });
+  
   // Initialization and cleanup
+  Future<void> init();
   Future<void> initialize();
   void dispose();
   
   // State
   bool get isInitialized;
   String? get currentSessionId;
+  
+  // Additional methods for backward compatibility
+  void setTherapistStyle(String systemPrompt);
+  Future<Map<String, dynamic>> endSessionWithMessages(List<Map<String, dynamic>> messages);
 }

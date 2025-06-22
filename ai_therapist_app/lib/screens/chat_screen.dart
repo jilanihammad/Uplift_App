@@ -17,6 +17,7 @@ import '../services/vad_manager.dart';
 
 import '../di/service_locator.dart';
 import '../services/therapy_service.dart' hide TherapyServiceMessage;
+import '../di/interfaces/i_therapy_service.dart';
 import '../services/progress_service.dart';
 import '../services/preferences_service.dart';
 import '../widgets/mood_selector.dart';
@@ -80,7 +81,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   late VoiceService _voiceService;
 
   // Services
-  final TherapyService _therapyService = serviceLocator<TherapyService>();
+  final ITherapyService _therapyService = serviceLocator<ITherapyService>();
   final ProgressService _progressService = serviceLocator<ProgressService>();
   final NavigationService _navigationService =
       serviceLocator<NavigationService>();
@@ -701,6 +702,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         text: welcomeMessage,
         onDone: () {
           debugPrint('[ChatScreen] Welcome TTS completed');
+          // Add delay and then enable auto-listening mode
+          Future.delayed(const Duration(milliseconds: 125), () {
+            debugPrint('[ChatScreen] Enabling auto mode after welcome TTS buffer');
+            if (mounted) {
+              context.read<VoiceSessionBloc>().add(const EnableAutoMode());
+            }
+          });
         },
         onError: (error) {
           debugPrint('Welcome TTS Error: $error');
@@ -958,7 +966,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
 
     // Get session summary from therapy service
-    final sessionData = await _therapyService.endSession(messageList);
+    final sessionData = await _therapyService.endSessionWithMessages(messageList);
 
     // Safely extract and convert lists to List<String>
     final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
@@ -982,6 +990,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       final messageRepository = serviceLocator<MessageRepository>();
 
       // Ensure the session exists in the repository
+      // Generate session title
+      final sessionTitle =
+          'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+      
       try {
         await sessionRepository.getSession(_currentSessionId);
       } catch (e) {
@@ -989,8 +1001,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           debugPrint('Session not found in repository, creating it now');
         }
         // Create the session if it doesn't exist
-        final sessionTitle =
-            'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
         final createdSession = await sessionRepository.createSession(
           sessionTitle,
           id: _currentSessionId,
@@ -1003,13 +1013,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
       // Save the session with its summary and messages
       await sessionRepository.saveSession(
-        id: _currentSessionId,
-        messages: messages.map((m) => m.toJson()).toList(),
+        sessionId: _currentSessionId,
+        title: sessionTitle,
         summary: sessionData['summary'],
-        actionItems:
-            (sessionData['actionItems'] as List<dynamic>).cast<String>(),
-        initialMood: _initialMood,
-        messageRepository: messageRepository,
+        messages: messages.map((m) => m.toJson()).toList(),
       );
 
       if (kDebugMode) {

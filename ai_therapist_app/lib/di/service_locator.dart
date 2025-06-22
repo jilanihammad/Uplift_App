@@ -15,6 +15,7 @@ import '../services/auth_service.dart';
 import '../services/notification_service.dart' as service_ns;
 import '../services/voice_service.dart';
 import '../services/therapy_service.dart';
+import 'interfaces/i_therapy_service.dart';
 import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
 import '../services/preferences_service.dart';
 import '../services/progress_service.dart';
@@ -216,8 +217,8 @@ Future<void> setupServiceLocator() async {
     // ===== REGISTER TherapyService (BEFORE MessageProcessor) =====
     // This is a dependency for MessageProcessor
     // Ensure its own dependencies (AudioGenerator, MemoryManager, ApiClient) are resolvable
-    if (!serviceLocator.isRegistered<TherapyService>()) {
-      serviceLocator.registerLazySingleton<TherapyService>(() {
+    if (!serviceLocator.isRegistered<ITherapyService>()) {
+      serviceLocator.registerLazySingleton<ITherapyService>(() {
         debugPrint('Creating TherapyService instance (lazy initialization)');
         return TherapyService(
           // Ensure these are registered or resolvable by serviceLocator
@@ -341,8 +342,8 @@ Future<void> setupServiceLocator() async {
     }
 
     // Register services that depend on repositories
-    if (!serviceLocator.isRegistered<TherapyService>()) {
-      serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
+    if (!serviceLocator.isRegistered<ITherapyService>()) {
+      serviceLocator.registerLazySingleton<ITherapyService>(() => TherapyService(
             messageProcessor: serviceLocator<MessageProcessor>(),
             audioGenerator: serviceLocator<AudioGenerator>(),
             memoryManager: serviceLocator<MemoryManager>(),
@@ -437,8 +438,8 @@ Future<void> registerApiDependentServices(
     }
 
     // Register services that depend on repositories
-    if (!serviceLocator.isRegistered<TherapyService>()) {
-      serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
+    if (!serviceLocator.isRegistered<ITherapyService>()) {
+      serviceLocator.registerLazySingleton<ITherapyService>(() => TherapyService(
             messageProcessor: serviceLocator<MessageProcessor>(),
             audioGenerator: serviceLocator<AudioGenerator>(),
             memoryManager: serviceLocator<MemoryManager>(),

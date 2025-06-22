@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
-import 'package:ai_therapist_app/services/progress_service.dart';
 import 'package:intl/intl.dart';
 
 class ProgressScreen extends StatefulWidget {
-  const ProgressScreen({Key? key}) : super(key: key);
+  final IProgressService? progressService;
+  
+  const ProgressScreen({
+    Key? key,
+    this.progressService,
+  }) : super(key: key);
 
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
@@ -13,14 +18,14 @@ class ProgressScreen extends StatefulWidget {
 
 class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  late ProgressService _progressService;
+  late IProgressService _progressService;
   late UserProgress _progress;
   
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _progressService = serviceLocator<ProgressService>();
+    _progressService = widget.progressService ?? DependencyContainer().progress;
     _progress = _progressService.progress;
     
     // Listen for progress changes

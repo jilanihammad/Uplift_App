@@ -3,9 +3,10 @@ import '../datasources/remote/api_client.dart';
 import '../datasources/local/app_database.dart';
 import '../../domain/entities/session.dart';
 import '../../data/repositories/message_repository.dart';
+import '../../di/interfaces/i_session_repository.dart';
 import 'package:flutter/foundation.dart';
 
-class SessionRepository {
+class SessionRepository implements ISessionRepository {
   final ApiClient apiClient;
   final AppDatabase appDatabase;
 
@@ -15,6 +16,7 @@ class SessionRepository {
   });
 
   // Create a new session
+  @override
   Future<Session> createSession(String title, {String? id}) async {
     // Check if session with this ID already exists locally
     if (id != null) {
@@ -102,6 +104,7 @@ class SessionRepository {
   }
 
   // Get all sessions
+  @override
   Future<List<Session>> getSessions() async {
     try {
       // Try to get sessions from the server
@@ -164,6 +167,7 @@ class SessionRepository {
   }
 
   // Get a specific session
+  @override
   Future<Session> getSession(String sessionId) async {
     try {
       // Try to get session from the server
@@ -226,10 +230,11 @@ class SessionRepository {
   }
 
   // Update a session
+  @override
   Future<Session> updateSession(
     String sessionId, {
     String? title,
-    String? summary,
+    bool sync = true,
   }) async {
     final now = DateTime.now();
 
@@ -237,7 +242,6 @@ class SessionRepository {
       // Try to update on the server
       final body = <String, dynamic>{};
       if (title != null) body['title'] = title;
-      if (summary != null) body['summary'] = summary;
 
       print('Updating session $sessionId on server with: $body');
       final response = await apiClient.patch(
@@ -272,7 +276,6 @@ class SessionRepository {
       };
 
       if (title != null) updateData['title'] = title;
-      if (summary != null) updateData['summary'] = summary;
 
       await appDatabase.update(
         'sessions',
@@ -301,6 +304,7 @@ class SessionRepository {
   }
 
   // Delete a session
+  @override
   Future<void> deleteSession(String sessionId) async {
     try {
       // Try to delete on server
@@ -321,134 +325,70 @@ class SessionRepository {
   }
 
   // Save a completed therapy session
+  @override
   Future<Session> saveSession({
-    required String id,
-    required List<dynamic> messages,
+    required String sessionId,
+    required String title,
     required String summary,
-    List<String>? actionItems,
-    dynamic initialMood,
-    required MessageRepository messageRepository,
+    required List<Map<String, dynamic>> messages,
+    bool sync = true,
   }) async {
     final now = DateTime.now();
-    // Use a default title if initialMood is null
-    final String title = initialMood != null
-        ? 'Session when feeling ${initialMood.toString().split('.').last}'
-        : 'Therapy Session';
 
-    print(
-        'Saving session $id with title: $title, summary length: ${summary.length}');
-    print('Action items: ${actionItems?.join(', ') ?? 'none'}');
+    print('Saving session $sessionId with title: $title, summary length: ${summary.length}');
 
     try {
-      // First, send any queued messages in batch
-      await messageRepository.sendQueuedMessages(id);
-
-      // Then, update the session details
-      final sessionData = {
-        'title': title,
-        'summary': summary,
-        'action_items': actionItems ?? [],
-        'initial_mood': initialMood?.toString(),
-      };
-
-      // Try to save to server
-      try {
-        print('Sending PATCH request to /sessions/$id with data: $sessionData');
-        final response = await apiClient.patch(
-          '/sessions/$id',
-          body: sessionData,
-        );
-        print('Server response for saving session $id: $response');
-
-        final session = Session.fromJson(response);
-
-        // Use a transaction for atomic local save
-        await appDatabase.transaction((txn) async {
-          // Update local database with the session FIRST
-          int updated = await txn.update(
-            'sessions',
-            {
-              'id': session.id,
-              'title': session.title,
-              'summary': session.summary ?? '',
-              'last_modified': session.lastModified.toIso8601String(),
-              'is_synced': 1,
-            },
-            where: 'id = ?',
-            whereArgs: [id],
-          );
-
-          // If no rows were updated, insert the session row
-          if (updated == 0) {
-            await txn.insert('sessions', {
-              'id': session.id,
-              'title': session.title,
-              'summary': session.summary ?? '',
-              'created_at': session.createdAt.toIso8601String(),
-              'last_modified': session.lastModified.toIso8601String(),
-              'is_synced': 1,
-            });
-          }
-
-          // Save messages to local DB within the same transaction
-          await _saveMessagesToLocalDBTxn(txn, id, messages, now);
-        });
-
-        return session;
-      } catch (e) {
-        print('Error saving session $id to server: $e');
-
-        // If server fails, save to local DB only (transactional)
-        await appDatabase.transaction((txn) async {
-          // Try to update local session
-          int updated = await txn.update(
-            'sessions',
-            {
-              'title': title,
-              'summary': summary,
-              'last_modified': now.toIso8601String(),
-              'is_synced': 0,
-            },
-            where: 'id = ?',
-            whereArgs: [id],
-          );
-
-          // If no rows were updated, insert the session row
-          if (updated == 0) {
-            await txn.insert('sessions', {
-              'id': id,
-              'title': title,
-              'summary': summary,
-              'created_at': now.toIso8601String(),
-              'last_modified': now.toIso8601String(),
-              'is_synced': 0,
-            });
-          }
-
-          await _saveMessagesToLocalDBTxn(txn, id, messages, now);
-        });
-
-        // Get updated session from local database
-        final results = await appDatabase.query(
+      // Save to local DB (transactional)
+      await appDatabase.transaction((txn) async {
+        // Try to update local session
+        int updated = await txn.update(
           'sessions',
+          {
+            'title': title,
+            'summary': summary,
+            'last_modified': now.toIso8601String(),
+            'is_synced': sync ? 0 : 0, // Mark as not synced for now
+          },
           where: 'id = ?',
-          whereArgs: [id],
+          whereArgs: [sessionId],
         );
 
-        if (results.isEmpty) {
-          throw Exception('Session not found');
+        // If no rows were updated, insert the session row
+        if (updated == 0) {
+          await txn.insert('sessions', {
+            'id': sessionId,
+            'title': title,
+            'summary': summary,
+            'created_at': now.toIso8601String(),
+            'last_modified': now.toIso8601String(),
+            'is_synced': 0,
+          });
         }
 
-        final data = results.first;
-        return Session(
-          id: data['id'] as String,
-          title: data['title'] as String,
-          summary: data['summary'] as String,
-          createdAt: DateTime.parse(data['created_at'] as String),
-          lastModified: DateTime.parse(data['last_modified'] as String),
-          isSynced: false,
-        );
+        // Save messages to local DB within the same transaction
+        await _saveMessagesToLocalDBTxn(txn, sessionId, messages, now);
+      });
+
+      // Get updated session from local database
+      final results = await appDatabase.query(
+        'sessions',
+        where: 'id = ?',
+        whereArgs: [sessionId],
+      );
+
+      if (results.isEmpty) {
+        throw Exception('Session not found');
       }
+
+      final data = results.first;
+      return Session(
+        id: data['id'] as String,
+        title: data['title'] as String,
+        summary: data['summary'] as String,
+        createdAt: DateTime.parse(data['created_at'] as String),
+        lastModified: DateTime.parse(data['last_modified'] as String),
+        isSynced: (data['is_synced'] as int) == 1,
+      );
     } catch (e) {
       print('Error in saveSession: $e');
       rethrow;

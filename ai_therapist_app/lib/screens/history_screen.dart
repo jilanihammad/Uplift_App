@@ -1,15 +1,18 @@
 // lib/screens/history_screen.dart
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
-import '../services/therapy_service.dart';
-import '../di/service_locator.dart';
-import '../data/repositories/session_repository.dart';
+import '../di/dependency_container.dart';
+import '../di/interfaces/interfaces.dart';
 import '../domain/entities/session.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({Key? key}) : super(key: key);
+  final ISessionRepository? sessionRepository;
+  
+  const HistoryScreen({
+    Key? key,
+    this.sessionRepository,
+  }) : super(key: key);
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -18,8 +21,7 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   bool _isLoading = true;
   List<Session> _sessions = [];
-  final SessionRepository _sessionRepository =
-      serviceLocator<SessionRepository>();
+  late ISessionRepository _sessionRepository;
   String? _errorMessage;
   bool _isDisposed = false;
 
@@ -31,6 +33,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
+    _sessionRepository = widget.sessionRepository ?? DependencyContainer().sessionRepository;
     _selectedDate = DateTime.now();
     _generateWeekDates();
     _loadSessions();

@@ -20,6 +20,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import 'enhanced_vad_manager.dart';
+import '../di/interfaces/i_therapy_service.dart';
+import '../models/therapy_message.dart';
+import '../models/user_profile.dart';
 
 enum TherapyMood {
   veryHappy,
@@ -129,7 +132,7 @@ class TherapyServiceMessage {
 }
 
 // Enhanced therapy service with refactored responsibilities
-class TherapyService {
+class TherapyService implements ITherapyService {
   // System prompt for the AI therapist
   String _systemPrompt = '';
 
@@ -158,6 +161,7 @@ class TherapyService {
         _conversationFlowManager = ConversationFlowManager();
 
   // Method to initialize the therapy service
+  @override
   Future<void> init() async {
     if (_isInitialized) return;
 
@@ -178,9 +182,11 @@ class TherapyService {
   }
 
   // Check if initialized
+  @override
   bool get isInitialized => _isInitialized;
 
   // Set the therapist style system prompt
+  @override
   void setTherapistStyle(String systemPrompt) {
     _systemPrompt = systemPrompt;
   }
@@ -192,6 +198,7 @@ class TherapyService {
 
   // Process a user message and generate a therapist response with streaming audio
   // This will start playing audio as soon as possible while it's still downloading
+  @override
   Future<Map<String, dynamic>> processUserMessageWithStreamingAudio(
     String userMessage,
     List<Map<String, String>> history, {
@@ -294,6 +301,7 @@ class TherapyService {
   }
 
   // Process a user message and get AI response
+  @override
   Future<String> processUserMessage(String userMessage,
       {List<Map<String, String>>? history}) async {
     try {
@@ -368,7 +376,8 @@ class TherapyService {
   }
 
   // End therapy session and generate a summary
-  Future<Map<String, dynamic>> endSession(
+  @override
+  Future<Map<String, dynamic>> endSessionWithMessages(
       List<Map<String, dynamic>> messages) async {
     try {
       // Use the MessageProcessor to generate the session summary
@@ -418,4 +427,150 @@ class TherapyService {
       String emotion, double intensity, String trigger) async {
     await _memoryManager.updateEmotionalState(emotion, intensity, trigger);
   }
+
+  // ========== ITherapyService interface implementations ==========
+  
+  @override
+  Future<String> startSession({
+    required String userId,
+    String? sessionType,
+    Map<String, dynamic>? initialContext,
+  }) async {
+    // Create a new session ID
+    final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+    // TODO: Implement proper session management
+    return sessionId;
+  }
+
+  @override
+  Future<void> endSession(String sessionId) async {
+    // TODO: Implement session end logic
+  }
+
+  @override
+  Future<void> pauseSession(String sessionId) async {
+    // TODO: Implement session pause logic
+  }
+
+  @override
+  Future<void> resumeSession(String sessionId) async {
+    // TODO: Implement session resume logic
+  }
+
+  @override
+  Future<TherapyMessage> processMessage({
+    required String sessionId,
+    required String userMessage,
+    Map<String, dynamic>? context,
+  }) async {
+    // TODO: Convert existing processUserMessage to return TherapyMessage
+    final response = await processUserMessage(userMessage);
+    return TherapyMessage(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      content: response,
+      isUser: false,
+      timestamp: DateTime.now(),
+      sequence: 0, // TODO: Implement proper sequencing
+    );
+  }
+
+  @override
+  Future<String> generateResponse({
+    required String sessionId,
+    required String userMessage,
+    Map<String, dynamic>? context,
+  }) async {
+    return await processUserMessage(userMessage);
+  }
+
+  @override
+  Future<void> updateSessionContext(String sessionId, Map<String, dynamic> context) async {
+    // TODO: Implement context management
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getSessionContext(String sessionId) async {
+    // TODO: Implement context retrieval
+    return null;
+  }
+
+  @override
+  Future<List<TherapyMessage>> getConversationHistory(String sessionId) async {
+    // TODO: Implement conversation history retrieval
+    return [];
+  }
+
+  @override
+  Future<void> saveMessage(String sessionId, TherapyMessage message) async {
+    // TODO: Implement message saving
+  }
+
+  @override
+  Future<void> setTherapyStyle(String sessionId, String therapyStyle) async {
+    // TODO: Implement therapy style setting
+  }
+
+  @override
+  Future<void> updateTherapyGoals(String sessionId, List<String> goals) async {
+    // TODO: Implement therapy goals update
+  }
+
+  @override
+  Future<void> updateUserProfile(UserProfile profile) async {
+    // TODO: Implement user profile update
+  }
+
+  @override
+  Future<UserProfile?> getUserProfile(String userId) async {
+    // TODO: Implement user profile retrieval
+    return null;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getSessionSummary(String sessionId) async {
+    // TODO: Implement session summary
+    return {};
+  }
+
+  @override
+  Future<List<String>> getActionItems(String sessionId) async {
+    // TODO: Implement action items retrieval
+    return [];
+  }
+
+  @override
+  Future<bool> detectCrisis(String message) async {
+    // TODO: Implement crisis detection
+    return false;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getCrisisResources() async {
+    // TODO: Implement crisis resources
+    return {};
+  }
+
+  @override
+  Future<void> trackMoodChange(String sessionId, String mood) async {
+    // TODO: Implement mood tracking
+  }
+
+  @override
+  Future<Map<String, dynamic>> getProgressMetrics(String userId) async {
+    // TODO: Implement progress metrics
+    return {};
+  }
+
+  @override
+  Future<void> initialize() async {
+    await init();
+  }
+
+  @override
+  void dispose() {
+    // TODO: Implement cleanup
+  }
+
+  @override
+  String? get currentSessionId => null; // TODO: Implement current session tracking
 }

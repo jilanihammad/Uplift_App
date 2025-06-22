@@ -11,6 +11,7 @@ import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
 import '../services/therapy_service.dart';
 import '../di/service_locator.dart';
+import '../di/interfaces/interfaces.dart';
 import 'package:flutter/foundation.dart';
 import '../models/therapy_message.dart';
 import '../services/recording_manager.dart';
@@ -34,6 +35,7 @@ typedef ConversationBufferMemory = dynamic;
 class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   final VoiceService voiceService;
   final VADManager vadManager;
+  final ITherapyService? therapyService;
   StreamSubscription? _recordingStateSub;
   StreamSubscription? _audioPlaybackSub;
   StreamSubscription? _ttsStateSub;
@@ -49,6 +51,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     required TherapyGraphService therapyGraphService,
     required NotificationService notificationService,
     required ConversationBufferMemory conversationHistory,
+    this.therapyService,
   })  : _memoryService = memoryService,
         _therapyGraphService = therapyGraphService,
         _notificationService = notificationService,
@@ -281,9 +284,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             '[VoiceSessionBloc] Voice mode - generating TTS response...');
         emit(state.copyWith(isAiSpeaking: true));
 
-        final therapyService = serviceLocator<TherapyService>();
+        final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
         final responseData =
-            await therapyService.processUserMessageWithStreamingAudio(
+            await therapyServiceInstance.processUserMessageWithStreamingAudio(
           transcription,
           history,
           onTTSPlaybackComplete: () async {
@@ -326,8 +329,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // Text mode - only get text response without TTS
         debugPrint(
             '[VoiceSessionBloc] Text mode - getting text response only...');
-        final therapyService = serviceLocator<TherapyService>();
-        final mayaResponseText = await therapyService.processUserMessage(
+        final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
+        final mayaResponseText = await therapyServiceInstance.processUserMessage(
           transcription,
           history: history,
         );
@@ -437,7 +440,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       final history = _buildConversationHistory(messagesWithUser);
 
-      final therapyService = serviceLocator<TherapyService>();
+      final therapyServiceInstance = therapyService ?? serviceLocator<TherapyService>() as ITherapyService;
       String mayaResponseText;
 
       if (state.isVoiceMode) {
@@ -447,7 +450,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         emit(state.copyWith(isAiSpeaking: true));
 
         final responseData =
-            await therapyService.processUserMessageWithStreamingAudio(
+            await therapyServiceInstance.processUserMessageWithStreamingAudio(
           event.text,
           history,
           onTTSPlaybackComplete: () async {
@@ -464,7 +467,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             'I\'m having trouble responding right now.';
       } else {
         debugPrint('[VoiceSessionBloc] Text message in text mode - no TTS...');
-        mayaResponseText = await therapyService.processUserMessage(
+        mayaResponseText = await therapyServiceInstance.processUserMessage(
           event.text,
           history: history,
         );
@@ -527,8 +530,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     try {
       await voiceService.initialize();
 
-      final therapyService = serviceLocator<TherapyService>();
-      await therapyService.init();
+      final therapyServiceInstance = therapyService ?? serviceLocator<TherapyService>() as ITherapyService;
+      await therapyServiceInstance.init();
 
       debugPrint('[VoiceSessionBloc] Services initialized successfully');
       emit(state.copyWith(isProcessingAudio: false));
@@ -553,6 +556,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint('[VoiceSessionBloc] Audio stopped successfully');
 
       voiceService.resetTTSState();
+
+      // Add buffer delay to prevent Maya from detecting her own voice
+      debugPrint('[VoiceSessionBloc] Adding 125ms buffer before enabling auto-listening...');
+      await Future.delayed(const Duration(milliseconds: 125));
 
       await voiceService.enableAutoMode();
       emit(state.copyWith(isAutoListeningEnabled: true));
@@ -624,13 +631,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           '[VoiceSessionBloc] TTS transition detected (true -> false), initial TTS has completed, enabling listening');
       emit(state.copyWith(isInitialGreetingPlayed: true));
 
-      Future.delayed(const Duration(milliseconds: 100), () {
+      // Add buffer delay to prevent Maya from detecting her own voice
+      Future.delayed(const Duration(milliseconds: 125), () {
         if (state.isVoiceMode &&
             !state.isAutoListeningEnabled &&
             !state.isRecording) {
           debugPrint(
-              '[VoiceSessionBloc] Dispatching EnableAutoMode after initial TTS');
-          add(EnableAutoMode());
+              '[VoiceSessionBloc] Dispatching EnableAutoMode after TTS with buffer delay');
+          add(const EnableAutoMode());
         }
       });
     }

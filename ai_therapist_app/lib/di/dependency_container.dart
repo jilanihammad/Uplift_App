@@ -73,6 +73,7 @@ class DependencyContainer {
   IProgressService get progress => get<IProgressService>();
   IUserProfileService get userProfile => get<IUserProfileService>();
   IGroqService get groq => get<IGroqService>();
+  ISessionRepository get sessionRepository => get<ISessionRepository>();
   
   // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;
