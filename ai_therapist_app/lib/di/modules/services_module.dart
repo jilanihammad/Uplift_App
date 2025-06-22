@@ -14,6 +14,9 @@ import '../../data/datasources/remote/api_client.dart';
 import '../../data/datasources/local/app_database.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../services/notification_service.dart' as service_ns;
+import '../../services/tts_service.dart';
+import '../../services/audio_player_manager.dart';
+import '../../services/websocket_audio_manager.dart';
 
 /// Services dependency module
 /// Registers application services with proper dependency injection
@@ -104,6 +107,36 @@ class ServicesModule {
     // Register interface for SessionRepository
     locator.registerLazySingleton<ISessionRepository>(
       () => locator<SessionRepository>(),
+    );
+
+    // Register AudioPlayerManager (no dependencies)
+    locator.registerLazySingleton<AudioPlayerManager>(
+      () => AudioPlayerManager(),
+    );
+
+    // Register TTSService with dependencies
+    locator.registerLazySingleton<TTSService>(
+      () => TTSService(
+        audioPlayerManager: locator<AudioPlayerManager>(),
+        apiClient: locator<ApiClient>(),
+      ),
+    );
+    
+    // Register interface for TTSService
+    locator.registerLazySingleton<ITTSService>(
+      () => locator<TTSService>(),
+    );
+
+    // Register WebSocketAudioManager with dependencies
+    locator.registerLazySingleton<WebSocketAudioManager>(
+      () => WebSocketAudioManager(
+        apiClient: locator<ApiClient>(),
+      ),
+    );
+    
+    // Register interface for WebSocketAudioManager
+    locator.registerLazySingleton<IWebSocketAudioManager>(
+      () => locator<WebSocketAudioManager>(),
     );
   }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show unawaited;
+import 'package:rxdart/rxdart.dart';
 
 import 'audio_player_manager.dart';
 import 'base_voice_service.dart' as base_voice;
@@ -8,16 +9,26 @@ import 'recording_manager.dart';
 import 'vad_manager.dart';
 import 'enhanced_vad_manager.dart';
 import 'voice_service.dart';
+import '../di/interfaces/i_voice_service.dart';
+import '../di/interfaces/i_tts_service.dart';
 
 /// Coordinates automatic voice detection and recording
 ///
 /// Manages the transition between Maya speaking and automatically
 /// listening for user input using VAD
+///
+/// 🔧 CRITICAL FIX: Implements engineer's robust solution for Maya's self-listening issue.
+/// Uses combined stream (AudioPlayer + TTS) with firstWhere(!busy) to eliminate 
+/// race conditions between audio state changes that caused Maya to detect her own voice.
 class AutoListeningCoordinator {
   // Core components
   final AudioPlayerManager _audioPlayerManager;
   final RecordingManager _recordingManager;
   final VoiceService _voiceService;
+  
+  // NEW: Combined stream for robust AI audio state tracking
+  late Stream<bool> _aiAudioActiveStream;
+  StreamSubscription<bool>? _startListeningSub;
   
   // VAD configuration - can switch between regular and enhanced VAD
   static bool _useEnhancedVAD = true; // Configuration flag - ENABLED for RNNoise integration
@@ -99,6 +110,20 @@ class AutoListeningCoordinator {
         print('🎙️ AutoListeningCoordinator: Using Standard VAD Manager');
       }
     }
+    
+    // NEW: Create combined stream that tracks if AI is making ANY sound
+    // This fixes race conditions between TTS generation and audio playback
+    _aiAudioActiveStream = Rx.combineLatest2<bool, bool, bool>(
+      _audioPlayerManager.isPlayingStream,  // true while audio player outputs sound
+      // For now, use VoiceService.isAiSpeaking - TODO: migrate to TTSService stream
+      Stream.periodic(const Duration(milliseconds: 100), (_) => _voiceService.isAiSpeaking).distinct(),
+      (playing, speaking) => playing || speaking,
+    ).distinct();
+    
+    if (kDebugMode) {
+      print('🎙️ AutoListeningCoordinator: Set up combined AI audio stream');
+    }
+    
     _setupListeners();
   }
 
@@ -352,6 +377,31 @@ class AutoListeningCoordinator {
         print('[AutoListeningCoordinator] [VAD] ERROR: $error');
       }
     });
+  }
+
+  // NEW: Engineer's robust solution - wait for stable "not busy" state
+  void _enterAiSpeakingComplete() {
+    // Cancel any previous subscription to prevent race conditions
+    _startListeningSub?.cancel();
+    
+    // Use firstWhere to wait for a stable "not busy" state
+    // This eliminates race conditions between TTS and audio player state changes
+    _startListeningSub = _aiAudioActiveStream
+        .firstWhere((busy) => !busy)
+        .then((_) {
+      if (_currentState == AutoListeningState.aiSpeaking && _autoModeEnabled) {
+        if (kDebugMode) {
+          print('[AutoListeningCoordinator] [ROBUST] AI audio definitively finished, starting VAD');
+        }
+        _startListeningAfterDelay();
+      } else if (kDebugMode) {
+        print('[AutoListeningCoordinator] [ROBUST] State changed or auto mode disabled, skipping VAD start');
+      }
+    }).catchError((error) {
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [ROBUST] Error waiting for AI audio completion: $error');
+      }
+    }) as StreamSubscription<bool>?;
   }
 
   // Start VAD listening after a short delay
@@ -864,6 +914,9 @@ class AutoListeningCoordinator {
     // Reset resource tracking flags
     _isVadActive = false;
     _isRecordingActive = false;
+
+    // Clean up robust solution subscriptions
+    _startListeningSub?.cancel();
 
     await _autoModeEnabledController.close();
     await _stateController.close();

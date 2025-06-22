@@ -1,0 +1,44 @@
+// lib/di/interfaces/i_tts_service.dart
+
+import 'dart:async';
+
+/// Interface for Text-to-Speech service operations
+/// Handles speech generation, streaming, and playback functionality
+abstract class ITTSService {
+  // TTS generation
+  Future<String> generateSpeech(String text, {String voice = 'alloy'});
+  Future<void> streamAndPlayTTS(
+    String text, {
+    void Function()? onDone,
+    void Function(String)? onError,
+    void Function(double)? onProgress,
+  });
+  
+  // Playback controls
+  Future<void> playAudio(String audioPath);
+  Future<void> stopAudio();
+  Future<void> pauseAudio();
+  Future<void> resumeAudio();
+  
+  // State management
+  bool get isPlaying;
+  bool get isSpeaking;
+  Stream<bool> get playbackStateStream;
+  Stream<bool> get speakingStateStream;
+  
+  // Audio configuration
+  void setVoiceSettings(String voice, double speed, double pitch);
+  void setAudioFormat(String format);
+  
+  // State control
+  void resetTTSState();
+  void setAiSpeaking(bool speaking);
+  
+  // Initialization and cleanup
+  Future<void> initialize();
+  void dispose();
+  
+  // Audio utilities
+  Future<String?> downloadAndCacheAudio(String url);
+  Future<void> cleanupAudioFiles();
+}
