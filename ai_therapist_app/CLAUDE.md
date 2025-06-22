@@ -104,8 +104,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Better testability and dependency injection
 - Easier to swap implementations or add features
 
-**Preserved Critical Features**
-- **125ms timing buffer** maintained in TTSService for Maya's voice detection issue
+**Preserved Critical Features**  
+- ✅ **Maya's self-detection issue RESOLVED** with engineer's robust solution in AutoListeningCoordinator
 - All existing functionality preserved during refactoring
 - Backward compatibility maintained via dual service registration
 
@@ -200,7 +200,7 @@ The `VoiceSessionBloc` manages complex state transitions:
 
 ### Critical Timing Dependencies
 
-**Voice Session Timing**: Maya (AI) must complete TTS before enabling listening to prevent self-detection. A 125ms buffer is implemented after TTS completion before enabling auto-listening mode.
+**Voice Session Timing**: ✅ **RESOLVED** - Maya's self-detection issue fixed using engineer's robust solution. Replaced race-prone timing buffers with combined stream monitoring (AudioPlayer + TTS) and `firstWhere(!busy)` stable state detection. No more 125ms timing dependencies needed.
 
 ## Important Development Considerations
 

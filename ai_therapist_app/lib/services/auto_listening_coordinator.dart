@@ -214,16 +214,11 @@ class AutoListeningCoordinator {
             print(
                 '[AutoListeningCoordinator] [AUDIO] Playback ended, will check TTS state before listening. isAiSpeaking=${_voiceService.isAiSpeaking}');
           }
-          // Only start listening if TTS is also not speaking
-          if (!_voiceService.isAiSpeaking) {
-            if (kDebugMode)
-              print(
-                  '[AutoListeningCoordinator] [AUDIO] TTS is not speaking, calling _startListeningAfterDelay()');
-            _startListeningAfterDelay();
-          } else if (kDebugMode) {
-            print(
-                '[AutoListeningCoordinator] [AUDIO] Not starting listening yet because TTS is still marked as speaking');
+          // IMPROVED: Use robust solution instead of race-prone single-point check
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [AUDIO] Playback event detected, using robust completion detection');
           }
+          _enterAiSpeakingComplete();
         } else {
           if (kDebugMode) {
             print(
@@ -262,14 +257,13 @@ class AutoListeningCoordinator {
         _updateState(AutoListeningState.aiSpeaking);
         _stopListeningAndRecording();
       } else {
-        // TTS stopped speaking
+        // TTS stopped speaking - use robust solution
         if (_currentState == AutoListeningState.aiSpeaking ||
             _currentState == AutoListeningState.idle) {
           if (kDebugMode) {
-            print(
-                '[AutoListeningCoordinator] [TTS] TTS stopped speaking. Current state $_currentState is suitable for restarting listening. Calling _startListeningAfterDelay().');
+            print('[AutoListeningCoordinator] [TTS] TTS stopped, using robust completion detection');
           }
-          _startListeningAfterDelay();
+          _enterAiSpeakingComplete();
         } else {
           // This case would include userSpeaking, processing
           if (kDebugMode) {
