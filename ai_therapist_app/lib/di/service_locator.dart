@@ -41,6 +41,8 @@ import '../services/recording_manager.dart';
 import '../services/auto_listening_coordinator.dart';
 import '../services/audio_player_manager.dart';
 import '../services/path_manager.dart';
+import 'modules/audio_services_module.dart';
+import 'interfaces/i_voice_service.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -284,6 +286,7 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered AudioGenerator with true lazy initialization');
     }
 
+    // Register the original monolithic VoiceService (still needed by AudioGenerator)
     if (!serviceLocator.isRegistered<VoiceService>()) {
       serviceLocator.registerLazySingleton<VoiceService>(() {
         debugPrint('Creating VoiceService instance (lazy initialization)');
@@ -301,6 +304,14 @@ Future<void> setupServiceLocator() async {
       });
       debugPrint('Registered VoiceService with true lazy initialization');
     }
+
+    // Register refactored audio services using AudioServicesModule
+    // This provides the new focused, single-responsibility services via IVoiceService
+    AudioServicesModule.registerServices(serviceLocator);
+    
+    // Mark audio services as initialized for dependency tracking
+    DependencyStatus.markInitialized('AudioServicesModule');
+    debugPrint('Registered refactored audio services via AudioServicesModule');
 
     if (!serviceLocator.isRegistered<service_tgs.TherapyGraphService>()) {
       serviceLocator.registerLazySingleton<service_tgs.TherapyGraphService>(

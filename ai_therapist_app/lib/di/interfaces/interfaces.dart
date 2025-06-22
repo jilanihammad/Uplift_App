@@ -12,6 +12,12 @@ export 'i_therapy_service.dart';
 export 'i_api_client.dart';
 export 'i_config_service.dart';
 
+// Audio service interfaces (VoiceService refactoring)
+export 'i_audio_recording_service.dart';
+export 'i_tts_service.dart';
+export 'i_websocket_audio_manager.dart';
+export 'i_audio_file_manager.dart';
+
 // Data interfaces
 export 'i_database.dart';
 export 'i_memory_manager.dart';
