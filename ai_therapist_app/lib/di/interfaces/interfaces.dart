@@ -1,0 +1,27 @@
+// lib/di/interfaces/interfaces.dart
+
+library interfaces;
+
+/// Central export file for all dependency injection interfaces
+/// This provides a single import point for all service contracts
+
+// Core service interfaces
+export 'i_auth_service.dart';
+export 'i_voice_service.dart';
+export 'i_therapy_service.dart';
+export 'i_api_client.dart';
+export 'i_config_service.dart';
+
+// Data interfaces
+export 'i_database.dart';
+export 'i_memory_manager.dart';
+
+// UI and flow interfaces
+export 'i_onboarding_service.dart';
+export 'i_theme_service.dart';
+export 'i_preferences_service.dart';
+export 'i_navigation_service.dart';
+
+// Additional service interfaces (to be created as needed)
+// export 'i_notification_service.dart';
+// export 'i_progress_service.dart';

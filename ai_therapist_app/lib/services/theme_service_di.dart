@@ -1,28 +1,26 @@
+// lib/services/theme_service_di.dart
+
 import 'package:flutter/material.dart';
 import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/services/preferences_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
-import 'package:ai_therapist_app/di/interfaces/i_theme_service.dart';
 
-class ThemeService extends ChangeNotifier implements IThemeService {
+/// Refactored ThemeService using dependency injection instead of service locator
+/// This demonstrates the pattern we'll use to replace service locator usage
+class ThemeServiceDI extends ChangeNotifier {
   final PreferencesService _preferencesService;
 
-  // Constructor with dependency injection
-  ThemeService({
-    PreferencesService? preferencesService,
-  }) : _preferencesService = preferencesService ?? serviceLocator<PreferencesService>();
+  // Constructor injection - dependency is provided explicitly
+  ThemeServiceDI({
+    required PreferencesService preferencesService,
+  }) : _preferencesService = preferencesService;
 
   // Get theme mode
   ThemeMode _themeMode = ThemeMode.light;
 
-  @override
   ThemeMode get themeMode => _themeMode;
-  
-  @override
   bool get isDarkMode => _themeMode == ThemeMode.dark;
 
   // Initialize theme service
-  @override
   Future<void> init() async {
     // Get dark mode preference from PreferencesService
     final darkModeEnabled =
@@ -31,7 +29,6 @@ class ThemeService extends ChangeNotifier implements IThemeService {
   }
 
   // Toggle theme
-  @override
   Future<void> toggleTheme() async {
     _themeMode =
         _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
@@ -46,7 +43,6 @@ class ThemeService extends ChangeNotifier implements IThemeService {
   }
 
   // Set specific theme
-  @override
   Future<void> setTheme(ThemeMode mode) async {
     if (_themeMode == mode) return;
 
@@ -62,7 +58,25 @@ class ThemeService extends ChangeNotifier implements IThemeService {
   }
 
   // Get current theme data
-  @override
   ThemeData get theme =>
       _themeMode == ThemeMode.dark ? AppTheme.darkTheme : AppTheme.lightTheme;
 }
+
+/// Example of how to register this service in a dependency module
+/// This would go in a services module file
+/*
+class ThemeModule {
+  static void register(GetIt locator) {
+    locator.registerLazySingleton<ThemeServiceDI>(
+      () => ThemeServiceDI(
+        preferencesService: locator<PreferencesService>(),
+      ),
+    );
+  }
+}
+*/
+
+/// Example of how to use this service with dependency injection
+/// Instead of: final themeService = serviceLocator<ThemeService>();
+/// Use: final themeService = dependencies.get<ThemeServiceDI>();
+/// Or inject it via constructor: ThemeServiceDI themeService;
