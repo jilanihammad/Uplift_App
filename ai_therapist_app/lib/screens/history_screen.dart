@@ -2,8 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
-import '../di/dependency_container.dart';
+import '../di/service_locator.dart';
 import '../di/interfaces/interfaces.dart';
+import '../data/repositories/session_repository.dart';
 import '../domain/entities/session.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -33,7 +34,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _sessionRepository = widget.sessionRepository ?? DependencyContainer().sessionRepository;
+    _sessionRepository = widget.sessionRepository ?? serviceLocator<SessionRepository>();
     _selectedDate = DateTime.now();
     _generateWeekDates();
     _loadSessions();

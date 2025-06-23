@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
+import 'package:ai_therapist_app/services/progress_service.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
 import 'package:intl/intl.dart';
 
@@ -25,7 +26,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _progressService = widget.progressService ?? DependencyContainer().progress;
+    _progressService = widget.progressService ?? serviceLocator<ProgressService>();
     _progress = _progressService.progress;
     
     // Listen for progress changes
