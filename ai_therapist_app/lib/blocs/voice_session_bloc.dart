@@ -138,9 +138,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // Not recording, that's fine
       }
 
-      // Close WebSocket connection to prevent keep-alive pings after session ends
-      await voiceService.closeWebSocketConnection();
-      debugPrint('[VoiceSessionBloc] WebSocket connection closed successfully');
 
       debugPrint('[VoiceSessionBloc] Session cleanup completed successfully');
     } catch (e) {
@@ -202,12 +199,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
         await Future.delayed(const Duration(milliseconds: 200));
 
-        if (!state.isAiSpeaking) {
+        // Only enable listening immediately if this is a manual mode switch (user has messages)
+        // For initial session, let _onTtsStateChanged handle the 125ms delay after welcome TTS
+        if (!state.isAiSpeaking && state.messages.isNotEmpty) {
           await voiceService.enableAutoMode();
           voiceService.autoListeningCoordinator.triggerListening();
         }
 
-        debugPrint('[VoiceSessionBloc] Waiting for EnableAutoMode after TTS');
+        debugPrint('[VoiceSessionBloc] Voice mode switch complete - auto-listening enabled');
       } catch (e) {
         debugPrint('[VoiceSessionBloc] Failed to prepare for voice mode: $e');
         emit(state.copyWith(errorMessage: e.toString()));

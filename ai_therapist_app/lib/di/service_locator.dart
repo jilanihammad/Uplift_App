@@ -43,6 +43,8 @@ import '../services/audio_player_manager.dart';
 import '../services/path_manager.dart';
 import 'modules/audio_services_module.dart';
 import 'interfaces/i_voice_service.dart';
+import 'interfaces/i_tts_service.dart';
+import 'interfaces/i_audio_file_manager.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -216,45 +218,15 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered ConversationBufferMemory');
     }
 
-    // ===== REGISTER TherapyService (BEFORE MessageProcessor) =====
-    // This is a dependency for MessageProcessor
-    // Ensure its own dependencies (AudioGenerator, MemoryManager, ApiClient) are resolvable
-    if (!serviceLocator.isRegistered<ITherapyService>()) {
-      serviceLocator.registerLazySingleton<ITherapyService>(() {
-        debugPrint('Creating TherapyService instance (lazy initialization)');
-        return TherapyService(
-          // Ensure these are registered or resolvable by serviceLocator
-          // ConfigService will be needed by ApiClient if ApiClient is created here or passed
-          // For now, assuming ApiClient is registered elsewhere (e.g. in registerApiDependentServices)
-          // and that ConfigService is also available to ApiClient when it's created.
-          messageProcessor: serviceLocator<
-              MessageProcessor>(), // This creates a circular dependency if MessageProcessor needs TherapyService. Re-evaluate.
-          audioGenerator: serviceLocator<AudioGenerator>(),
-          memoryManager: serviceLocator<MemoryManager>(),
-          apiClient:
-              serviceLocator<ApiClient>(), // ApiClient needs ConfigService
-        );
-      });
-      debugPrint('Registered TherapyService');
-    }
-
-    // ===== CORRECTED MessageProcessor REGISTRATION =====
+    // ===== REGISTER MessageProcessor (BEFORE TherapyService) =====
+    // Break circular dependency by registering MessageProcessor first
     if (!serviceLocator.isRegistered<MessageProcessor>()) {
       serviceLocator.registerLazySingleton<MessageProcessor>(() {
         debugPrint('Creating MessageProcessor instance (lazy initialization)');
 
-        VoiceSessionBloc? vsBloc;
-        try {
-          vsBloc = serviceLocator<VoiceSessionBloc>();
-        } catch (e) {
-          debugPrint(
-              'VoiceSessionBloc not found in serviceLocator for MessageProcessor. This might be an issue if MessageProcessor strictly requires it at instantiation.');
-        }
-
         final processor = MessageProcessor(
-          voiceSessionBloc: vsBloc,
-          conversationHistory: serviceLocator<
-              ConversationBufferMemory>(), // This should now be unambiguous
+          voiceSessionBloc: null, // Will be set later to avoid circular dependency
+          conversationHistory: serviceLocator<ConversationBufferMemory>(),
           configService: serviceLocator<ConfigService>(),
         );
 
@@ -262,16 +234,19 @@ Future<void> setupServiceLocator() async {
         debugPrint('MessageProcessor instance created and marked initialized.');
         return processor;
       });
-      debugPrint(
-          'Registered MessageProcessor with correct constructor injection');
+      debugPrint('Registered MessageProcessor without circular dependencies');
     }
+
+    // NOTE: TherapyService will be registered in registerApiDependentServices() 
+    // after ApiClient is available
 
     if (!serviceLocator.isRegistered<AudioGenerator>()) {
       // Use lazy singleton to prevent immediate initialization
       serviceLocator.registerLazySingleton<AudioGenerator>(() {
         debugPrint('Creating AudioGenerator instance (lazy initialization)');
         final generator = AudioGenerator(
-          voiceService: serviceLocator<VoiceService>(),
+          ttsService: serviceLocator<ITTSService>(),
+          audioFileManager: serviceLocator<IAudioFileManager>(),
           apiClient: serviceLocator<ApiClient>(),
         );
 
@@ -352,16 +327,7 @@ Future<void> setupServiceLocator() async {
       debugPrint('Connected AuthService to OnboardingService');
     }
 
-    // Register services that depend on repositories
-    if (!serviceLocator.isRegistered<ITherapyService>()) {
-      serviceLocator.registerLazySingleton<ITherapyService>(() => TherapyService(
-            messageProcessor: serviceLocator<MessageProcessor>(),
-            audioGenerator: serviceLocator<AudioGenerator>(),
-            memoryManager: serviceLocator<MemoryManager>(),
-            apiClient: serviceLocator<ApiClient>(),
-          ));
-      debugPrint('Registered TherapyService with constructor injection');
-    }
+    // TherapyService registration moved to registerApiDependentServices() to avoid duplicates
 
     // Register NavigationService
     if (!serviceLocator.isRegistered<NavigationService>()) {
@@ -448,7 +414,7 @@ Future<void> registerApiDependentServices(
       debugPrint('Registered MessageRepository');
     }
 
-    // Register services that depend on repositories
+    // Register TherapyService after all its dependencies are available
     if (!serviceLocator.isRegistered<ITherapyService>()) {
       serviceLocator.registerLazySingleton<ITherapyService>(() => TherapyService(
             messageProcessor: serviceLocator<MessageProcessor>(),
@@ -456,7 +422,7 @@ Future<void> registerApiDependentServices(
             memoryManager: serviceLocator<MemoryManager>(),
             apiClient: serviceLocator<ApiClient>(),
           ));
-      debugPrint('Registered TherapyService with constructor injection');
+      debugPrint('Registered TherapyService with all dependencies');
     }
 
     DependencyStatus.apiDependenciesRegistered = true;

@@ -89,6 +89,9 @@ class AutoListeningCoordinator {
 
   // Transition guard to prevent duplicate calls
   bool _isTransitionInProgress = false;
+  
+  // Safety guard for _enterAiSpeakingComplete
+  bool _awaitingPlaybackEnd = false;
 
   // Constructor
   AutoListeningCoordinator({
@@ -374,28 +377,39 @@ class AutoListeningCoordinator {
   }
 
   // NEW: Engineer's robust solution - wait for stable "not busy" state
-  void _enterAiSpeakingComplete() {
+  Future<void> _enterAiSpeakingComplete() async {
+    // Safety guard to prevent multiple invocations
+    if (_awaitingPlaybackEnd) {
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [ROBUST] Already awaiting playback end, skipping duplicate call');
+      }
+      return;
+    }
+    _awaitingPlaybackEnd = true;
+    
     // Cancel any previous subscription to prevent race conditions
     _startListeningSub?.cancel();
     
-    // Use firstWhere to wait for a stable "not busy" state
-    // This eliminates race conditions between TTS and audio player state changes
-    _startListeningSub = _aiAudioActiveStream
-        .firstWhere((busy) => !busy)
-        .then((_) {
+    try {
+      // Use await with firstWhere - this returns a Future<bool>, not a StreamSubscription
+      await _aiAudioActiveStream.firstWhere((busy) => !busy);
+      
       if (_currentState == AutoListeningState.aiSpeaking && _autoModeEnabled) {
         if (kDebugMode) {
           print('[AutoListeningCoordinator] [ROBUST] AI audio definitively finished, starting VAD');
         }
-        _startListeningAfterDelay();
+        await _startListeningAfterDelay();
       } else if (kDebugMode) {
         print('[AutoListeningCoordinator] [ROBUST] State changed or auto mode disabled, skipping VAD start');
       }
-    }).catchError((error) {
+    } catch (error) {
       if (kDebugMode) {
         print('[AutoListeningCoordinator] [ROBUST] Error waiting for AI audio completion: $error');
       }
-    }) as StreamSubscription<bool>?;
+    } finally {
+      // Always reset the safety guard
+      _awaitingPlaybackEnd = false;
+    }
   }
 
   // Start VAD listening after a short delay

@@ -323,15 +323,7 @@ class VoiceService {
 
       _isInitialized = true;
 
-      // Pre-warm WebSocket connection for faster TTS
-      if (!_isWeb) {
-        _getWebSocketConnection().then((connection) {
-          if (kDebugMode) print('🔍 [WS] Pre-warmed connection ready');
-        }).catchError((e) {
-          if (kDebugMode) print('Pre-warming WebSocket connection failed: $e');
-          // Don't fail initialization if WebSocket fails, it will retry when needed
-        });
-      }
+      // WebSocket pre-warming removed - handled by TTSService
 
       if (kDebugMode) {
         print('Voice service initialized successfully');
@@ -472,7 +464,8 @@ class VoiceService {
           print(
               '⏹️ VOICE DEBUG: processRecordedAudioFile: Making API call to transcribe audio...');
         }
-        final response = await _apiClient.post('/voice/transcribe', body: {
+        // Use custom timeout for transcription (longer than default 15s)
+        final response = await _transcribeWithCustomTimeout({
           'audio_data': base64Audio,
           'audio_format': 'm4a',
           'model': 'gpt-4o-mini-transcribe'
@@ -519,431 +512,53 @@ class VoiceService {
 
   // Note: File deletion is now handled by FileCleanupManager.safeDelete
 
-  /// Get or create a reusable WebSocket connection with broadcast stream
-  Future<WebSocketChannel> _getWebSocketConnection() async {
-    final now = DateTime.now();
-    
-    // Check if we have a valid connection that's not too old
-    if (_reusableChannel != null && 
-        _reusableChannel!.closeCode == null &&
-        _lastUsed != null &&
-        now.difference(_lastUsed!) < _connectionTimeout) {
-      _lastUsed = now;
-      if (kDebugMode) print('🔍 [WS] Reusing existing connection');
-      return _reusableChannel!;
-    }
-    
-    // Clean up old connection
-    await _cleanupConnection();
-    
-    // Create new connection
-    final wsUrl = 'wss://ai-therapist-backend-385290373302.us-central1.run.app/voice/ws/tts';
-    if (kDebugMode) print('🔍 [WS] Creating new WebSocket connection...');
-    
-    _reusableChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
-    _lastUsed = now;
-    
-    // Set up broadcast stream for the WebSocket messages
-    _setupBroadcastStream();
-    
-    // Start keep-alive for reusable connection
-    _startKeepAlive();
-    
-    return _reusableChannel!;
-  }
-
-  /// Setup broadcast stream to handle multiple concurrent TTS requests
-  void _setupBroadcastStream() {
-    _messageStreamController?.close();
-    _wsSubscription?.cancel();
-    
-    _messageStreamController = StreamController<dynamic>.broadcast();
-    
-    _wsSubscription = _reusableChannel!.stream.listen(
-      (message) {
-        try {
-          final data = jsonDecode(message);
-          
-          // Route messages to specific sessions
-          final sessionId = data['session_id'] as String?;
-          if (sessionId != null && _activeSessions.containsKey(sessionId)) {
-            _activeSessions[sessionId]!.add(data);
-          } else if (data['type'] == 'ping') {
-            // Handle ping globally
-            if (kDebugMode) print('🔍 [WS] Received ping response');
-          } else {
-            // Backward compatibility: send to all sessions if no session ID
-            for (final controller in _activeSessions.values) {
-              if (!controller.isClosed) {
-                controller.add(data);
-              }
-            }
-          }
-        } catch (e) {
-          if (kDebugMode) print('🔍 [WS] Error parsing message: $e');
-        }
-      },
-      onError: (error) {
-        if (kDebugMode) print('🔍 [WS] Stream error: $error');
-        // Notify all active sessions of the error
-        for (final controller in _activeSessions.values) {
-          if (!controller.isClosed) {
-            controller.addError(error);
-          }
-        }
-        _reusableChannel = null;
-      },
-      onDone: () {
-        if (kDebugMode) print('🔍 [WS] Stream closed');
-        // Close all active session controllers
-        for (final controller in _activeSessions.values) {
-          if (!controller.isClosed) {
-            controller.close();
-          }
-        }
-        _activeSessions.clear();
-        _messageStreamController?.close();
-        _reusableChannel = null;
-      },
-    );
-  }
-
-  /// Clean up WebSocket connection and streams
-  Future<void> _cleanupConnection() async {
-    _keepAliveTimer?.cancel();
-    _wsSubscription?.cancel();
-    _messageStreamController?.close();
-    
-    // Close all active session controllers
-    for (final controller in _activeSessions.values) {
-      if (!controller.isClosed) {
-        controller.close();
+  /// Custom transcription method with extended timeout for large audio files
+  Future<dynamic> _transcribeWithCustomTimeout(Map<String, dynamic> body) async {
+    try {
+      // Use a longer timeout for transcription (45 seconds instead of 15)
+      const transcriptionTimeout = Duration(seconds: 45);
+      
+      if (kDebugMode) {
+        print('⏹️ VOICE DEBUG: Using extended timeout (45s) for transcription');
       }
-    }
-    _activeSessions.clear();
-    
-    if (_reusableChannel != null) {
-      try {
-        await _reusableChannel!.sink.close();
-        if (kDebugMode) print('🔍 [WS] WebSocket connection closed');
-      } catch (_) {}
-      _reusableChannel = null;
-    }
-  }
-
-  /// Public method to close WebSocket connection (called when session ends)
-  Future<void> closeWebSocketConnection() async {
-    if (kDebugMode) print('🔍 [WS] Closing WebSocket connection for session end');
-    await _cleanupConnection();
-  }
-
-  /// Start keep-alive mechanism
-  void _startKeepAlive() {
-    _keepAliveTimer?.cancel();
-    _keepAliveTimer = Timer.periodic(Duration(seconds: 25), (timer) {
-      if (_reusableChannel?.closeCode == null) {
-        try {
-          _reusableChannel?.sink.add(jsonEncode({'type': 'ping'}));
-          if (kDebugMode) print('🔍 [WS] Keep-alive ping sent');
-        } catch (e) {
-          if (kDebugMode) print('🔍 [WS] Keep-alive failed: $e');
-          // Connection failed, will be recreated on next use
-          _reusableChannel = null;
-          timer.cancel();
-        }
+      
+      // Get auth token
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      
+      // Build headers
+      final headers = {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
+      
+      // Make direct HTTP call with extended timeout
+      final response = await http.post(
+        Uri.parse('$_backendUrl/voice/transcribe'),
+        headers: headers,
+        body: jsonEncode(body),
+      ).timeout(transcriptionTimeout);
+      
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
       } else {
-        timer.cancel();
+        throw Exception('Transcription API returned ${response.statusCode}: ${response.body}');
       }
-    });
-  }
-
-  /// Stream TTS audio from backend and play it
-  Future<String?> streamAndPlayTTS({
-    required String text,
-    String voice = 'sage',
-    String responseFormat = 'wav',
-    void Function(double progress)? onProgress,
-    void Function()? onDone,
-    void Function(String error)? onError,
-  }) async {
-    // START TIMING DIAGNOSTICS
-    final totalStopwatch = Stopwatch()..start();
-    final wsConnectStopwatch = Stopwatch();
-    final firstChunkStopwatch = Stopwatch();
-
-    if (kDebugMode)
-      print(
-          '🔍 [TTS TIMING] Starting TTS for text length: ${text.length} chars');
-
-    // Note: isAiSpeaking state is managed by the calling helper methods and _onPlaybackDone()
-    String? filePath;
-    io.File? tempFile; // Keep a reference to the file
-
-    try {
-      // Use per-request connections to avoid race conditions
-      wsConnectStopwatch.start();
-      // Note: Connection creation is now done below in the subscription setup
-      wsConnectStopwatch.stop();
-      
+    } catch (e) {
       if (kDebugMode) {
-        print('🔍 [TTS TIMING] WebSocket connecting...');
+        print('❌ VOICE ERROR: _transcribeWithCustomTimeout failed: $e');
       }
-      
-      final List<int> audioBuffer = [];
-      StreamSubscription? subscription;
-
-      final request = jsonEncode({
-        'text': text,
-        'voice': voice,
-        'params': {'response_format': responseFormat},
-      });
-
-      final completer = Completer<String?>();
-      bool firstChunkReceived = false;
-      firstChunkStopwatch.start();
-
-      // Generate unique session ID for this TTS request
-      final sessionId = DateTime.now().microsecondsSinceEpoch.toString();
-      
-      // Use connection reuse but with proper session isolation
-      wsConnectStopwatch.start();
-      final channel = await _getWebSocketConnection();
-      wsConnectStopwatch.stop();
-      
-      if (kDebugMode) {
-        print('🔍 [TTS TIMING] WebSocket ready in: ${wsConnectStopwatch.elapsedMilliseconds}ms');
-      }
-      
-      // Create session-specific controller
-      final sessionController = StreamController<dynamic>.broadcast();
-      _activeSessions[sessionId] = sessionController;
-      
-      // Bullet-proof completer to prevent double completion
-      bool done = false;
-      void finishTTS([Object? error, StackTrace? st]) {
-        if (done) return; // Prevents double complete
-        done = true;
-        
-        // Cleanup session
-        _activeSessions.remove(sessionId);
-        if (!sessionController.isClosed) {
-          sessionController.close();
-        }
-        
-        if (error == null) {
-          if (!completer.isCompleted) completer.complete(filePath);
-        } else {
-          if (!completer.isCompleted) completer.completeError(error, st);
-        }
-      }
-      
-      // Listen to session-specific messages
-      subscription = sessionController.stream.listen((data) async {
-        try {
-          if (data['type'] == 'audio_chunk') {
-            if (!firstChunkReceived) {
-              firstChunkStopwatch.stop();
-              if (kDebugMode)
-                print(
-                    '🔍 [TTS TIMING] First audio chunk received after: ${firstChunkStopwatch.elapsedMilliseconds}ms');
-              firstChunkReceived = true;
-            }
-            final chunk = base64Decode(data['data']);
-            audioBuffer.addAll(chunk);
-            // Optionally, call onProgress
-          } else if (data['type'] == 'done') {
-            // Write buffer to temp file
-            try {
-              // Updated file extension logic for WAV format
-              final ext = responseFormat == 'wav'
-                  ? 'wav'
-                  : responseFormat == 'opus'
-                      ? 'ogg'
-                      : 'mp3';
-              // NEW CODE (collision-resistant with cleaner API):
-              final baseId = DateTime.now().microsecondsSinceEpoch.toString();
-              filePath = PathManager.instance.ttsFile(baseId, ext);
-              tempFile = io.File(filePath!);
-              await tempFile!.writeAsBytes(audioBuffer);
-
-              if (kDebugMode) {
-                final fileSize = await tempFile!.length();
-                print('TTS audio written to $filePath (size: $fileSize bytes)');
-              }
-
-              try {
-                // Use AudioPlayerManager to play the audio and await its completion
-                await _audioPlayerManager.playAudio(filePath!);
-                // Playback is complete here
-                // Note: isAiSpeaking state will be cleared by _onPlaybackDone() in generateAudio()
-
-                totalStopwatch.stop();
-                if (kDebugMode) {
-                  print('🔍 [TTS TIMING] === TOTAL BREAKDOWN ===');
-                  print(
-                      '🔍 [TTS TIMING] WebSocket connect: ${wsConnectStopwatch.elapsedMilliseconds}ms');
-                  print(
-                      '🔍 [TTS TIMING] First chunk wait: ${firstChunkStopwatch.elapsedMilliseconds}ms');
-                  print(
-                      '🔍 [TTS TIMING] TOTAL TIME: ${totalStopwatch.elapsedMilliseconds}ms');
-                }
-
-                onDone?.call();
-                if (kDebugMode)
-                  print(
-                      '[VoiceService] [TTS] TTS stream done, audio played by manager');
-
-                // Successfully completed - return immediately to prevent fallback
-                finishTTS();
-                return; // ← EXIT HERE ON SUCCESS - prevents double completion
-              } catch (e) {
-                if (kDebugMode) print('❌ Playback error: $e');
-                onError?.call('Playback error: $e');
-                finishTTS(e);
-              }
-            } catch (e) {
-              onError?.call('File write error: $e');
-              finishTTS(e);
-            }
-            await subscription?.cancel();
-          } else if (data['type'] == 'error') {
-            if (kDebugMode)
-              print(
-                  '[VoiceService] [TTS] TTS stream error: ${data['detail'] ?? 'Unknown error'}');
-            onError?.call(data['detail'] ?? 'Unknown error');
-            finishTTS(Exception(data['detail'] ?? 'Unknown error'));
-            await subscription?.cancel();
-          } else if (data['type'] == 'ping') {
-            // Handle ping response, don't process as TTS
-            if (kDebugMode) print('🔍 [WS] Received ping response');
-            return;
-          }
-        } catch (e) {
-          if (kDebugMode)
-            print('[VoiceService] [TTS] Failed to process TTS stream: $e');
-          onError?.call('Failed to process TTS stream: $e');
-          finishTTS(e);
-          await subscription?.cancel();
-        }
-      }, onError: (err) async {
-        if (kDebugMode) print('[VoiceService] [TTS] WebSocket error: $err');
-        onError?.call('WebSocket error: $err');
-        finishTTS(err);
-        await subscription?.cancel();
-        // Mark connection as invalid so it gets recreated
-        _reusableChannel = null;
-      }, onDone: () async {
-        if (kDebugMode) print('[VoiceService] [TTS] WebSocket stream closed');
-        await subscription?.cancel();
-        // Mark connection as invalid so it gets recreated
-        _reusableChannel = null;
-      });
-
-      // Send the TTS request with session ID
-      final requestData = jsonDecode(request);
-      requestData['session_id'] = sessionId;
-      channel.sink.add(jsonEncode(requestData));
-      return await completer.future;
-    } finally {
-      // No longer set isAiSpeaking = false here, already done immediately after playback
-
-      // Ensure file deletion even if errors occurred before playback completion,
-      // or if playback itself errored (handled by playAudio returning Future.error)
-      if (tempFile != null && await tempFile!.exists()) {
-        try {
-          await tempFile!.delete();
-          if (kDebugMode)
-            print('Deleted temp TTS file (finally block): $filePath');
-        } catch (e) {
-          if (kDebugMode)
-            print('Error deleting temp TTS file (finally block): $e');
-        }
-      }
+      rethrow;
     }
   }
 
-  /// Helper method to stream and play WAV audio
-  Future<String?> _streamAndPlayWav(String text) async {
-    // Set speaking state to true when starting TTS
-    _setAiSpeaking(true);
-    try {
-      final result = await streamAndPlayTTS(
-        text: text,
-        responseFormat: 'wav',
-      );
-      if (result == null) {
-        throw PlaybackException('WAV TTS generation failed');
-      }
-      return result;
-    } catch (e) {
-      throw PlaybackException('WAV TTS error: $e');
-    }
-  }
+  // WebSocket TTS methods removed - now handled by TTSService
 
-  /// Helper method to stream and play MP3 audio as fallback
-  Future<String?> _streamAndPlayMp3(String text) async {
-    // State should already be true from WAV attempt or explicit setting
-    try {
-      final result = await streamAndPlayTTS(
-        text: text,
-        responseFormat: 'mp3',
-      );
-      if (result == null) {
-        throw PlaybackException('MP3 TTS generation failed');
-      }
-      return result;
-    } catch (e) {
-      throw PlaybackException('MP3 TTS error: $e');
-    }
-  }
+  // TTS methods removed - now handled by TTSService to eliminate duplicate calls
 
-  // Serialized TTS generation with automatic fallback using mutex lock
-  Future<String?> generateAudio(
-    String text, {
-    String voice = 'sage',
-    String responseFormat =
-        'wav', // Changed from 'opus' to 'wav' for lowest latency
-    void Function()? onDone,
-    void Function(String error)? onError,
-  }) async {
-    // Serialize all TTS requests to prevent concurrent access
-    await _ttsLock.acquire();
-    try {
-      if (_disposed) return null;
+  // Helper TTS methods removed - handled by TTSService
 
-      String? filePath;
-      try {
-        filePath = await _streamAndPlayWav(text);
-        _onPlaybackDone(); // Clear state only after successful completion
-        onDone?.call();
-        return filePath;
-      } on PlaybackException catch (_) {
-        // When entering retry/fallback, keep isAiSpeaking = true so coordinator doesn't start VAD
-        _setAiSpeaking(true); // Ensure state stays true during retry
-        if (kDebugMode) {
-          print('[VoiceService] Entering MP3 fallback, keeping isAiSpeaking = true');
-        }
-        try {
-          filePath = await _streamAndPlayMp3(text); // one-shot fallback
-          _onPlaybackDone(); // Clear state only after successful completion
-          onDone?.call();
-          return filePath;
-        } catch (fallbackError) {
-          // Only clear the state if both attempts failed completely
-          _onPlaybackDone();
-          onError?.call('Both WAV and MP3 TTS failed: $fallbackError');
-          return null;
-        }
-      }
-    } catch (e) {
-      // Clear state on any unexpected error
-      _onPlaybackDone();
-      onError?.call('TTS generation error: $e');
-      return null;
-    } finally {
-      _ttsLock.release();
-    }
-  }
+  // generateAudio method removed - now handled by TTSService to eliminate duplicate calls
 
   // Play an audio file
   Future<void> playAudio(String audioPath) async {
@@ -1278,8 +893,7 @@ class VoiceService {
     if (kDebugMode) print('[VoiceService] dispose called');
     _disposed = true;
 
-    // Clean up reusable WebSocket connection
-    _cleanupConnection();
+    // WebSocket cleanup removed - handled by TTSService
     
     // Clean up debounce timer
     _playbackDebounceTimer?.cancel();

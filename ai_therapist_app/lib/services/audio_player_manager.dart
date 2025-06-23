@@ -152,7 +152,16 @@ class AudioPlayerManager {
 
       // Load and play the audio
       await _audioPlayer.setFilePath(audioPath);
-      await _audioPlayer.play();
+      if (!_audioPlayer.playing) {
+        await _audioPlayer.play();
+        if (kDebugMode) {
+          print('🎧 AudioPlayerManager: Started playback for $audioPath');
+        }
+      } else {
+        if (kDebugMode) {
+          print('🎧 AudioPlayerManager: Skipped redundant play() call - already playing');
+        }
+      }
 
       // Listen for completion and all terminal states
       StreamSubscription? subscription;
