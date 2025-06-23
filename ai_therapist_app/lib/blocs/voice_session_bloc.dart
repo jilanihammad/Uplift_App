@@ -418,6 +418,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ProcessTextMessage event, Emitter<VoiceSessionState> emit) async {
     debugPrint(
         '[VoiceSessionBloc] Received ProcessTextMessage: \'${event.text}\'');
+    debugPrint('[VoiceSessionBloc] Current state - isVoiceMode: ${state.isVoiceMode}, isProcessingAudio: ${state.isProcessingAudio}');
     emit(state.copyWith(isProcessingAudio: true));
 
     try {
@@ -439,7 +440,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       final history = _buildConversationHistory(messagesWithUser);
 
-      final therapyServiceInstance = therapyService ?? serviceLocator<TherapyService>() as ITherapyService;
+      final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
       String mayaResponseText;
 
       if (state.isVoiceMode) {
@@ -466,10 +467,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             'I\'m having trouble responding right now.';
       } else {
         debugPrint('[VoiceSessionBloc] Text message in text mode - no TTS...');
+        debugPrint('[VoiceSessionBloc] Calling therapyService.processUserMessage...');
         mayaResponseText = await therapyServiceInstance.processUserMessage(
           event.text,
           history: history,
         );
+        debugPrint('[VoiceSessionBloc] Received therapy response: "${mayaResponseText.substring(0, 50)}..."');
       }
 
       final nextAISequence = state.currentMessageSequence + 1;
@@ -490,10 +493,31 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
 
       debugPrint('[VoiceSessionBloc] Text message processing complete');
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('[VoiceSessionBloc] Error processing text message: $e');
-      emit(
-          state.copyWith(isProcessingAudio: false, errorMessage: e.toString()));
+      debugPrint('[VoiceSessionBloc] Stack trace: $stackTrace');
+      
+      // Ensure processing state is cleared and error is shown to user
+      emit(state.copyWith(
+        isProcessingAudio: false, 
+        errorMessage: 'Failed to get response: ${e.toString()}',
+        hasError: true,
+      ));
+      
+      // Also add a fallback error message to chat
+      final errorMessage = TherapyMessage(
+        id: const Uuid().v4(),
+        content: "I'm sorry, I'm having trouble responding right now. Please try again.",
+        isUser: false,
+        timestamp: DateTime.now(),
+        sequence: state.currentMessageSequence + 1,
+      );
+      
+      final messagesWithError = List.of(state.messages)..add(errorMessage);
+      emit(state.copyWith(
+        messages: messagesWithError,
+        currentMessageSequence: state.currentMessageSequence + 1,
+      ));
     }
   }
 
@@ -529,7 +553,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     try {
       await voiceService.initialize();
 
-      final therapyServiceInstance = therapyService ?? serviceLocator<TherapyService>() as ITherapyService;
+      final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
       await therapyServiceInstance.init();
 
       debugPrint('[VoiceSessionBloc] Services initialized successfully');

@@ -305,11 +305,15 @@ class TherapyService implements ITherapyService {
   Future<String> processUserMessage(String userMessage,
       {List<Map<String, String>>? history}) async {
     try {
+      log.d('TherapyService.processUserMessage called with: "$userMessage"');
+      
       // Check if the message is empty
       if (userMessage.trim().isEmpty) {
+        log.w('Empty user message received');
         return "I didn't catch that. Could you please repeat?";
       }
 
+      log.d('Processing user input through conversation graph...');
       // Process through conversation graph to get context
       final graphResult =
           await _conversationFlowManager.processUserInput(userMessage);
@@ -317,9 +321,12 @@ class TherapyService implements ITherapyService {
       log.d(
           'Graph analysis complete. State: ${graphResult['state'] ?? 'unknown'}');
 
+      log.d('Getting memory context...');
       // Get memory context
       final memoryContext = await _memoryManager.getMemoryContext();
+      log.d('Memory context retrieved: ${memoryContext.length} characters');
 
+      log.d('Processing message through MessageProcessor...');
       // Process message using the MessageProcessor
       final aiResponse = await _messageProcessor.processMessage(
           userMessage,
@@ -328,14 +335,19 @@ class TherapyService implements ITherapyService {
           graphResult,
           history: history);
 
+      log.d('AI response received: "${aiResponse.substring(0, aiResponse.length > 50 ? 50 : aiResponse.length)}..."');
+
       // Process response insights and save to memory in background
       final responseMap = {'response': aiResponse};
       _memoryManager.processInsightsAndSaveMemory(
           userMessage, responseMap, graphResult);
 
+      log.d('TherapyService.processUserMessage completed successfully');
       return aiResponse;
     } catch (e, stackTrace) {
       log.e('General error processing message', e, stackTrace);
+      debugPrint('[TherapyService] ERROR in processUserMessage: $e');
+      debugPrint('[TherapyService] Stack trace: $stackTrace');
       return "I'm sorry, I'm having trouble understanding. Could you try phrasing that differently?";
     }
   }
