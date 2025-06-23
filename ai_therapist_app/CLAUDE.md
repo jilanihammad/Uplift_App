@@ -26,6 +26,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `build_cloud_release.ps1` - Build for cloud deployment
 - `run_release_test.ps1` - Test release build functionality
 
+### Code Quality Commands
+- **Analyze code**: `flutter analyze` (uses `package:flutter_lints/flutter.yaml`)
+- **Format code**: `flutter format .`
+- **Check dependencies**: `flutter pub deps`
+
 ## Architecture Overview
 
 ### Core Application Structure
@@ -42,14 +47,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Critical Service Dependencies
 
 #### Voice Processing Pipeline
-- **VoiceService** (`lib/services/voice_service.dart`) - 1,419 lines, handles recording, TTS, noise reduction (legacy monolith)
+- **VoiceService** (`lib/services/voice_service.dart`) - 1,033 lines, legacy service with reduced functionality (TTS/WebSocket methods moved to TTSService)
 - **VoiceSessionBloc** (`lib/blocs/voice_session_bloc.dart`) - Coordinates real-time voice interactions
 - **AutoListeningCoordinator** (`lib/services/auto_listening_coordinator.dart`) - Manages voice activity detection
 - **RNNoiseService** - Custom noise reduction using RNNoise C++ integration
 
 ### Audio Services Architecture
 
-**Status**: ✅ **Refactored** - The monolithic `VoiceService` (1,419 lines) has been successfully split into focused, single-responsibility services.
+**Status**: ✅ **Refactored** - The monolithic `VoiceService` (originally 1,419 lines, now 1,033 lines) has been successfully split into focused, single-responsibility services.
 
 #### Refactored Audio Services
 
@@ -59,7 +64,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Key Features**: Preserves 125ms timing buffer for Maya's voice detection, manages service initialization
 - **Usage**: Primary entry point for voice operations, replaces monolithic VoiceService
 
-**AudioRecordingService** (`lib/services/audio_recording_service.dart`) - ~300 lines  
+**AudioRecordingService** (`lib/services/audio_recording_service.dart`) - ~460 lines  
 - **Role**: Handles all audio recording operations
 - **Responsibilities**: Microphone access, recording state management, audio level monitoring
 - **Interface**: `IAudioRecordingService`
@@ -72,7 +77,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Key Features**: WebSocket TTS streaming, 125ms timing buffer preservation, multiple voice providers
 - **Critical**: Maintains the timing fix that prevents Maya from detecting her own voice
 
-**WebSocketAudioManager** (`lib/services/websocket_audio_manager.dart`) - ~280 lines
+**WebSocketAudioManager** (`lib/services/websocket_audio_manager.dart`) - ~590 lines
 - **Role**: Real-time audio streaming over WebSocket connections
 - **Responsibilities**: WebSocket lifecycle, audio streaming, session management  
 - **Interface**: `IWebSocketAudioManager`
@@ -110,7 +115,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Backward compatibility maintained via dual service registration
 
 **Improved Maintainability**
-- Smaller, focused files (~300-600 lines each)
+- Smaller, focused files (~350-650 lines each)
 - Clear separation of concerns
 - Better error isolation and debugging
 
@@ -212,7 +217,7 @@ The codebase is undergoing major refactoring (documented in `refactor.md`). Key 
 - Complex state management
 
 ### Critical File Sizes & Complexity
-- ✅ `voice_service.dart` - 1,419 lines (**REFACTORED** → split into 5 focused services ~300-600 lines each)
+- ✅ `voice_service.dart` - 1,033 lines (**REFACTORED** → split into 5 focused services ~350-650 lines each)
 - `chat_screen.dart` - 1,092 lines (needs UI/logic separation)
 - `service_locator.dart` - 488 lines (being replaced with DI)
 - `auto_listening_coordinator.dart` - 940 lines (complex state machine)
@@ -229,6 +234,15 @@ The codebase is undergoing major refactoring (documented in `refactor.md`). Key 
 - App Check enabled for security
 - Real-time messaging for notifications
 - Firestore for user data persistence
+
+### Environment Configuration
+- **Environment Variables**: Configured via `.env` file in assets
+- **LLM Providers**: OpenAI, Google Gemini 2.5 Flash, Groq Llama 3.3
+- **Backend URLs**: 
+  - Local: `http://localhost:8000`
+  - Production: `https://ai-therapist-backend-385290373302.us-central1.run.app`
+- **TTS Models**: OpenAI GPT-4o-mini-tts (sage voice), Google Gemini TTS (Zephyr voice)
+- **Database**: PostgreSQL configuration for backend services
 
 ### Testing Infrastructure
 - Unit tests in `test/` directory
@@ -253,3 +267,24 @@ The codebase is undergoing major refactoring (documented in `refactor.md`). Key 
 - Efficient audio buffer management  
 - Resource cleanup on session termination
 - Wake lock management for uninterrupted sessions
+
+### CI/CD Pipeline
+- **GitHub Actions**: `.github/workflows/ci.yml` runs on push/PR to main
+- **Flutter Version**: 3.19.x stable channel required
+- **Pipeline Steps**: dependencies → analyze → test → build APK
+- **Artifacts**: Release APK automatically uploaded to GitHub
+
+### Code Quality Standards
+- **Linting**: Uses `package:flutter_lints/flutter.yaml` recommended rules
+- **Analysis**: Run `flutter analyze` before commits
+- **Formatting**: Use `flutter format .` for consistent code style
+- **No Custom Lint Rules**: Currently follows Flutter defaults
+
+### Key Dependencies
+- **Custom Plugin**: `rnnoise_flutter` (C++ noise reduction, local path dependency)
+- **State Management**: BLoC pattern (`flutter_bloc: ^9.1.0`)
+- **Dependency Injection**: Service locator (`get_it: ^8.0.3`) - being refactored to interfaces
+- **Navigation**: `go_router: ^15.0.0`
+- **Network**: `dio: ^5.3.2`, `web_socket_channel: ^3.0.1`
+- **Audio Stack**: `record: ^5.0.1`, `just_audio: ^0.10.0`, `flutter_tts: ^4.2.2`
+- **Testing**: `mockito: ^5.4.6`, `bloc_test: ^10.0.0`

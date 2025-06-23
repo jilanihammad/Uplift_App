@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/services/therapy_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
+import 'package:ai_therapist_app/services/audio_generator.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'dart:async';
 import 'package:ai_therapist_app/config/app_config.dart';
@@ -107,8 +108,9 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       // Extract the LLM response text
       final response = _llmTestResult.replaceFirst('LLM Response:\n', '');
 
-      // Generate audio from the LLM response
-      final audioPath = await _voiceService.generateAudio(response);
+      // Generate audio from the LLM response using AudioGenerator
+      final audioGenerator = serviceLocator<AudioGenerator>();
+      final audioPath = await audioGenerator.generateAudio(response);
 
       setState(() {
         _ttsTestResult = 'Audio generated successfully: $audioPath';

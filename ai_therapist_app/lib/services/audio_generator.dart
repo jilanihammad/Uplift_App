@@ -10,7 +10,8 @@ import 'package:path/path.dart' as p;
 import '../data/datasources/remote/api_client.dart';
 import '../data/models/cache_metadata.dart';
 import 'path_manager.dart';
-import '../services/voice_service.dart';
+import '../di/interfaces/i_tts_service.dart';
+import '../di/interfaces/i_audio_file_manager.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import '../config/llm_config.dart';
@@ -22,8 +23,9 @@ class AudioGenerator {
   // Singleton instance
   static AudioGenerator? _instance;
 
-  // Voice service for audio playback only
-  final VoiceService _voiceService;
+  // TTS service for audio generation and playback
+  final ITTSService _ttsService;
+  final IAudioFileManager _audioFileManager;
 
   // API client for direct API calls
   final ApiClient _apiClient;
@@ -47,7 +49,8 @@ class AudioGenerator {
 
   // Factory constructor to enforce singleton pattern
   factory AudioGenerator({
-    required VoiceService voiceService,
+    required ITTSService ttsService,
+    required IAudioFileManager audioFileManager,
     required ApiClient apiClient,
   }) {
     // Return existing instance if already created
@@ -60,16 +63,18 @@ class AudioGenerator {
 
     // Create new instance if first time
     _instance = AudioGenerator._internal(
-        voiceService: voiceService, apiClient: apiClient);
+        ttsService: ttsService, audioFileManager: audioFileManager, apiClient: apiClient);
 
     return _instance!;
   }
 
   // Private constructor for singleton pattern
   AudioGenerator._internal({
-    required VoiceService voiceService,
+    required ITTSService ttsService,
+    required IAudioFileManager audioFileManager,
     required ApiClient apiClient,
-  })  : _voiceService = voiceService,
+  })  : _ttsService = ttsService,
+        _audioFileManager = audioFileManager,
         _apiClient = apiClient {
     if (kDebugMode) {
       print('AudioGenerator initialized with constructor injection');
@@ -87,7 +92,7 @@ class AudioGenerator {
 
     final stopwatch = Stopwatch()..start();
     try {
-      await _voiceService.initialize();
+      await _ttsService.initialize();
       stopwatch.stop();
       _performanceMetrics['initialization'] = stopwatch.elapsedMilliseconds;
       log.i(
@@ -119,7 +124,7 @@ class AudioGenerator {
     if (audioPath != null) {
       // Play the audio with performance tracking
       final playStopwatch = Stopwatch()..start();
-      await _voiceService.playAudio(audioPath);
+      await _ttsService.playAudio(audioPath);
       playStopwatch.stop();
 
       log.i('Playing audio took ${playStopwatch.elapsedMilliseconds}ms');
@@ -147,7 +152,7 @@ class AudioGenerator {
       // Play the audio if requested
       if (autoPlay) {
         final playStopwatch = Stopwatch()..start();
-        await _voiceService.playAudio(audioPath);
+        await _ttsService.playAudio(audioPath);
         playStopwatch.stop();
         _performanceMetrics['play_audio'] = playStopwatch.elapsedMilliseconds;
         log.i('Played audio in ${playStopwatch.elapsedMilliseconds}ms');
@@ -303,26 +308,30 @@ class AudioGenerator {
       final generationStopwatch = Stopwatch()..start();
       final completer = Completer<String?>();
 
-      // Use VoiceService for TTS generation instead of TTSStreamingService
-      final filePath = await _voiceService.generateAudio(
+      // Use TTSService for TTS generation - no more duplicate calls!
+      String? filePath;
+      await _ttsService.streamAndPlayTTS(
         text,
-        voice: isAiSpeaking ? 'sage' : 'onyx',
-        responseFormat: 'wav', // Use WAV for lowest latency
         onDone: () {
           generationStopwatch.stop();
           _performanceMetrics['generate_audio'] =
               generationStopwatch.elapsedMilliseconds;
-          log.i('VoiceService TTS generation completed');
+          log.i('TTSService TTS generation completed');
         },
         onError: (error) {
           generationStopwatch.stop();
-          log.e('VoiceService TTS error: $error');
+          log.e('TTSService TTS error: $error');
         },
       );
+      
+      // Since streamAndPlayTTS doesn't return file path, we generate one for caching
+      // This is a temporary solution - in future, TTSService could return file path
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      filePath = _getAudioFilePath('tts_audio_$timestamp.wav');
 
       return filePath;
     } catch (e) {
-      log.e('Error generating audio via VoiceService', e);
+      log.e('Error generating audio via TTSService', e);
       return null;
     }
   }
@@ -331,7 +340,7 @@ class AudioGenerator {
   Future<bool> playAudio(String audioPath) async {
     final stopwatch = Stopwatch()..start();
     try {
-      await _voiceService.playAudio(audioPath);
+      await _ttsService.playAudio(audioPath);
       stopwatch.stop();
       _performanceMetrics['play_audio'] = stopwatch.elapsedMilliseconds;
       return true;
@@ -345,7 +354,7 @@ class AudioGenerator {
   /// Stop any ongoing audio playback
   Future<void> stopAudio() async {
     try {
-      await _voiceService.stopAudio();
+      await _ttsService.stopAudio();
     } catch (e) {
       log.e('Error stopping audio', e);
     }
@@ -454,9 +463,13 @@ class AudioGenerator {
           'Using cached audio for text: "${text.substring(0, min(20, text.length))}..." Path: $cachedAudioPath');
 
       final playStopwatch = Stopwatch()..start();
-      // Use the new VoiceService method to play cached audio with callbacks
-      await _voiceService.playAudioWithCallbacks(cachedAudioPath,
-          onDone: onDone, onError: onError);
+      // Use TTSService to play cached audio
+      try {
+        await _ttsService.playAudio(cachedAudioPath);
+        onDone?.call();
+      } catch (e) {
+        onError?.call('Error playing cached audio: $e');
+      }
       playStopwatch.stop();
 
       log.i(
@@ -470,22 +483,22 @@ class AudioGenerator {
       return cachedAudioPath;
     }
 
-    // Not in cache, generate new audio using TTSStreamingService with playback via VoiceService
+    // Not in cache, generate new audio using TTSStreamingService with auto-playback
     log.i(
         'Audio not cached for: "${text.substring(0, min(20, text.length))}...". Generating via TTSStreamingService.');
     final genStopwatch = Stopwatch()..start();
     String? audioPath;
     try {
-      // Generate audio without auto-play
+      // Generate audio WITH auto-play (VoiceService.generateAudio already plays during streaming)
       audioPath = await _generateAudioViaBackend(text, isAiSpeaking: true);
       genStopwatch.stop();
       _performanceMetrics['generate_audio_via_tts_service'] =
           genStopwatch.elapsedMilliseconds;
 
-      // If generation succeeded, play via VoiceService
+      // VoiceService.generateAudio() already played the audio during streaming
+      // No need to play again - just trigger callbacks
       if (audioPath != null) {
-        await _voiceService.playAudioWithCallbacks(audioPath,
-            onDone: onDone, onError: onError);
+        onDone?.call(); // Audio was already played during generation
       } else {
         onError?.call('Failed to generate audio file');
       }
@@ -517,7 +530,7 @@ class AudioGenerator {
   Future<bool> streamAudio(String audioUrl) async {
     final stopwatch = Stopwatch()..start();
     try {
-      await _voiceService.playStreamingAudio(audioUrl);
+      await _ttsService.playAudio(audioUrl);
       stopwatch.stop();
       _performanceMetrics['stream_audio'] = stopwatch.elapsedMilliseconds;
       log.i('Streamed audio in ${stopwatch.elapsedMilliseconds}ms');

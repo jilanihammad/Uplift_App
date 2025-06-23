@@ -18,6 +18,8 @@ import '../services/vad_manager.dart';
 import '../di/service_locator.dart';
 import '../services/therapy_service.dart' hide TherapyServiceMessage;
 import '../di/interfaces/i_therapy_service.dart';
+import '../di/interfaces/i_tts_service.dart';
+import '../di/interfaces/i_audio_file_manager.dart';
 import '../services/progress_service.dart';
 import '../services/preferences_service.dart';
 import '../widgets/mood_selector.dart';
@@ -698,8 +700,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     if (state.isVoiceMode) {
       debugPrint('[ChatScreen] Starting welcome TTS in voice mode');
 
-      _voiceService.streamAndPlayTTS(
-        text: welcomeMessage,
+      final ttsService = serviceLocator<ITTSService>();
+      ttsService.streamAndPlayTTS(
+        welcomeMessage,
         onDone: () {
           debugPrint('[ChatScreen] Welcome TTS completed');
           // Add delay and then enable auto-listening mode
@@ -935,7 +938,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     serviceLocator.registerLazySingleton<AudioGenerator>(() {
       final generator = AudioGenerator(
-        voiceService: serviceLocator<VoiceService>(),
+        ttsService: serviceLocator<ITTSService>(),
+        audioFileManager: serviceLocator<IAudioFileManager>(),
         apiClient: serviceLocator<ApiClient>(),
       );
       generator.initializeOnlyIfNeeded();
