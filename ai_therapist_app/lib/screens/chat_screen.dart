@@ -736,8 +736,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   void _sendMessage() {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      debugPrint('[ChatScreen] _sendMessage called but text is empty');
+      return;
+    }
 
+    debugPrint('[ChatScreen] Sending text message: "$text"');
     context.read<VoiceSessionBloc>().add(ProcessTextMessage(text));
     _messageController.clear();
   }
