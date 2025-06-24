@@ -16,20 +16,13 @@ import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
 
 import '../di/service_locator.dart';
-import '../services/therapy_service.dart' hide TherapyServiceMessage;
 import '../di/interfaces/i_therapy_service.dart';
 import '../di/dependency_container.dart';
-import '../di/interfaces/i_tts_service.dart';
-import '../di/interfaces/i_audio_file_manager.dart';
-import '../services/progress_service.dart';
-import '../services/preferences_service.dart';
+import '../di/interfaces/i_progress_service.dart';
+import '../di/interfaces/i_navigation_service.dart';
 import '../widgets/mood_selector.dart';
 import '../models/therapist_style.dart';
 import '../models/therapy_message.dart';
-import '../data/repositories/session_repository.dart';
-import '../services/navigation_service.dart';
-import '../services/audio_generator.dart';
-import '../data/repositories/message_repository.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../utils/list_extensions.dart';
 import '../services/native_wakelock_service.dart';
@@ -38,26 +31,29 @@ import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
-import '../services/auto_listening_coordinator.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
   final ITherapyService? therapyService;
   final ApiClient? apiClient;
+  final VoiceService? voiceService;
+  final VADManager? vadManager;
   
   const ChatScreen({
     super.key, 
     this.sessionId,
     this.therapyService,
     this.apiClient,
+    this.voiceService,
+    this.vadManager,
   });
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider<VoiceSessionBloc>(
       create: (context) => VoiceSessionBloc(
-        voiceService: serviceLocator<VoiceService>(),
-        vadManager: serviceLocator<VADManager>(),
+        voiceService: voiceService ?? serviceLocator<VoiceService>(),
+        vadManager: vadManager ?? serviceLocator<VADManager>(),
         memoryService: null,
         therapyGraphService: null,
         notificationService: null,
@@ -67,6 +63,8 @@ class ChatScreen extends StatelessWidget {
         sessionId: sessionId,
         therapyService: therapyService,
         apiClient: apiClient,
+        voiceService: voiceService,
+        vadManager: vadManager,
       ),
     );
   }
@@ -76,12 +74,16 @@ class _ChatScreenBody extends StatefulWidget {
   final String? sessionId;
   final ITherapyService? therapyService;
   final ApiClient? apiClient;
+  final VoiceService? voiceService;
+  final VADManager? vadManager;
   
   const _ChatScreenBody({
     super.key, 
     this.sessionId,
     this.therapyService,
     this.apiClient,
+    this.voiceService,
+    this.vadManager,
   });
 
   @override
@@ -105,9 +107,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Services - Use dependency injection with fallback to DependencyContainer
   late final ITherapyService _therapyService;
-  final ProgressService _progressService = serviceLocator<ProgressService>();
-  final NavigationService _navigationService =
-      serviceLocator<NavigationService>();
+  late final IProgressService _progressService;
+  late final INavigationService _navigationService;
 
   // Session timer
   Timer? _sessionTimer;
@@ -196,6 +197,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     
     // Initialize services using dependency injection
     _therapyService = widget.therapyService ?? DependencyContainer().therapy;
+    _progressService = DependencyContainer().progress;
+    _navigationService = DependencyContainer().navigation;
 
     // Don't enable wakelock here - only enable during active therapy session
 
@@ -209,7 +212,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     );
 
     // Initialize services
-    _voiceService = serviceLocator<VoiceService>();
+    _voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
     _initializeServices();
     _loadTherapistStyle();
 
@@ -567,7 +570,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<void> _loadTherapistStyle() async {
-    final preferencesService = serviceLocator<PreferencesService>();
+    final preferencesService = DependencyContainer().preferences;
     final userPreferences = preferencesService.preferences;
 
     // Set therapist style
@@ -724,7 +727,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     if (state.isVoiceMode) {
       debugPrint('[ChatScreen] Starting welcome TTS in voice mode');
 
-      final ttsService = serviceLocator<ITTSService>();
+      final ttsService = DependencyContainer().ttsService;
       ttsService.streamAndPlayTTS(
         welcomeMessage,
         onDone: () {
@@ -808,7 +811,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Explicitly stop VAD immediately to prevent it from continuing to run
     try {
-      await serviceLocator<VADManager>().stopListening();
+      await DependencyContainer().vadManager.stopListening();
       debugPrint('[ChatScreen] VAD explicitly stopped in _endSession');
     } catch (e) {
       debugPrint('[ChatScreen] Failed to stop VAD in _endSession: $e');
@@ -944,40 +947,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
   }
 
-  Future<void> _reregisterServices() {
-    if (kDebugMode) {
-      debugPrint('🔄 Re-registering VoiceService and AudioGenerator');
-    }
-
-    // Unregister existing services
-    if (serviceLocator.isRegistered<VoiceService>()) {
-      serviceLocator.unregister<VoiceService>();
-    }
-    if (serviceLocator.isRegistered<AudioGenerator>()) {
-      serviceLocator.unregister<AudioGenerator>();
-    }
-
-    // Register new instances
-    serviceLocator.registerLazySingleton<VoiceService>(() {
-      final service = VoiceService(apiClient: serviceLocator<ApiClient>());
-      service.initializeOnlyIfNeeded();
-      return service;
-    });
-
-    serviceLocator.registerLazySingleton<AudioGenerator>(() {
-      final generator = AudioGenerator(
-        ttsService: serviceLocator<ITTSService>(),
-        audioFileManager: serviceLocator<IAudioFileManager>(),
-        apiClient: serviceLocator<ApiClient>(),
-      );
-      generator.initializeOnlyIfNeeded();
-      return generator;
-    });
-
-    // Update local reference
-    _voiceService = serviceLocator<VoiceService>();
-    return _initializeServices();
-  }
 
   Future<Map<String, dynamic>> _generateSessionSummary(
       List<TherapyMessage> messages) async {
@@ -1018,8 +987,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Future<void> _saveSession(
       Map<String, dynamic> sessionData, List<TherapyMessage> messages) async {
     try {
-      final sessionRepository = serviceLocator<SessionRepository>();
-      final messageRepository = serviceLocator<MessageRepository>();
+      final sessionRepository = DependencyContainer().sessionRepository;
 
       // Ensure the session exists in the repository
       // Generate session title

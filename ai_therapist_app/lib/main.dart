@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
@@ -721,7 +722,7 @@ Future<void> _initializeConfigAndApi() async {
     // 1. First initialize services that don't depend on the database
     try {
       logger.debug('[Main] Initializing VoiceService...');
-      final voiceService = serviceLocator<VoiceService>();
+      final voiceService = serviceLocator<VoiceService>(); // Keep legacy VoiceService for initialization
       await voiceService.initialize();
       logger.debug('[Main] VoiceService initialized ✓');
 
@@ -733,7 +734,8 @@ Future<void> _initializeConfigAndApi() async {
 
     try {
       logger.debug('[Main] Initializing AudioGenerator...');
-      final audioGenerator = serviceLocator<AudioGenerator>();
+      final container = DependencyContainer();
+      final audioGenerator = container.audioGenerator;
       await audioGenerator.initialize();
       logger.debug('[Main] AudioGenerator initialized ✓');
 
@@ -760,7 +762,7 @@ Future<void> _initializeConfigAndApi() async {
     // Memory manager depends on memory service
     try {
       logger.debug('[Main] Initializing MemoryManager...');
-      final memoryManager = serviceLocator<MemoryManager>();
+      final memoryManager = DependencyContainer().memoryManagerConcrete;
       await memoryManager.init();
       logger.debug('[Main] MemoryManager initialized ✓');
 

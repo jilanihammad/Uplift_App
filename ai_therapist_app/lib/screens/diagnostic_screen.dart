@@ -15,11 +15,15 @@ import 'package:ai_therapist_app/config/app_config.dart';
 class DiagnosticScreen extends StatefulWidget {
   final ITherapyService? therapyService;
   final ApiClient? apiClient;
+  final VoiceService? voiceService;
+  final AudioGenerator? audioGenerator;
   
   const DiagnosticScreen({
     Key? key,
     this.therapyService,
     this.apiClient,
+    this.voiceService,
+    this.audioGenerator,
   }) : super(key: key);
 
   @override
@@ -28,7 +32,8 @@ class DiagnosticScreen extends StatefulWidget {
 
 class _DiagnosticScreenState extends State<DiagnosticScreen> {
   late final ITherapyService _therapyService;
-  final VoiceService _voiceService = serviceLocator<VoiceService>();
+  late final VoiceService _voiceService;
+  late final AudioGenerator _audioGenerator;
   Map<String, dynamic>? _serviceStatus;
   bool _isLoading = false;
   String? _error;
@@ -46,8 +51,10 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
   @override
   void initState() {
     super.initState();
-    // Use dependency injection with fallback to DependencyContainer
+    // Use dependency injection with fallback to service locator
     _therapyService = widget.therapyService ?? DependencyContainer().therapy;
+    _voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
+    _audioGenerator = widget.audioGenerator ?? DependencyContainer().audioGenerator;
     _checkServiceStatus();
   }
 
@@ -129,8 +136,7 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       final response = _llmTestResult.replaceFirst('LLM Response:\n', '');
 
       // Generate audio from the LLM response using AudioGenerator
-      final audioGenerator = serviceLocator<AudioGenerator>();
-      final audioPath = await audioGenerator.generateAudio(response);
+      final audioPath = await _audioGenerator.generateAudio(response);
 
       setState(() {
         _ttsTestResult = 'Audio generated successfully: $audioPath';
