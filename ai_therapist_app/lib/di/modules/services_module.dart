@@ -9,27 +9,20 @@ import '../../services/navigation_service.dart';
 import '../../services/progress_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/groq_service.dart';
-import '../../services/config_service.dart';
-import '../../data/datasources/remote/api_client.dart';
-import '../../data/datasources/local/app_database.dart';
 import '../../data/repositories/session_repository.dart';
-import '../../services/notification_service.dart' as service_ns;
 import '../../services/tts_service.dart';
-import '../../services/audio_player_manager.dart';
 import '../../services/websocket_audio_manager.dart';
-import '../../services/message_processor.dart';
-import '../../services/audio_generator.dart';
 import '../../services/memory_manager.dart';
-import '../../services/memory_service.dart' as memory_svc;
 import '../../services/therapy_service.dart';
-import '../../blocs/voice_session_bloc.dart' as voice_bloc;
-import '../../services/langchain/custom_langchain.dart' as langchain;
 import '../interfaces/i_therapy_service.dart';
 import '../../services/auth_coordinator.dart';
 import '../../services/auth_service.dart';
 import '../../services/onboarding_service.dart';
 import '../../data/datasources/local/database_provider.dart';
 import '../interfaces/i_memory_manager.dart';
+import '../../data/repositories/user_repository.dart';
+import '../../data/repositories/message_repository.dart';
+import '../../data/repositories/auth_repository.dart';
 
 /// Services dependency module
 /// Registers application services with proper dependency injection
@@ -87,6 +80,27 @@ class ServicesModule {
     if (!locator.isRegistered<ISessionRepository>()) {
       locator.registerLazySingleton<ISessionRepository>(
         () => locator<SessionRepository>(),
+      );
+    }
+
+    // Register interface for UserRepository (already registered)
+    if (!locator.isRegistered<IUserRepository>()) {
+      locator.registerLazySingleton<IUserRepository>(
+        () => locator<UserRepository>(),
+      );
+    }
+
+    // Register interface for MessageRepository (already registered)
+    if (!locator.isRegistered<IMessageRepository>()) {
+      locator.registerLazySingleton<IMessageRepository>(
+        () => locator<MessageRepository>(),
+      );
+    }
+
+    // Register interface for AuthRepository (already registered)
+    if (!locator.isRegistered<IAuthRepository>()) {
+      locator.registerLazySingleton<IAuthRepository>(
+        () => locator<AuthRepository>(),
       );
     }
 

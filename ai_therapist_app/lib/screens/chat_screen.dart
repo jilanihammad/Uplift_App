@@ -15,9 +15,9 @@ import '../blocs/voice_session_event.dart';
 import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
 
-import '../di/service_locator.dart';
 import '../di/interfaces/i_therapy_service.dart';
 import '../di/dependency_container.dart';
+import '../di/service_locator.dart';
 import '../di/interfaces/i_progress_service.dart';
 import '../di/interfaces/i_navigation_service.dart';
 import '../widgets/mood_selector.dart';
@@ -53,12 +53,8 @@ class ChatScreen extends StatelessWidget {
     return BlocProvider<VoiceSessionBloc>(
       create: (context) => VoiceSessionBloc(
         voiceService: voiceService ?? serviceLocator<VoiceService>(),
-        vadManager: vadManager ?? serviceLocator<VADManager>(),
-        memoryService: null, // Keep as null for now - will be handled via fallback in bloc
-        therapyGraphService: null, // Keep as null for now
-        notificationService: null, // Keep as null for now
-        conversationHistory: null, // Keep as null for now
-        therapyService: therapyService ?? (serviceLocator.isRegistered<ITherapyService>() ? serviceLocator<ITherapyService>() : null),
+        vadManager: vadManager ?? DependencyContainer().vadManager,
+        therapyService: therapyService ?? DependencyContainer().therapy,
       ),
       child: _ChatScreenBody(
         sessionId: sessionId,

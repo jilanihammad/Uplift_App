@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
+import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../models/user_profile.dart';
@@ -12,8 +12,8 @@ class ProfileExperienceScreen extends StatefulWidget {
 }
 
 class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
-  final _onboardingService = GetIt.instance<OnboardingService>();
-  final _userProfileService = GetIt.instance<UserProfileService>();
+  final _onboardingService = DependencyContainer().get<OnboardingService>();
+  final _userProfileService = DependencyContainer().get<UserProfileService>();
   
   TherapyExperience? _selectedExperience;
   bool _isLoading = false;

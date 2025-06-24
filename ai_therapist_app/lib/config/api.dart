@@ -2,7 +2,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'package:ai_therapist_app/config/app_config.dart';
 
 class ApiConfig {

@@ -1,7 +1,6 @@
 // lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:get_it/get_it.dart';
 import '../services/backend_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -90,7 +89,7 @@ class _SplashScreenState extends State<SplashScreen>
       }
 
       // Ensure ConfigService is initialized before using BackendService
-      if (serviceLocator.isRegistered<ConfigService>()) {
+      if (DependencyContainer().isRegistered<ConfigService>()) {
         final configService = DependencyContainer().configService;
         await configService.init();
         if (kDebugMode) {
@@ -103,7 +102,7 @@ class _SplashScreenState extends State<SplashScreen>
       }
 
       // Ensure ApiClient is ready
-      if (serviceLocator.isRegistered<ApiClient>()) {
+      if (DependencyContainer().isRegistered<ApiClient>()) {
         if (kDebugMode) {
           print("SplashScreen: ApiClient is registered");
         }
@@ -290,8 +289,8 @@ class _SplashScreenState extends State<SplashScreen>
     }
 
     // Defensive check for required services before attempting backend check
-    if (!serviceLocator.isRegistered<ConfigService>() ||
-        !serviceLocator.isRegistered<ApiClient>()) {
+    if (!DependencyContainer().isRegistered<ConfigService>() ||
+        !DependencyContainer().isRegistered<ApiClient>()) {
       if (kDebugMode) {
         print(
             "SplashScreen: Cannot check backend - required services not registered");

@@ -77,6 +77,6 @@ class ThemeModule {
 */
 
 /// Example of how to use this service with dependency injection
-/// Instead of: final themeService = serviceLocator<ThemeService>();
-/// Use: final themeService = dependencies.get<ThemeServiceDI>();
+/// Instead of using service locator pattern
+/// Use: final themeService = DependencyContainer().get<ThemeServiceDI>();
 /// Or inject it via constructor: ThemeServiceDI themeService;

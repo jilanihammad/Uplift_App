@@ -432,8 +432,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                       if (serviceLocator.isRegistered<AuthService>()) {
                         final authBloc = AuthBloc(
                           authService: serviceLocator<AuthService>(),
-                          onboardingService:
-                              serviceLocator<OnboardingService>(),
                         )..add(CheckAuthStatusEvent());
                         debugPrint(
                             '[main.dart] AuthBloc registered in service locator');
@@ -448,7 +446,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                               onboardingService: OnboardingService(),
                             ),
                           ),
-                          onboardingService: OnboardingService(),
                         );
                         if (!serviceLocator.isRegistered<AuthBloc>()) {
                           serviceLocator.registerSingleton<AuthBloc>(authBloc);
@@ -466,7 +463,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                             onboardingService: OnboardingService(),
                           ),
                         ),
-                        onboardingService: OnboardingService(),
                       );
                       if (!serviceLocator.isRegistered<AuthBloc>()) {
                         serviceLocator.registerSingleton<AuthBloc>(authBloc);

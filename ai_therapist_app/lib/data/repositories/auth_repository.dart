@@ -1,10 +1,11 @@
 // lib/data/repositories/auth_repository.dart
 import 'package:shared_preferences/shared_preferences.dart';
-import '../datasources/remote/api_client.dart';
 import '../../domain/entities/user.dart';
+import '../../di/interfaces/i_auth_repository.dart';
+import '../../di/interfaces/i_api_client.dart';
 
-class AuthRepository {
-  final ApiClient? apiClient;
+class AuthRepository implements IAuthRepository {
+  final IApiClient? apiClient;
   late SharedPreferences _prefs;
   bool _initialized = false;
 
@@ -22,6 +23,7 @@ class AuthRepository {
   }
 
   // Login with email and password
+  @override
   Future<User> login(String email, String password) async {
     await _initPrefs();
     if (apiClient != null) {
@@ -57,6 +59,7 @@ class AuthRepository {
   }
 
   // Register a new user
+  @override
   Future<User> register({
     required String name,
     required String email,
@@ -97,6 +100,7 @@ class AuthRepository {
   }
 
   // Logout user
+  @override
   Future<void> logout() async {
     await _initPrefs();
     try {
@@ -112,6 +116,7 @@ class AuthRepository {
   }
 
   // Change password
+  @override
   Future<void> changePassword(
       String currentPassword, String newPassword) async {
     if (apiClient != null) {
@@ -126,6 +131,7 @@ class AuthRepository {
   }
 
   // Request password reset
+  @override
   Future<void> requestPasswordReset(String email) async {
     if (apiClient != null) {
       await apiClient!.post(
@@ -138,6 +144,7 @@ class AuthRepository {
   }
 
   // Confirm password reset
+  @override
   Future<void> confirmPasswordReset(String token, String newPassword) async {
     if (apiClient != null) {
       await apiClient!.post(
@@ -151,6 +158,7 @@ class AuthRepository {
   }
 
   // Check if user is authenticated
+  @override
   Future<bool> isAuthenticated() async {
     await _initPrefs();
     final token = _prefs.getString('auth_token');

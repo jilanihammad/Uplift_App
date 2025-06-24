@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
-import 'package:get_it/get_it.dart';
 import '../widgets/welcome_feature_card.dart';
 
 class WelcomeScreen extends StatelessWidget {
@@ -8,7 +8,7 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final onboardingService = GetIt.instance<OnboardingService>();
+    final onboardingService = DependencyContainer().get<OnboardingService>();
 
     return Scaffold(
       backgroundColor: Colors.white, // Clean white background

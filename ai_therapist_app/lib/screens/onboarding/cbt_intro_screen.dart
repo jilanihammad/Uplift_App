@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
+import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 
 class CbtIntroScreen extends StatelessWidget {
@@ -7,7 +7,7 @@ class CbtIntroScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final onboardingService = GetIt.instance<OnboardingService>();
+    final onboardingService = DependencyContainer().get<OnboardingService>();
     
     return Scaffold(
       appBar: AppBar(

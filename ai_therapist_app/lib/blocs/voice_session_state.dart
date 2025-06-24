@@ -5,8 +5,6 @@
 import 'package:equatable/equatable.dart';
 import '../models/therapy_message.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
-import 'package:flutter/foundation.dart'; // Required for kDebugMode
-import 'package:ai_therapist_app/models/therapist_style.dart'; // Corrected filename
 
 enum VoiceSessionStatus {
   initial,

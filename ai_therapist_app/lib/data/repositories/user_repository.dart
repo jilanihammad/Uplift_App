@@ -1,10 +1,11 @@
 // lib/data/repositories/user_repository.dart
 import 'package:shared_preferences/shared_preferences.dart';
-import '../datasources/remote/api_client.dart';
 import '../../domain/entities/user.dart';
+import '../../di/interfaces/i_user_repository.dart';
+import '../../di/interfaces/i_api_client.dart';
 
-class UserRepository {
-  final ApiClient apiClient;
+class UserRepository implements IUserRepository {
+  final IApiClient apiClient;
   late SharedPreferences _prefs;
   bool _initialized = false;
   
@@ -22,12 +23,14 @@ class UserRepository {
   }
   
   // Get user profile
+  @override
   Future<User> getUserProfile() async {
     final response = await apiClient.get('/api/v1/users/me');
     return User.fromJson(response);
   }
   
   // Update user profile
+  @override
   Future<User> updateProfile({
     String? name,
     String? email,
@@ -38,19 +41,20 @@ class UserRepository {
     if (email != null) body['email'] = email;
     if (profileImage != null) body['profile_image'] = profileImage;
     
-    final response = await apiClient.patch(
+    final response = await apiClient.put(
       '/api/v1/users/me',
-      body: body,
+      body,
     );
     
     return User.fromJson(response);
   }
   
   // Update user preferences
+  @override
   Future<User> updatePreferences(Map<String, dynamic> preferences) async {
-    final response = await apiClient.patch(
+    final response = await apiClient.put(
       '/api/v1/users/me/preferences',
-      body: {
+      {
         'preferences': preferences,
       },
     );
@@ -59,6 +63,7 @@ class UserRepository {
   }
   
   // Get user ID
+  @override
   Future<String?> getUserId() async {
     await _initPrefs();
     return _prefs.getString('user_id');

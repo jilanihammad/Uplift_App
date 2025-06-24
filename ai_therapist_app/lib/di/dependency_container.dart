@@ -2,8 +2,6 @@
 
 import 'package:get_it/get_it.dart';
 import 'interfaces/interfaces.dart';
-import 'modules/core_module.dart';
-import 'modules/services_module.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../services/audio_generator.dart';
 import '../services/vad_manager.dart';
@@ -89,6 +87,8 @@ class DependencyContainer {
   IGroqService get groq => get<IGroqService>();
   ISessionRepository get sessionRepository => get<ISessionRepository>();
   IMessageRepository get messageRepository => get<IMessageRepository>();
+  IUserRepository get userRepository => get<IUserRepository>();
+  IAuthRepository get authRepository => get<IAuthRepository>();
   IAuthService get authService => get<IAuthService>();
   IAuthEventHandler get authEventHandler => get<IAuthEventHandler>();
   IOnboardingService get onboarding => get<IOnboardingService>();

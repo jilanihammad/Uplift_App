@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:ai_therapist_app/services/firebase_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 
 class FirebaseDebugScreen extends StatefulWidget {
   const FirebaseDebugScreen({Key? key}) : super(key: key);
@@ -158,14 +158,14 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
 
     try {
       // Get the Firebase service and force a reconnect
-      if (serviceLocator.isRegistered<FirebaseService>()) {
-        await serviceLocator<FirebaseService>().tryReconnect();
+      if (DependencyContainer().isRegistered<FirebaseService>()) {
+        await DependencyContainer().get<FirebaseService>().tryReconnect();
         if (kDebugMode) {
           print('Reconnect attempt completed');
         }
       } else {
         if (kDebugMode) {
-          print('FirebaseService not registered in service locator');
+          print('FirebaseService not registered in dependency container');
         }
       }
 

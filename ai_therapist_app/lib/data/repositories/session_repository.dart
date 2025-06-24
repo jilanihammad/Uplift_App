@@ -1,14 +1,13 @@
 // lib/data/repositories/session_repository.dart
-import '../datasources/remote/api_client.dart';
-import '../datasources/local/app_database.dart';
 import '../../domain/entities/session.dart';
-import '../../data/repositories/message_repository.dart';
 import '../../di/interfaces/i_session_repository.dart';
+import '../../di/interfaces/i_api_client.dart';
+import '../../di/interfaces/i_app_database.dart';
 import 'package:flutter/foundation.dart';
 
 class SessionRepository implements ISessionRepository {
-  final ApiClient apiClient;
-  final AppDatabase appDatabase;
+  final IApiClient apiClient;
+  final IAppDatabase appDatabase;
 
   SessionRepository({
     required this.apiClient,
@@ -244,9 +243,9 @@ class SessionRepository implements ISessionRepository {
       if (title != null) body['title'] = title;
 
       print('Updating session $sessionId on server with: $body');
-      final response = await apiClient.patch(
+      final response = await apiClient.put(
         '/sessions/$sessionId',
-        body: body,
+        body,
       );
       print('Server response for updating session $sessionId: $response');
 

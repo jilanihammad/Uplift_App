@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
+import '../../di/dependency_container.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
@@ -12,8 +12,8 @@ class ProfileGoalsScreen extends StatefulWidget {
 }
 
 class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
-  final _onboardingService = GetIt.instance<OnboardingService>();
-  final _userProfileService = GetIt.instance<UserProfileService>();
+  final _onboardingService = DependencyContainer().get<OnboardingService>();
+  final _userProfileService = DependencyContainer().get<UserProfileService>();
   
   final _otherGoalController = TextEditingController();
   bool _isLoading = false;

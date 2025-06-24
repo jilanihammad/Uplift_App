@@ -1,14 +1,14 @@
 // lib/data/repositories/message_repository.dart
-import '../datasources/remote/api_client.dart';
-import '../datasources/local/app_database.dart';
 import '../../domain/entities/message.dart';
-import '../../utils/logger_util.dart';
 import '../../utils/logging_service.dart';
+import '../../di/interfaces/i_message_repository.dart';
+import '../../di/interfaces/i_api_client.dart';
+import '../../di/interfaces/i_app_database.dart';
 import 'dart:collection';
 
-class MessageRepository {
-  final ApiClient apiClient;
-  final AppDatabase appDatabase;
+class MessageRepository implements IMessageRepository {
+  final IApiClient apiClient;
+  final IAppDatabase appDatabase;
 
   // Queue to hold unsent messages for batching
   final Queue<Map<String, dynamic>> _messageQueue =
@@ -20,6 +20,7 @@ class MessageRepository {
   });
 
   // Send a message
+  @override
   Future<Message> sendMessage(String sessionId, String content) async {
     final now = DateTime.now();
     final String localId = 'local_${now.millisecondsSinceEpoch}';
@@ -70,6 +71,7 @@ class MessageRepository {
   }
 
   // Send all queued messages in a batch
+  @override
   Future<bool> sendQueuedMessages(String sessionId) async {
     if (_messageQueue.isEmpty) {
       logger.debug('No messages queued for batch sending');
@@ -121,6 +123,7 @@ class MessageRepository {
   }
 
   // Get response from AI
+  @override
   Future<Message> getAiResponse(String sessionId, String userMessage) async {
     try {
       // Get AI response from server
@@ -148,7 +151,7 @@ class MessageRepository {
       // Generate a simple local response if API call fails
       final now = DateTime.now();
       final String localId = 'local_ai_${now.millisecondsSinceEpoch}';
-      final String fallbackResponse =
+      const String fallbackResponse =
           "I'm having trouble connecting to the server. "
           "Can you tell me more about how you're feeling?";
 
@@ -173,6 +176,7 @@ class MessageRepository {
   }
 
   // Get messages for a session
+  @override
   Future<List<Message>> getSessionMessages(String sessionId) async {
     try {
       // Try to get messages from server

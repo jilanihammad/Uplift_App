@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/services/preferences_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/i_theme_service.dart';
 
 class ThemeService extends ChangeNotifier implements IThemeService {
@@ -10,7 +10,7 @@ class ThemeService extends ChangeNotifier implements IThemeService {
   // Constructor with dependency injection
   ThemeService({
     PreferencesService? preferencesService,
-  }) : _preferencesService = preferencesService ?? serviceLocator<PreferencesService>();
+  }) : _preferencesService = preferencesService ?? DependencyContainer().get<PreferencesService>();
 
   // Get theme mode
   ThemeMode _themeMode = ThemeMode.light;

@@ -3,7 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'database_provider.dart';
-import '../../../di/service_locator.dart';
+import '../../../di/dependency_container.dart';
 
 /// DatabaseHelper has been deprecated and now acts as an adapter around DatabaseProvider.
 /// This class exists for backward compatibility and will eventually be removed.
@@ -16,7 +16,7 @@ class DatabaseHelper {
 
   // Private constructor
   DatabaseHelper._internal() {
-    _databaseProvider = serviceLocator<DatabaseProvider>();
+    _databaseProvider = DependencyContainer().get<DatabaseProvider>();
     if (kDebugMode) {
       print(
           'Warning: DatabaseHelper is deprecated. Use DatabaseProvider instead.');
