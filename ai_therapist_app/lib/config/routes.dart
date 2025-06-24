@@ -1,9 +1,7 @@
 // lib/config/routes.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:get_it/get_it.dart';
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 
 // Import screen files with the correct paths
@@ -26,10 +24,6 @@ import 'package:ai_therapist_app/screens/diagnostic_screen.dart';
 
 // Services for navigation guards
 import 'package:ai_therapist_app/di/dependency_container.dart';
-import 'package:ai_therapist_app/di/interfaces/i_auth_service.dart';
-import 'package:ai_therapist_app/services/onboarding_service.dart';
-import 'package:ai_therapist_app/services/user_profile_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/services/navigation_service.dart';
 
 /// The router configuration for the app
@@ -293,7 +287,7 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
   @override
   void initState() {
     super.initState();
-    _navigationService = serviceLocator<NavigationService>();
+    _navigationService = DependencyContainer().navigation as NavigationService;
     _isBottomNavVisible = _navigationService.isBottomNavVisible;
 
     // Listen for changes to bottom nav visibility

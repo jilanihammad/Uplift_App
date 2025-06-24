@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
+import '../../di/dependency_container.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/auth_service.dart';
@@ -23,8 +23,8 @@ class OnboardingWrapper extends StatefulWidget {
 }
 
 class _OnboardingWrapperState extends State<OnboardingWrapper> {
-  final _onboardingService = GetIt.instance<OnboardingService>();
-  final _authService = GetIt.instance<AuthService>();
+  final _onboardingService = DependencyContainer().get<OnboardingService>();
+  final _authService = DependencyContainer().get<AuthService>();
   late ValueNotifier<OnboardingStep> _stepNotifier;
 
   @override
@@ -37,12 +37,12 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
 
     // Defer heavy initializations to after navigation
     Future.microtask(() async {
-      if (GetIt.instance.isRegistered<MemoryManager>()) {
-        final memoryManager = GetIt.instance<MemoryManager>();
+      if (DependencyContainer().isRegistered<MemoryManager>()) {
+        final memoryManager = DependencyContainer().get<MemoryManager>();
         await memoryManager.initializeOnlyIfNeeded();
       }
-      if (GetIt.instance.isRegistered<AudioGenerator>()) {
-        final audioGenerator = GetIt.instance<AudioGenerator>();
+      if (DependencyContainer().isRegistered<AudioGenerator>()) {
+        final audioGenerator = DependencyContainer().get<AudioGenerator>();
         await audioGenerator.initializeOnlyIfNeeded();
       }
       // Add any other heavy service initializations here

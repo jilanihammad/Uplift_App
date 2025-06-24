@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
+import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/progress_service.dart';
 import '../../widgets/mood_selector.dart';
@@ -12,8 +12,8 @@ class MoodSetupScreen extends StatefulWidget {
 }
 
 class _MoodSetupScreenState extends State<MoodSetupScreen> {
-  final _onboardingService = GetIt.instance<OnboardingService>();
-  final _progressService = GetIt.instance<ProgressService>();
+  final _onboardingService = DependencyContainer().get<OnboardingService>();
+  final _progressService = DependencyContainer().get<ProgressService>();
 
   Mood? _selectedMood;
   bool _isLoading = false;

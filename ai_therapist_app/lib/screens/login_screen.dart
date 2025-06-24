@@ -39,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // Defer heavy initializations to after navigation
     Future.microtask(() async {
-      if (serviceLocator.isRegistered<MemoryManager>()) {
+      if (DependencyContainer().isRegistered<MemoryManager>()) {
         final memoryManager = DependencyContainer().memoryManagerConcrete;
         await memoryManager.initializeOnlyIfNeeded();
       }

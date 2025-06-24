@@ -21,14 +21,14 @@ class LoggerUtil {
       lineLength: 120, // Width of the output
       colors: true, // Colorful log messages
       printEmojis: true, // Print an emoji for each log message
-      printTime: true, // Print time for each log message
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart, // Print time for each log message
     );
 
     // Configure logger with custom options
     _logger = Logger(
       printer: _printer,
       // Only log in debug mode by default
-      level: kDebugMode ? Level.verbose : Level.nothing,
+      level: kDebugMode ? Level.trace : Level.off,
     );
   }
 
@@ -47,7 +47,7 @@ class LoggerUtil {
 
   /// Disable all logs
   void disableLogs() {
-    setLogLevel(Level.nothing);
+    setLogLevel(Level.off);
   }
 
   /// Log a debug message
@@ -86,7 +86,7 @@ class LoggerUtil {
   /// Log a verbose message (debug only)
   void v(String message, [dynamic error, StackTrace? stackTrace]) {
     if (kDebugMode) {
-      _logger.v(message, error: error, stackTrace: stackTrace);
+      _logger.t(message, error: error, stackTrace: stackTrace);
     }
     logger.debug(message, tag: 'Logger-Verbose');
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
+import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/preferences_service.dart';
 import '../../models/therapist_style.dart';
@@ -12,8 +12,8 @@ class PreferredStyleScreen extends StatefulWidget {
 }
 
 class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
-  final _onboardingService = GetIt.instance<OnboardingService>();
-  final _preferencesService = GetIt.instance<PreferencesService>();
+  final _onboardingService = DependencyContainer().get<OnboardingService>();
+  final _preferencesService = DependencyContainer().get<PreferencesService>();
   
   String? _selectedStyleId;
   bool _isLoading = false;

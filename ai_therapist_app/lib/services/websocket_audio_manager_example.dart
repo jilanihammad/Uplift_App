@@ -2,7 +2,7 @@
 // Example usage of WebSocketAudioManager - for documentation purposes
 
 import 'dart:typed_data';
-import '../di/service_locator.dart';
+import '../di/dependency_container.dart';
 import '../di/interfaces/i_websocket_audio_manager.dart';
 
 /// Example demonstrating WebSocketAudioManager usage
@@ -10,7 +10,7 @@ class WebSocketAudioExample {
   late final IWebSocketAudioManager _wsManager;
   
   WebSocketAudioExample() {
-    _wsManager = ServiceLocator.instance.get<IWebSocketAudioManager>();
+    _wsManager = DependencyContainer().get<IWebSocketAudioManager>();
   }
 
   /// Example: Basic audio streaming session

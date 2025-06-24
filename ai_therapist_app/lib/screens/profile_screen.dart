@@ -1,7 +1,9 @@
 // lib/screens/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:get_it/get_it.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
@@ -11,7 +13,14 @@ import 'package:ai_therapist_app/models/user_profile.dart';
 import 'package:go_router/go_router.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  final IUserProfileService? userProfileService;
+  final IThemeService? themeService;
+  
+  const ProfileScreen({
+    Key? key,
+    this.userProfileService,
+    this.themeService,
+  }) : super(key: key);
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -25,13 +34,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   bool _darkModeEnabled = false;
 
-  final _userProfileService = GetIt.instance<UserProfileService>();
-  final _themeService = GetIt.instance<ThemeService>();
+  late IUserProfileService _userProfileService;
+  late IThemeService _themeService;
   UserProfile? _userProfile;
 
   @override
   void initState() {
     super.initState();
+    _userProfileService = widget.userProfileService ?? DependencyContainer().userProfile;
+    _themeService = widget.themeService ?? DependencyContainer().theme;
     _loadUserProfile();
     _darkModeEnabled = _themeService.isDarkMode;
   }

@@ -18,7 +18,6 @@ import '../services/notification_service.dart' as service_ns;
 import '../services/voice_service.dart';
 import '../services/therapy_service.dart';
 import 'interfaces/i_therapy_service.dart';
-import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
 import '../services/preferences_service.dart';
 import '../services/progress_service.dart';
 import '../services/user_profile_service.dart';
@@ -33,6 +32,9 @@ import '../services/theme_service.dart';
 import '../services/navigation_service.dart';
 
 import '../utils/connectivity_checker.dart';
+import 'interfaces/i_api_client.dart';
+import 'interfaces/i_app_database.dart';
+import 'interfaces/i_database_operation_manager.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../services/memory_manager.dart';
 import '../services/message_processor.dart';
@@ -40,12 +42,7 @@ import '../services/audio_generator.dart';
 import 'package:ai_therapist_app/utils/database_helper.dart';
 import '../services/groq_service.dart';
 import '../services/vad_manager.dart';
-import '../services/recording_manager.dart';
-import '../services/auto_listening_coordinator.dart';
-import '../services/audio_player_manager.dart';
-import '../services/path_manager.dart';
 import 'modules/audio_services_module.dart';
-import 'interfaces/i_voice_service.dart';
 import 'interfaces/i_tts_service.dart';
 import 'interfaces/i_audio_file_manager.dart';
 
@@ -111,14 +108,34 @@ Future<void> setupServiceLocator() async {
     debugPrint('Starting core service registration...');
 
     // Register utilities first
-    serviceLocator.registerSingleton<DatabaseOperationManager>(
-        DatabaseOperationManager());
-    debugPrint(
-        'Registered DatabaseOperationManager to manage database operations');
+    if (!serviceLocator.isRegistered<DatabaseOperationManager>()) {
+      serviceLocator.registerSingleton<DatabaseOperationManager>(
+          DatabaseOperationManager());
+      debugPrint(
+          'Registered DatabaseOperationManager to manage database operations');
+    }
+
+    // Register interface mapping for DatabaseOperationManager
+    if (!serviceLocator.isRegistered<IDatabaseOperationManager>()) {
+      serviceLocator.registerLazySingleton<IDatabaseOperationManager>(
+        () => serviceLocator<DatabaseOperationManager>(),
+      );
+      debugPrint('Registered IDatabaseOperationManager interface');
+    }
 
     // Register data sources
-    serviceLocator.registerSingleton<AppDatabase>(AppDatabase());
-    debugPrint('Registered AppDatabase');
+    if (!serviceLocator.isRegistered<AppDatabase>()) {
+      serviceLocator.registerSingleton<AppDatabase>(AppDatabase());
+      debugPrint('Registered AppDatabase');
+    }
+
+    // Register interface mapping for AppDatabase
+    if (!serviceLocator.isRegistered<IAppDatabase>()) {
+      serviceLocator.registerLazySingleton<IAppDatabase>(
+        () => serviceLocator<AppDatabase>(),
+      );
+      debugPrint('Registered IAppDatabase interface');
+    }
 
     // ===== FIREBASE SERVICE (Base registration only) =====
     // Skip registration if firebase_core is not available / imported
@@ -311,26 +328,22 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered UserProfileService');
     }
 
+    // Register OnboardingService
+    if (!serviceLocator.isRegistered<OnboardingService>()) {
+      serviceLocator.registerLazySingleton<OnboardingService>(() => OnboardingService());
+      debugPrint('Registered OnboardingService');
+    }
+    
+    // Register AuthCoordinator with OnboardingService dependency
+    if (!serviceLocator.isRegistered<AuthCoordinator>()) {
+      serviceLocator.registerLazySingleton<AuthCoordinator>(() => AuthCoordinator(
+        onboardingService: serviceLocator<OnboardingService>(),
+      ));
+      debugPrint('Registered AuthCoordinator');
+    }
+    
     // Register AuthService with dependencies (migrated to dependency injection)
     if (!serviceLocator.isRegistered<AuthService>()) {
-      // First ensure UserProfileService is registered
-      if (!serviceLocator.isRegistered<UserProfileService>()) {
-        serviceLocator.registerLazySingleton<UserProfileService>(() => UserProfileService());
-      }
-      
-      // Register OnboardingService first if not already registered
-      if (!serviceLocator.isRegistered<OnboardingService>()) {
-        serviceLocator.registerLazySingleton<OnboardingService>(() => OnboardingService());
-      }
-      
-      // Register AuthCoordinator with OnboardingService dependency
-      if (!serviceLocator.isRegistered<AuthCoordinator>()) {
-        serviceLocator.registerLazySingleton<AuthCoordinator>(() => AuthCoordinator(
-          onboardingService: serviceLocator<OnboardingService>(),
-        ));
-      }
-      
-      // Register AuthService with proper dependencies
       serviceLocator.registerLazySingleton<AuthService>(() => AuthService(
         userProfileService: serviceLocator<UserProfileService>(),
         authEventHandler: serviceLocator<AuthCoordinator>(),
@@ -338,16 +351,6 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered AuthService with dependency injection');
     }
 
-
-    // Ensure AuthCoordinator is registered and initialized
-    if (!serviceLocator.isRegistered<AuthCoordinator>()) {
-      serviceLocator.registerLazySingleton<AuthCoordinator>(
-          () => AuthCoordinator(
-            onboardingService: serviceLocator<OnboardingService>(),
-          ));
-      debugPrint('Registered AuthCoordinator with dependency injection');
-    }
-    
     // Initialize the coordinator
     try {
       final authCoordinator = serviceLocator<AuthCoordinator>();
@@ -419,37 +422,45 @@ Future<void> registerApiDependentServices(
       debugPrint('Registered ApiClient');
     }
 
+    // Register interface mapping for ApiClient
+    if (!serviceLocator.isRegistered<IApiClient>()) {
+      serviceLocator.registerLazySingleton<IApiClient>(
+        () => serviceLocator<ApiClient>(),
+      );
+      debugPrint('Registered IApiClient interface');
+    }
+
     // Register repositories that depend on ApiClient and AppDatabase
     if (!serviceLocator.isRegistered<AuthRepository>()) {
       serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
-            apiClient: serviceLocator<ApiClient>(),
+            apiClient: serviceLocator<IApiClient>(),
           ));
-      debugPrint('Registered AuthRepository with injected ApiClient');
+      debugPrint('Registered AuthRepository with injected IApiClient');
     }
 
     if (!serviceLocator.isRegistered<UserRepository>()) {
       serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
-            apiClient: serviceLocator<ApiClient>(),
+            apiClient: serviceLocator<IApiClient>(),
           ));
-      debugPrint('Registered UserRepository');
+      debugPrint('Registered UserRepository with IApiClient');
     }
 
     if (!serviceLocator.isRegistered<SessionRepository>()) {
       serviceLocator
           .registerLazySingleton<SessionRepository>(() => SessionRepository(
-                apiClient: serviceLocator<ApiClient>(),
-                appDatabase: serviceLocator<AppDatabase>(),
+                apiClient: serviceLocator<IApiClient>(),
+                appDatabase: serviceLocator<IAppDatabase>(),
               ));
-      debugPrint('Registered SessionRepository');
+      debugPrint('Registered SessionRepository with interfaces');
     }
 
     if (!serviceLocator.isRegistered<MessageRepository>()) {
       serviceLocator
           .registerLazySingleton<MessageRepository>(() => MessageRepository(
-                apiClient: serviceLocator<ApiClient>(),
-                appDatabase: serviceLocator<AppDatabase>(),
+                apiClient: serviceLocator<IApiClient>(),
+                appDatabase: serviceLocator<IAppDatabase>(),
               ));
-      debugPrint('Registered MessageRepository');
+      debugPrint('Registered MessageRepository with interfaces');
     }
 
     // Register TherapyService concrete implementation first

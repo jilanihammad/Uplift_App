@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
+import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
 
@@ -11,8 +11,8 @@ class ProfileReasonScreen extends StatefulWidget {
 }
 
 class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
-  final _onboardingService = GetIt.instance<OnboardingService>();
-  final _userProfileService = GetIt.instance<UserProfileService>();
+  final _onboardingService = DependencyContainer().get<OnboardingService>();
+  final _userProfileService = DependencyContainer().get<UserProfileService>();
   
   String? _selectedReason;
   final _otherReasonController = TextEditingController();

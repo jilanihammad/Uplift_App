@@ -9,8 +9,7 @@ import 'voice_session_event.dart';
 import 'voice_session_state.dart';
 import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
-import '../services/therapy_service.dart';
-import '../di/service_locator.dart';
+// Removed service_locator import - now using dependency injection
 import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import 'package:flutter/foundation.dart';
@@ -40,24 +39,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   StreamSubscription? _recordingStateSub;
   StreamSubscription? _audioPlaybackSub;
   StreamSubscription? _ttsStateSub;
-  final MemoryService _memoryService;
-  final TherapyGraphService _therapyGraphService;
-  final NotificationService _notificationService;
-  final ConversationBufferMemory _conversationHistory;
 
   VoiceSessionBloc({
     required this.voiceService,
     required this.vadManager,
-    required MemoryService memoryService,
-    required TherapyGraphService therapyGraphService,
-    required NotificationService notificationService,
-    required ConversationBufferMemory conversationHistory,
     this.therapyService,
-  })  : _memoryService = memoryService,
-        _therapyGraphService = therapyGraphService,
-        _notificationService = notificationService,
-        _conversationHistory = conversationHistory,
-        super(VoiceSessionState.initial()) {
+  }) : super(VoiceSessionState.initial()) {
     on<StartSession>(_onStartSession);
     on<EndSession>(_onEndSession);
     on<StartListening>(_onStartListening);
@@ -441,7 +428,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       final history = _buildConversationHistory(messagesWithUser);
 
-      final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
+      final therapyServiceInstance = therapyService ?? DependencyContainer().therapy;
       String mayaResponseText;
 
       if (state.isVoiceMode) {
@@ -554,7 +541,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     try {
       await voiceService.initialize();
 
-      final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
+      final therapyServiceInstance = therapyService ?? DependencyContainer().therapy;
       await therapyServiceInstance.init();
 
       debugPrint('[VoiceSessionBloc] Services initialized successfully');

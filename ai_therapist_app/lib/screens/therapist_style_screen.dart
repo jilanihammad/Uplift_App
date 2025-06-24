@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/i_therapy_service.dart';
 import 'package:ai_therapist_app/models/therapist_style.dart';
@@ -25,7 +24,7 @@ class _TherapistStyleScreenState extends State<TherapistStyleScreen> {
   @override
   void initState() {
     super.initState();
-    _preferencesService = serviceLocator<PreferencesService>();
+    _preferencesService = DependencyContainer().get<PreferencesService>();
     // Use dependency injection with fallback to DependencyContainer
     _therapyService = widget.therapyService ?? DependencyContainer().therapy;
     _selectedStyleId = _preferencesService.preferences?.therapistStyleId ?? 'cbt';

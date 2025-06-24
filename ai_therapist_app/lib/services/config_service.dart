@@ -46,6 +46,7 @@ class ConfigService implements IConfigService {
   bool _directLLMMode = false; // Default to false
 
   // Getters for config values
+  @override
   String get groqApiKey => _groqApiKey;
   String get groqApiBaseUrl => _groqApiBaseUrl;
   // String get llmApiEndpoint => _llmApiEndpoint; // We'll adjust this below
@@ -61,9 +62,11 @@ class ConfigService implements IConfigService {
   String get transcriptionModelId => _transcriptionModelId;
 
   // Getters for Firebase configuration
+  @override
   String get firebaseApiKey => _firebaseApiKey;
   String get firebaseAppId => _firebaseAppId;
   String get firebaseMessagingSenderId => _firebaseMessagingSenderId;
+  @override
   String get firebaseProjectId => _firebaseProjectId;
   String get firebaseStorageBucket => _firebaseStorageBucket;
   String get firebaseDatabaseId => _firebaseDatabaseId;

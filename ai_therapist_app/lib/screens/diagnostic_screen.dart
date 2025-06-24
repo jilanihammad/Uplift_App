@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/di/interfaces/i_therapy_service.dart';
 import 'package:ai_therapist_app/services/therapy_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
@@ -51,7 +51,7 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
   @override
   void initState() {
     super.initState();
-    // Use dependency injection with fallback to service locator
+    // Use dependency injection with fallback to DependencyContainer
     _therapyService = widget.therapyService ?? DependencyContainer().therapy;
     _voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
     _audioGenerator = widget.audioGenerator ?? DependencyContainer().audioGenerator;
@@ -72,13 +72,13 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
 
     try {
       // For diagnostic purposes, we need access to the concrete implementation
-      // Try to use the injected service if it has the method, otherwise fallback to service locator
+      // Try to use the injected service if it has the method, otherwise fallback to DependencyContainer
       Map<String, dynamic> status;
       if (_therapyService is TherapyService) {
         status = await (_therapyService as TherapyService).checkServiceStatus();
       } else {
-        // Fallback to service locator for diagnostic functionality
-        final concreteService = serviceLocator<TherapyService>();
+        // Fallback to DependencyContainer for diagnostic functionality
+        final concreteService = DependencyContainer().get<TherapyService>();
         status = await concreteService.checkServiceStatus();
       }
       setState(() {

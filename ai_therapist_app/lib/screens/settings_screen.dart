@@ -1,7 +1,6 @@
 // lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
@@ -41,7 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _preferencesService = widget.preferencesService ?? DependencyContainer().preferences;
-    _notificationService = widget.notificationService ?? serviceLocator<NotificationService>();  // Keep as is since not in interfaces yet
+    _notificationService = widget.notificationService ?? DependencyContainer().get<NotificationService>();
     _themeService = widget.themeService ?? DependencyContainer().theme;
 
     // Load preferences

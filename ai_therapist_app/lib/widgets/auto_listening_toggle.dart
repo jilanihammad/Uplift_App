@@ -123,7 +123,7 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: _getStateColor().withOpacity(0.2),
+        color: _getStateColor().withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _getStateColor(), width: 1),
       ),

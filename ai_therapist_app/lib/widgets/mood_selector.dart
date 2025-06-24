@@ -49,7 +49,7 @@ extension MoodExtension on Mood {
 class MoodSelector extends StatelessWidget {
   final Function(Mood) onMoodSelected;
   
-  const MoodSelector({Key? key, required this.onMoodSelected}) : super(key: key);
+  const MoodSelector({super.key, required this.onMoodSelected});
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +85,7 @@ class MoodSelector extends StatelessWidget {
       child: Column(
         children: [
           Material(
-            color: mood.color.withOpacity(0.2),
+            color: mood.color.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(16),
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
