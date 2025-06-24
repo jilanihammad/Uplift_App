@@ -5,9 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
-import 'package:ai_therapist_app/services/auth_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -33,9 +32,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
-    // Use dependency injection with fallback to service locator
-    // TODO: Remove fallback when AuthService is migrated to dependency injection
-    _authService = widget.authService ?? serviceLocator<AuthService>() as IAuthService;
+    // Use dependency injection with fallback to DependencyContainer
+    _authService = widget.authService ?? DependencyContainer().authService;
   }
 
   @override

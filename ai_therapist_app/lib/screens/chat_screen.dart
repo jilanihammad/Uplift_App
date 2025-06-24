@@ -18,6 +18,7 @@ import '../services/vad_manager.dart';
 import '../di/service_locator.dart';
 import '../services/therapy_service.dart' hide TherapyServiceMessage;
 import '../di/interfaces/i_therapy_service.dart';
+import '../di/dependency_container.dart';
 import '../di/interfaces/i_tts_service.dart';
 import '../di/interfaces/i_audio_file_manager.dart';
 import '../services/progress_service.dart';
@@ -41,7 +42,15 @@ import '../services/auto_listening_coordinator.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
-  const ChatScreen({super.key, this.sessionId});
+  final ITherapyService? therapyService;
+  final ApiClient? apiClient;
+  
+  const ChatScreen({
+    super.key, 
+    this.sessionId,
+    this.therapyService,
+    this.apiClient,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -54,14 +63,26 @@ class ChatScreen extends StatelessWidget {
         notificationService: null,
         conversationHistory: null,
       ),
-      child: _ChatScreenBody(sessionId: sessionId),
+      child: _ChatScreenBody(
+        sessionId: sessionId,
+        therapyService: therapyService,
+        apiClient: apiClient,
+      ),
     );
   }
 }
 
 class _ChatScreenBody extends StatefulWidget {
   final String? sessionId;
-  const _ChatScreenBody({super.key, this.sessionId});
+  final ITherapyService? therapyService;
+  final ApiClient? apiClient;
+  
+  const _ChatScreenBody({
+    super.key, 
+    this.sessionId,
+    this.therapyService,
+    this.apiClient,
+  });
 
   @override
   State<_ChatScreenBody> createState() => _ChatScreenBodyState();
@@ -82,8 +103,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   late Animation<double> _micAnimation;
   late VoiceService _voiceService;
 
-  // Services
-  final ITherapyService _therapyService = serviceLocator<ITherapyService>();
+  // Services - Use dependency injection with fallback to DependencyContainer
+  late final ITherapyService _therapyService;
   final ProgressService _progressService = serviceLocator<ProgressService>();
   final NavigationService _navigationService =
       serviceLocator<NavigationService>();
@@ -172,6 +193,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     super.initState();
     debugPrint('[ChatScreen] initState called');
     WidgetsBinding.instance.addObserver(this);
+    
+    // Initialize services using dependency injection
+    _therapyService = widget.therapyService ?? DependencyContainer().therapy;
 
     // Don't enable wakelock here - only enable during active therapy session
 

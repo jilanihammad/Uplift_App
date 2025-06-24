@@ -55,7 +55,7 @@ class SessionRepository implements ISessionRepository {
     try {
       final response = await apiClient.post(
         '/sessions',
-        body: {
+        {
           'title': title,
           'id': id, // Include the ID if provided
         },
@@ -112,7 +112,7 @@ class SessionRepository implements ISessionRepository {
       final response = await apiClient.get('/sessions');
       print('Server response for sessions: $response');
 
-      final List<dynamic> sessionsJson = response;
+      final List<dynamic> sessionsJson = response['data'] ?? response['sessions'] ?? response;
 
       final sessions =
           sessionsJson.map((json) => Session.fromJson(json)).toList();

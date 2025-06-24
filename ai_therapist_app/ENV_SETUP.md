@@ -13,61 +13,52 @@ This app now uses environment variables for configuration, eliminating hardcoded
 2. Copy the content below and replace with your appropriate values
 
 ```
-# AI Therapist App Configuration
+  # Database
+POSTGRES_SERVER=localhost
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=7860
+POSTGRES_DB=ai_therapist
 
-# === Backend API Configuration ===
-BACKEND_URL=https://ai-therapist-backend-fuukqlcsha-uc.a.run.app
-LLM_API_ENDPOINT=https://ai-therapist-backend-fuukqlcsha-uc.a.run.app
-VOICE_MODEL_ENDPOINT=https://ai-therapist-backend-fuukqlcsha-uc.a.run.app
+# Security
+SECRET_KEY=your_secret_key
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 
-# === Model Configuration ===
-LLM_MODEL_ID=meta-llama/llama-4-scout-17b-16e-instruct
-TTS_MODEL_ID=playai-tts
-TRANSCRIPTION_MODEL_ID=whisper-large-v3-turbo
+# API
+API_V1_STR=/api/v1
+SERVER_HOST=http://localhost:8000
 
-# === Firebase Configuration ===
-FIREBASE_API_KEY=YOUR_API_KEY
-FIREBASE_APP_ID=YOUR_APP_ID
-FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID
-FIREBASE_PROJECT_ID=upliftapp-cd86e
-FIREBASE_STORAGE_BUCKET=upliftapp-cd86e.appspot.com
-FIREBASE_DATABASE_ID=upliftdb
+# Groq API Configuration
+GROQ_API_KEY=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
+GROQ_API_BASE_URL=https://api.groq.com/openai/v1
+GROQ_LLM_MODEL_ID=llama-3.3-70b-versatile
 
-# === App Configuration ===
-IS_PRODUCTION_MODE=true
-USE_VOICE_FEATURES=true
-ENABLE_ANALYTICS=true
-DEFAULT_THEME=light
-```
+#backend URL
+SERVER_HOST=https://ai-therapist-backend-385290373302.us-central1.run.app
 
-## Configuration Variables Explained
+GOOGLE_API_KEY=AIzaSyAa525sLf7FPId43NgvVTJECO8K79SJHzM
+GOOGLE_LLM_MODEL_ID=gemini-2.5-flash-preview-05-20
+GOOGLE_TTS_MODEL=gemini-2.5-flash-preview-tts
+GOOGLE_TTS_VOICE=Zephyr
+GOOGLE_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta
 
-### Backend API Configuration
-- `BACKEND_URL`: The base URL for the backend service
-- `LLM_API_ENDPOINT`: Endpoint for LLM (Language Model) API
-- `VOICE_MODEL_ENDPOINT`: Endpoint for voice synthesis and recognition
+      
 
-### Model Configuration
-- `LLM_MODEL_ID`: The ID of the language model to use
-- `TTS_MODEL_ID`: The ID of the text-to-speech model
-- `TRANSCRIPTION_MODEL_ID`: The ID of the speech-to-text model
+OPENAI_API_KEY=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
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=sage
+OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 
-### Firebase Configuration
-- `FIREBASE_API_KEY`: Your Firebase API key
-- `FIREBASE_APP_ID`: Your Firebase app ID
-- `FIREBASE_MESSAGING_SENDER_ID`: Firebase Cloud Messaging sender ID
-- `FIREBASE_PROJECT_ID`: Your Firebase project ID
-- `FIREBASE_STORAGE_BUCKET`: Your Firebase storage bucket
-- `FIREBASE_DATABASE_ID`: Your Firestore database ID
 
-### App Configuration
-- `IS_PRODUCTION_MODE`: Set to "true" for production, "false" for development
-- `USE_VOICE_FEATURES`: Enable/disable voice features
-- `ENABLE_ANALYTICS`: Enable/disable analytics
-- `DEFAULT_THEME`: Default app theme (light/dark)
+#Huggingface Token: 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
 
-## Important Notes
-- The `.env` file should never be committed to version control
-- For local development, you can create a `.env.dev` file
-- The app will fallback to default values if a variable is not found in the environment
-- Some services might not work without valid API keys and configuration 
+# Payment
+STRIPE_SECRET_KEY=your_stripe_secret_key
+STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+BASIC_MONTHLY_PRICE_ID=price_basic_monthly
+BASIC_YEARLY_PRICE_ID=price_basic_yearly
+PREMIUM_MONTHLY_PRICE_ID=price_premium_monthly
+PREMIUM_YEARLY_PRICE_ID=price_premium_yearly
+
+# Security
+ENCRYPTION_KEY=your_encryption_key

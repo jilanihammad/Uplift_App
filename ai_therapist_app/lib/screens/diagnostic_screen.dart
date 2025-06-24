@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/i_therapy_service.dart';
 import 'package:ai_therapist_app/services/therapy_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
 import 'package:ai_therapist_app/services/audio_generator.dart';
@@ -11,14 +13,21 @@ import 'package:ai_therapist_app/config/app_config.dart';
 
 /// A screen for diagnostic testing of critical app components like LLM and TTS
 class DiagnosticScreen extends StatefulWidget {
-  const DiagnosticScreen({Key? key}) : super(key: key);
+  final ITherapyService? therapyService;
+  final ApiClient? apiClient;
+  
+  const DiagnosticScreen({
+    Key? key,
+    this.therapyService,
+    this.apiClient,
+  }) : super(key: key);
 
   @override
   State<DiagnosticScreen> createState() => _DiagnosticScreenState();
 }
 
 class _DiagnosticScreenState extends State<DiagnosticScreen> {
-  final TherapyService _therapyService = serviceLocator<TherapyService>();
+  late final ITherapyService _therapyService;
   final VoiceService _voiceService = serviceLocator<VoiceService>();
   Map<String, dynamic>? _serviceStatus;
   bool _isLoading = false;
@@ -37,6 +46,8 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
   @override
   void initState() {
     super.initState();
+    // Use dependency injection with fallback to DependencyContainer
+    _therapyService = widget.therapyService ?? DependencyContainer().therapy;
     _checkServiceStatus();
   }
 
@@ -53,7 +64,16 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
     });
 
     try {
-      final status = await _therapyService.checkServiceStatus();
+      // For diagnostic purposes, we need access to the concrete implementation
+      // Try to use the injected service if it has the method, otherwise fallback to service locator
+      Map<String, dynamic> status;
+      if (_therapyService is TherapyService) {
+        status = await (_therapyService as TherapyService).checkServiceStatus();
+      } else {
+        // Fallback to service locator for diagnostic functionality
+        final concreteService = serviceLocator<TherapyService>();
+        status = await concreteService.checkServiceStatus();
+      }
       setState(() {
         _serviceStatus = status;
         _isLoading = false;
@@ -141,7 +161,7 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
     });
 
     try {
-      final apiClient = serviceLocator<ApiClient>();
+      final apiClient = widget.apiClient ?? DependencyContainer().apiClientConcrete;
       debugPrint(
           '[DEBUG] Testing status endpoint directly with raw HTTP request');
 

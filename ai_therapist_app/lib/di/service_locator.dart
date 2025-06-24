@@ -1,6 +1,7 @@
 // lib/di/service_locator.dart
 import 'package:get_it/get_it.dart';
 import 'package:flutter/foundation.dart';
+import 'dependency_container.dart';
 
 import '../data/datasources/remote/api_client.dart';
 import '../data/datasources/local/prefs_manager.dart';
@@ -21,6 +22,7 @@ import '../services/preferences_service.dart';
 import '../services/progress_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/onboarding_service.dart';
+import '../services/auth_coordinator.dart';
 import '../services/memory_service.dart' as service_ms;
 import '../services/therapy_graph_service.dart' as service_tgs;
 import '../services/config_service.dart';
@@ -308,23 +310,50 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered UserProfileService');
     }
 
-    // Register AuthService first without OnboardingService
+    // Register AuthService with dependencies (migrated to dependency injection)
     if (!serviceLocator.isRegistered<AuthService>()) {
-      serviceLocator.registerLazySingleton<AuthService>(() => AuthService());
-      debugPrint('Registered AuthService');
+      // First ensure UserProfileService is registered
+      if (!serviceLocator.isRegistered<UserProfileService>()) {
+        serviceLocator.registerLazySingleton<UserProfileService>(() => UserProfileService());
+      }
+      
+      // Register OnboardingService first if not already registered
+      if (!serviceLocator.isRegistered<OnboardingService>()) {
+        serviceLocator.registerLazySingleton<OnboardingService>(() => OnboardingService());
+      }
+      
+      // Register AuthCoordinator with OnboardingService dependency
+      if (!serviceLocator.isRegistered<AuthCoordinator>()) {
+        serviceLocator.registerLazySingleton<AuthCoordinator>(() => AuthCoordinator(
+          onboardingService: serviceLocator<OnboardingService>(),
+        ));
+      }
+      
+      // Register AuthService with proper dependencies
+      serviceLocator.registerLazySingleton<AuthService>(() => AuthService(
+        userProfileService: serviceLocator<UserProfileService>(),
+        authEventHandler: serviceLocator<AuthCoordinator>(),
+      ));
+      debugPrint('Registered AuthService with dependency injection');
     }
 
-    // Register OnboardingService with AuthService injected
-    if (!serviceLocator.isRegistered<OnboardingService>()) {
-      final authService = serviceLocator<AuthService>();
-      serviceLocator.registerLazySingleton<OnboardingService>(
-          () => OnboardingService(authService: authService));
-      debugPrint('Registered OnboardingService with AuthService');
 
-      // Connect the AuthService back to OnboardingService to break circular dependency
-      final onboardingService = serviceLocator<OnboardingService>();
-      authService.setOnboardingService(onboardingService);
-      debugPrint('Connected AuthService to OnboardingService');
+    // Ensure AuthCoordinator is registered and initialized
+    if (!serviceLocator.isRegistered<AuthCoordinator>()) {
+      serviceLocator.registerLazySingleton<AuthCoordinator>(
+          () => AuthCoordinator(
+            onboardingService: serviceLocator<OnboardingService>(),
+          ));
+      debugPrint('Registered AuthCoordinator with dependency injection');
+    }
+    
+    // Initialize the coordinator
+    try {
+      final authCoordinator = serviceLocator<AuthCoordinator>();
+      await authCoordinator.init();
+      debugPrint('Initialized AuthCoordinator');
+    } catch (e) {
+      debugPrint('Error initializing AuthCoordinator: $e');
     }
 
     // TherapyService registration moved to registerApiDependentServices() to avoid duplicates
@@ -347,6 +376,10 @@ Future<void> setupServiceLocator() async {
       serviceLocator.registerLazySingleton<VADManager>(() => VADManager());
       debugPrint('Registered VADManager');
     }
+
+    // Initialize the new DependencyContainer
+    await DependencyContainer().initialize();
+    debugPrint('DependencyContainer initialized');
 
     // Mark core services as registered
     DependencyStatus.coreServicesRegistered = true;

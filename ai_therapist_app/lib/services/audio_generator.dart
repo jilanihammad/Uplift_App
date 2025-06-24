@@ -426,7 +426,7 @@ class AudioGenerator {
       {bool isAiSpeaking = true}) async {
     try {
       final backendUrl = AppConfig().backendUrl;
-      final response = await _apiClient.post('/voice/synthesize', body: {
+      final response = await _apiClient.post('/voice/synthesize', {
         'text': text,
         'voice': isAiSpeaking ? 'sage' : 'onyx',
       });

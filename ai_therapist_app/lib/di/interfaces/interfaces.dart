@@ -32,5 +32,8 @@ export 'i_progress_service.dart';
 export 'i_user_profile_service.dart';
 export 'i_groq_service.dart';
 
+// Event handling interfaces
+export 'i_auth_event_handler.dart';
+
 // Additional service interfaces (to be created as needed)
 // export 'i_notification_service.dart';

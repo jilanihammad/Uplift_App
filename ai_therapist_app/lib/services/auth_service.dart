@@ -1,18 +1,16 @@
 // lib/services/auth_service.dart
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
-import 'package:ai_therapist_app/services/onboarding_service.dart';
-import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:ai_therapist_app/di/interfaces/i_auth_service.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
+import 'package:ai_therapist_app/di/interfaces/i_auth_event_handler.dart';
+import 'package:ai_therapist_app/di/events/auth_events.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 
-class AuthService {
+class AuthService implements IAuthService {
   // Keys for shared preferences
   static const AUTH_TOKEN_KEY = 'auth_token';
   static const EMAIL_KEY = 'user_email';
@@ -20,6 +18,7 @@ class AuthService {
   static const HAS_COMPLETED_SIGNUP_KEY = 'has_completed_signup';
 
   // Auth status changed stream controller
+  @override
   final authStatusChangedController = ValueNotifier<bool>(false);
 
   // SharedPreferences instance
@@ -30,16 +29,16 @@ class AuthService {
   String? _verificationId;
   int? _resendToken;
 
-  // OnboardingService - injected after initialization to break circular dependency
-  OnboardingService? _onboardingService;
+  // Dependencies injected via constructor
+  final UserProfileService _userProfileService;
+  final IAuthEventHandler _authEventHandler;
 
-  // Default constructor
-  AuthService();
-
-  // Method to set the OnboardingService after initialization
-  void setOnboardingService(OnboardingService onboardingService) {
-    _onboardingService = onboardingService;
-  }
+  // Constructor with dependency injection
+  AuthService({
+    required UserProfileService userProfileService,
+    required IAuthEventHandler authEventHandler,
+  }) : _userProfileService = userProfileService,
+       _authEventHandler = authEventHandler;
 
   // Ensure the service is initialized before use
   Future<void> _ensureInitialized() async {
@@ -49,7 +48,18 @@ class AuthService {
     }
   }
 
+  // Helper method to get current user ID
+  Future<String> _getCurrentUserId() async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser != null) {
+      return firebaseUser.uid;
+    }
+    // Fallback to generated ID
+    return 'user_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
   // Check if user is logged in
+  @override
   Future<bool> get isLoggedIn async {
     await _ensureInitialized();
 
@@ -75,53 +85,49 @@ class AuthService {
   }
 
   // Check if user has completed signup process
+  @override
   Future<bool> get hasCompletedSignup async {
     await _ensureInitialized();
     return _prefs.getBool(HAS_COMPLETED_SIGNUP_KEY) ?? false;
   }
 
   // Make sure onboarding status is in sync with signup status
+  @override
   Future<void> syncWithOnboardingService() async {
     await _ensureInitialized();
 
     try {
-      if (!serviceLocator.isRegistered<OnboardingService>()) {
-        if (kDebugMode) {
-          print(
-            "AuthService: OnboardingService not registered yet in syncWithOnboardingService",
-          );
-        }
-        return; // Skip if OnboardingService is not registered yet
-      }
-
-      final onboardingService = serviceLocator<OnboardingService>();
+      // No need to check for null with dependency injection
 
       final hasCompleted = _prefs.getBool(HAS_COMPLETED_SIGNUP_KEY) ?? false;
 
       if (kDebugMode) {
         print(
-          "AuthService: Syncing with OnboardingService - hasCompletedSignup = $hasCompleted",
+          "AuthService: Syncing with AuthCoordinator - hasCompletedSignup = $hasCompleted",
         );
       }
 
       if (hasCompleted) {
         if (kDebugMode) {
           print(
-            "AuthService: User has completed signup, ensuring onboarding is marked complete",
+            "AuthService: User has completed signup, emitting signup completed event",
           );
         }
-        // If user has completed signup, make sure onboarding is also marked as complete
-        await onboardingService.completeOnboarding();
+        // Emit event that user has completed signup
+        await _authEventHandler.handleUserSignupCompleted(UserSignupCompletedEvent(
+          userId: await _getCurrentUserId(),
+        ));
       }
     } catch (e) {
       if (kDebugMode) {
-        print("AuthService: Error syncing with OnboardingService: $e");
+        print("AuthService: Error syncing with AuthCoordinator: $e");
       }
       // Continue without syncing
     }
   }
 
   // Sync version for splash screen
+  @override
   bool get isLoggedInSync {
     try {
       return false; // Simplified - requires async check
@@ -131,6 +137,7 @@ class AuthService {
   }
 
   // Phone number verification with Firebase
+  @override
   Future<Map<String, dynamic>> verifyPhoneNumber({
     required String phoneNumber,
     required Function(PhoneAuthCredential) onVerificationCompleted,
@@ -287,6 +294,7 @@ class AuthService {
   }
 
   // Sign in with phone verification code using Firebase
+  @override
   Future<bool> signInWithPhoneAuthCredential({
     required String verificationId,
     required String smsCode,
@@ -329,20 +337,28 @@ class AuthService {
 
         if (hasCompleted) {
           // User has already completed signup/onboarding
-          final onboardingService = serviceLocator<OnboardingService>();
-          await onboardingService.completeOnboarding();
+          await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+            userId: user.uid,
+            phoneNumber: user.phoneNumber,
+            isNewUser: false,
+            authMethod: AuthMethod.phone,
+          ));
           print(
-            "AuthService: signInWithPhone - Setting onboarding as complete for returning user",
+            "AuthService: signInWithPhone - Emitted login event for returning user",
           );
         } else {
           // Mark as new user (this is their first login with phone)
           await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
 
-          // Make sure onboarding is reset for new users
-          final onboardingService = serviceLocator<OnboardingService>();
-          await onboardingService.resetOnboarding();
+          // Emit event for new user
+          await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+            userId: user.uid,
+            phoneNumber: user.phoneNumber,
+            isNewUser: true,
+            authMethod: AuthMethod.phone,
+          ));
           print(
-            "AuthService: signInWithPhone - Setting up onboarding for new user",
+            "AuthService: signInWithPhone - Emitted login event for new user",
           );
         }
 
@@ -364,6 +380,7 @@ class AuthService {
   }
 
   // Sign in with credential for auto-retrieval using Firebase
+  @override
   Future<bool> signInWithCredential(PhoneAuthCredential credential) async {
     try {
       await _ensureInitialized();
@@ -389,21 +406,28 @@ class AuthService {
 
       if (hasCompleted) {
         // User has already completed signup/onboarding
-        final onboardingService = serviceLocator<OnboardingService>();
-        await onboardingService.completeOnboarding();
+        await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+          userId: user.uid,
+          phoneNumber: user.phoneNumber,
+          isNewUser: false,
+          authMethod: AuthMethod.phone,
+        ));
         print(
-          "AuthService: signInWithCredential - Setting onboarding as complete for returning user",
+          "AuthService: signInWithCredential - Emitted login event for returning user",
         );
       } else {
         // Mark as new user (this is their first login with credential)
         await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
 
-        // Reset onboarding for new users
-        final onboardingService = serviceLocator<OnboardingService>();
-        await onboardingService.resetOnboarding();
-
+        // Emit event for new user
+        await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+          userId: user.uid,
+          phoneNumber: user.phoneNumber,
+          isNewUser: true,
+          authMethod: AuthMethod.phone,
+        ));
         print(
-          "AuthService: signInWithCredential - Setting up onboarding for new user",
+          "AuthService: signInWithCredential - Emitted login event for new user",
         );
       }
 
@@ -415,6 +439,7 @@ class AuthService {
   }
 
   // Login using email and password
+  @override
   Future<bool> login(String email, String password) async {
     try {
       await _ensureInitialized();
@@ -440,12 +465,24 @@ class AuthService {
 
       // If user has already completed signup, skip onboarding
       if (hasCompleted) {
-        // Ensure onboarding state is marked as complete
-        final onboardingService = serviceLocator<OnboardingService>();
-        await onboardingService.completeOnboarding();
+        // Emit event for returning user
+        await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+          userId: user.uid,
+          email: email,
+          isNewUser: false,
+          authMethod: AuthMethod.email,
+        ));
         print(
-          "AuthService: login - Setting onboarding as complete for returning user",
+          "AuthService: login - Emitted login event for returning user",
         );
+      } else {
+        // Emit event for new user
+        await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+          userId: user.uid,
+          email: email,
+          isNewUser: true,
+          authMethod: AuthMethod.email,
+        ));
       }
 
       return true;
@@ -458,6 +495,7 @@ class AuthService {
   }
 
   // Register new user with Firebase
+  @override
   Future<bool> register(String name, String email, String password) async {
     try {
       await _ensureInitialized();
@@ -484,9 +522,12 @@ class AuthService {
       // Mark as new user (this is their first login)
       await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
 
-      // Make sure onboarding is reset for new users
-      final onboardingService = serviceLocator<OnboardingService>();
-      await onboardingService.resetOnboarding();
+      // Emit registration completed event
+      await _authEventHandler.handleUserRegistrationCompleted(UserRegistrationCompletedEvent(
+        userId: user.uid,
+        email: email,
+        name: name,
+      ));
 
       return true;
     } catch (e) {
@@ -498,12 +539,23 @@ class AuthService {
   }
 
   // Complete signup (marking user as having gone through initial process)
+  @override
   Future<void> completeSignup() async {
     await _ensureInitialized();
     await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, true);
+    
+    // Emit signup completed event
+    final userId = await _getCurrentUserId();
+    await _authEventHandler.handleUserSignupCompleted(UserSignupCompletedEvent(
+      userId: userId,
+    ));
+    if (kDebugMode) {
+      print('AuthService: Emitted signup completed event');
+    }
   }
 
   // Sign in with Google - real implementation
+  @override
   Future<bool> signInWithGoogle() async {
     try {
       await _ensureInitialized();
@@ -614,20 +666,28 @@ class AuthService {
 
         if (hasCompleted) {
           // Skip onboarding for returning users
-          final onboardingService = serviceLocator<OnboardingService>();
-          await onboardingService.completeOnboarding();
+          await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+            userId: user.uid,
+            email: user.email,
+            isNewUser: false,
+            authMethod: AuthMethod.google,
+          ));
           print(
-            "AuthService: signInWithGoogle - Setting onboarding as complete for returning user",
+            "AuthService: signInWithGoogle - Emitted login event for returning user",
           );
         } else {
           // Mark as new user (this is their first login with Google)
           await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
 
-          // Reset onboarding for new users
-          final onboardingService = serviceLocator<OnboardingService>();
-          await onboardingService.resetOnboarding();
+          // Emit event for new user
+          await _authEventHandler.handleUserLoggedIn(UserLoggedInEvent(
+            userId: user.uid,
+            email: user.email,
+            isNewUser: true,
+            authMethod: AuthMethod.google,
+          ));
           print(
-            "AuthService: signInWithGoogle - Setting up onboarding for new user",
+            "AuthService: signInWithGoogle - Emitted login event for new user",
           );
         }
 
@@ -654,6 +714,7 @@ class AuthService {
   }
 
   // Get user info
+  @override
   Future<Map<String, dynamic>> getUserInfo() async {
     await _ensureInitialized();
 
@@ -670,15 +731,27 @@ class AuthService {
   }
 
   // Logout - updated to handle Firebase auth
+  @override
   Future<bool> logout() async {
     try {
       await _ensureInitialized();
+      
+      // Get user ID before logout
+      final userId = await _getCurrentUserId();
 
       // Firebase logout
       await FirebaseAuth.instance.signOut();
 
       // Clear local auth token
       await _prefs.remove(AUTH_TOKEN_KEY);
+      
+      // Emit logout event
+      await _authEventHandler.handleUserLoggedOut(UserLoggedOutEvent(
+        userId: userId,
+      ));
+      if (kDebugMode) {
+        print('AuthService: Emitted logout event');
+      }
 
       return true;
     } catch (e) {
@@ -690,6 +763,7 @@ class AuthService {
   }
 
   /// Force session verification and refresh
+  @override
   Future<bool> verifySession() async {
     await _ensureInitialized();
 

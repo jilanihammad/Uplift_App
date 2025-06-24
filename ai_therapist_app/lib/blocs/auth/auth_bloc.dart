@@ -3,22 +3,22 @@
 
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
-import 'package:ai_therapist_app/services/auth_service.dart';
-import 'package:ai_therapist_app/services/onboarding_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/i_auth_service.dart';
+import 'package:ai_therapist_app/di/interfaces/i_onboarding_service.dart';
 import 'package:bloc/bloc.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide PhoneCodeSent;
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
-  final AuthService _authService;
-  final OnboardingService _onboardingService;
+  final IAuthService _authService;
+  final IOnboardingService _onboardingService;
 
   AuthBloc({
-    required AuthService authService,
-    required OnboardingService onboardingService,
-  })  : _authService = authService,
-        _onboardingService = onboardingService,
+    IAuthService? authService,
+    IOnboardingService? onboardingService,
+  })  : _authService = authService ?? DependencyContainer().authService,
+        _onboardingService = onboardingService ?? DependencyContainer().onboarding,
         super(AuthInitial()) {
     on<CheckAuthStatusEvent>(_checkAuthStatus);
     on<LoginEvent>(_login);

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ai_therapist_app/services/auth_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import '../di/interfaces/i_onboarding_service.dart';
 
 enum OnboardingStep {
   welcome,
@@ -12,17 +11,15 @@ enum OnboardingStep {
   complete
 }
 
-class OnboardingService {
+class OnboardingService implements IOnboardingService {
   static const String _currentStepKey = 'onboarding_step';
   static const String _completedKey = 'onboarding_completed';
-
-  // Auth service instance
-  final AuthService? _authService;
 
   // Current step in memory
   OnboardingStep _currentStep = OnboardingStep.welcome;
 
   // Get current step
+  @override
   OnboardingStep get currentStep => _currentStep;
 
   // Value notifier to track step changes
@@ -30,46 +27,31 @@ class OnboardingService {
       ValueNotifier<OnboardingStep>(OnboardingStep.welcome);
 
   // Observable step changes
+  @override
   ValueNotifier<OnboardingStep> get stepChanged => _stepChangedController;
 
   // Has completed onboarding
   bool _hasCompleted = false;
+  @override
   bool get hasCompleted => _hasCompleted;
 
   // This is the last step in the onboarding process before completion
   static const _lastImplementedStep = OnboardingStep.moodSetup;
 
-  // Constructor with optional AuthService dependency
-  // This helps break the circular dependency by allowing it to be null during initialization
-  OnboardingService({AuthService? authService}) : _authService = authService;
+  // Constructor
+  OnboardingService();
 
   // Initialize the service
+  @override
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
 
     print('Initializing OnboardingService...');
 
-    // First check if the user has completed signup from AuthService (if available)
-    bool userHasCompletedSignup = false;
-    if (_authService != null) {
-      userHasCompletedSignup = await _authService!.hasCompletedSignup;
-    }
-
     // Get locally stored completion status
     _hasCompleted = prefs.getBool(_completedKey) ?? false;
 
-    print(
-        'OnboardingService init - AuthService hasCompletedSignup: $userHasCompletedSignup, local hasCompleted: $_hasCompleted');
-
-    // Ensure consistency between AuthService and OnboardingService
-    if (userHasCompletedSignup && !_hasCompleted) {
-      // If auth service says user has completed signup but onboarding doesn't,
-      // update onboarding state to be consistent
-      print(
-          'Sync inconsistency detected - updating onboarding completion to match auth service');
-      _hasCompleted = true;
-      await prefs.setBool(_completedKey, true);
-    }
+    print('OnboardingService init - hasCompleted: $_hasCompleted');
 
     if (_hasCompleted) {
       print('Onboarding already completed, setting step to complete');
@@ -98,6 +80,7 @@ class OnboardingService {
   }
 
   // Move to next step
+  @override
   Future<void> goToNextStep() async {
     if (_currentStep == OnboardingStep.complete) return;
 
@@ -121,6 +104,7 @@ class OnboardingService {
   }
 
   // Move to a specific step
+  @override
   Future<void> goToStep(OnboardingStep step) async {
     print('Requested to go to step: ${step.toString()} (index: ${step.index})');
 
@@ -158,6 +142,7 @@ class OnboardingService {
   }
 
   // Mark onboarding as completed
+  @override
   Future<void> completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_completedKey, true);
@@ -168,6 +153,7 @@ class OnboardingService {
   }
 
   // Reset onboarding (for testing)
+  @override
   Future<void> resetOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_currentStepKey);

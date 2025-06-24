@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/i_therapy_service.dart';
 import 'package:ai_therapist_app/models/therapist_style.dart';
 import 'package:ai_therapist_app/services/preferences_service.dart';
-import 'package:ai_therapist_app/services/therapy_service.dart';
 
 class TherapistStyleScreen extends StatefulWidget {
-  const TherapistStyleScreen({Key? key}) : super(key: key);
+  final ITherapyService? therapyService;
+  
+  const TherapistStyleScreen({
+    Key? key,
+    this.therapyService,
+  }) : super(key: key);
 
   @override
   State<TherapistStyleScreen> createState() => _TherapistStyleScreenState();
@@ -13,14 +19,15 @@ class TherapistStyleScreen extends StatefulWidget {
 
 class _TherapistStyleScreenState extends State<TherapistStyleScreen> {
   late PreferencesService _preferencesService;
-  late TherapyService _therapyService;
+  late ITherapyService _therapyService;
   String _selectedStyleId = '';
   
   @override
   void initState() {
     super.initState();
     _preferencesService = serviceLocator<PreferencesService>();
-    _therapyService = serviceLocator<TherapyService>();
+    // Use dependency injection with fallback to DependencyContainer
+    _therapyService = widget.therapyService ?? DependencyContainer().therapy;
     _selectedStyleId = _preferencesService.preferences?.therapistStyleId ?? 'cbt';
   }
   
