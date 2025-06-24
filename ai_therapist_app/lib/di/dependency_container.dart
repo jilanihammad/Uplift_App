@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import 'interfaces/interfaces.dart';
 import 'modules/core_module.dart';
 import 'modules/services_module.dart';
+import '../data/datasources/remote/api_client.dart';
 
 /// New dependency injection container to replace service locator pattern
 /// This provides a clean interface for dependency injection with proper lifecycle management
@@ -22,16 +23,11 @@ class DependencyContainer {
     }
 
     try {
-      if (testing) {
-        // Register mock implementations for testing
-        CoreModule.registerMocks(_locator);
-        ServicesModule.registerMocks(_locator);
-      } else {
-        // Register production implementations
-        await CoreModule.register(_locator);
-        await ServicesModule.register(_locator);
-      }
-
+      // The DependencyContainer now acts as a wrapper around the existing
+      // service locator registrations. We don't need to re-register services
+      // that are already registered in setupServiceLocator.
+      
+      // Just mark as initialized since services are already registered
       _isInitialized = true;
     } catch (e) {
       _isInitialized = false;
@@ -66,6 +62,7 @@ class DependencyContainer {
   // Convenience getters for commonly used services
   IConfigService get config => get<IConfigService>();
   IApiClient get apiClient => get<IApiClient>();
+  ApiClient get apiClientConcrete => get<ApiClient>(); // Concrete implementation for backward compatibility
   IDatabase get database => get<IDatabase>();
   IThemeService get theme => get<IThemeService>();
   IPreferencesService get preferences => get<IPreferencesService>();
@@ -74,6 +71,10 @@ class DependencyContainer {
   IUserProfileService get userProfile => get<IUserProfileService>();
   IGroqService get groq => get<IGroqService>();
   ISessionRepository get sessionRepository => get<ISessionRepository>();
+  IAuthService get authService => get<IAuthService>();
+  IAuthEventHandler get authEventHandler => get<IAuthEventHandler>();
+  IOnboardingService get onboarding => get<IOnboardingService>();
+  ITherapyService get therapy => get<ITherapyService>();
   
   // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;

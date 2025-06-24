@@ -227,7 +227,7 @@ class MessageProcessor {
         // REMOVED: final backendApiUrl = _configService.backendBaseUrl;
         // log.d('Using API URL: $backendApiUrl/ai/response');
 
-        final response = await apiClient.post('/ai/response', body: payload);
+        final response = await apiClient.post('/ai/response', payload);
 
         if (response != null && response.containsKey('response')) {
           log.d('API call successful. Response received.');
@@ -502,7 +502,7 @@ $conversationText''';
 
       // Make API call to end session and get summary
       final response = await apiClient.post('/therapy/end_session',
-          body: {'messages': messages, 'system_prompt': systemPrompt});
+          {'messages': messages, 'system_prompt': systemPrompt});
 
       if (response != null) {
         log.i(

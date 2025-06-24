@@ -146,7 +146,7 @@ class GroqService implements IGroqService {
       _memory?.addUserMessage(userMessage);
 
       // Make API request to backend proxy for Groq
-      final response = await _apiClient.post('/ai/generate', body: {
+      final response = await _apiClient.post('/ai/generate', {
         'message': userMessage,
         'system_prompt': systemPrompt,
         'model': model ?? _llmModelId,

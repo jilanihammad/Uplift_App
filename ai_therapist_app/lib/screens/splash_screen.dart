@@ -2,12 +2,13 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:get_it/get_it.dart';
-import '../services/auth_service.dart';
-import '../services/onboarding_service.dart';
 import '../services/backend_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../di/service_locator.dart';
+import '../di/dependency_container.dart';
+import '../di/interfaces/i_auth_service.dart';
+import '../di/interfaces/i_onboarding_service.dart';
 import 'custom_icons.dart'; // Import the custom icons
 import 'package:go_router/go_router.dart'; // Import GoRouter
 import '../config/routes.dart'; // Import route constants
@@ -19,9 +20,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class SplashScreen extends StatefulWidget {
   final bool skipFirebaseCheck;
+  final IAuthService? authService;
+  final IOnboardingService? onboardingService;
+  final ApiClient? apiClient;
 
-  const SplashScreen({Key? key, this.skipFirebaseCheck = false})
-      : super(key: key);
+  const SplashScreen({
+    Key? key, 
+    this.skipFirebaseCheck = false,
+    this.authService,
+    this.onboardingService,
+    this.apiClient,
+  }) : super(key: key);
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -29,9 +38,9 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  // Don't directly access services during State creation
-  late AuthService _authService;
-  late OnboardingService _onboardingService;
+  // Don't directly access services during State creation - use dependency injection
+  late IAuthService _authService;
+  late IOnboardingService _onboardingService;
   late BackendService _backendService;
   bool _serviceInitialized = false;
   bool _backendAvailable = false;
@@ -71,9 +80,13 @@ class _SplashScreenState extends State<SplashScreen>
         _loadingProgress = 0.1;
       });
 
-      // Ensure service locator is initialized
-      if (!serviceLocator.isRegistered<AuthService>()) {
+      // Ensure service locator is initialized - using fallback approach
+      try {
         await setupServiceLocator();
+      } catch (e) {
+        if (kDebugMode) {
+          print("SplashScreen: Service locator setup had issues: $e");
+        }
       }
 
       // Ensure ConfigService is initialized before using BackendService
@@ -100,13 +113,11 @@ class _SplashScreenState extends State<SplashScreen>
         }
       }
 
-      // Now safely get services from the locator
-      _authService = serviceLocator<AuthService>();
+      // Now safely get services using dependency injection
+      _authService = widget.authService ?? DependencyContainer().authService;
 
-      if (serviceLocator.isRegistered<OnboardingService>()) {
-        _onboardingService = serviceLocator<OnboardingService>();
-        await _onboardingService.init();
-      }
+      _onboardingService = widget.onboardingService ?? DependencyContainer().onboarding;
+      await _onboardingService.init();
 
       // Add a check for first app launch to force fresh login experience
       final prefs = await SharedPreferences.getInstance();
@@ -249,7 +260,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   // Get auth data in an isolate to avoid blocking main thread
-  static Future<Map<String, bool>> _getAuthData(AuthService service) async {
+  static Future<Map<String, bool>> _getAuthData(IAuthService service) async {
     final isLoggedIn = await service.isLoggedIn;
     final hasCompletedSignup = await service.hasCompletedSignup;
     return {
@@ -444,7 +455,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   // Isolate function to sync services
-  static Future<void> _syncServices(AuthService service) async {
+  static Future<void> _syncServices(IAuthService service) async {
     await service.syncWithOnboardingService();
   }
 
@@ -474,17 +485,18 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _resetSignupStatus() async {
     try {
       // Safely get the OnboardingService when needed
-      _onboardingService = serviceLocator<OnboardingService>();
+      _onboardingService = widget.onboardingService ?? DependencyContainer().onboarding;
 
       // Logout first to ensure we're starting from a clean state
       await _authService.logout();
 
       // Clean up all auth-related preferences
       await SharedPreferences.getInstance().then((prefs) {
-        prefs.remove(AuthService.HAS_COMPLETED_SIGNUP_KEY);
-        prefs.remove(AuthService.AUTH_TOKEN_KEY);
-        prefs.remove(AuthService.EMAIL_KEY);
-        prefs.remove(AuthService.PHONE_KEY);
+        // Remove auth-related preferences - using constants from interfaces
+        prefs.remove('has_completed_signup');
+        prefs.remove('auth_token');
+        prefs.remove('email');
+        prefs.remove('phone');
       });
 
       // Reset onboarding step
@@ -514,7 +526,7 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _completeSignup() async {
     try {
       // Safely get the OnboardingService when needed
-      _onboardingService = serviceLocator<OnboardingService>();
+      _onboardingService = widget.onboardingService ?? DependencyContainer().onboarding;
 
       await _authService.completeSignup();
       await _onboardingService.completeOnboarding();

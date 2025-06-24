@@ -27,7 +27,7 @@ class AuthRepository {
     if (apiClient != null) {
       final response = await apiClient!.post(
         '/api/v1/auth/login',
-        body: {
+        {
           'email': email,
           'password': password,
         },
@@ -66,7 +66,7 @@ class AuthRepository {
     if (apiClient != null) {
       final response = await apiClient!.post(
         '/api/v1/auth/register',
-        body: {
+        {
           'name': name,
           'email': email,
           'password': password,
@@ -101,7 +101,7 @@ class AuthRepository {
     await _initPrefs();
     try {
       if (apiClient != null) {
-        await apiClient!.post('/api/v1/auth/logout');
+        await apiClient!.post('/api/v1/auth/logout', {});
       }
     } catch (e) {
       // Ignore errors during logout
@@ -117,7 +117,7 @@ class AuthRepository {
     if (apiClient != null) {
       await apiClient!.post(
         '/api/v1/auth/change-password',
-        body: {
+        {
           'current_password': currentPassword,
           'new_password': newPassword,
         },
@@ -130,7 +130,7 @@ class AuthRepository {
     if (apiClient != null) {
       await apiClient!.post(
         '/api/v1/auth/reset-password-request',
-        body: {
+        {
           'email': email,
         },
       );
@@ -142,7 +142,7 @@ class AuthRepository {
     if (apiClient != null) {
       await apiClient!.post(
         '/api/v1/auth/reset-password-confirm',
-        body: {
+        {
           'token': token,
           'new_password': newPassword,
         },

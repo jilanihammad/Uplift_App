@@ -11,6 +11,7 @@ import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
 import '../services/therapy_service.dart';
 import '../di/service_locator.dart';
+import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import 'package:flutter/foundation.dart';
 import '../models/therapy_message.dart';
@@ -283,7 +284,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             '[VoiceSessionBloc] Voice mode - generating TTS response...');
         emit(state.copyWith(isAiSpeaking: true));
 
-        final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
+        final therapyServiceInstance = therapyService ?? DependencyContainer().therapy;
         final responseData =
             await therapyServiceInstance.processUserMessageWithStreamingAudio(
           transcription,
@@ -328,7 +329,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // Text mode - only get text response without TTS
         debugPrint(
             '[VoiceSessionBloc] Text mode - getting text response only...');
-        final therapyServiceInstance = therapyService ?? serviceLocator<ITherapyService>();
+        final therapyServiceInstance = therapyService ?? DependencyContainer().therapy;
         final mayaResponseText = await therapyServiceInstance.processUserMessage(
           transcription,
           history: history,

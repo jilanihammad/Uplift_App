@@ -50,10 +50,8 @@ class CoreModule {
     final apiClient = ApiClient(configService: configService);
     locator.registerSingleton<ApiClient>(apiClient);
     
-    // Register adapter that bridges ApiClient to IApiClient
-    locator.registerSingleton<IApiClient>(
-      _ApiClientAdapter(apiClient),
-    );
+    // Register ApiClient as IApiClient directly (no adapter needed)
+    locator.registerSingleton<IApiClient>(apiClient);
 
     // Register adapter that bridges AppDatabase to IDatabase
     locator.registerSingleton<IDatabase>(
@@ -467,101 +465,6 @@ class _ConfigServiceAdapter implements IConfigService {
   bool get isInitialized => true; // Assume initialized after creation
 }
 
-class _ApiClientAdapter implements IApiClient {
-  final ApiClient _apiClient;
-  
-  _ApiClientAdapter(this._apiClient);
-  
-  @override
-  Future<Map<String, dynamic>> get(String endpoint, {Map<String, String>? headers, Map<String, dynamic>? queryParams}) async {
-    final result = await _apiClient.get(endpoint, queryParams: queryParams);
-    return result is Map<String, dynamic> ? result : {'data': result};
-  }
-  
-  @override
-  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> data, {Map<String, String>? headers}) async {
-    final result = await _apiClient.post(endpoint, body: data, additionalHeaders: headers);
-    return result;
-  }
-  
-  @override
-  Future<Map<String, dynamic>> put(String endpoint, Map<String, dynamic> data, {Map<String, String>? headers}) async {
-    final result = await _apiClient.put(endpoint, body: data);
-    return result is Map<String, dynamic> ? result : {'data': result};
-  }
-  
-  @override
-  Future<Map<String, dynamic>> delete(String endpoint, {Map<String, String>? headers}) async {
-    final result = await _apiClient.delete(endpoint);
-    return result is Map<String, dynamic> ? result : {'data': result};
-  }
-  
-  @override
-  Future<Map<String, dynamic>> uploadFile(String endpoint, String fieldName, Uint8List fileData, String fileName, {Map<String, String>? headers, Map<String, String>? additionalFields}) async {
-    // ApiClient doesn't have uploadFile method, so simulate it
-    return {'status': 'error', 'message': 'Upload not implemented'};
-  }
-  
-  @override
-  Future<Uint8List> downloadFile(String url) async {
-    // ApiClient doesn't have downloadFile method, so simulate it
-    return Uint8List(0);
-  }
-  
-  @override
-  void setAuthToken(String token) {
-    // ApiClient handles tokens internally via SharedPreferences
-    // This would need to be implemented if we want to support external token setting
-  }
-  
-  @override
-  void clearAuthToken() {
-    // ApiClient handles tokens internally via SharedPreferences
-    // This would need to be implemented if we want to support external token clearing
-  }
-  
-  @override
-  String? get authToken => null; // ApiClient doesn't expose token getter
-  
-  @override
-  String get baseUrl => _apiClient.configService.llmApiEndpoint;
-  
-  @override
-  void setBaseUrl(String url) {
-    // Not implemented in original ApiClient
-  }
-  
-  @override
-  void setTimeout(Duration timeout) {
-    // Not implemented in original ApiClient
-  }
-  
-  @override
-  Future<bool> checkConnection() async {
-    try {
-      await _apiClient.get('/health');
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-  
-  @override
-  bool get isConnected => true; // Assume connected
-  
-  @override
-  Stream<String> get errorStream => const Stream.empty();
-  
-  @override
-  Future<void> initialize() async {
-    // ApiClient doesn't have explicit initialize method
-  }
-  
-  @override
-  void dispose() {
-    // ApiClient doesn't have explicit dispose method
-  }
-}
 
 class _DatabaseAdapter implements IDatabase {
   final AppDatabase _database;

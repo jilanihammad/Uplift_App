@@ -25,7 +25,8 @@ import 'package:ai_therapist_app/screens/session_details_screen.dart';
 import 'package:ai_therapist_app/screens/diagnostic_screen.dart';
 
 // Services for navigation guards
-import 'package:ai_therapist_app/services/auth_service.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/i_auth_service.dart';
 import 'package:ai_therapist_app/services/onboarding_service.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
@@ -64,7 +65,7 @@ class AppRouter {
 
       // Access services needed for routing decisions
       try {
-        final authService = serviceLocator<AuthService>();
+        final authService = DependencyContainer().authService;
 
         // Check if user is logged in and onboarding status - note async/await
         final bool isLoggedIn = await authService.isLoggedIn;

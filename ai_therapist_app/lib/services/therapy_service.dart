@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import '../di/service_locator.dart';
 import 'voice_service.dart';
 import 'memory_service.dart';
 import 'memory_manager.dart';
@@ -15,7 +14,7 @@ import 'conversation_flow_manager.dart';
 import '../services/therapy_graph_service.dart';
 import '../services/therapy_conversation_graph.dart';
 import '../models/conversation_memory.dart';
-import '../data/datasources/remote/api_client.dart';
+import '../di/interfaces/i_api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
@@ -154,7 +153,7 @@ class TherapyService implements ITherapyService {
     required MessageProcessor messageProcessor,
     required AudioGenerator audioGenerator,
     required MemoryManager memoryManager,
-    required ApiClient apiClient,
+    required IApiClient apiClient,
   })  : _messageProcessor = messageProcessor,
         _audioGenerator = audioGenerator,
         _memoryManager = memoryManager,

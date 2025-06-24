@@ -86,7 +86,7 @@ class MessageRepository {
       // Send batch request to server
       final response = await apiClient.post(
         '/sessions/$sessionId/messages/batch',
-        body: {'messages': messages},
+        {'messages': messages},
       );
 
       // Mark messages as synced in the database
@@ -126,7 +126,7 @@ class MessageRepository {
       // Get AI response from server
       final response = await apiClient.post(
         '/api/v1/sessions/$sessionId/ai-response',
-        body: {
+        {
           'user_message': userMessage,
         },
       );
@@ -178,7 +178,7 @@ class MessageRepository {
       // Try to get messages from server
       final response =
           await apiClient.get('/api/v1/sessions/$sessionId/messages');
-      final List<dynamic> messagesJson = response;
+      final List<dynamic> messagesJson = response['data'] ?? response['messages'] ?? response;
 
       final messages =
           messagesJson.map((json) => Message.fromJson(json)).toList();

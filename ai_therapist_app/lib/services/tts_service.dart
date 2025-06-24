@@ -106,7 +106,7 @@ class TTSService implements ITTSService {
     if (_disposed) throw TTSException('TTSService has been disposed');
     
     try {
-      final response = await _apiClient.post('/voice/tts', body: {
+      final response = await _apiClient.post('/voice/tts', {
         'text': text,
         'voice': voice,
         'response_format': _audioFormat,

@@ -17,6 +17,18 @@ import '../../services/notification_service.dart' as service_ns;
 import '../../services/tts_service.dart';
 import '../../services/audio_player_manager.dart';
 import '../../services/websocket_audio_manager.dart';
+import '../../services/message_processor.dart';
+import '../../services/audio_generator.dart';
+import '../../services/memory_manager.dart';
+import '../../services/memory_service.dart' as memory_svc;
+import '../../services/therapy_service.dart';
+import '../../blocs/voice_session_bloc.dart' as voice_bloc;
+import '../../services/langchain/custom_langchain.dart' as langchain;
+import '../interfaces/i_therapy_service.dart';
+import '../../services/auth_coordinator.dart';
+import '../../services/auth_service.dart';
+import '../../services/onboarding_service.dart';
+import '../../data/datasources/local/database_provider.dart';
 
 /// Services dependency module
 /// Registers application services with proper dependency injection
@@ -137,6 +149,95 @@ class ServicesModule {
     // Register interface for WebSocketAudioManager
     locator.registerLazySingleton<IWebSocketAudioManager>(
       () => locator<WebSocketAudioManager>(),
+    );
+
+    // Register OnboardingService first (needed by AuthCoordinator)
+    locator.registerLazySingleton<OnboardingService>(
+      () => OnboardingService(),
+    );
+    
+    // Register interface for OnboardingService
+    locator.registerLazySingleton<IOnboardingService>(
+      () => locator<OnboardingService>(),
+    );
+
+    // Register AuthCoordinator with OnboardingService dependency
+    locator.registerLazySingleton<AuthCoordinator>(
+      () => AuthCoordinator(
+        onboardingService: locator<IOnboardingService>(),
+      ),
+    );
+    
+    // Register interface for AuthCoordinator
+    locator.registerLazySingleton<IAuthEventHandler>(
+      () => locator<AuthCoordinator>(),
+    );
+
+    // Register AuthService with dependency injection
+    locator.registerLazySingleton<AuthService>(
+      () => AuthService(
+        userProfileService: locator<UserProfileService>(),
+        authEventHandler: locator<IAuthEventHandler>(),
+      ),
+    );
+    
+    // Register interface for AuthService
+    locator.registerLazySingleton<IAuthService>(
+      () => locator<AuthService>(),
+    );
+
+    // Register therapy-related services for TherapyService dependencies
+    
+    // Register MemoryService (needed by MemoryManager)
+    locator.registerLazySingleton<memory_svc.MemoryService>(
+      () => memory_svc.MemoryService(
+        databaseProvider: locator<DatabaseProvider>(),
+      ),
+    );
+
+    // Register ConversationBufferMemory (needed by MessageProcessor)
+    locator.registerLazySingleton<langchain.ConversationBufferMemory>(
+      () => langchain.ConversationBufferMemory(),
+    );
+
+    // Register MemoryManager with dependencies
+    locator.registerLazySingleton<MemoryManager>(
+      () => MemoryManager(
+        memoryService: locator<memory_svc.MemoryService>(),
+      ),
+    );
+
+    // Register MessageProcessor with dependencies (VoiceSessionBloc can be null)
+    locator.registerLazySingleton<MessageProcessor>(
+      () => MessageProcessor(
+        voiceSessionBloc: null, // Can be null according to constructor
+        conversationHistory: locator<langchain.ConversationBufferMemory>(),
+        configService: locator<ConfigService>(),
+      ),
+    );
+
+    // Register AudioGenerator with dependencies
+    locator.registerLazySingleton<AudioGenerator>(
+      () => AudioGenerator(
+        ttsService: locator<ITTSService>(),
+        audioFileManager: locator<IAudioFileManager>(),
+        apiClient: locator<ApiClient>(),
+      ),
+    );
+
+    // Register TherapyService with all dependencies
+    locator.registerLazySingleton<TherapyService>(
+      () => TherapyService(
+        messageProcessor: locator<MessageProcessor>(),
+        audioGenerator: locator<AudioGenerator>(),
+        memoryManager: locator<MemoryManager>(),
+        apiClient: locator<IApiClient>(),
+      ),
+    );
+    
+    // Register interface for TherapyService
+    locator.registerLazySingleton<ITherapyService>(
+      () => locator<TherapyService>(),
     );
   }
 

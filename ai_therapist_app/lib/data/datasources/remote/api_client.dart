@@ -6,12 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import '../../../services/config_service.dart'; // Corrected import path
-import 'package:ai_therapist_app/di/service_locator.dart';
-import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/config/app_config.dart'; // Import AppConfig
 import 'package:ai_therapist_app/config/llm_config.dart'; // Import LLM Configuration
+import '../../../di/interfaces/i_api_client.dart';
 
-class ApiClient {
+class ApiClient implements IApiClient {
   final http.Client httpClient;
   final ConfigService configService; // Add ConfigService field
   late SharedPreferences _prefs;
@@ -96,8 +95,12 @@ class ApiClient {
   }
 
   // GET request
-  Future<dynamic> get(String endpoint,
-      {Map<String, dynamic>? queryParams}) async {
+  @override
+  Future<Map<String, dynamic>> get(
+    String endpoint, {
+    Map<String, String>? headers,
+    Map<String, dynamic>? queryParams,
+  }) async {
     final token = await _getToken();
     final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
     debugPrint('[RELEASE DEBUG] ApiClient.get - Using baseUrl: "$baseUrl"');
@@ -115,9 +118,10 @@ class ApiClient {
     final Uri uriWithParams =
         queryParams != null ? uri.replace(queryParameters: queryParams) : uri;
 
-    final headers = {
+    final requestHeaders = {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      if (headers != null) ...headers,
     };
 
     try {
@@ -127,7 +131,7 @@ class ApiClient {
 
       final response = await _retryRequest(() => httpClient.get(
             uriWithParams,
-            headers: headers,
+            headers: requestHeaders,
           ));
 
       return _handleResponse(response);
@@ -154,15 +158,11 @@ class ApiClient {
   }
 
   /// POST request to the API
+  @override
   Future<Map<String, dynamic>> post(
-    String endpoint, {
-    Map<String, dynamic>? body,
-    String contentType = 'application/json',
-    bool isFormData = false,
-    Map<String, String>? additionalHeaders,
-    Map<String, String>? queryParams,
-    bool forceAuth = false,
-    bool handleErrors = true,
+    String endpoint,
+    Map<String, dynamic> data, {
+    Map<String, String>? headers,
   }) async {
     if (kDebugMode) {
       debugPrint(
@@ -190,9 +190,10 @@ class ApiClient {
 
     final token = await _getToken();
 
-    final headers = {
-      'Content-Type': contentType,
+    final requestHeaders = {
+      'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      if (headers != null) ...headers,
     };
 
     try {
@@ -202,8 +203,8 @@ class ApiClient {
 
       final response = await _retryRequest(() => httpClient.post(
             Uri.parse(urlString),
-            headers: headers,
-            body: jsonEncode(body),
+            headers: requestHeaders,
+            body: jsonEncode(data),
           ));
 
       return _handleResponse(response);
@@ -230,22 +231,28 @@ class ApiClient {
   }
 
   // PUT request
-  Future<dynamic> put(String endpoint, {dynamic body}) async {
+  @override
+  Future<Map<String, dynamic>> put(
+    String endpoint,
+    Map<String, dynamic> data, {
+    Map<String, String>? headers,
+  }) async {
     final token = await _getToken();
     final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
     debugPrint('[RELEASE DEBUG] ApiClient.put - Using baseUrl: "$baseUrl"');
     final uri = Uri.parse('$baseUrl$endpoint');
 
-    final headers = {
+    final requestHeaders = {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      if (headers != null) ...headers,
     };
 
     try {
       final response = await _retryRequest(() => httpClient.put(
             uri,
-            headers: headers,
-            body: jsonEncode(body),
+            headers: requestHeaders,
+            body: jsonEncode(data),
           ));
 
       return _handleResponse(response);
@@ -330,7 +337,11 @@ class ApiClient {
   }
 
   // DELETE request
-  Future<dynamic> delete(String endpoint) async {
+  @override
+  Future<Map<String, dynamic>> delete(
+    String endpoint, {
+    Map<String, String>? headers,
+  }) async {
     final token = await _getToken();
     final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
     debugPrint('[RELEASE DEBUG] ApiClient.delete - Using baseUrl: "$baseUrl"');
@@ -371,12 +382,13 @@ class ApiClient {
   }
 
   // Handle response and process JSON
-  dynamic _handleResponse(http.Response response) {
+  Map<String, dynamic> _handleResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (response.body.isEmpty) {
         return {};
       }
-      return jsonDecode(response.body);
+      final decoded = jsonDecode(response.body);
+      return decoded is Map<String, dynamic> ? decoded : {'data': decoded};
     } else if (response.statusCode == 401) {
       throw ApiException(
         statusCode: response.statusCode,
@@ -402,6 +414,85 @@ class ApiClient {
         message: errorMessage,
       );
     }
+  }
+
+  // IApiClient interface methods
+  @override
+  Future<Map<String, dynamic>> uploadFile(
+    String endpoint,
+    String fieldName,
+    Uint8List fileData,
+    String fileName, {
+    Map<String, String>? headers,
+    Map<String, String>? additionalFields,
+  }) async {
+    // Implementation for file upload
+    throw UnimplementedError('File upload not yet implemented');
+  }
+
+  @override
+  Future<Uint8List> downloadFile(String url) async {
+    // Implementation for file download
+    throw UnimplementedError('File download not yet implemented');
+  }
+
+  @override
+  void setAuthToken(String token) {
+    updateAuthToken(token);
+  }
+
+  @override
+  void clearAuthToken() {
+    _initPrefs().then((_) {
+      _prefs.remove('auth_token');
+    });
+  }
+
+  @override
+  String? get authToken {
+    // Can't make this async, so return null and require proper initialization
+    return _initialized ? _prefs.getString('auth_token') : null;
+  }
+
+  @override
+  String get baseUrl => configService.llmApiEndpoint;
+
+  @override
+  void setBaseUrl(String url) {
+    // This would require modifying the ConfigService, which is not recommended
+    throw UnimplementedError('Base URL modification not supported - use ConfigService instead');
+  }
+
+  @override
+  void setTimeout(Duration timeout) {
+    // Current implementation uses a fixed timeout, enhancement needed
+    throw UnimplementedError('Timeout modification not yet implemented');
+  }
+
+  @override
+  Future<bool> checkConnection() async {
+    try {
+      await get('/health');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  bool get isConnected => true; // Simplified implementation
+
+  @override
+  Stream<String> get errorStream => const Stream.empty(); // Simplified implementation
+
+  @override
+  Future<void> initialize() async {
+    await _initPrefs();
+  }
+
+  @override
+  void dispose() {
+    close();
   }
 
   // Close the client when done

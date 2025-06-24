@@ -24,6 +24,7 @@ import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:ai_therapist_app/services/therapy_service.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:ai_therapist_app/services/onboarding_service.dart';
+import 'package:ai_therapist_app/services/auth_coordinator.dart';
 import 'package:ai_therapist_app/services/memory_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
 import 'package:ai_therapist_app/services/memory_manager.dart';
@@ -440,7 +441,12 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                         debugPrint(
                             '[main.dart] WARNING: AuthService not registered, using empty AuthBloc');
                         final authBloc = AuthBloc(
-                          authService: AuthService(),
+                          authService: AuthService(
+                            userProfileService: UserProfileService(),
+                            authEventHandler: AuthCoordinator(
+                              onboardingService: OnboardingService(),
+                            ),
+                          ),
                           onboardingService: OnboardingService(),
                         );
                         if (!serviceLocator.isRegistered<AuthBloc>()) {
@@ -453,7 +459,12 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                     } catch (e) {
                       debugPrint('[main.dart] Error creating AuthBloc: $e');
                       final authBloc = AuthBloc(
-                        authService: AuthService(),
+                        authService: AuthService(
+                          userProfileService: UserProfileService(),
+                          authEventHandler: AuthCoordinator(
+                            onboardingService: OnboardingService(),
+                          ),
+                        ),
                         onboardingService: OnboardingService(),
                       );
                       if (!serviceLocator.isRegistered<AuthBloc>()) {

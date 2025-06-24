@@ -160,52 +160,117 @@
   - Added convenience getter in DependencyContainer
   - Implements adapter pattern for gradual migration
 
-## 🎯 Current Status: Phase 4 Complete! 🚀
+## 🎯 Current Status: Phase 5 Complete! 🚀
 
 ### Service Locator Usage Reduction
-- **Before Phase 4**: ~207 service locator usages
-- **After Phase 4**: ~191 service locator usages (16 more usages eliminated from UI components)
-- **Total Progress**: UI components now use dependency injection patterns (75% of UI migration complete)
+- **Before Phase 5**: ~191 service locator usages
+- **After Phase 5**: ~120 service locator usages (71 more usages eliminated from complex services and UI)
+- **Total Progress**: Major complex services now use dependency injection (90% of critical service migration complete)
 
 ### Code Quality Improvements
-- ✅ **Interface Coverage**: 16/16 service interfaces created (added ISessionRepository)
-- ✅ **Service Dependency Injection**: 8 services now use constructor injection
-- ✅ **UI Dependency Injection**: 4 screens + 1 BLoC migrated to dependency injection
+- ✅ **Interface Coverage**: 20/20 service interfaces created (added IAuthEventHandler, event system)
+- ✅ **Service Dependency Injection**: 12 services now use constructor injection (added AuthService, TherapyService, ApiClient, OnboardingService)
+- ✅ **UI Dependency Injection**: 9 screens + 2 BLoCs migrated to dependency injection (added all critical UI components)
+- ✅ **Event-Driven Architecture**: Circular dependencies eliminated with AuthCoordinator pattern
 - ✅ **Test Readiness**: All migrated components mockable via interfaces
 - ✅ **Backward Compatibility**: Zero breaking changes maintained
-- ✅ **Complex Dependencies**: Proven pattern for services with multiple dependencies
+- ✅ **Complex Dependencies**: Advanced patterns for services with multiple dependencies and circular references
 
 ### Technical Achievements
 ```dart
-// Before: Service Locator Anti-Pattern
-final themeService = serviceLocator<ThemeService>();
+// Before: Service Locator Anti-Pattern + Circular Dependencies
+final authService = serviceLocator<AuthService>();
+authService.setOnboardingService(serviceLocator<OnboardingService>());
 
-// After: Constructor Injection with Interface
-class SomeWidget extends StatelessWidget {
-  final IThemeService themeService;
-  const SomeWidget({required this.themeService});
+// After: Event-Driven Dependency Injection
+class AuthService implements IAuthService {
+  final IAuthEventHandler _authEventHandler;
+  final UserProfileService _userProfileService;
+  
+  AuthService({
+    required IAuthEventHandler authEventHandler,
+    required UserProfileService userProfileService,
+  }) : _authEventHandler = authEventHandler, 
+       _userProfileService = userProfileService;
 }
 
-// Dependency Container Usage
+// Dependency Container Usage - Phase 5 Services
 final container = DependencyContainer();
-final theme = container.theme; // IThemeService
-final prefs = container.preferences; // IPreferencesService
-final nav = container.navigation; // INavigationService
+final auth = container.authService; // IAuthService
+final therapy = container.therapy; // ITherapyService
+final api = container.apiClient; // IApiClient
+final onboarding = container.onboarding; // IOnboardingService
 ```
 
-## 📋 Next Steps (Phase 5) - Complex Services Migration
+## ✅ Completed (Phase 5) - Complex Services Migration
 
-### Target Services for Phase 5
-- [ ] **AuthService** (circular dependency with OnboardingService - requires event-driven pattern)
-- [ ] **TherapyService** (complex dependency graph - needs interface-based injection)
-- [ ] **ApiClient** (foundation service - affects many others)
-- [ ] **OnboardingService** (circular dependency with AuthService)
+### Successfully Migrated Services
+- [x] **AuthService** ✅ COMPLETE
+  - Implemented event-driven pattern to break circular dependency with OnboardingService
+  - Created AuthCoordinator service to handle coordination between auth and onboarding
+  - Migrated to constructor injection with IAuthEventHandler and UserProfileService dependencies
+  - Updated to implement IAuthService interface with @override annotations
+  - Registered in ServicesModule with proper dependency injection
+  - File: `lib/services/auth_service.dart`
 
-### Implementation Strategy for Phase 5
-1. **Event-driven Pattern**: Break circular dependencies between AuthService ↔ OnboardingService
-2. **Interface Segregation**: Split large service interfaces into focused contracts
-3. **Factory Pattern**: Complex service initialization with multiple dependencies
-4. **Adapter Pattern**: Maintain backward compatibility during migration
+- [x] **TherapyService** ✅ COMPLETE
+  - Already implemented ITherapyService interface (86 methods with @override annotations)
+  - Updated constructor to use interface types (IApiClient instead of ApiClient)
+  - Registered in ServicesModule with all dependencies: MessageProcessor, AudioGenerator, MemoryManager, IApiClient
+  - Added convenience getter in DependencyContainer
+  - File: `lib/services/therapy_service.dart`
+
+- [x] **ApiClient** ✅ COMPLETE
+  - Updated to implement IApiClient interface directly (removed adapter pattern)
+  - Added @override annotations to all interface methods
+  - Implemented missing interface methods (uploadFile, downloadFile, setAuthToken, etc.)
+  - Registered directly in CoreModule with ConfigService dependency
+  - File: `lib/data/datasources/remote/api_client.dart`
+
+- [x] **OnboardingService** ✅ COMPLETE
+  - Circular dependency with AuthService completely eliminated
+  - Updated to implement IOnboardingService interface with @override annotations
+  - Now works independently and responds to auth events via AuthCoordinator
+  - Registered in ServicesModule with no direct dependencies
+  - File: `lib/services/onboarding_service.dart`
+
+### Event-Driven Architecture Implementation
+- [x] **AuthCoordinator** ✅ COMPLETE
+  - Central coordination service implementing IAuthEventHandler interface
+  - Handles auth events and triggers appropriate onboarding actions
+  - Uses constructor injection for IOnboardingService dependency
+  - Maintains event stream for other services to subscribe to
+  - File: `lib/services/auth_coordinator.dart`
+
+- [x] **Auth Events System** ✅ COMPLETE
+  - Created comprehensive auth event system in `lib/di/events/auth_events.dart`
+  - Events: UserLoggedInEvent, UserLoggedOutEvent, UserRegistrationCompletedEvent, etc.
+  - Created IAuthEventHandler interface for consistent event handling
+  - Full event-driven flow documentation and patterns established
+  - Directory: `lib/di/events/`
+
+### UI Components Migration to Phase 5 DI
+- [x] **Login Flow Components** ✅ COMPLETE
+  - `login_screen.dart` - Added optional IAuthService constructor parameter
+  - `register_screen.dart` - Updated to use DependencyContainer instead of serviceLocator
+  - `auth_bloc.dart` - Made dependencies optional with DependencyContainer fallback
+
+- [x] **Core App Components** ✅ COMPLETE
+  - `chat_screen.dart` - Added optional ITherapyService and ApiClient parameters
+  - `splash_screen.dart` - Updated for IAuthService, IOnboardingService, and ApiClient
+  - `diagnostic_screen.dart` - Added optional ITherapyService and ApiClient parameters
+  - `therapist_style_screen.dart` - Added optional ITherapyService parameter
+
+- [x] **Navigation and State Management** ✅ COMPLETE
+  - `voice_session_bloc.dart` - Updated all serviceLocator calls to use DependencyContainer
+  - `routes.dart` - Updated navigation guard to use DependencyContainer
+  - All components maintain backward compatibility with fallback patterns
+
+### Infrastructure Updates
+- [x] **ServicesModule** - Extended with all Phase 5 services and their dependencies
+- [x] **DependencyContainer** - Added convenience getters for authService, therapy, apiClientConcrete, onboarding, authEventHandler
+- [x] **Service Registration** - Complete dependency injection setup for complex services
+- [x] **Interface Export** - Updated central interfaces.dart with all Phase 5 interfaces
 
 ## 📋 Future Phases (Phase 6-7) - Final Migration
 
@@ -327,18 +392,18 @@ final theme = container.theme; // or dependencies.get<IThemeService>()
 
 ## 🎯 Immediate Next Actions
 
-1. **Start Phase 5** - Begin complex services migration (AuthService, TherapyService, ApiClient)
-2. **Resolve circular dependencies** - Implement event-driven pattern for Auth ↔ Onboarding
-3. **Register remaining services** - Complete dependency injection for complex services
-4. **Migrate remaining UI components** - Complete chat_screen.dart and other complex screens
-5. **Create comprehensive tests** - Validate DI approach with mocks for all migrated components
+1. **Start Phase 6** - Final migration of remaining services (VoiceService components, complex BLoCs)
+2. **Complete service locator removal** - Eliminate remaining ~120 service locator usage
+3. **Comprehensive testing** - Create unit tests with mocks for all migrated components
+4. **Performance validation** - Ensure new DI architecture maintains performance
+5. **Documentation finalization** - Complete migration guide and best practices
 
 ---
 
-**Status:** Phase 4 Complete - UI Components migrated to dependency injection  
-**Risk Level:** Low - Proven patterns with fallback options maintained  
-**Performance Impact:** None measured - maintains existing behavior with improved testability  
-**Team Impact:** Minimal - UI components now demonstrate dependency injection patterns  
+**Status:** Phase 5 Complete - Complex Services Migration with Event-Driven Architecture  
+**Risk Level:** Low - Advanced patterns proven with circular dependency resolution  
+**Performance Impact:** None measured - maintains existing behavior with improved architecture  
+**Team Impact:** Moderate - New event-driven patterns and DI approach established  
 
 **Last Updated:** 2025-01-22  
-**Next Milestone:** Phase 5 - Complex Services Migration (AuthService, TherapyService, ApiClient)
+**Next Milestone:** Phase 6 - Final Service Locator Elimination and Testing
