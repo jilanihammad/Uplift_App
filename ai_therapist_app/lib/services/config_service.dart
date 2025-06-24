@@ -6,10 +6,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'dart:io';
+import '../di/interfaces/i_config_service.dart';
 
 /// Service for accessing configuration values and API keys
 /// Uses environment variables and secure storage
-class ConfigService {
+class ConfigService implements IConfigService {
   // Stored API keys (encrypted in a real production app)
   static const String _apiKeysPrefsKey = 'encrypted_api_keys';
 
@@ -132,6 +133,12 @@ class ConfigService {
   }
 
   /// Initialize the configuration service
+  @override
+  Future<void> initialize() async {
+    await init();
+  }
+
+  /// Legacy initialization method - use initialize() instead
   Future<void> init() async {
     try {
       // Load environment variables
@@ -469,4 +476,119 @@ class ConfigService {
       }
     }
   }
+
+  // Interface implementation methods
+  @override
+  String get environment => _isProductionMode ? 'production' : 'development';
+
+  @override
+  bool get isProduction => _isProductionMode;
+
+  @override
+  bool get isDevelopment => !_isProductionMode;
+
+  @override
+  bool get isDebug => !_isProductionMode;
+
+  @override
+  String get apiBaseUrl => llmApiEndpoint;
+
+  @override
+  String get websocketUrl => llmApiEndpoint.replaceFirst('http', 'ws');
+
+  @override
+  Duration get apiTimeout => const Duration(seconds: 30);
+
+  @override
+  int get maxRetries => 3;
+
+  @override
+  String? get googleClientId => null; // Add to env if needed
+
+  @override
+  String? get openAiApiKey => null; // Add to env if needed
+
+  @override
+  String? get stripePublishableKey => null; // Add to env if needed
+
+  @override
+  bool get enableVoiceRecording => true;
+
+  @override
+  bool get enableOfflineMode => false;
+
+  @override
+  bool get enableAnalytics => false;
+
+  @override
+  bool get enableCrashReporting => false;
+
+  @override
+  bool get enableRNNoise => true;
+
+  @override
+  int get audioSampleRate => 16000;
+
+  @override
+  String get audioFormat => 'wav';
+
+  @override
+  int get maxRecordingDuration => 300;
+
+  @override
+  int get sessionTimeoutMinutes => 30;
+
+  @override
+  int get maxConcurrentSessions => 5;
+
+  @override
+  String get databaseName => 'ai_therapist.db';
+
+  @override
+  int get databaseVersion => 4;
+
+  @override
+  bool get enableDatabaseLogging => false;
+
+  @override
+  String get logLevel => 'info';
+
+  @override
+  bool get enableFileLogging => false;
+
+  @override
+  String? get loggingEndpoint => null;
+
+  @override
+  Duration get cacheTimeout => const Duration(minutes: 30);
+
+  @override
+  int get maxCacheSize => 100;
+
+  @override
+  bool validateConfiguration() {
+    return groqApiKey.isNotEmpty && llmApiEndpoint.isNotEmpty;
+  }
+
+  @override
+  List<String> getMissingRequiredConfig() {
+    final missing = <String>[];
+    if (groqApiKey.isEmpty) missing.add('GROQ_API_KEY');
+    if (llmApiEndpoint.isEmpty) missing.add('LLM_API_ENDPOINT');
+    return missing;
+  }
+
+  @override
+  Future<void> refreshConfiguration() async {
+    await init();
+  }
+
+  @override
+  Future<void> updateConfiguration(String key, dynamic value) async {
+    // Not implemented in original ConfigService
+    debugPrint('updateConfiguration not implemented: $key = $value');
+  }
+
+  @override
+  bool get isInitialized => _appVersion != null;
 }

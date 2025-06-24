@@ -9,6 +9,9 @@ import '../../data/datasources/local/app_database.dart';
 import '../../data/datasources/local/prefs_manager.dart';
 import '../../data/datasources/local/database_provider.dart';
 import '../../utils/connectivity_checker.dart';
+import '../../utils/database_helper.dart';
+import '../interfaces/i_database_operation_manager.dart';
+import '../interfaces/i_app_database.dart';
 
 /// Core dependency module
 /// Registers fundamental services that other services depend on
@@ -56,6 +59,19 @@ class CoreModule {
     // Register adapter that bridges AppDatabase to IDatabase
     locator.registerSingleton<IDatabase>(
       _DatabaseAdapter(locator<AppDatabase>()),
+    );
+
+    // Register AppDatabase as IAppDatabase interface
+    locator.registerSingleton<IAppDatabase>(
+      locator<AppDatabase>(),
+    );
+
+    // Register DatabaseOperationManager and its interface
+    locator.registerSingleton<DatabaseOperationManager>(
+      DatabaseOperationManager(),
+    );
+    locator.registerSingleton<IDatabaseOperationManager>(
+      locator<DatabaseOperationManager>(),
     );
   }
 

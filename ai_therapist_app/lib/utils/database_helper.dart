@@ -3,9 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'package:sqflite/sqflite.dart';
+import '../di/interfaces/i_database_operation_manager.dart';
 
 /// Database operation manager utility to coordinate database operations and prevent conflicts
-class DatabaseOperationManager {
+class DatabaseOperationManager implements IDatabaseOperationManager {
   static final DatabaseOperationManager _instance =
       DatabaseOperationManager._internal();
   factory DatabaseOperationManager() => _instance;
@@ -21,6 +22,7 @@ class DatabaseOperationManager {
   /// Add a database operation to the queue
   ///
   /// Returns a Future that completes when the operation has been executed
+  @override
   Future<T> queueOperation<T>(
     Future<T> Function() operation, {
     String name = 'unnamed',
@@ -139,6 +141,7 @@ class DatabaseOperationManager {
   }
 
   /// Check database health and fix any issues
+  @override
   Future<bool> checkAndRepairDatabaseHealth(AppDatabase database) async {
     try {
       debugPrint('Checking database health...');
@@ -181,6 +184,7 @@ class DatabaseOperationManager {
   }
 
   /// Optimize database performance
+  @override
   Future<void> optimizeDatabase(AppDatabase database) async {
     try {
       debugPrint('Optimizing database...');
@@ -201,6 +205,7 @@ class DatabaseOperationManager {
 
   /// Synchronize local database with server
   /// This should be called after initial app loading
+  @override
   Future<void> synchronizeWithServer(
     AppDatabase database,
     ApiClient apiClient,

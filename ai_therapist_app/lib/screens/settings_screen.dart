@@ -2,23 +2,32 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/di/service_locator.dart';
-import 'package:ai_therapist_app/services/preferences_service.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
-import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/models/therapist_style.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  final IPreferencesService? preferencesService;
+  final NotificationService? notificationService;
+  final IThemeService? themeService;
+  
+  const SettingsScreen({
+    Key? key,
+    this.preferencesService,
+    this.notificationService,
+    this.themeService,
+  }) : super(key: key);
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late PreferencesService _preferencesService;
+  late IPreferencesService _preferencesService;
   late NotificationService _notificationService;
-  late ThemeService _themeService;
+  late IThemeService _themeService;
   bool _darkModeEnabled = false;
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
@@ -31,9 +40,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _preferencesService = serviceLocator<PreferencesService>();
-    _notificationService = serviceLocator<NotificationService>();
-    _themeService = serviceLocator<ThemeService>();
+    _preferencesService = widget.preferencesService ?? DependencyContainer().preferences;
+    _notificationService = widget.notificationService ?? serviceLocator<NotificationService>();  // Keep as is since not in interfaces yet
+    _themeService = widget.themeService ?? DependencyContainer().theme;
 
     // Load preferences
     _therapistStyleId =

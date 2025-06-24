@@ -243,7 +243,7 @@ Future<void> main() async {
     debugPrint('[main.dart] Initializing app database connection...');
     logger.info('[Main] Initializing app database connection...');
     try {
-      final appDatabase = serviceLocator<AppDatabase>();
+      final appDatabase = DependencyContainer().appDatabaseConcrete;
       await appDatabase.database;
       debugPrint('[main.dart] Database connection established.');
       logger.info('[Main] Database connection established.');
@@ -513,7 +513,7 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
     try {
       // Close database connection
       if (serviceLocator.isRegistered<AppDatabase>()) {
-        final appDatabase = serviceLocator<AppDatabase>();
+        final appDatabase = DependencyContainer().appDatabaseConcrete;
         await appDatabase.close();
         debugPrint('[AiTherapistApp] Database connection closed');
       }
@@ -701,8 +701,8 @@ Future<void> _initializeConfigAndApi() async {
     // Initialize database operations manager first
     try {
       logger.debug('[Main] Getting DatabaseOperationManager...');
-      final dbOpManager = serviceLocator<DatabaseOperationManager>();
-      final appDatabase = serviceLocator<AppDatabase>();
+      final dbOpManager = DependencyContainer().databaseOperationManagerConcrete;
+      final appDatabase = DependencyContainer().appDatabaseConcrete;
 
       // Check and repair database health
       await dbOpManager.checkAndRepairDatabaseHealth(appDatabase);
@@ -808,10 +808,10 @@ Future<void> initializeHeavyServices() async {
   try {
     // Table checks and health/repair
     try {
-      final appDatabase = serviceLocator<AppDatabase>();
+      final appDatabase = DependencyContainer().appDatabaseConcrete;
       if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
         logger.debug('[Main] Checking database health...');
-        final dbManager = serviceLocator<DatabaseOperationManager>();
+        final dbManager = DependencyContainer().databaseOperationManagerConcrete;
         final isHealthy =
             await dbManager.checkAndRepairDatabaseHealth(appDatabase);
         if (isHealthy) {
@@ -850,7 +850,7 @@ Future<void> initializeHeavyServices() async {
       // Schedule database optimization for later (after app is visible)
       if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
         Future.delayed(Duration(seconds: 3), () {
-          final dbManager = serviceLocator<DatabaseOperationManager>();
+          final dbManager = DependencyContainer().databaseOperationManagerConcrete;
           dbManager.optimizeDatabase(appDatabase).then((_) {
             logger.debug('[Main] Database optimization completed');
           });

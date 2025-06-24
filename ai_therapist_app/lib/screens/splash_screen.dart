@@ -91,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen>
 
       // Ensure ConfigService is initialized before using BackendService
       if (serviceLocator.isRegistered<ConfigService>()) {
-        final configService = serviceLocator<ConfigService>();
+        final configService = DependencyContainer().configService;
         await configService.init();
         if (kDebugMode) {
           print("SplashScreen: ConfigService initialized successfully");

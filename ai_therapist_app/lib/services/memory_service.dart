@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation_memory.dart';
 import '../di/service_locator.dart';
+import '../di/dependency_container.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../di/initialization_tracker.dart';
 import '../utils/logging_service.dart';
@@ -102,7 +103,7 @@ class MemoryService {
   Future<void> _ensureTablesExist() async {
     try {
       // Get DatabaseOperationManager to prevent database locks
-      final dbOpManager = serviceLocator<DatabaseOperationManager>();
+      final dbOpManager = DependencyContainer().databaseOperationManagerConcrete;
 
       // Check if required tables exist - this should be read-only
       final convMemoriesExists = await dbOpManager.queueOperation<bool>(

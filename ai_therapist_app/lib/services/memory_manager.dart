@@ -4,9 +4,10 @@ import '../models/conversation_memory.dart';
 import '../services/memory_service.dart';
 import '../utils/logging_service.dart';
 import '../di/initialization_tracker.dart';
+import '../di/interfaces/i_memory_manager.dart';
 
 /// Handles management of conversation memory and context for therapy sessions
-class MemoryManager {
+class MemoryManager implements IMemoryManager {
   // The underlying memory service
   final MemoryService _memoryService;
 
@@ -23,6 +24,12 @@ class MemoryManager {
       : _memoryService = memoryService;
 
   /// Initialize the memory manager
+  @override
+  Future<void> initialize() async {
+    await init();
+  }
+
+  /// Legacy initialization method - use initialize() instead
   Future<void> init() async {
     if (_isInitialized) return;
 
@@ -57,12 +64,14 @@ class MemoryManager {
   }
 
   /// Check if already initialized
+  @override
   bool get isInitialized => _isInitialized;
 
   /// Get the last initialization error
   String? get lastInitError => _lastInitError;
 
   /// Initialize only if not already initialized
+  @override
   Future<void> initializeIfNeeded() async {
     if (!_isInitialized && _initAttempts < _maxInitAttempts) {
       await init();
@@ -70,6 +79,7 @@ class MemoryManager {
   }
 
   /// Legacy method for backward compatibility
+  @override
   Future<void> initializeOnlyIfNeeded() async {
     return initializeIfNeeded();
   }
@@ -239,4 +249,177 @@ class MemoryManager {
       return '';
     }
   }
+
+  // Interface implementation methods
+  @override
+  Future<void> storeMemory(
+    String sessionId,
+    String content, {
+    Map<String, dynamic>? metadata,
+    List<String>? tags,
+  }) async {
+    try {
+      await _safeInitialize();
+      await _memoryService.addMemory(content, '', metadata: metadata ?? {});
+    } catch (e) {
+      logger.error('Error storing memory', error: e);
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> retrieveMemories(
+    String sessionId, {
+    String? query,
+    List<String>? tags,
+    int limit = 10,
+  }) async {
+    try {
+      await _safeInitialize();
+      // MemoryService doesn't have a direct retrieve method
+      // Return empty list for now
+      return [];
+    } catch (e) {
+      logger.error('Error retrieving memories', error: e);
+      return [];
+    }
+  }
+
+  @override
+  Future<void> updateMemory(
+    String memoryId,
+    String content, {
+    Map<String, dynamic>? metadata,
+  }) async {
+    // Not implemented in underlying service
+    logger.debug('updateMemory not implemented: $memoryId');
+  }
+
+  @override
+  Future<void> deleteMemory(String memoryId) async {
+    // Not implemented in underlying service
+    logger.debug('deleteMemory not implemented: $memoryId');
+  }
+
+  @override
+  Future<void> clearSessionMemories(String sessionId) async {
+    // Not implemented in underlying service
+    logger.debug('clearSessionMemories not implemented: $sessionId');
+  }
+
+  @override
+  Future<void> updateContext(String sessionId, Map<String, dynamic> context) async {
+    // Not implemented in underlying service
+    logger.debug('updateContext not implemented: $sessionId');
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getContext(String sessionId) async {
+    try {
+      await _safeInitialize();
+      final context = await getMemoryContext();
+      return {'context': context};
+    } catch (e) {
+      logger.error('Error getting context', error: e);
+      return null;
+    }
+  }
+
+  @override
+  Future<void> clearContext(String sessionId) async {
+    // Not implemented in underlying service
+    logger.debug('clearContext not implemented: $sessionId');
+  }
+
+  @override
+  Future<void> addToHistory(
+    String sessionId,
+    String role,
+    String content, {
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      await _safeInitialize();
+      if (role == 'user') {
+        await _memoryService.addMemory(content, '', metadata: metadata ?? {});
+      } else {
+        await _memoryService.addMemory('', content, metadata: metadata ?? {});
+      }
+    } catch (e) {
+      logger.error('Error adding to history', error: e);
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getHistory(
+    String sessionId, {
+    int limit = 50,
+    String? fromTimestamp,
+  }) async {
+    try {
+      await _safeInitialize();
+      // MemoryService doesn't have a direct history method
+      // Return empty list for now
+      return [];
+    } catch (e) {
+      logger.error('Error getting history', error: e);
+      return [];
+    }
+  }
+
+  @override
+  Future<void> summarizeHistory(String sessionId) async {
+    // Not implemented in underlying service
+    logger.debug('summarizeHistory not implemented: $sessionId');
+  }
+
+  @override
+  Future<Map<String, dynamic>> getMemoryStats(String sessionId) async {
+    return {
+      'total_memories': 0,
+      'session_id': sessionId,
+      'last_updated': DateTime.now().toIso8601String(),
+    };
+  }
+
+  @override
+  Future<List<String>> extractKeyTopics(String sessionId) async {
+    return [];
+  }
+
+  @override
+  Future<Map<String, double>> getSentimentAnalysis(String sessionId) async {
+    return {
+      'positive': 0.0,
+      'negative': 0.0,
+      'neutral': 1.0,
+    };
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchMemories(
+    String query, {
+    String? sessionId,
+    List<String>? tags,
+    double threshold = 0.7,
+  }) async {
+    return [];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getRelatedMemories(
+    String memoryId, {
+    int limit = 5,
+    double threshold = 0.8,
+  }) async {
+    return [];
+  }
+
+  @override
+  void dispose() {
+    // Cleanup resources
+    _isInitialized = false;
+  }
+
+  @override
+  int get memoryCount => 0;
 }
