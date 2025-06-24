@@ -4,12 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import '../../../di/interfaces/i_app_database.dart';
 
 /// App database class using singleton pattern for SQLite database access
 ///
 /// This class manages the local SQLite database with proper migration paths
 /// when database schema changes are needed.
-class AppDatabase {
+class AppDatabase implements IAppDatabase {
   // Singleton pattern implementation
   static final AppDatabase _instance = AppDatabase._internal();
   factory AppDatabase() => _instance;
@@ -34,6 +35,7 @@ class AppDatabase {
   };
 
   /// Get the database instance
+  @override
   Future<Database> get database async {
     if (_database != null) return _database!;
 
@@ -484,6 +486,7 @@ class AppDatabase {
   }
 
   /// Check if a table exists in the database
+  @override
   Future<bool> tableExists(String tableName) async {
     try {
       final db = await database;
@@ -499,6 +502,7 @@ class AppDatabase {
   }
 
   /// Close the database connection
+  @override
   Future<void> close() async {
     if (_database != null) {
       await _database!.close();
@@ -510,6 +514,7 @@ class AppDatabase {
   // CRUD operations
 
   /// Insert a row into a table
+  @override
   Future<int> insert(String table, Map<String, dynamic> data) async {
     try {
       final db = await database;
@@ -526,6 +531,7 @@ class AppDatabase {
   }
 
   /// Query rows from a table
+  @override
   Future<List<Map<String, dynamic>>> query(
     String table, {
     String? where,
@@ -552,6 +558,7 @@ class AppDatabase {
   }
 
   /// Update a row in a table
+  @override
   Future<int> update(
     String table,
     Map<String, dynamic> data, {
@@ -574,6 +581,7 @@ class AppDatabase {
   }
 
   /// Delete a row from a table
+  @override
   Future<int> delete(
     String table, {
     String? where,
@@ -594,6 +602,7 @@ class AppDatabase {
   }
 
   /// Execute a raw SQL query
+  @override
   Future<List<Map<String, dynamic>>> rawQuery(
     String sql, [
     List<dynamic>? arguments,
@@ -609,6 +618,7 @@ class AppDatabase {
   }
 
   /// Execute a raw SQL command
+  @override
   Future<int> rawExecute(
     String sql, [
     List<dynamic>? arguments,
@@ -624,6 +634,7 @@ class AppDatabase {
   }
 
   /// Execute multiple operations in a transaction
+  @override
   Future<T> transaction<T>(Future<T> Function(Transaction txn) action) async {
     try {
       final db = await database;

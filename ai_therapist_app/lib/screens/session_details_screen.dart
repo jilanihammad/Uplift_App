@@ -2,20 +2,22 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:get_it/get_it.dart';
 import '../domain/entities/session.dart';
-import '../data/repositories/session_repository.dart';
-import '../data/datasources/local/app_database.dart';
-import '../di/service_locator.dart';
+import '../di/dependency_container.dart';
+import '../di/interfaces/interfaces.dart';
 import '../models/therapy_message.dart';
 import 'dart:convert';
 
 class SessionDetailsScreen extends StatefulWidget {
   final String sessionId;
+  final ISessionRepository? sessionRepository;
+  final IDatabase? database;
 
   const SessionDetailsScreen({
     Key? key,
     required this.sessionId,
+    this.sessionRepository,
+    this.database,
   }) : super(key: key);
 
   @override
@@ -27,12 +29,14 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   Session? _session;
   List<TherapyMessage> _messages = [];
   String? _errorMessage;
-  final SessionRepository _sessionRepository =
-      serviceLocator<SessionRepository>();
+  late ISessionRepository _sessionRepository;
+  late IDatabase _database;
 
   @override
   void initState() {
     super.initState();
+    _sessionRepository = widget.sessionRepository ?? DependencyContainer().sessionRepository;
+    _database = widget.database ?? DependencyContainer().database;
     _loadSession();
   }
 
@@ -74,8 +78,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     try {
       // This would typically be done through a MessageRepository
       // For now, we'll get them from the local database
-      final appDatabase = serviceLocator<AppDatabase>();
-      final results = await appDatabase.query(
+      final results = await _database.query(
         'messages',
         where: 'session_id = ?',
         whereArgs: [sessionId],

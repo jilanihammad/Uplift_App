@@ -2,6 +2,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:flutter/foundation.dart';
 import 'dependency_container.dart';
+import 'modules/services_module.dart';
 
 import '../data/datasources/remote/api_client.dart';
 import '../data/datasources/local/prefs_manager.dart';
@@ -377,6 +378,10 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered VADManager');
     }
 
+    // Register Phase 5/6 interface mappings from ServicesModule
+    await ServicesModule.register(serviceLocator);
+    debugPrint('ServicesModule interface registrations complete');
+
     // Initialize the new DependencyContainer
     await DependencyContainer().initialize();
     debugPrint('DependencyContainer initialized');
@@ -447,16 +452,28 @@ Future<void> registerApiDependentServices(
       debugPrint('Registered MessageRepository');
     }
 
-    // Register TherapyService after all its dependencies are available
-    if (!serviceLocator.isRegistered<ITherapyService>()) {
-      serviceLocator.registerLazySingleton<ITherapyService>(() => TherapyService(
+    // Register TherapyService concrete implementation first
+    if (!serviceLocator.isRegistered<TherapyService>()) {
+      serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
             messageProcessor: serviceLocator<MessageProcessor>(),
             audioGenerator: serviceLocator<AudioGenerator>(),
             memoryManager: serviceLocator<MemoryManager>(),
             apiClient: serviceLocator<ApiClient>(),
           ));
-      debugPrint('Registered TherapyService with all dependencies');
+      debugPrint('Registered TherapyService concrete implementation');
     }
+
+    // Register interface mapping after concrete service is available
+    if (!serviceLocator.isRegistered<ITherapyService>()) {
+      serviceLocator.registerLazySingleton<ITherapyService>(
+        () => serviceLocator<TherapyService>(),
+      );
+      debugPrint('Registered ITherapyService interface mapping');
+    }
+
+    // Re-register interface mappings now that concrete services are available
+    await ServicesModule.register(serviceLocator);
+    debugPrint('ServicesModule interface mappings updated after API services');
 
     DependencyStatus.apiDependenciesRegistered = true;
     debugPrint('API-dependent service registration complete');

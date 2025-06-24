@@ -29,6 +29,7 @@ import '../../services/auth_coordinator.dart';
 import '../../services/auth_service.dart';
 import '../../services/onboarding_service.dart';
 import '../../data/datasources/local/database_provider.dart';
+import '../interfaces/i_memory_manager.dart';
 
 /// Services dependency module
 /// Registers application services with proper dependency injection
@@ -39,206 +40,102 @@ class ServicesModule {
       return;
     }
 
-    // Register PreferencesService with interface
-    if (!locator.isRegistered<PreferencesService>()) {
-      locator.registerLazySingleton<PreferencesService>(
-        () => PreferencesService(),
+    // Only register interface mappings for services already registered in service_locator.dart
+    
+    // Register interface for PreferencesService (already registered)
+    if (!locator.isRegistered<IPreferencesService>()) {
+      locator.registerLazySingleton<IPreferencesService>(
+        () => locator<PreferencesService>(),
       );
     }
-    
-    // Register interface for PreferencesService
-    locator.registerLazySingleton<IPreferencesService>(
-      () => locator<PreferencesService>(),
-    );
 
-    // Register ThemeService with dependency injection
-    locator.registerLazySingleton<IThemeService>(
-      () => ThemeService(
-        preferencesService: locator<PreferencesService>(),
-      ),
-    );
+    // Register interface for ThemeService (already registered)
+    if (!locator.isRegistered<IThemeService>()) {
+      locator.registerLazySingleton<IThemeService>(
+        () => locator<ThemeService>(),
+      );
+    }
 
-    // Also register concrete class for backward compatibility
-    locator.registerLazySingleton<ThemeService>(
-      () => locator<IThemeService>() as ThemeService,
-    );
+    // Register interface for NavigationService (already registered)
+    if (!locator.isRegistered<INavigationService>()) {
+      locator.registerLazySingleton<INavigationService>(
+        () => locator<NavigationService>(),
+      );
+    }
 
-    // Register NavigationService (no dependencies)
-    locator.registerLazySingleton<NavigationService>(
-      () => NavigationService(),
-    );
-    
-    // Register interface for NavigationService
-    locator.registerLazySingleton<INavigationService>(
-      () => locator<NavigationService>(),
-    );
+    // Register interface for ProgressService (already registered)
+    if (!locator.isRegistered<IProgressService>()) {
+      locator.registerLazySingleton<IProgressService>(
+        () => locator<ProgressService>(),
+      );
+    }
+    // Register interface for UserProfileService (already registered)
+    if (!locator.isRegistered<IUserProfileService>()) {
+      locator.registerLazySingleton<IUserProfileService>(
+        () => locator<UserProfileService>(),
+      );
+    }
 
-    // Register ProgressService with dependency injection
-    locator.registerLazySingleton<ProgressService>(
-      () => ProgressService(
-        notificationService: locator<service_ns.NotificationService>(),
-      ),
-    );
-    
-    // Register interface for ProgressService
-    locator.registerLazySingleton<IProgressService>(
-      () => locator<ProgressService>(),
-    );
+    // Register interface for GroqService (already registered)
+    if (!locator.isRegistered<IGroqService>()) {
+      locator.registerLazySingleton<IGroqService>(
+        () => locator<GroqService>(),
+      );
+    }
 
-    // Register UserProfileService (no dependencies)
-    locator.registerLazySingleton<UserProfileService>(
-      () => UserProfileService(),
-    );
-    
-    // Register interface for UserProfileService
-    locator.registerLazySingleton<IUserProfileService>(
-      () => locator<UserProfileService>(),
-    );
+    // Register interface for SessionRepository (already registered)
+    if (!locator.isRegistered<ISessionRepository>()) {
+      locator.registerLazySingleton<ISessionRepository>(
+        () => locator<SessionRepository>(),
+      );
+    }
 
-    // Register GroqService with dependencies from core module
-    locator.registerLazySingleton<GroqService>(
-      () => GroqService(
-        configService: locator<ConfigService>(),
-        apiClient: locator<ApiClient>(),
-      ),
-    );
-    
-    // Register interface for GroqService
-    locator.registerLazySingleton<IGroqService>(
-      () => locator<GroqService>(),
-    );
+    // Register interface for TTSService (already registered via AudioServicesModule)
+    if (!locator.isRegistered<ITTSService>()) {
+      locator.registerLazySingleton<ITTSService>(
+        () => locator<TTSService>(),
+      );
+    }
 
-    // Register SessionRepository with dependencies from core module
-    locator.registerLazySingleton<SessionRepository>(
-      () => SessionRepository(
-        apiClient: locator<ApiClient>(),
-        appDatabase: locator<AppDatabase>(),
-      ),
-    );
-    
-    // Register interface for SessionRepository
-    locator.registerLazySingleton<ISessionRepository>(
-      () => locator<SessionRepository>(),
-    );
+    // Register interface for WebSocketAudioManager (already registered via AudioServicesModule)
+    if (!locator.isRegistered<IWebSocketAudioManager>()) {
+      locator.registerLazySingleton<IWebSocketAudioManager>(
+        () => locator<WebSocketAudioManager>(),
+      );
+    }
+    // Register interface for OnboardingService (already registered)
+    if (!locator.isRegistered<IOnboardingService>()) {
+      locator.registerLazySingleton<IOnboardingService>(
+        () => locator<OnboardingService>(),
+      );
+    }
 
-    // Register AudioPlayerManager (no dependencies)
-    locator.registerLazySingleton<AudioPlayerManager>(
-      () => AudioPlayerManager(),
-    );
+    // Register interface for AuthCoordinator (already registered)
+    if (!locator.isRegistered<IAuthEventHandler>()) {
+      locator.registerLazySingleton<IAuthEventHandler>(
+        () => locator<AuthCoordinator>(),
+      );
+    }
 
-    // Register TTSService with dependencies
-    locator.registerLazySingleton<TTSService>(
-      () => TTSService(
-        audioPlayerManager: locator<AudioPlayerManager>(),
-        apiClient: locator<ApiClient>(),
-      ),
-    );
-    
-    // Register interface for TTSService
-    locator.registerLazySingleton<ITTSService>(
-      () => locator<TTSService>(),
-    );
+    // Register interface for AuthService (already registered)
+    if (!locator.isRegistered<IAuthService>()) {
+      locator.registerLazySingleton<IAuthService>(
+        () => locator<AuthService>(),
+      );
+    }
 
-    // Register WebSocketAudioManager with dependencies
-    locator.registerLazySingleton<WebSocketAudioManager>(
-      () => WebSocketAudioManager(
-        apiClient: locator<ApiClient>(),
-      ),
-    );
-    
-    // Register interface for WebSocketAudioManager
-    locator.registerLazySingleton<IWebSocketAudioManager>(
-      () => locator<WebSocketAudioManager>(),
-    );
-
-    // Register OnboardingService first (needed by AuthCoordinator)
-    locator.registerLazySingleton<OnboardingService>(
-      () => OnboardingService(),
-    );
-    
-    // Register interface for OnboardingService
-    locator.registerLazySingleton<IOnboardingService>(
-      () => locator<OnboardingService>(),
-    );
-
-    // Register AuthCoordinator with OnboardingService dependency
-    locator.registerLazySingleton<AuthCoordinator>(
-      () => AuthCoordinator(
-        onboardingService: locator<IOnboardingService>(),
-      ),
-    );
-    
-    // Register interface for AuthCoordinator
-    locator.registerLazySingleton<IAuthEventHandler>(
-      () => locator<AuthCoordinator>(),
-    );
-
-    // Register AuthService with dependency injection
-    locator.registerLazySingleton<AuthService>(
-      () => AuthService(
-        userProfileService: locator<UserProfileService>(),
-        authEventHandler: locator<IAuthEventHandler>(),
-      ),
-    );
-    
-    // Register interface for AuthService
-    locator.registerLazySingleton<IAuthService>(
-      () => locator<AuthService>(),
-    );
-
-    // Register therapy-related services for TherapyService dependencies
-    
-    // Register MemoryService (needed by MemoryManager)
-    locator.registerLazySingleton<memory_svc.MemoryService>(
-      () => memory_svc.MemoryService(
-        databaseProvider: locator<DatabaseProvider>(),
-      ),
-    );
-
-    // Register ConversationBufferMemory (needed by MessageProcessor)
-    locator.registerLazySingleton<langchain.ConversationBufferMemory>(
-      () => langchain.ConversationBufferMemory(),
-    );
-
-    // Register MemoryManager with dependencies
-    locator.registerLazySingleton<MemoryManager>(
-      () => MemoryManager(
-        memoryService: locator<memory_svc.MemoryService>(),
-      ),
-    );
-
-    // Register MessageProcessor with dependencies (VoiceSessionBloc can be null)
-    locator.registerLazySingleton<MessageProcessor>(
-      () => MessageProcessor(
-        voiceSessionBloc: null, // Can be null according to constructor
-        conversationHistory: locator<langchain.ConversationBufferMemory>(),
-        configService: locator<ConfigService>(),
-      ),
-    );
-
-    // Register AudioGenerator with dependencies
-    locator.registerLazySingleton<AudioGenerator>(
-      () => AudioGenerator(
-        ttsService: locator<ITTSService>(),
-        audioFileManager: locator<IAudioFileManager>(),
-        apiClient: locator<ApiClient>(),
-      ),
-    );
-
-    // Register TherapyService with all dependencies
-    locator.registerLazySingleton<TherapyService>(
-      () => TherapyService(
-        messageProcessor: locator<MessageProcessor>(),
-        audioGenerator: locator<AudioGenerator>(),
-        memoryManager: locator<MemoryManager>(),
-        apiClient: locator<IApiClient>(),
-      ),
-    );
-    
-    // Register interface for TherapyService
-    locator.registerLazySingleton<ITherapyService>(
-      () => locator<TherapyService>(),
-    );
+    // Register interface for MemoryManager (already registered)
+    if (!locator.isRegistered<IMemoryManager>()) {
+      locator.registerLazySingleton<IMemoryManager>(
+        () => locator<MemoryManager>(),
+      );
+    }
+    // Register interface for TherapyService (only if concrete service is registered)
+    if (!locator.isRegistered<ITherapyService>() && locator.isRegistered<TherapyService>()) {
+      locator.registerLazySingleton<ITherapyService>(
+        () => locator<TherapyService>(),
+      );
+    }
   }
 
   static void registerMocks(GetIt locator) {

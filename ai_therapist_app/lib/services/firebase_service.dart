@@ -8,7 +8,7 @@ import 'dart:async';
 
 // Import to access the synchronized Firebase initialization function
 import 'package:ai_therapist_app/utils/firebase_init.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:ai_therapist_app/utils/logging_service.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -44,7 +44,7 @@ class FirebaseService {
   // Constructor
   FirebaseService() {
     try {
-      _configService = serviceLocator<ConfigService>();
+      _configService = DependencyContainer().configService;
     } catch (e) {
       logger.warning(
         'ConfigService not available, using defaults',

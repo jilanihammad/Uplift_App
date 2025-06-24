@@ -4,21 +4,27 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
-import 'package:ai_therapist_app/services/therapy_service.dart';
-import 'package:ai_therapist_app/services/progress_service.dart';
-import 'package:ai_therapist_app/services/preferences_service.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
-import 'package:ai_therapist_app/services/user_profile_service.dart';
 import 'package:ai_therapist_app/services/memory_manager.dart';
 import 'package:ai_therapist_app/services/audio_generator.dart';
 import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  final IProgressService? progressService;
+  final IPreferencesService? preferencesService;
+  final IUserProfileService? userProfileService;
+  
+  const HomeScreen({
+    Key? key,
+    this.progressService,
+    this.preferencesService,
+    this.userProfileService,
+  }) : super(key: key);
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -27,16 +33,18 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Mood _currentMood = Mood.neutral;
   DateTime? _nextSessionDate;
-  late ProgressService _progressService;
-  late PreferencesService _preferencesService;
+  late IProgressService _progressService;
+  late IPreferencesService _preferencesService;
+  late IUserProfileService _userProfileService;
   late UserProgress _progress;
   bool _progressInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    _progressService = serviceLocator<ProgressService>();
-    _preferencesService = serviceLocator<PreferencesService>();
+    _progressService = widget.progressService ?? DependencyContainer().progress;
+    _preferencesService = widget.preferencesService ?? DependencyContainer().preferences;
+    _userProfileService = widget.userProfileService ?? DependencyContainer().userProfile;
     _progress = _progressService.progress;
 
     // Listen for progress changes
@@ -46,12 +54,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Defer heavy initializations to after navigation
     Future.microtask(() async {
-      if (serviceLocator.isRegistered<MemoryManager>()) {
-        final memoryManager = serviceLocator<MemoryManager>();
+      final container = DependencyContainer();
+      if (container.isRegistered<MemoryManager>()) {
+        final memoryManager = container.get<MemoryManager>();
         await memoryManager.initializeOnlyIfNeeded();
       }
-      if (serviceLocator.isRegistered<AudioGenerator>()) {
-        final audioGenerator = serviceLocator<AudioGenerator>();
+      if (container.isRegistered<AudioGenerator>()) {
+        final audioGenerator = container.get<AudioGenerator>();
         await audioGenerator.initializeOnlyIfNeeded();
       }
       // Add any other heavy service initializations here
@@ -208,8 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String greeting;
 
     // Get actual user name from UserProfileService
-    final userProfileService = serviceLocator<UserProfileService>();
-    String userName = userProfileService.profile?.name ?? "there";
+    String userName = _userProfileService.profile?.name ?? "there";
 
     if (hour < 12) {
       greeting = 'Good Morning';

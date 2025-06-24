@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:ai_therapist_app/config/api.dart';
 import 'package:ai_therapist_app/services/langchain/custom_langchain.dart';
@@ -22,8 +22,8 @@ class GroqService implements IGroqService {
   GroqService({
     ConfigService? configService,
     ApiClient? apiClient,
-  }) : _configService = configService ?? serviceLocator<ConfigService>(),
-       _apiClient = apiClient ?? serviceLocator<ApiClient>();
+  }) : _configService = configService ?? DependencyContainer().configService,
+       _apiClient = apiClient ?? DependencyContainer().apiClientConcrete;
 
   // API connection details
   late String _llmModelId;

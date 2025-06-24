@@ -3,7 +3,7 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:ai_therapist_app/utils/logging_service.dart';
 
@@ -48,7 +48,7 @@ class DefaultFirebaseOptions {
   static FirebaseOptions get android {
     try {
       // Try to get values from ConfigService
-      final configService = serviceLocator<ConfigService>();
+      final configService = DependencyContainer().configService;
       return FirebaseOptions(
         apiKey: configService.firebaseApiKey,
         appId: configService.firebaseAppId,
@@ -74,7 +74,7 @@ class DefaultFirebaseOptions {
   static FirebaseOptions _getDevFirebaseOptions() {
     try {
       // Try to get values from ConfigService
-      final configService = serviceLocator<ConfigService>();
+      final configService = DependencyContainer().configService;
       return FirebaseOptions(
         apiKey: configService.firebaseApiKey,
         appId: configService.firebaseAppId,

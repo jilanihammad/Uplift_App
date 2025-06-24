@@ -54,10 +54,11 @@ class ChatScreen extends StatelessWidget {
       create: (context) => VoiceSessionBloc(
         voiceService: voiceService ?? serviceLocator<VoiceService>(),
         vadManager: vadManager ?? serviceLocator<VADManager>(),
-        memoryService: null,
-        therapyGraphService: null,
-        notificationService: null,
-        conversationHistory: null,
+        memoryService: null, // Keep as null for now - will be handled via fallback in bloc
+        therapyGraphService: null, // Keep as null for now
+        notificationService: null, // Keep as null for now
+        conversationHistory: null, // Keep as null for now
+        therapyService: therapyService ?? (serviceLocator.isRegistered<ITherapyService>() ? serviceLocator<ITherapyService>() : null),
       ),
       child: _ChatScreenBody(
         sessionId: sessionId,

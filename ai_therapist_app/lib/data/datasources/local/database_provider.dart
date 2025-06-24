@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/utils/database_health_checker.dart';
 
 /// DatabaseProvider abstracts database access and adds an additional layer
@@ -10,9 +10,9 @@ class DatabaseProvider {
   final AppDatabase _database;
 
   /// Create a new DatabaseProvider with the given database
-  /// or use the service locator if not provided
+  /// or use the dependency container if not provided
   DatabaseProvider({AppDatabase? database})
-      : _database = database ?? serviceLocator<AppDatabase>();
+      : _database = database ?? DependencyContainer().appDatabaseConcrete;
 
   /// Initialize the database
   Future<void> init() async {

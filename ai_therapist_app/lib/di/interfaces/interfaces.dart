@@ -20,8 +20,15 @@ export 'i_audio_file_manager.dart';
 
 // Data interfaces
 export 'i_database.dart';
+export 'i_app_database.dart';
+export 'i_database_operation_manager.dart';
 export 'i_memory_manager.dart';
 export 'i_session_repository.dart';
+
+// Repository interfaces
+export 'i_auth_repository.dart';
+export 'i_user_repository.dart';
+export 'i_message_repository.dart';
 
 // UI and flow interfaces
 export 'i_onboarding_service.dart';

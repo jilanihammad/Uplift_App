@@ -44,6 +44,10 @@ class DependencyContainer {
   /// Get a dependency by type
   T get<T extends Object>() {
     if (!_isInitialized) {
+      // Fallback to service locator for backward compatibility during initialization
+      if (_locator.isRegistered<T>()) {
+        return _locator.get<T>();
+      }
       throw StateError('DependencyContainer not initialized. Call initialize() first.');
     }
     return _locator.get<T>();
