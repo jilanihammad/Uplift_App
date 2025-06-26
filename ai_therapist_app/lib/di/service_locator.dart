@@ -248,6 +248,7 @@ Future<void> setupServiceLocator() async {
           voiceSessionBloc: null, // Will be set later to avoid circular dependency
           conversationHistory: serviceLocator<ConversationBufferMemory>(),
           configService: serviceLocator<ConfigService>(),
+          groqService: serviceLocator<GroqService>(),
         );
 
         DependencyStatus.markInitialized('MessageProcessor');
@@ -274,6 +275,25 @@ Future<void> setupServiceLocator() async {
         generator.initializeOnlyIfNeeded().then((_) {
           DependencyStatus.markInitialized('AudioGenerator');
           debugPrint('AudioGenerator initialized on first access');
+          
+          // Set up TTS state callback to coordinate with VoiceService
+          // This is done after initialization to avoid circular dependency issues
+          try {
+            final voiceService = serviceLocator<VoiceService>();
+            generator.setTTSStateCallback((isSpeaking) {
+              voiceService.updateTTSSpeakingState(isSpeaking);
+            });
+            debugPrint('AudioGenerator TTS state callback connected to VoiceService');
+            
+            // Set up VAD pause/resume callbacks to prevent echo-loop
+            generator.setVADCallbacks(
+              pauseCallback: () async => await voiceService.pauseVAD(),
+              resumeCallback: () async => await voiceService.resumeVAD(),
+            );
+            debugPrint('AudioGenerator VAD callbacks connected to VoiceService');
+          } catch (e) {
+            debugPrint('Warning: Could not connect AudioGenerator callbacks: $e');
+          }
         });
 
         return generator;

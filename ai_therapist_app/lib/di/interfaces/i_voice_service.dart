@@ -30,6 +30,9 @@ abstract class IVoiceService {
   Future<void> speakText(String text, {String voice = 'alloy'});
   Future<void> stopSpeaking();
   
+  // TTS State Management (for auto-listening coordination)
+  void updateTTSSpeakingState(bool isSpeaking);
+  
   // Audio processing
   Future<Uint8List?> processAudioWithRNNoise(Uint8List audioData);
   

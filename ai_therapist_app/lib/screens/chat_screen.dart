@@ -724,21 +724,25 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     if (state.isVoiceMode) {
       debugPrint('[ChatScreen] Starting welcome TTS in voice mode');
 
+      // CRITICAL FIX: Coordinate welcome TTS with VoiceService AI speaking state
+      final voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
+      
+      // Set AI speaking state to coordinate with VoiceSessionBloc
+      voiceService.updateTTSSpeakingState(true);
+      
       final ttsService = DependencyContainer().ttsService;
       ttsService.streamAndPlayTTS(
         welcomeMessage,
         onDone: () {
           debugPrint('[ChatScreen] Welcome TTS completed');
-          // Add delay and then enable auto-listening mode
-          Future.delayed(const Duration(milliseconds: 125), () {
-            debugPrint('[ChatScreen] Enabling auto mode after welcome TTS buffer');
-            if (mounted) {
-              context.read<VoiceSessionBloc>().add(const EnableAutoMode());
-            }
-          });
+          // Clear AI speaking state to trigger VoiceSessionBloc coordination
+          voiceService.updateTTSSpeakingState(false);
+          debugPrint('[ChatScreen] AI speaking state cleared - VoiceSessionBloc will handle auto mode');
         },
         onError: (error) {
           debugPrint('Welcome TTS Error: $error');
+          // Clear AI speaking state even on error
+          voiceService.updateTTSSpeakingState(false);
         },
       );
     }
