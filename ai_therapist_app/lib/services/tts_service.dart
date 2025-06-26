@@ -64,6 +64,13 @@ class TTSService implements ITTSService {
   
   // File cleanup tracking
   final Set<String> _tempFiles = <String>{};
+  
+  // Text buffering for intelligent chunking
+  final Map<String, StringBuffer> _textBuffers = {};
+  final Map<String, Timer?> _bufferTimers = {};
+  static const int _minBufferSize = 50; // Minimum characters before processing
+  static const int _maxBufferSize = 200; // Maximum buffer size
+  static const Duration _bufferTimeout = Duration(seconds: 2); // Timeout for processing
 
   /// Constructor
   TTSService({
@@ -133,6 +140,7 @@ class TTSService implements ITTSService {
     void Function()? onDone,
     void Function(String)? onError,
     void Function(double)? onProgress,
+    String? sessionId,
   }) async {
     // START TIMING DIAGNOSTICS
     final totalStopwatch = Stopwatch()..start();
@@ -281,9 +289,21 @@ class TTSService implements ITTSService {
           _reusableChannel = null;
         });
 
+        // Process text through intelligent buffering
+        final processedText = await _processTextWithBuffering(text, sessionId: sessionId);
+        
+        if (processedText.isEmpty) {
+          // Text was buffered, not ready to send yet
+          if (kDebugMode) {
+            print('[TTSService] Text buffered, waiting for more content or timeout');
+          }
+          finishTTS();
+          return;
+        }
+        
         // Send the TTS request with session ID
         final request = {
-          'text': text,
+          'text': processedText,
           'voice': _currentVoice,
           'params': {'response_format': _audioFormat},
           'session_id': sessionId,
@@ -647,6 +667,246 @@ class TTSService implements ITTSService {
       if (kDebugMode) {
         print('TTSService: Is speaking set to $speaking');
       }
+    }
+  }
+  
+  /// Process text through intelligent buffering system
+  Future<String> _processTextWithBuffering(String text, {String? sessionId}) async {
+    final bufferId = sessionId ?? 'default';
+    
+    // Initialize buffer if needed
+    _textBuffers[bufferId] ??= StringBuffer();
+    final buffer = _textBuffers[bufferId]!;
+    
+    // Add new text to buffer
+    buffer.write(text);
+    
+    // Cancel existing timer
+    _bufferTimers[bufferId]?.cancel();
+    
+    final currentBufferContent = buffer.toString();
+    
+    if (kDebugMode) {
+      print('[TTSService] Buffer[$bufferId] now has ${currentBufferContent.length} chars: "${currentBufferContent.substring(0, currentBufferContent.length.clamp(0, 50))}..."');
+    }
+    
+    // Check if we should process the buffer
+    if (_shouldProcessBuffer(currentBufferContent)) {
+      // Extract sentences to process
+      final result = _extractSentencesFromBuffer(currentBufferContent);
+      
+      if (result.processedText.isNotEmpty) {
+        // Update buffer with remaining text
+        buffer.clear();
+        if (result.remainingText.isNotEmpty) {
+          buffer.write(result.remainingText);
+        }
+        
+        if (kDebugMode) {
+          print('[TTSService] Processing ${result.processedText.length} chars, ${result.remainingText.length} chars remaining in buffer');
+        }
+        
+        return result.processedText;
+      }
+    }
+    
+    // Set timeout to process buffer if no more text arrives
+    _bufferTimers[bufferId] = Timer(_bufferTimeout, () {
+      final bufferContent = buffer.toString();
+      if (bufferContent.isNotEmpty) {
+        if (kDebugMode) {
+          print('[TTSService] Buffer timeout reached, flushing ${bufferContent.length} chars');
+        }
+        // Process whatever is in the buffer
+        _flushBuffer(bufferId);
+      }
+    });
+    
+    // Return empty string to indicate buffering
+    return '';
+  }
+  
+  /// Check if buffer should be processed
+  bool _shouldProcessBuffer(String bufferContent) {
+    // Process if we have enough characters
+    if (bufferContent.length >= _minBufferSize) {
+      // Check for sentence boundaries
+      return _containsCompleteSentence(bufferContent);
+    }
+    
+    // Process if buffer is getting too large
+    if (bufferContent.length >= _maxBufferSize) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /// Check if text contains a complete sentence
+  bool _containsCompleteSentence(String text) {
+    // Look for sentence endings followed by space or end of string
+    final sentenceEndPattern = RegExp(r'[.!?]+\s*');
+    final matches = sentenceEndPattern.allMatches(text);
+    
+    for (final match in matches) {
+      // Check if this is a real sentence ending (not abbreviation)
+      if (_isRealSentenceEnd(text, match.start)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  /// Check if a punctuation mark is a real sentence ending
+  bool _isRealSentenceEnd(String text, int position) {
+    if (position >= text.length) return false;
+    
+    final char = text[position];
+    
+    // Always treat ! and ? as sentence endings
+    if (char == '!' || char == '?') return true;
+    
+    // For periods, check for common abbreviations
+    if (char == '.') {
+      // Common abbreviations that shouldn't end sentences
+      final abbreviations = {
+        'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'Inc', 'Ltd', 'Co', 'Corp',
+        'vs', 'etc', 'eg', 'ie', 'et', 'al', 'Ph', 'M', 'B', 'D'
+      };
+      
+      // Look backwards to find the word before the period
+      int wordStart = position - 1;
+      while (wordStart >= 0 && text[wordStart] != ' ') {
+        wordStart--;
+      }
+      wordStart++;
+      
+      if (wordStart < position) {
+        final word = text.substring(wordStart, position);
+        if (abbreviations.contains(word)) {
+          return false;
+        }
+      }
+      
+      // Check if next character is lowercase (continuation)
+      if (position + 1 < text.length) {
+        final nextChar = text[position + 1];
+        if (nextChar != ' ' && nextChar.toLowerCase() == nextChar && RegExp(r'[a-z]').hasMatch(nextChar)) {
+          return false;
+        }
+      }
+      
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /// Extract complete sentences from buffer
+  ({String processedText, String remainingText}) _extractSentencesFromBuffer(String bufferContent) {
+    final sentenceEndPattern = RegExp(r'[.!?]+\s*');
+    final matches = sentenceEndPattern.allMatches(bufferContent).toList();
+    
+    int lastSentenceEnd = 0;
+    
+    for (final match in matches) {
+      if (_isRealSentenceEnd(bufferContent, match.start)) {
+        lastSentenceEnd = match.end;
+      }
+    }
+    
+    if (lastSentenceEnd > 0) {
+      // We found at least one complete sentence
+      final processedText = bufferContent.substring(0, lastSentenceEnd).trim();
+      final remainingText = bufferContent.substring(lastSentenceEnd).trim();
+      
+      return (processedText: processedText, remainingText: remainingText);
+    }
+    
+    // No complete sentences, but check if buffer is too large
+    if (bufferContent.length >= _maxBufferSize) {
+      // Find a good breaking point (comma, semicolon, etc.)
+      final breakPoints = RegExp(r'[,;:]\s*');
+      final breakMatches = breakPoints.allMatches(bufferContent).toList();
+      
+      if (breakMatches.isNotEmpty) {
+        // Use the last break point that keeps us under max size
+        for (int i = breakMatches.length - 1; i >= 0; i--) {
+          if (breakMatches[i].end <= _maxBufferSize) {
+            final processedText = bufferContent.substring(0, breakMatches[i].end).trim();
+            final remainingText = bufferContent.substring(breakMatches[i].end).trim();
+            return (processedText: processedText, remainingText: remainingText);
+          }
+        }
+      }
+      
+      // No good break point, just cut at max size
+      final processedText = bufferContent.substring(0, _maxBufferSize).trim();
+      final remainingText = bufferContent.substring(_maxBufferSize).trim();
+      return (processedText: processedText, remainingText: remainingText);
+    }
+    
+    // Buffer not ready to process
+    return (processedText: '', remainingText: bufferContent);
+  }
+  
+  /// Flush buffer and process any remaining text
+  Future<void> _flushBuffer(String bufferId) async {
+    final buffer = _textBuffers[bufferId];
+    if (buffer == null || buffer.isEmpty) return;
+    
+    final remainingText = buffer.toString().trim();
+    buffer.clear();
+    
+    if (remainingText.isNotEmpty && remainingText.length > 5) {
+      if (kDebugMode) {
+        print('[TTSService] Flushing buffer with ${remainingText.length} chars');
+      }
+      
+      // Process the remaining text directly
+      await streamAndPlayTTS(remainingText, sessionId: '${bufferId}_flush');
+    }
+    
+    // Clean up timer
+    _bufferTimers[bufferId]?.cancel();
+    _bufferTimers[bufferId] = null;
+  }
+  
+  /// Stream and play TTS with intelligent chunking
+  /// This method queues multiple text chunks and processes them intelligently
+  @override
+  Future<void> streamAndPlayTTSChunked(
+    Stream<String> textStream, {
+    void Function()? onDone,
+    void Function(String)? onError,
+    void Function(double)? onProgress,
+    String? sessionId,
+  }) async {
+    final bufferId = sessionId ?? 'stream_${DateTime.now().millisecondsSinceEpoch}';
+    _textBuffers[bufferId] = StringBuffer();
+    
+    try {
+      await for (final chunk in textStream) {
+        await streamAndPlayTTS(
+          chunk,
+          sessionId: bufferId,
+          onError: onError,
+          onProgress: onProgress,
+        );
+      }
+      
+      // Flush any remaining buffer content
+      await _flushBuffer(bufferId);
+      
+      onDone?.call();
+    } catch (e) {
+      onError?.call(e.toString());
+    } finally {
+      // Cleanup
+      _textBuffers.remove(bufferId);
+      _bufferTimers[bufferId]?.cancel();
+      _bufferTimers.remove(bufferId);
     }
   }
 }

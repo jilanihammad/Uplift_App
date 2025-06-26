@@ -980,7 +980,6 @@ class VoiceService {
     try {
       // Ensure the AudioPlayerManager's playAudio method is awaited
       // and it signals completion appropriately for onDone/onError.
-      // (This was established in prior refactoring of AudioPlayerManager.playAudio)
       await _audioPlayerManager.playAudio(filePath);
       onDone?.call();
     } catch (e) {
@@ -999,9 +998,11 @@ class VoiceService {
   void _setAiSpeaking(bool speaking) {
     isAiSpeaking = speaking;
     _ttsSpeakingStateController.add(speaking);
+    
+    // SIMPLIFIED: Only update TTS state - AutoListeningCoordinator handles VAD coordination
+    // The single TTS "done" signal approach eliminates competing VAD restart triggers
     if (kDebugMode) {
-      print(
-          '[VoiceService] _setAiSpeaking: isAiSpeaking set to $speaking, stream updated.');
+      print('[VoiceService] _setAiSpeaking: TTS state set to $speaking (VAD coordination handled by AutoListeningCoordinator)');
     }
   }
 
@@ -1010,14 +1011,51 @@ class VoiceService {
     isAiSpeaking = false;      // single source of truth
     _ttsSpeakingStateController.add(false);
     if (kDebugMode) {
-      print('[VoiceService] _onPlaybackDone: isAiSpeaking set to false, TTS state cleared');
+      print('[VoiceService] _onPlaybackDone: TTS state cleared (AutoListeningCoordinator handles VAD restart)');
+    }
+  }
+
+  /// Update TTS speaking state for auto-listening coordination
+  /// This is the clean interface for external TTS state updates
+  void updateTTSSpeakingState(bool isSpeaking) {
+    _setAiSpeaking(isSpeaking);
+    if (kDebugMode) {
+      print('[VoiceService] updateTTSSpeakingState: $isSpeaking (coordination handled by single TTS restart path)');
+    }
+  }
+
+  /// Pause VAD to prevent echo-loop during TTS playback
+  Future<void> pauseVAD() async {
+    try {
+      await _autoListeningCoordinator.pauseVAD();
+      if (kDebugMode) {
+        print('[VoiceService] pauseVAD: VAD paused successfully');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceService] pauseVAD: Error pausing VAD (protected): $e');
+      }
+    }
+  }
+
+  /// Resume VAD after TTS playback completes
+  Future<void> resumeVAD() async {
+    try {
+      await _autoListeningCoordinator.resumeVAD();
+      if (kDebugMode) {
+        print('[VoiceService] resumeVAD: VAD resumed successfully');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceService] resumeVAD: Error resuming VAD (protected): $e');
+      }
     }
   }
 
   // Public method to reset TTS state
   void resetTTSState() {
     if (kDebugMode) {
-      print('[VoiceService] resetTTSState: Resetting TTS state to false');
+      print('[VoiceService] resetTTSState: Resetting TTS state to false (VAD coordination handled by AutoListeningCoordinator)');
     }
     _setAiSpeaking(false);
   }

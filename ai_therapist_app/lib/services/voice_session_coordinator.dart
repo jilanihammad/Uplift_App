@@ -19,6 +19,7 @@ class VoiceSessionCoordinator implements IVoiceService {
   final ITTSService _ttsService;
   final IWebSocketAudioManager _wsManager;
   final IAudioFileManager _fileManager;
+  
   // TODO: Integrate AutoListeningCoordinator and VADManager in Phase 5
   // late final AutoListeningCoordinator _autoListening;
   // late final VADManager _vadManager;
@@ -203,6 +204,15 @@ class VoiceSessionCoordinator implements IVoiceService {
     final pitch = settings['pitch'] as double? ?? 1.0;
     
     _ttsService.setVoiceSettings(voice, speed, pitch);
+  }
+
+  @override
+  void updateTTSSpeakingState(bool isSpeaking) {
+    // Delegate to TTS service for now
+    // TODO: In Phase 5, coordinate with AutoListeningCoordinator
+    if (kDebugMode) {
+      print('VoiceSessionCoordinator: updateTTSSpeakingState($isSpeaking)');
+    }
   }
 
   @override

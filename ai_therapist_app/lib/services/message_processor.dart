@@ -9,6 +9,7 @@ import '../config/llm_config.dart'; // Import LLM Configuration
 import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
 import './langchain/custom_langchain.dart'; // Added for ConversationBufferMemory
 import './config_service.dart'; // Added for ConfigService
+import '../di/interfaces/i_groq_service.dart'; // Added for GroqService streaming
 
 /// Handles processing of user messages and generating AI responses
 class MessageProcessor {
@@ -16,6 +17,7 @@ class MessageProcessor {
   final ConversationBufferMemory _conversationHistory;
   final ConfigService _configService;
   final ApiClient apiClient;
+  final IGroqService _groqService;
 
   bool _directLLMEnabled = false;
   static const String _directLLMLogTag = '[MessageProcessorDirectLLM]';
@@ -61,9 +63,11 @@ class MessageProcessor {
     required VoiceSessionBloc? voiceSessionBloc,
     required ConversationBufferMemory conversationHistory,
     required ConfigService configService,
+    required IGroqService groqService,
   })  : _voiceSessionBloc = voiceSessionBloc,
         _conversationHistory = conversationHistory,
         _configService = configService,
+        _groqService = groqService,
         apiClient = ApiClient(configService: configService) {
     _init();
     debugPrint(
@@ -635,6 +639,54 @@ $conversationText''';
       return {
         'error': 'Error checking service status: ${e.toString()}',
         'status': 'error'
+      };
+    }
+  }
+
+  /// Stream a user message and get an AI response via WebSocket
+  Stream<Map<String, dynamic>> streamMessage(
+    String userMessage,
+    String systemPrompt,
+    Map<String, dynamic> graphResult, {
+    List<Map<String, dynamic>>? history,
+  }) async* {
+    try {
+      if (userMessage.trim().isEmpty) {
+        yield {
+          'type': 'error',
+          'detail': "I didn't catch that. Could you please repeat?",
+        };
+        return;
+      }
+
+      log.d('Starting message streaming with graph state: ${graphResult['state'] ?? 'unknown'}');
+      
+      // Prepare the conversation history
+      List<Map<String, dynamic>> conversationHistory = history ?? [];
+      
+      // Add system prompt to history if provided
+      if (systemPrompt.isNotEmpty) {
+        conversationHistory.insert(0, {
+          'role': 'system',
+          'content': _buildSystemPrompt(systemPrompt, graphResult),
+        });
+      }
+
+      log.d('Streaming message via WebSocket to LLM...');
+      
+      // Stream the response from GroqService
+      await for (final chunk in _groqService.streamChatCompletionViaWebSocket(
+        message: userMessage,
+        history: conversationHistory,
+      )) {
+        yield chunk;
+      }
+      
+    } catch (e) {
+      log.e('Error in message streaming', e);
+      yield {
+        'type': 'error',
+        'detail': 'Error processing message: ${e.toString()}',
       };
     }
   }

@@ -20,6 +20,13 @@ import '../di/interfaces/i_tts_service.dart';
 /// 🔧 CRITICAL FIX: Implements engineer's robust solution for Maya's self-listening issue.
 /// Uses combined stream (AudioPlayer + TTS) with firstWhere(!busy) to eliminate 
 /// race conditions between audio state changes that caused Maya to detect her own voice.
+///
+/// 🎯 POST-AUDIO DELAY: Adds configurable delay (default 300ms) after audio playback
+/// completes before resuming VAD. This prevents immediate re-triggering from ambient
+/// noise when Maya finishes speaking. The delay is automatically cancelled if:
+/// - New audio starts playing
+/// - User manually triggers recording
+/// - Auto mode is disabled or re-enabled
 class AutoListeningCoordinator {
   // Core components
   final AudioPlayerManager _audioPlayerManager;
@@ -92,7 +99,26 @@ class AutoListeningCoordinator {
   
   // Safety guard for _enterAiSpeakingComplete
   bool _awaitingPlaybackEnd = false;
+  
+  // CRITICAL: Guard flag to prevent multiple VAD restart attempts
+  bool _vadRestartScheduled = false;
+  
+  // VAD retry configuration
+  static const int _maxVadRetries = 3;
+  static const List<int> _retryDelays = [100, 200, 400]; // Exponential backoff in milliseconds
 
+  // Configuration for post-audio delay
+  static Duration _postAudioDelay = const Duration(milliseconds: 300);
+  Timer? _postAudioDelayTimer;
+  
+  // Static method to configure the post-audio delay
+  static void setPostAudioDelay(Duration delay) {
+    _postAudioDelay = delay;
+    if (kDebugMode) {
+      print('🎙️ AutoListeningCoordinator: Post-audio delay set to ${delay.inMilliseconds}ms');
+    }
+  }
+  
   // Constructor
   AutoListeningCoordinator({
     required AudioPlayerManager audioPlayerManager,
@@ -130,7 +156,7 @@ class AutoListeningCoordinator {
     _setupListeners();
   }
 
-  // Safe VAD management with resource tracking
+  // Safe VAD management with resource tracking and native crash protection
   Future<bool> _safeStartVAD() async {
     if (_isVadActive) {
       if (kDebugMode)
@@ -146,9 +172,65 @@ class AutoListeningCoordinator {
       }
       return success;
     } catch (e) {
-      if (kDebugMode) print('[AutoListeningCoordinator] VAD start failed: $e');
+      if (kDebugMode) print('[AutoListeningCoordinator] CRITICAL: VAD start failed (native crash protection): $e');
+      _isVadActive = false; // Ensure state is consistent on failure
       return false;
     }
+  }
+
+  // NEW: VAD start with retry mechanism and exponential backoff
+  Future<bool> _startVADWithRetry() async {
+    if (_isVadActive) {
+      if (kDebugMode)
+        print('[AutoListeningCoordinator] [RETRY] VAD already active, skipping start');
+      return true;
+    }
+
+    for (int attempt = 1; attempt <= _maxVadRetries; attempt++) {
+      try {
+        if (kDebugMode) {
+          print('[AutoListeningCoordinator] [RETRY] VAD start attempt $attempt/$_maxVadRetries');
+        }
+        
+        final success = await _vadManager.startListening();
+        if (success) {
+          _isVadActive = true;
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [RETRY] VAD started successfully on attempt $attempt');
+          }
+          return true;
+        } else {
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [RETRY] VAD start returned false on attempt $attempt');
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('[AutoListeningCoordinator] [RETRY] VAD start failed on attempt $attempt: $e');
+        }
+      }
+
+      // If not the last attempt, wait before retrying
+      if (attempt < _maxVadRetries) {
+        final delayMs = _retryDelays[attempt - 1];
+        if (kDebugMode) {
+          print('[AutoListeningCoordinator] [RETRY] Waiting ${delayMs}ms before retry ${attempt + 1}');
+        }
+        await Future.delayed(Duration(milliseconds: delayMs));
+      }
+    }
+
+    // All retries failed
+    _isVadActive = false;
+    if (kDebugMode) {
+      print('[AutoListeningCoordinator] [RETRY] CRITICAL: All VAD start attempts failed after $_maxVadRetries retries');
+    }
+    
+    // Emit error and transition to idle state
+    _errorController.add('VAD startup failed after $_maxVadRetries retry attempts');
+    _updateState(AutoListeningState.idle);
+    
+    return false;
   }
 
   Future<void> _safeStopVAD() async {
@@ -163,7 +245,8 @@ class AutoListeningCoordinator {
       if (kDebugMode)
         print('[AutoListeningCoordinator] VAD stopped successfully');
     } catch (e) {
-      if (kDebugMode) print('[AutoListeningCoordinator] VAD stop failed: $e');
+      if (kDebugMode) print('[AutoListeningCoordinator] CRITICAL: VAD stop failed (native crash protection): $e');
+      _isVadActive = false; // Ensure state is consistent even on failure
     }
   }
 
@@ -205,7 +288,7 @@ class AutoListeningCoordinator {
 
   // Set up listeners for component events
   void _setupListeners() {
-    // Listen for audio playback state changes
+    // Listen for audio playback state changes (UI updates only - NO VAD restarts)
     _audioPlayerManager.isPlayingStream.listen((isPlaying) {
       if (kDebugMode) {
         print(
@@ -215,18 +298,17 @@ class AutoListeningCoordinator {
         if (!isPlaying) {
           if (kDebugMode) {
             print(
-                '[AutoListeningCoordinator] [AUDIO] Playback ended, will check TTS state before listening. isAiSpeaking=${_voiceService.isAiSpeaking}');
+                '[AutoListeningCoordinator] [AUDIO] Playback ended - UI update only (VAD restart handled by TTS completion)');
           }
-          // IMPROVED: Use robust solution instead of race-prone single-point check
-          if (kDebugMode) {
-            print('[AutoListeningCoordinator] [AUDIO] Playback event detected, using robust completion detection');
-          }
-          _enterAiSpeakingComplete();
+          // REMOVED: VAD restart logic from audio playback events to prevent race conditions
+          // Only update UI state - TTS completion will handle VAD restart
         } else {
           if (kDebugMode) {
             print(
-                '[AutoListeningCoordinator] [AUDIO] Audio playing, stopping listening/recording');
+                '[AutoListeningCoordinator] [AUDIO] Audio playing, stopping listening/recording and cancelling post-audio delay');
           }
+          // Cancel any pending post-audio delay timer since new audio is playing
+          _postAudioDelayTimer?.cancel();
           _stopListeningAndRecording();
           _updateState(AutoListeningState.aiSpeaking);
         }
@@ -236,7 +318,7 @@ class AutoListeningCoordinator {
       }
     });
 
-    // Listen for TTS state changes
+    // Listen for TTS state changes (ONLY path for VAD restart)
     _voiceService.isTtsActuallySpeaking.listen((isSpeaking) {
       if (kDebugMode) {
         print(
@@ -251,27 +333,28 @@ class AutoListeningCoordinator {
       }
 
       if (isSpeaking) {
-        // TTS started speaking
+        // TTS started speaking - clear any scheduled VAD restart
+        _vadRestartScheduled = false;
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator] [TTS] TTS is speaking, forcing state to aiSpeaking and stopping listening/recording (Step 1: Prevent Self-Listening)');
+              '[AutoListeningCoordinator] [TTS] TTS is speaking, clearing VAD restart flag and stopping listening/recording (Step 1: Prevent Self-Listening)');
         }
         // Force state to aiSpeaking every time TTS starts
         _updateState(AutoListeningState.aiSpeaking);
         _stopListeningAndRecording();
       } else {
-        // TTS stopped speaking - use robust solution
-        if (_currentState == AutoListeningState.aiSpeaking ||
-            _currentState == AutoListeningState.idle) {
+        // TTS stopped speaking - ONLY trigger VAD restart from here
+        if ((_currentState == AutoListeningState.aiSpeaking ||
+            _currentState == AutoListeningState.idle) && !_vadRestartScheduled) {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [TTS] TTS stopped, using robust completion detection');
+            print('[AutoListeningCoordinator] [TTS] TTS definitively complete - scheduling VAD restart (single path)');
           }
+          _vadRestartScheduled = true;
           _enterAiSpeakingComplete();
         } else {
-          // This case would include userSpeaking, processing
           if (kDebugMode) {
             print(
-                '[AutoListeningCoordinator] [TTS] TTS stopped speaking, but current state is $_currentState. Not automatically restarting listening via this path.');
+                '[AutoListeningCoordinator] [TTS] TTS stopped but restart already scheduled or inappropriate state ($_currentState)');
           }
         }
       }
@@ -376,7 +459,7 @@ class AutoListeningCoordinator {
     });
   }
 
-  // NEW: Engineer's robust solution - wait for stable "not busy" state
+  // NEW: Engineer's robust solution - wait for stable "not busy" state with crash protection
   Future<void> _enterAiSpeakingComplete() async {
     // Safety guard to prevent multiple invocations
     if (_awaitingPlaybackEnd) {
@@ -390,25 +473,55 @@ class AutoListeningCoordinator {
     // Cancel any previous subscription to prevent race conditions
     _startListeningSub?.cancel();
     
+    // Cancel any existing post-audio delay timer
+    _postAudioDelayTimer?.cancel();
+    
     try {
       // Use await with firstWhere - this returns a Future<bool>, not a StreamSubscription
       await _aiAudioActiveStream.firstWhere((busy) => !busy);
       
-      if (_currentState == AutoListeningState.aiSpeaking && _autoModeEnabled) {
+      if (_currentState == AutoListeningState.aiSpeaking && _autoModeEnabled && _vadRestartScheduled) {
         if (kDebugMode) {
-          print('[AutoListeningCoordinator] [ROBUST] AI audio definitively finished, starting VAD');
+          print('[AutoListeningCoordinator] [ROBUST] AI audio definitively finished, applying ${_postAudioDelay.inMilliseconds}ms post-audio delay');
         }
-        await _startListeningAfterDelay();
+        
+        // Add post-audio delay to prevent immediate VAD re-triggering
+        _postAudioDelayTimer = Timer(_postAudioDelay, () async {
+          if (!_autoModeEnabled || !_vadRestartScheduled || _currentState != AutoListeningState.aiSpeaking) {
+            if (kDebugMode) {
+              print('[AutoListeningCoordinator] [POST-AUDIO-DELAY] Delay completed but conditions changed, skipping VAD restart');
+            }
+            return;
+          }
+          
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [POST-AUDIO-DELAY] Delay completed, now starting VAD with retry mechanism');
+          }
+          
+          // Use retry mechanism for VAD restart
+          final vadStarted = await _startVADWithRetry();
+          if (vadStarted) {
+            await _startListeningAfterDelay();
+          } else {
+            if (kDebugMode) {
+              print('[AutoListeningCoordinator] [ROBUST] VAD restart failed after retries, Maya may be stuck - transitioning to idle');
+            }
+            _updateState(AutoListeningState.idle);
+          }
+        });
       } else if (kDebugMode) {
-        print('[AutoListeningCoordinator] [ROBUST] State changed or auto mode disabled, skipping VAD start');
+        print('[AutoListeningCoordinator] [ROBUST] State changed, auto mode disabled, or restart not scheduled - skipping VAD start');
       }
     } catch (error) {
       if (kDebugMode) {
-        print('[AutoListeningCoordinator] [ROBUST] Error waiting for AI audio completion: $error');
+        print('[AutoListeningCoordinator] [ROBUST] CRITICAL: Error waiting for AI audio completion (native crash protection): $error');
       }
+      // Ensure Maya doesn't get stuck by transitioning to idle on error
+      _updateState(AutoListeningState.idle);
     } finally {
-      // Always reset the safety guard
+      // Always reset the safety guards
       _awaitingPlaybackEnd = false;
+      _vadRestartScheduled = false; // Clear restart flag when operation completes
     }
   }
 
@@ -500,54 +613,80 @@ class AutoListeningCoordinator {
       await _voiceService.stopAudio();
     }
 
-    // SERIALIZE RECORDING STARTUP: Start VAD first and let it settle
-    await _safeStartVAD();
-    if (kDebugMode) {
-      print(
-          '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
-    }
-
-    // Wait for VAD to fully initialize before starting recording (prevents dual codec creation)
-    await Future.delayed(Duration(milliseconds: 100));
-    if (kDebugMode) {
-      print(
-          '[AutoListeningCoordinator] [VAD] VAD settled, now starting recording pipeline');
-    }
-
-    // Start the actual recording pipeline as well
-    if (kDebugMode) {
-      print(
-          '[AutoListeningCoordinator] [RECORDING] Calling voiceService.startRecording() after VAD start');
-    }
-
+    // SERIALIZE RECORDING STARTUP: Start VAD first and let it settle (with crash protection)
     try {
-      await _voiceService.startRecording();
-      // Transition to listening state now that VAD is active
-      _updateState(AutoListeningState.listening);
-      // Cancel the stuck state timer since we successfully started
-      _stuckStateTimer?.cancel();
+      // Use retry mechanism for VAD startup
+      final vadStarted = await _startVADWithRetry();
+      if (!vadStarted) {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [VAD] VAD startup failed with retries, aborting listening start');
+        }
+        return;
+      }
+      
       if (kDebugMode) {
         print(
-            '[AutoListeningCoordinator] [VAD] Transitioned to listening state');
+            '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
+      }
+
+      // Wait for VAD to fully initialize before starting recording (prevents dual codec creation)
+      await Future.delayed(Duration(milliseconds: 100));
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [VAD] VAD settled, now starting recording pipeline');
+      }
+
+      // Start the actual recording pipeline as well
+      if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator] [RECORDING] Calling voiceService.startRecording() after VAD start');
+      }
+
+      try {
+        await _voiceService.startRecording();
+        // Transition to listening state now that VAD is active
+        _updateState(AutoListeningState.listening);
+        // Cancel the stuck state timer since we successfully started
+        _stuckStateTimer?.cancel();
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [VAD] Transitioned to listening state');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print(
+              '[AutoListeningCoordinator] [RECORDING] CRITICAL: Error starting recording (native crash protection): $e');
+        }
+        // Clean up VAD on recording failure to prevent resource leak
+        await _safeStopVAD();
       }
     } catch (e) {
       if (kDebugMode) {
         print(
-            '[AutoListeningCoordinator] [RECORDING] Error starting recording: $e');
+            '[AutoListeningCoordinator] [VAD] CRITICAL: Error in VAD startup sequence (native crash protection): $e');
       }
     }
   }
 
   // Start listening for voice activity
   Future<void> _startListening() async {
+    // Cancel any post-audio delay when starting listening
+    _postAudioDelayTimer?.cancel();
+    
     if (_currentState == AutoListeningState.idle ||
         _currentState == AutoListeningState.processing) {
       try {
-        final success = await _safeStartVAD();
+        // Use retry mechanism for VAD startup
+        final success = await _startVADWithRetry();
         if (success) {
           _updateState(AutoListeningState.listening);
           if (kDebugMode) {
             print('🎤 AutoListening: Started listening for voice activity');
+          }
+        } else {
+          if (kDebugMode) {
+            print('❌ AutoListening: VAD startup failed after retries, remaining in current state');
           }
         }
       } catch (e) {
@@ -685,6 +824,23 @@ class AutoListeningCoordinator {
         print(StackTrace.current);
       }
       if (_currentState == AutoListeningState.userSpeaking) {
+        // CRITICAL FIX: Stop VAD before stopping recording to prevent buffer race (with crash protection)
+        try {
+          if (kDebugMode) {
+            print(
+                '[AutoListeningCoordinator][DEBUG] _stopRecording: Stopping VAD first to prevent buffer race');
+          }
+          await _vadManager.stopListening();
+          _isVadActive = false; // Update state tracking
+          // Small delay for buffer cleanup
+          await Future.delayed(Duration(milliseconds: 50));
+        } catch (e) {
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator][DEBUG] CRITICAL: VAD stop error during recording stop (native crash protection): $e');
+          }
+          _isVadActive = false; // Ensure consistent state even on failure
+        }
+        
         if (kDebugMode) {
           print(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
@@ -735,24 +891,28 @@ class AutoListeningCoordinator {
       // Cancel any pending timers
       _cancelSpeechEndTimer();
 
-      // Stop VAD
+      // CRITICAL FIX: Stop VAD stream FIRST and wait for complete shutdown
       await _safeStopVAD();
       if (kDebugMode) {
-        print('🎤 [Step 1] AutoListening: VAD stopped (mic muted during TTS)');
+        print('🛑 [Step 1] AutoListening: VAD stopped and buffers released (preventing crash)');
       }
+      
+      // CRITICAL: Give AudioRecord time to fully release buffers before stopping recording
+      // This prevents the ClientProxy::releaseBuffer assert failure
+      await Future.delayed(Duration(milliseconds: 100));
 
-      // Stop recording if currently recording
+      // Now safely stop recording
       if (_currentState == AutoListeningState.userSpeaking) {
         await _stopRecording();
         if (kDebugMode) {
           print(
-              '🎤 [Step 1] AutoListening: Recording stopped (mic muted during TTS)');
+              '🎤 [Step 1] AutoListening: Recording stopped safely after VAD shutdown');
         }
       }
 
       if (kDebugMode) {
         print(
-            '🎤 [Step 1] AutoListening: Stopped listening and recording (mic fully muted during TTS)');
+            '🎤 [Step 1] AutoListening: Complete shutdown sequence finished (crash prevention)');
       }
     } catch (e) {
       _errorController.add('Error stopping listening/recording: $e');
@@ -764,6 +924,9 @@ class AutoListeningCoordinator {
 
   // Enable automatic listening mode with explicit audio state from Bloc
   Future<void> enableAutoModeWithAudioState(bool isAudioPlaying) async {
+    // Cancel any post-audio delay when manually enabling auto mode
+    _postAudioDelayTimer?.cancel();
+    
     if (!_autoModeEnabled) {
       _autoModeEnabled = true;
       _autoModeEnabledController.add(true);
@@ -792,6 +955,9 @@ class AutoListeningCoordinator {
 
   // Enable automatic listening mode (original method using AudioPlayerManager)
   Future<void> enableAutoMode() async {
+    // Cancel any post-audio delay when manually enabling auto mode
+    _postAudioDelayTimer?.cancel();
+    
     // If we're stuck in listeningForVoice, reset to idle first
     if (_currentState == AutoListeningState.listeningForVoice) {
       if (kDebugMode) {
@@ -918,6 +1084,7 @@ class AutoListeningCoordinator {
     _cancelSpeechEndTimer();
     _cancelPendingSpeechEnd();
     _stuckStateTimer?.cancel();
+    _postAudioDelayTimer?.cancel();
 
     // Reset resource tracking flags
     _isVadActive = false;
@@ -953,6 +1120,9 @@ class AutoListeningCoordinator {
 
   // Explicitly trigger listening to start - can be called from outside
   void triggerListening() {
+    // Cancel any post-audio delay when manually triggering listening
+    _postAudioDelayTimer?.cancel();
+    
     if (_autoModeEnabled &&
         _currentState != AutoListeningState.listeningForVoice) {
       if (kDebugMode) {
@@ -975,6 +1145,86 @@ class AutoListeningCoordinator {
       // Transition back to listening state
       _updateState(AutoListeningState.idle);
       _startListeningAfterDelay();
+    }
+  }
+
+  // Hard-mute VAD while TTS is playing to prevent echo-loop (with restart guard)
+  Future<void> pauseVAD() async {
+    if (kDebugMode) {
+      print('[AutoListeningCoordinator] [VAD-MUTE] Pausing VAD to prevent TTS echo-loop');
+    }
+    
+    // Clear any scheduled VAD restart to prevent race conditions
+    _vadRestartScheduled = false;
+    
+    try {
+      // Stop VAD completely with proper buffer cleanup
+      await _safeStopVAD();
+      
+      // Additional delay to ensure buffers are released before TTS starts
+      await Future.delayed(Duration(milliseconds: 100));
+      
+      // Stop any active recording
+      if (_isRecordingActive) {
+        await _safeStopRecording();
+      }
+      
+      // Temporarily disable auto mode to prevent restart during TTS
+      _autoModeEnabled = false;
+      
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [VAD-MUTE] VAD completely muted during TTS (buffers released, restart guard cleared)');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [VAD-MUTE] CRITICAL: Error during VAD pause (native crash protection): $e');
+      }
+    }
+  }
+
+  // Resume VAD after TTS completes (with restart guard protection)
+  Future<void> resumeVAD() async {
+    if (kDebugMode) {
+      print('[AutoListeningCoordinator] [VAD-RESUME] Resuming VAD after TTS complete');
+    }
+    
+    // Check for competing restart attempts
+    if (_vadRestartScheduled) {
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [VAD-RESUME] VAD restart already scheduled by TTS completion - skipping manual resume');
+      }
+      return;
+    }
+    
+    try {
+      // Re-enable auto mode
+      _autoModeEnabled = true;
+      _autoModeEnabledController.add(true);
+      
+      // Start listening again (but prevent duplicate restarts)
+      if (!_vadRestartScheduled) {
+        _vadRestartScheduled = true;
+        // Use retry mechanism for VAD resume
+        final vadStarted = await _startVADWithRetry();
+        if (vadStarted) {
+          _updateState(AutoListeningState.listening);
+        } else {
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [VAD-RESUME] VAD resume failed after retries, transitioning to idle');
+          }
+          _updateState(AutoListeningState.idle);
+        }
+        _vadRestartScheduled = false;
+      }
+      
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [VAD-RESUME] VAD resumed and listening active (with restart guard)');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [VAD-RESUME] CRITICAL: Error during VAD resume (native crash protection): $e');
+      }
+      _vadRestartScheduled = false; // Clear guard on error
     }
   }
 }

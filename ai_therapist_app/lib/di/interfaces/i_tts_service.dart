@@ -12,6 +12,16 @@ abstract class ITTSService {
     void Function()? onDone,
     void Function(String)? onError,
     void Function(double)? onProgress,
+    String? sessionId,
+  });
+  
+  // Streaming with intelligent chunking
+  Future<void> streamAndPlayTTSChunked(
+    Stream<String> textStream, {
+    void Function()? onDone,
+    void Function(String)? onError,
+    void Function(double)? onProgress,
+    String? sessionId,
   });
   
   // Playback controls

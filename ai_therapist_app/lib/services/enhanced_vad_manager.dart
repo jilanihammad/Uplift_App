@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:audio_streamer/audio_streamer.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -18,6 +19,10 @@ import 'rnnoise_service.dart';
 class EnhancedVADManager {
   static EnhancedVADManager? _instance;
 
+  // Instance tracking for crash protection
+  static int _instanceCounter = 0;
+  late final String _vadInstanceId;
+  
   // RNNoise integration
   final RNNoiseService _rnnoiseService = RNNoiseService.instance;
   bool _useRNNoise = true;
@@ -31,6 +36,18 @@ class EnhancedVADManager {
   bool _isListening = false;
   bool _isSpeechDetected = false;
   
+  // Enhanced lifecycle tracking to prevent crashes
+  bool _isStreamActive = false;
+  bool _isShuttingDown = false;
+  bool _isDisposing = false;
+  
+  // Shutdown completion tracking for race condition prevention
+  Completer<void>? _shutdownCompleter;
+  
+  // Operation timeout protection
+  Timer? _operationTimeoutTimer;
+  static const Duration _operationTimeout = Duration(seconds: 5);
+  
   // RNNoise VAD parameters
   double _speechThreshold = 0.8; // RNNoise VAD confidence threshold (raised from 0.6 to reduce false positives)
   int _speechFrames = 0;
@@ -42,6 +59,10 @@ class EnhancedVADManager {
   static const int _sampleRate = 48000; // RNNoise requires 48kHz
   static const int _frameSize = 480; // 10ms at 48kHz
   final List<double> _audioBuffer = [];
+  
+  // Log throttling to reduce spam (max 1 log per second)
+  DateTime? _lastLogTime;
+  static const Duration _logThrottleInterval = Duration(seconds: 1);
   
   // Stream controllers for events (same interface as VADManager)
   final StreamController<void> _speechStartController = StreamController<void>.broadcast();
@@ -62,105 +83,213 @@ class EnhancedVADManager {
   }
 
   // Private constructor
-  EnhancedVADManager._internal();
+  EnhancedVADManager._internal() {
+    _vadInstanceId = 'VAD_${++_instanceCounter}_${DateTime.now().millisecondsSinceEpoch}';
+    if (kDebugMode) {
+      print('🎙️ Enhanced VAD: Created instance $_vadInstanceId');
+    }
+  }
   
   /// Initialize the enhanced VAD system
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized || _isDisposing) return;
+    
+    if (kDebugMode) {
+      print('🎙️ Enhanced VAD ($_vadInstanceId): Starting initialization');
+    }
     
     try {
+      // Set timeout protection for initialization
+      _startOperationTimeout('initialize');
+      
       // Request microphone permission
       final status = await Permission.microphone.request();
       if (status != PermissionStatus.granted) {
         _errorController.add('Microphone permission not granted for Enhanced VAD');
+        if (kDebugMode) {
+          print('❌ Enhanced VAD ($_vadInstanceId): Microphone permission denied');
+        }
         return;
       }
       
-      // Try to initialize RNNoise
+      // Try to initialize RNNoise with crash protection
       try {
         _rnnoiseInitialized = await _rnnoiseService.initialize();
         if (_rnnoiseInitialized) {
           if (kDebugMode) {
-            print('🎙️ Enhanced VAD: RNNoise initialized successfully');
+            print('🎙️ Enhanced VAD ($_vadInstanceId): RNNoise initialized successfully');
           }
         } else {
           if (kDebugMode) {
-            print('⚠️ Enhanced VAD: RNNoise initialization failed, using amplitude fallback');
+            print('⚠️ Enhanced VAD ($_vadInstanceId): RNNoise initialization failed, using amplitude fallback');
           }
           _useRNNoise = false;
         }
       } catch (e) {
         if (kDebugMode) {
-          print('⚠️ Enhanced VAD: RNNoise initialization error: $e, using amplitude fallback');
+          print('⚠️ Enhanced VAD ($_vadInstanceId): RNNoise initialization error: $e, using amplitude fallback');
         }
         _useRNNoise = false;
         _rnnoiseInitialized = false;
       }
       
       _isInitialized = true;
+      _clearOperationTimeout();
       
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD Manager initialized (RNNoise: ${_useRNNoise ? 'ENABLED' : 'DISABLED'})');
+        print('🎙️ Enhanced VAD ($_vadInstanceId) initialized (RNNoise: ${_useRNNoise ? 'ENABLED' : 'DISABLED'})');
       }
     } catch (e) {
+      _clearOperationTimeout();
       _errorController.add('Error initializing Enhanced VAD: $e');
       if (kDebugMode) {
-        print('❌ Enhanced VAD initialization error: $e');
+        print('❌ Enhanced VAD ($_vadInstanceId) initialization error: $e');
       }
     }
   }
   
   /// Start enhanced voice activity detection
   Future<bool> startListening() async {
+    // Enhanced double-stop protection
+    if (_isDisposing) {
+      if (kDebugMode) {
+        print('🛑 Enhanced VAD ($_vadInstanceId): Cannot start - instance is disposing');
+      }
+      return false;
+    }
+    
     if (!_isInitialized) {
       await initialize();
+      if (!_isInitialized || _isDisposing) {
+        return false;
+      }
     }
     
     if (_isListening) {
-      if (kDebugMode) print('🎙️ Enhanced VAD already listening');
+      if (kDebugMode) {
+        print('🎙️ Enhanced VAD ($_vadInstanceId): Already listening, ignoring duplicate start');
+      }
       return true;
     }
     
-    if (_useRNNoise && _rnnoiseInitialized) {
-      return await _startRNNoiseVAD();
-    } else {
-      return await _startAmplitudeVAD();
+    if (kDebugMode) {
+      print('🎙️ Enhanced VAD ($_vadInstanceId): Starting voice activity detection');
+    }
+    
+    try {
+      // Set timeout protection for start operation
+      _startOperationTimeout('startListening');
+      
+      bool result;
+      if (_useRNNoise && _rnnoiseInitialized) {
+        result = await _startRNNoiseVAD();
+      } else {
+        result = await _startAmplitudeVAD();
+      }
+      
+      _clearOperationTimeout();
+      return result;
+      
+    } catch (e) {
+      _clearOperationTimeout();
+      if (kDebugMode) {
+        print('❌ Enhanced VAD ($_vadInstanceId): Failed to start listening: $e');
+      }
+      _errorController.add('Failed to start VAD: $e');
+      return false;
     }
   }
   
   /// Start RNNoise-based VAD
   Future<bool> _startRNNoiseVAD() async {
     try {
-      // Reset RNNoise state for new session
-      await _rnnoiseService.reset();
-      
-      // CRITICAL: Set sampling rate to 48kHz for RNNoise (requirement for optimal performance)
-      AudioStreamer().sampleRate = _sampleRate; // 48000 Hz as defined in _sampleRate
-      
-      if (kDebugMode) {
-        print('🎙️ Enhanced VAD: Audio streamer configured for ${_sampleRate}Hz (RNNoise requirement)');
+      // Enhanced state validation
+      if (_isDisposing) {
+        if (kDebugMode) {
+          print('🛑 Enhanced VAD ($_vadInstanceId): Cannot start RNNoise - disposing');
+        }
+        return false;
       }
       
-      // Subscribe to audio stream
-      _audioSubscription = AudioStreamer().audioStream.listen(
-        _processRNNoiseAudioChunk,
-        onError: (error) {
-          if (kDebugMode) print('❌ RNNoise VAD stream error: $error');
-          _fallbackToAmplitudeVAD();
-        },
-      );
+      // RACE CONDITION FIX: Wait for any ongoing shutdown to complete
+      if (_isShuttingDown) {
+        if (kDebugMode) {
+          print('🔄 Enhanced VAD ($_vadInstanceId): Shutdown in progress, waiting for completion before restart');
+        }
+        
+        final shutdownCompleted = await _waitForShutdownCompletion();
+        if (!shutdownCompleted) {
+          if (kDebugMode) {
+            print('❌ Enhanced VAD ($_vadInstanceId): Failed to wait for shutdown completion');
+          }
+          return false;
+        }
+      }
+      
+      // Ensure shutdown flags are reset after successful wait
+      _isShuttingDown = false;
+      
+      // Reset RNNoise state for new session with crash protection
+      try {
+        await _rnnoiseService.reset();
+      } catch (e) {
+        if (kDebugMode) {
+          print('⚠️ Enhanced VAD ($_vadInstanceId): RNNoise reset failed: $e');
+        }
+        // Continue without reset - not critical
+      }
+      
+      // CRITICAL: Set sampling rate to 48kHz for RNNoise with native crash protection
+      try {
+        AudioStreamer().sampleRate = _sampleRate; // 48000 Hz as defined in _sampleRate
+        
+        if (kDebugMode) {
+          print('🎙️ Enhanced VAD ($_vadInstanceId): Audio streamer configured for ${_sampleRate}Hz (RNNoise requirement)');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Enhanced VAD ($_vadInstanceId): Failed to configure audio streamer: $e');
+        }
+        return await _fallbackToAmplitudeVAD();
+      }
+      
+      // Subscribe to audio stream with enhanced error handling
+      try {
+        _audioSubscription = AudioStreamer().audioStream.listen(
+          _processRNNoiseAudioChunk,
+          onError: (error) {
+            if (kDebugMode) {
+              print('❌ Enhanced VAD ($_vadInstanceId): RNNoise VAD stream error: $error');
+            }
+            _isStreamActive = false; // Mark stream as inactive on error
+            _handleStreamError(error);
+          },
+          onDone: () {
+            if (kDebugMode) {
+              print('🔚 Enhanced VAD ($_vadInstanceId): RNNoise stream completed');
+            }
+            _isStreamActive = false;
+          },
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Enhanced VAD ($_vadInstanceId): Failed to subscribe to audio stream: $e');
+        }
+        return await _fallbackToAmplitudeVAD();
+      }
       
       _isListening = true;
+      _isStreamActive = true; // Mark stream as active
       _resetVADState();
       
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD: Started RNNoise-based voice detection');
+        print('🎙️ Enhanced VAD ($_vadInstanceId): Started RNNoise-based voice detection');
       }
       
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Enhanced VAD: Failed to start RNNoise VAD: $e');
+        print('❌ Enhanced VAD ($_vadInstanceId): Failed to start RNNoise VAD: $e');
       }
       return await _fallbackToAmplitudeVAD();
     }
@@ -169,28 +298,62 @@ class EnhancedVADManager {
   /// Start simple amplitude-based VAD (fallback)
   Future<bool> _startAmplitudeVAD() async {
     try {
-      // Set sampling rate for amplitude processing (16kHz is fine)
-      AudioStreamer().sampleRate = 16000;
+      // Enhanced state validation
+      if (_isDisposing || _isShuttingDown) {
+        if (kDebugMode) {
+          print('🛑 Enhanced VAD ($_vadInstanceId): Cannot start amplitude VAD - disposing or shutting down');
+        }
+        return false;
+      }
       
-      _audioSubscription = AudioStreamer().audioStream.listen(
-        _processAmplitudeChunk,
-        onError: (error) {
-          if (kDebugMode) print('❌ Amplitude VAD stream error: $error');
-          _errorController.add('VAD stream error: $error');
-        },
-      );
+      // Set sampling rate for amplitude processing with crash protection
+      try {
+        AudioStreamer().sampleRate = 16000;
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Enhanced VAD ($_vadInstanceId): Failed to set amplitude VAD sample rate: $e');
+        }
+        _errorController.add('Failed to configure audio for amplitude VAD: $e');
+        return false;
+      }
+      
+      // Subscribe to audio stream with enhanced error handling
+      try {
+        _audioSubscription = AudioStreamer().audioStream.listen(
+          _processAmplitudeChunk,
+          onError: (error) {
+            if (kDebugMode) {
+              print('❌ Enhanced VAD ($_vadInstanceId): Amplitude VAD stream error: $error');
+            }
+            _handleStreamError(error);
+          },
+          onDone: () {
+            if (kDebugMode) {
+              print('🔚 Enhanced VAD ($_vadInstanceId): Amplitude stream completed');
+            }
+            _isStreamActive = false;
+          },
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Enhanced VAD ($_vadInstanceId): Failed to subscribe to amplitude stream: $e');
+        }
+        _errorController.add('Failed to start amplitude VAD stream: $e');
+        return false;
+      }
       
       _isListening = true;
+      _isStreamActive = true;
       _resetVADState();
       
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD: Started amplitude-based voice detection');
+        print('🎙️ Enhanced VAD ($_vadInstanceId): Started amplitude-based voice detection');
       }
       
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Enhanced VAD: Failed to start amplitude VAD: $e');
+        print('❌ Enhanced VAD ($_vadInstanceId): Failed to start amplitude VAD: $e');
       }
       _errorController.add('Failed to start VAD: $e');
       return false;
@@ -240,21 +403,44 @@ class EnhancedVADManager {
   
   /// Process incoming audio chunk with RNNoise
   void _processRNNoiseAudioChunk(List<double> chunk) {
+    // Enhanced state checks to prevent native crashes
+    if (!_isStreamActive || _isShuttingDown || !_isListening || _isDisposing) {
+      if (kDebugMode && (_isShuttingDown || _isDisposing)) {
+        print('🛑 Enhanced VAD ($_vadInstanceId): Ignoring audio chunk during shutdown to prevent buffer race');
+      }
+      return; // Exit early to prevent buffer race conditions
+    }
+    
     try {
-      // Add samples to buffer
-      _audioBuffer.addAll(chunk);
+      // Add samples to buffer with additional safety checks
+      if (chunk.isNotEmpty && _audioBuffer.length < 10000) { // Prevent excessive buffer growth
+        _audioBuffer.addAll(chunk);
+      }
       
-      // Process complete frames
-      while (_audioBuffer.length >= _frameSize) {
+      // Process complete frames with enhanced state validation
+      while (_audioBuffer.length >= _frameSize && 
+             _isStreamActive && 
+             !_isShuttingDown && 
+             !_isDisposing &&
+             _isListening) {
+        
         final frame = _audioBuffer.take(_frameSize).toList();
         _audioBuffer.removeRange(0, _frameSize);
         
-        _processRNNoiseAudioFrame(frame);
+        // Additional safety check before processing frame
+        if (_isStreamActive && !_isShuttingDown && !_isDisposing) {
+          _processRNNoiseAudioFrame(frame);
+        } else {
+          // Stop processing if state changed during loop
+          break;
+        }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Enhanced VAD: RNNoise audio processing error: $e');
+        print('❌ Enhanced VAD ($_vadInstanceId): RNNoise audio processing error: $e');
       }
+      // Don't let processing errors crash the stream
+      _handleProcessingError(e);
     }
   }
   
@@ -302,7 +488,8 @@ class EnhancedVADManager {
           }
         }
         
-        if (kDebugMode && (vadProbability > 0.1)) {
+        // Throttled logging to reduce spam (max 1 log per second)
+        if (kDebugMode && (vadProbability > 0.1) && _shouldLog()) {
           print('🎙️ Enhanced VAD (RNNoise): confidence=${vadProbability.toStringAsFixed(3)} | '
                 'threshold=${dynamicThreshold.toStringAsFixed(2)} | frames=S$_speechFrames/Sil$_silenceFrames | amp=${amplitude.toStringAsFixed(1)}dB');
         }
@@ -333,6 +520,16 @@ class EnhancedVADManager {
         print('❌ Enhanced VAD: RNNoise frame processing error: $e');
       }
     }
+  }
+  
+  /// Check if enough time has passed to allow logging (throttling mechanism)
+  bool _shouldLog() {
+    final now = DateTime.now();
+    if (_lastLogTime == null || now.difference(_lastLogTime!) >= _logThrottleInterval) {
+      _lastLogTime = now;
+      return true;
+    }
+    return false;
   }
   
   /// Calculate amplitude from Int16 audio frame
@@ -402,23 +599,111 @@ class EnhancedVADManager {
   
   /// Stop RNNoise VAD processing
   Future<void> _stopRNNoiseVAD() async {
-    await _audioSubscription?.cancel();
-    _audioSubscription = null;
+    // Create shutdown completion tracker if not already created
+    _shutdownCompleter ??= Completer<void>();
+    
+    _isShuttingDown = true;
+    _isStreamActive = false;
+    
+    if (_audioSubscription != null) {
+      await _audioSubscription!.cancel();
+      _audioSubscription = null;
+      
+      // Give time for buffer cleanup
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    
     _resetVADState();
+    
+    // Signal shutdown completion
+    _isShuttingDown = false;
+    if (_shutdownCompleter != null && !_shutdownCompleter!.isCompleted) {
+      _shutdownCompleter!.complete();
+    }
   }
   
   /// Stop voice activity detection
   Future<void> stopListening() async {
-    if (!_isListening) return;
+    // Enhanced double-stop protection
+    if (!_isListening || _isShuttingDown) {
+      if (kDebugMode) {
+        print('🛑 Enhanced VAD ($_vadInstanceId): Already stopped or shutting down, ignoring duplicate stop');
+      }
+      return;
+    }
     
-    await _audioSubscription?.cancel();
-    _audioSubscription = null;
-    _isListening = false;
-    _isSpeechDetected = false;
-    _resetVADState();
+    if (_isDisposing) {
+      if (kDebugMode) {
+        print('🛑 Enhanced VAD ($_vadInstanceId): Cannot stop - instance is disposing');
+      }
+      return;
+    }
+    
+    // RACE CONDITION FIX: Create shutdown completion tracker
+    _shutdownCompleter = Completer<void>();
+    
+    // CRITICAL FIX: Signal shutdown to prevent buffer race conditions
+    _isShuttingDown = true;
+    _isStreamActive = false;
     
     if (kDebugMode) {
-      print('🎙️ Enhanced VAD: Stopped listening');
+      print('🛑 Enhanced VAD ($_vadInstanceId): Beginning shutdown sequence to prevent buffer race');
+    }
+    
+    try {
+      // Set timeout protection for stop operation
+      _startOperationTimeout('stopListening');
+      
+      // Cancel subscription with enhanced crash protection
+      if (_audioSubscription != null) {
+        try {
+          await _audioSubscription!.cancel();
+        } catch (e) {
+          if (kDebugMode) {
+            print('⚠️ Enhanced VAD ($_vadInstanceId): Error canceling subscription: $e');
+          }
+          // Continue with cleanup even if cancellation fails
+        } finally {
+          _audioSubscription = null;
+        }
+        
+        // CRITICAL: Give native AudioRecord time to release buffers
+        // This prevents the ClientProxy::releaseBuffer assert failure
+        await Future.delayed(const Duration(milliseconds: 200)); // Increased from 150ms for better stability
+      }
+      
+      // Reset state safely
+      _isListening = false;
+      _isSpeechDetected = false;
+      _resetVADState();
+      
+      _clearOperationTimeout();
+      
+      // RACE CONDITION FIX: Signal shutdown completion
+      _isShuttingDown = false;
+      if (_shutdownCompleter != null && !_shutdownCompleter!.isCompleted) {
+        _shutdownCompleter!.complete();
+      }
+      
+      if (kDebugMode) {
+        print('🎙️ Enhanced VAD ($_vadInstanceId): Stopped listening (buffers safely released, shutdown complete)');
+      }
+      
+    } catch (e) {
+      _clearOperationTimeout();
+      if (kDebugMode) {
+        print('❌ Enhanced VAD ($_vadInstanceId): Error during stop: $e');
+      }
+      // Ensure state is reset even on error
+      _isListening = false;
+      _isSpeechDetected = false;
+      _isShuttingDown = false;
+      _resetVADState();
+      
+      // RACE CONDITION FIX: Signal shutdown completion even on error
+      if (_shutdownCompleter != null && !_shutdownCompleter!.isCompleted) {
+        _shutdownCompleter!.complete();
+      }
     }
   }
   
@@ -427,6 +712,61 @@ class EnhancedVADManager {
     _speechFrames = 0;
     _silenceFrames = 0;
     _audioBuffer.clear();
+  }
+  
+  /// Wait for shutdown completion to prevent race conditions
+  /// 
+  /// This method ensures that any ongoing shutdown process completes
+  /// before allowing a restart attempt, preventing the race condition
+  /// where restart is attempted while shutdown is still in progress.
+  Future<bool> _waitForShutdownCompletion() async {
+    if (!_isShuttingDown) {
+      return true; // No shutdown in progress
+    }
+    
+    if (kDebugMode) {
+      print('⏳ Enhanced VAD ($_vadInstanceId): Waiting for shutdown completion to prevent race condition');
+    }
+    
+    try {
+      // Wait for existing shutdown to complete with timeout
+      if (_shutdownCompleter != null) {
+        await _shutdownCompleter!.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {
+            if (kDebugMode) {
+              print('⚠️ Enhanced VAD ($_vadInstanceId): Shutdown completion timeout - forcing reset');
+            }
+            // Force reset shutdown state on timeout
+            _isShuttingDown = false;
+            _shutdownCompleter = null;
+          },
+        );
+      }
+      
+      // Double-check shutdown state after wait
+      if (_isShuttingDown) {
+        if (kDebugMode) {
+          print('⚠️ Enhanced VAD ($_vadInstanceId): Shutdown still in progress after wait - forcing reset');
+        }
+        _isShuttingDown = false;
+        _shutdownCompleter = null;
+      }
+      
+      if (kDebugMode) {
+        print('✅ Enhanced VAD ($_vadInstanceId): Shutdown completion confirmed - safe to restart');
+      }
+      
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Enhanced VAD ($_vadInstanceId): Error waiting for shutdown completion: $e');
+      }
+      // Force reset on any error
+      _isShuttingDown = false;
+      _shutdownCompleter = null;
+      return false;
+    }
   }
   
   /// Update VAD sensitivity (public API)
@@ -453,22 +793,189 @@ class EnhancedVADManager {
   
   /// Dispose resources
   Future<void> dispose() async {
-    await stopListening();
-    
-    // Dispose RNNoise service
-    if (_rnnoiseInitialized) {
-      await _rnnoiseService.dispose();
+    // Prevent new operations during disposal
+    if (_isDisposing) {
+      if (kDebugMode) {
+        print('🛑 Enhanced VAD ($_vadInstanceId): Already disposing, ignoring duplicate dispose');
+      }
+      return;
     }
     
-    await _speechStartController.close();
-    await _speechEndController.close();
-    await _errorController.close();
-    await _amplitudeController.close();
-    
-    _isInitialized = false;
+    _isDisposing = true;
     
     if (kDebugMode) {
-      print('🎙️ Enhanced VAD: Disposed');
+      print('🗑️ Enhanced VAD ($_vadInstanceId): Starting disposal process');
     }
+    
+    try {
+      // Clear any pending timeouts
+      _clearOperationTimeout();
+      
+      // Stop listening with enhanced protection
+      await stopListening();
+      
+      // Give extra time for cleanup during disposal
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Dispose RNNoise service with crash protection
+      if (_rnnoiseInitialized) {
+        try {
+          await _rnnoiseService.dispose();
+        } catch (e) {
+          if (kDebugMode) {
+            print('⚠️ Enhanced VAD ($_vadInstanceId): Error disposing RNNoise service: $e');
+          }
+          // Continue with disposal even if RNNoise disposal fails
+        }
+        _rnnoiseInitialized = false;
+      }
+      
+      // Close stream controllers with crash protection
+      try {
+        await _speechStartController.close();
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Enhanced VAD ($_vadInstanceId): Error closing speech start controller: $e');
+      }
+      
+      try {
+        await _speechEndController.close();
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Enhanced VAD ($_vadInstanceId): Error closing speech end controller: $e');
+      }
+      
+      try {
+        await _errorController.close();
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Enhanced VAD ($_vadInstanceId): Error closing error controller: $e');
+      }
+      
+      try {
+        await _amplitudeController.close();
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Enhanced VAD ($_vadInstanceId): Error closing amplitude controller: $e');
+      }
+      
+      // Reset all state
+      _isInitialized = false;
+      _useRNNoise = false;
+      _isListening = false;
+      _isSpeechDetected = false;
+      _isStreamActive = false;
+      _isShuttingDown = false;
+      _resetVADState();
+      
+      // RACE CONDITION FIX: Complete any pending shutdown tracker
+      if (_shutdownCompleter != null && !_shutdownCompleter!.isCompleted) {
+        _shutdownCompleter!.complete();
+      }
+      _shutdownCompleter = null;
+      
+      if (kDebugMode) {
+        print('🗑️ Enhanced VAD ($_vadInstanceId): Disposed successfully');
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Enhanced VAD ($_vadInstanceId): Error during disposal: $e');
+      }
+      // Ensure disposal flag remains set even on error
+    }
+  }
+  
+  /// Start operation timeout protection
+  void _startOperationTimeout(String operation) {
+    _clearOperationTimeout();
+    _operationTimeoutTimer = Timer(_operationTimeout, () {
+      if (kDebugMode) {
+        print('⏰ Enhanced VAD ($_vadInstanceId): Operation timeout for $operation');
+      }
+      _handleOperationTimeout(operation);
+    });
+  }
+  
+  /// Clear operation timeout
+  void _clearOperationTimeout() {
+    _operationTimeoutTimer?.cancel();
+    _operationTimeoutTimer = null;
+  }
+  
+  /// Handle operation timeout
+  void _handleOperationTimeout(String operation) {
+    if (kDebugMode) {
+      print('🚨 Enhanced VAD ($_vadInstanceId): Timeout during $operation - forcing cleanup');
+    }
+    
+    // Force cleanup on timeout
+    _isStreamActive = false;
+    
+    // Cancel subscription immediately
+    _audioSubscription?.cancel();
+    _audioSubscription = null;
+    
+    // Reset state
+    _isListening = false;
+    _isSpeechDetected = false;
+    _resetVADState();
+    
+    // RACE CONDITION FIX: Signal shutdown completion on timeout
+    _isShuttingDown = false;
+    if (_shutdownCompleter != null && !_shutdownCompleter!.isCompleted) {
+      _shutdownCompleter!.complete();
+    }
+    
+    _errorController.add('VAD operation timeout: $operation');
+  }
+  
+  /// Handle stream errors with fallback protection
+  void _handleStreamError(dynamic error) {
+    if (kDebugMode) {
+      print('🚨 Enhanced VAD ($_vadInstanceId): Stream error: $error');
+    }
+    
+    // Mark stream as inactive
+    _isStreamActive = false;
+    
+    // Check if this is a platform exception (native crash)
+    if (error is PlatformException) {
+      if (kDebugMode) {
+        print('🚨 Enhanced VAD ($_vadInstanceId): Native platform error detected: ${error.code} - ${error.message}');
+      }
+      
+      // For native errors, force immediate cleanup
+      _audioSubscription?.cancel();
+      _audioSubscription = null;
+      _isListening = false;
+      _resetVADState();
+      
+      // RACE CONDITION FIX: Signal shutdown completion on native error
+      _isShuttingDown = false;
+      if (_shutdownCompleter != null && !_shutdownCompleter!.isCompleted) {
+        _shutdownCompleter!.complete();
+      }
+    }
+    
+    // Emit error event
+    _errorController.add('VAD stream error: $error');
+    
+    // Try to fallback to amplitude VAD if using RNNoise
+    if (_useRNNoise) {
+      if (kDebugMode) {
+        print('🔄 Enhanced VAD ($_vadInstanceId): Attempting fallback to amplitude VAD due to stream error');
+      }
+      _fallbackToAmplitudeVAD();
+    }
+  }
+  
+  /// Handle processing errors without crashing the stream
+  void _handleProcessingError(dynamic error) {
+    if (kDebugMode) {
+      print('⚠️ Enhanced VAD ($_vadInstanceId): Processing error (continuing): $error');
+    }
+    
+    // Clear buffer to prevent further issues
+    _audioBuffer.clear();
+    
+    // Don't emit error events for processing errors to avoid spam
+    // Just log and continue
   }
 } 
