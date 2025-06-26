@@ -1189,14 +1189,21 @@ async def stream_chat_from_llm(
         # Log the history being sent to the LLM for debugging
         # logger.debug(f"History being sent to LLM for session {session_id}: {json.dumps(request_data.history, indent=2)}")
 
-        text_stream = llm_manager.stream_google_chat_completion(
-            system_prompt=system_prompt_for_session,
-            history=request_data.history, # This history should be correctly formatted
-            params=llm_params
-        )
+        # Extract the latest user message and context
+        latest_message = request_data.history[-1].get("content", "") if request_data.history else ""
+        context = request_data.history[:-1] if len(request_data.history) > 1 else []
         
-        # The stream_google_chat_completion should yield plain text strings.
-        return StreamingResponse(text_stream, media_type="text/plain; charset=utf-8")
+        # Create async generator function for streaming
+        async def text_stream():
+            async for chunk in llm_manager.stream_chat_completion(
+                message=latest_message,
+                context=context,
+                system_prompt=system_prompt_for_session,
+                temperature=llm_params.get("temperature", 0.7)
+            ):
+                yield chunk
+        
+        return StreamingResponse(text_stream(), media_type="text/plain; charset=utf-8")
 
     except HTTPException as e:
         logger.error(f"HTTPException in stream_chat_from_llm for session {session_id}: {e.detail}")

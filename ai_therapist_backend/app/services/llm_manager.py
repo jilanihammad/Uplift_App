@@ -4,6 +4,7 @@ import json
 import os
 import base64
 import traceback
+import asyncio
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI, AsyncOpenAI
@@ -648,7 +649,8 @@ class LLMManager:
                 config=request_config
             )
 
-            async for chunk in stream:
+            # Google's SDK returns a synchronous generator, not async
+            for chunk in stream:
                 # Extract text from streaming chunk
                 if hasattr(chunk, 'text') and chunk.text:
                     yield chunk.text
@@ -661,6 +663,9 @@ class LLMManager:
                                     yield part.text
                         elif hasattr(candidate.content, 'text') and candidate.content.text:
                             yield candidate.content.text
+                
+                # Allow other async operations to run
+                await asyncio.sleep(0)
 
         except Exception as e:
             logger.error(f"Error streaming Google response using new SDK: {str(e)}")

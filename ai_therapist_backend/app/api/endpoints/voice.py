@@ -1298,8 +1298,8 @@ async def synthesize_voice(request: Request):
         # Extract format parameters
         format_params = {}
         
-        # Default to opus/ogg for optimal compatibility
-        format_params["response_format"] = data.get("format", "opus")  # Default format is now opus
+        # Default to wav for optimal compatibility
+        format_params["response_format"] = data.get("format", "wav")  # Default format is now wav
         
         # Add voice if provided
         if voice:
@@ -1368,7 +1368,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
 @router.post("/tts", description="Convert text to speech")
 async def text_to_speech(
     text: str = Form(...), 
-    format: str = Form("opus"), 
+    format: str = Form("wav"), 
     voice: str = Form("sage"),
     background_tasks: BackgroundTasks = None
 ):
@@ -1490,7 +1490,7 @@ async def websocket_tts(websocket: WebSocket):
                 text = payload.get("text")
                 voice = payload.get("voice", "sage")
                 params = payload.get("params", {})
-                response_format = params.get("response_format", "opus")  # Default to opus
+                response_format = params.get("response_format", "wav")  # Default to wav
 
                 if not text:
                     await websocket.send_text(json.dumps({
