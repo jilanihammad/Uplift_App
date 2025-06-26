@@ -44,17 +44,17 @@ if [[ -z "$google_api_key" ]]; then
 fi
 
 # Check if gcloud is installed and user is authenticated
-GCLOUD_PATH="./google-cloud-sdk/bin/gcloud"
-if [[ ! -f "$GCLOUD_PATH" ]]; then
-    echo "Error: gcloud CLI not found at $GCLOUD_PATH"
-    echo "Please ensure Google Cloud CLI is installed."
+if ! command -v gcloud &> /dev/null; then
+    echo "Error: gcloud CLI not found in PATH"
+    echo "Please ensure Google Cloud CLI is installed and in your PATH."
+    echo "Install instructions: https://cloud.google.com/sdk/docs/install"
     exit 1
 fi
 
-gcp_project=$($GCLOUD_PATH config get-value project 2>/dev/null)
+gcp_project=$(gcloud config get-value project 2>/dev/null)
 if [[ "$gcp_project" != "$PROJECT_ID" ]]; then
     echo "Setting GCP project to $PROJECT_ID..."
-    $GCLOUD_PATH config set project $PROJECT_ID
+    gcloud config set project $PROJECT_ID
 fi
 
 # Install aiofiles locally first to verify it works
@@ -157,14 +157,14 @@ echo "Deploying to Google Cloud Run with a fresh build..."
 
 # Execute the build command
 echo "Building container image..."
-if ! $GCLOUD_PATH builds submit "$TEMP_DIR" --tag="gcr.io/$PROJECT_ID/$BUILD_TAG"; then
+if ! gcloud builds submit "$TEMP_DIR" --tag="gcr.io/$PROJECT_ID/$BUILD_TAG"; then
     echo "Error: Building the container image failed."
     exit 1
 fi
 
 # Deploy the built image
 echo "Deploying to Cloud Run..."
-if ! $GCLOUD_PATH run deploy "$SERVICE_NAME" \
+if ! gcloud run deploy "$SERVICE_NAME" \
     --image="gcr.io/$PROJECT_ID/$BUILD_TAG" \
     --platform=managed \
     --region="$REGION" \
@@ -181,7 +181,7 @@ fi
 
 # Get the service URL
 echo "Getting service URL..."
-service_url=$($GCLOUD_PATH run services describe "$SERVICE_NAME" --platform=managed --region="$REGION" --format="value(status.url)")
+service_url=$(gcloud run services describe "$SERVICE_NAME" --platform=managed --region="$REGION" --format="value(status.url)")
 
 echo "================================================="
 echo "Deployment Complete!"
