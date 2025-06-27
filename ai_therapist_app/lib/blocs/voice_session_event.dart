@@ -126,6 +126,12 @@ class TtsStateChanged extends VoiceSessionEvent {
   const TtsStateChanged(this.isSpeaking);
 }
 
+// Event to play welcome message with proper TTS state management
+class PlayWelcomeMessage extends VoiceSessionEvent {
+  final String welcomeMessage;
+  const PlayWelcomeMessage(this.welcomeMessage);
+}
+
 // Event to mark when the welcome message TTS has completed
 class WelcomeMessageCompleted extends VoiceSessionEvent {
   const WelcomeMessageCompleted();

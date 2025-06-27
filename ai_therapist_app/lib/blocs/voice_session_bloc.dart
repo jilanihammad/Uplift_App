@@ -70,6 +70,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<PlayAudio>(_onPlayAudio);
     on<AudioPlaybackStateChanged>(_onAudioPlaybackStateChanged);
     on<TtsStateChanged>(_onTtsStateChanged);
+    on<PlayWelcomeMessage>(_onPlayWelcomeMessage);
     on<WelcomeMessageCompleted>(_onWelcomeMessageCompleted);
     on<SetInitializing>(_onSetInitializing);
     on<SetEndingSession>(_onSetEndingSession);
@@ -187,10 +188,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
         await Future.delayed(const Duration(milliseconds: 200));
 
-        // Only enable listening immediately if this is a manual mode switch (user has messages)
-        // For initial session, let _onTtsStateChanged handle the 125ms delay after welcome TTS
+        // ALWAYS enable auto mode when switching to voice mode
+        // Keep autoModeEnabled=true throughout voice sessions
+        await voiceService.enableAutoMode();
+        debugPrint('[VoiceSessionBloc] Auto mode enabled for voice session');
+        
+        // Only start listening immediately if this is a manual mode switch (user has messages)
+        // For initial session, let _onTtsStateChanged handle listening after welcome TTS
         if (!state.isAiSpeaking && state.messages.isNotEmpty) {
-          await voiceService.enableAutoMode();
           voiceService.autoListeningCoordinator.triggerListening();
         }
 
@@ -620,6 +625,44 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint('[VoiceSessionBloc] Audio played successfully');
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Failed to play audio: $e');
+      emit(state.copyWith(errorMessage: e.toString()));
+    }
+  }
+
+  Future<void> _onPlayWelcomeMessage(
+      PlayWelcomeMessage event, Emitter<VoiceSessionState> emit) async {
+    debugPrint('[VoiceSessionBloc] Playing welcome message TTS: ${event.welcomeMessage}');
+    
+    try {
+      // Use VoiceService TTS state management to properly coordinate with auto-listening
+      voiceService.updateTTSSpeakingState(true); // Stops auto-listening
+      
+      // Get AudioGenerator and generate TTS audio
+      final audioGenerator = DependencyContainer().audioGenerator;
+      final audioPath = await audioGenerator.generateAudio(event.welcomeMessage);
+      
+      if (audioPath != null) {
+        debugPrint('[VoiceSessionBloc] Welcome TTS generated: $audioPath');
+        
+        // Play the audio through VoiceService
+        await voiceService.playAudio(audioPath);
+        
+        debugPrint('[VoiceSessionBloc] Welcome TTS playback completed');
+        
+        // Use VoiceService TTS state management to trigger auto-listening
+        voiceService.updateTTSSpeakingState(false); // Starts auto-listening
+        
+        // Fire the welcome message completed event if needed
+        add(const WelcomeMessageCompleted());
+        
+      } else {
+        debugPrint('[VoiceSessionBloc] Failed to generate welcome TTS audio');
+        voiceService.updateTTSSpeakingState(false); // Reset state on error
+        emit(state.copyWith(errorMessage: 'Failed to generate welcome audio'));
+      }
+    } catch (e) {
+      debugPrint('[VoiceSessionBloc] Error playing welcome message: $e');
+      voiceService.updateTTSSpeakingState(false); // Reset state on error
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }

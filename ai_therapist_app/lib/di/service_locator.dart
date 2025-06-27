@@ -285,12 +285,8 @@ Future<void> setupServiceLocator() async {
             });
             debugPrint('AudioGenerator TTS state callback connected to VoiceService');
             
-            // Set up VAD pause/resume callbacks to prevent echo-loop
-            generator.setVADCallbacks(
-              pauseCallback: () async => await voiceService.pauseVAD(),
-              resumeCallback: () async => await voiceService.resumeVAD(),
-            );
-            debugPrint('AudioGenerator VAD callbacks connected to VoiceService');
+            // VAD callbacks removed - no longer needed with new TTS architecture
+            debugPrint('AudioGenerator VAD callbacks disabled (legacy workaround removed)');
           } catch (e) {
             debugPrint('Warning: Could not connect AudioGenerator callbacks: $e');
           }
