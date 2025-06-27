@@ -75,70 +75,51 @@ await prefs.setString('GROQ_API_KEY', 'your-api-key-here');
 
 ## 🔧 Supported Providers
 
-### OpenAI
-- **Models**: `gpt-4o`, `gpt-4o-mini`
-- **TTS**: `tts-1`, `tts-1-hd`
-- **API Key**: `OPENAI_API_KEY`
-
-### Anthropic
-- **Models**: `claude-3-5-sonnet-20241022`, `claude-3-haiku-20240307`
-- **TTS**: Not available
-- **API Key**: `ANTHROPIC_API_KEY`
-
-### Google
-- **Models**: `gemini-1.5-pro`, `gemini-1.5-flash`
-- **TTS**: Not available
-- **API Key**: `GOOGLE_API_KEY`
-
-### Groq
-- **Models**: `llama-3.1-70b-versatile`, `llama-3.1-8b-instant`
-- **TTS**: Not available
-- **API Key**: `GROQ_API_KEY`
-
-### Custom Providers
-You can add custom providers by extending the configuration maps in `llm_config.dart`.
+| Provider | LLM Models | TTS Support | API Key |
+|----------|------------|-------------|----------|
+| OpenAI | `gpt-4o`, `gpt-4o-mini` | `tts-1`, `tts-1-hd` | `OPENAI_API_KEY` |
+| Anthropic | `claude-3-5-sonnet-20241022`, `claude-3-haiku-20240307` | ❌ | `ANTHROPIC_API_KEY` |
+| Google | `gemini-1.5-pro`, `gemini-1.5-flash` | ❌ | `GOOGLE_API_KEY` |
+| Groq | `llama-3.1-70b-versatile`, `llama-3.1-8b-instant` | ❌ | `GROQ_API_KEY` |
+| Custom | Extensible via `llm_config.dart` | Depends on provider | Variable |
 
 ## 🎛️ Configuration Examples
 
-### Example 1: Use OpenAI GPT-4o with Backend Proxy
+### Backend Proxy Mode (Recommended)
 ```dart
-// In llm_config.dart
+// llm_config.dart
 static const LLMProvider _activeLLMProvider = LLMProvider.openai;
 static const String _activeLLMModelId = 'gpt-4o';
 
-// In message_processor.dart
-static const bool _useDirectLLMCalls = false; // Use backend
-
-// In audio_generator.dart  
-static const bool _useDirectTTSCalls = false; // Use backend
+// message_processor.dart & audio_generator.dart
+static const bool _useDirectLLMCalls = false;
+static const bool _useDirectTTSCalls = false;
 ```
 
-### Example 2: Use Groq Llama with Direct API Calls
+### Direct API Mode (Development)
 ```dart
-// In llm_config.dart
+// llm_config.dart
 static const LLMProvider _activeLLMProvider = LLMProvider.groq;
 static const String _activeLLMModelId = 'llama-3.1-70b-versatile';
 
-// In message_processor.dart
-static const bool _useDirectLLMCalls = true; // Direct calls
+// message_processor.dart
+static const bool _useDirectLLMCalls = true;
 
-// In audio_generator.dart (still use backend for TTS since Groq doesn't have TTS)
-static const bool _useDirectTTSCalls = false; // Use backend
+// audio_generator.dart (use backend for TTS since Groq doesn't support TTS)
+static const bool _useDirectTTSCalls = false;
 ```
 
-### Example 3: Use Claude with OpenAI TTS
+### Mixed Provider Setup
 ```dart
-// In llm_config.dart
+// llm_config.dart - Claude for LLM, OpenAI for TTS
 static const LLMProvider _activeLLMProvider = LLMProvider.anthropic;
 static const String _activeLLMModelId = 'claude-3-5-sonnet-20241022';
 static const LLMProvider _activeTTSProvider = LLMProvider.openai;
 static const String _activeTTSModelId = 'tts-1';
 
-// In message_processor.dart
-static const bool _useDirectLLMCalls = true; // Direct calls
-
-// In audio_generator.dart
-static const bool _useDirectTTSCalls = true; // Direct calls
+// Both direct calls
+static const bool _useDirectLLMCalls = true;
+static const bool _useDirectTTSCalls = true;
 ```
 
 ## 🔄 How It Works
@@ -157,11 +138,10 @@ App → AudioGenerator → TTS Provider (direct)
 
 ## 🚀 Benefits
 
-1. **Easy Provider Switching**: Change providers by modifying 1-2 constants
-2. **Cost Optimization**: Switch to cheaper models during development
-3. **Fallback Support**: Use different providers for different purposes
-4. **Development Speed**: Skip backend for prototyping
-5. **Provider Comparison**: Easy A/B testing between providers
+- **Easy Provider Switching**: Change providers by modifying 1-2 constants
+- **Cost Optimization**: Switch to cheaper models during development  
+- **Development Speed**: Skip backend for prototyping
+- **Provider Comparison**: Easy A/B testing between providers
 
 ## 🔧 Adding New Providers
 
@@ -240,24 +220,15 @@ The system includes debug logging. Look for messages like:
 [AudioGenerator] Making direct TTS call to tts-1
 ```
 
-## 📊 Performance Considerations
+## 📊 Performance & Security
 
-- **Direct calls** are faster (no backend hop) but require API key management
-- **Backend proxy** is more secure but adds latency
-- **Caching** is implemented for both LLM responses and TTS audio
-- **Fallback responses** ensure the app works even if APIs fail
+### Performance
+- **Direct calls**: Faster (no backend hop) but require API key management
+- **Backend proxy**: More secure but adds latency
+- **Caching**: Implemented for both LLM responses and TTS audio
 
-## 🔒 Security Notes
-
+### Security
 - Store API keys securely (use flutter_secure_storage in production)
 - Consider rate limiting for direct API calls
 - Monitor API usage and costs
-- Implement proper error handling for failed requests
-
-## 📝 Future Enhancements
-
-- GUI configuration panel
-- A/B testing framework
-- Cost tracking and optimization
-- Automatic provider failover
-- Per-user provider preferences 
+- Implement proper error handling for failed requests 
