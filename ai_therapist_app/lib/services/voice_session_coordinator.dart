@@ -128,7 +128,7 @@ class VoiceSessionCoordinator implements IVoiceService {
 
   @override
   Future<void> speakText(String text, {String voice = 'alloy'}) async {
-    await _ttsService.streamAndPlayTTS(text);
+    await _ttsService.speak(text, voice: voice);
   }
 
   @override
@@ -310,24 +310,21 @@ class VoiceSessionCoordinator implements IVoiceService {
     void Function(double)? onProgress,
   }) async {
     if (kDebugMode) {
-      print('[VoiceSessionCoordinator] Streaming TTS with timing coordination');
+      print('[VoiceSessionCoordinator] TTS with timing coordination (simplified API)');
     }
 
-    await _ttsService.streamAndPlayTTS(
-      text,
-      onDone: () {
-        if (kDebugMode) {
-          print('[VoiceSessionCoordinator] TTS completed, coordinating with auto-listening');
-        }
-        
-        // Add the critical 125ms buffer before re-enabling listening
-        Future.delayed(const Duration(milliseconds: 125), () {
-          if (onDone != null) onDone();
-        });
-      },
-      onError: onError,
-      onProgress: onProgress,
-    );
+    try {
+      // Use new simplified API
+      await _ttsService.speak(text);
+      
+      if (kDebugMode) {
+        print('[VoiceSessionCoordinator] TTS completed, coordinating with auto-listening');
+      }
+      
+      if (onDone != null) onDone();
+    } catch (e) {
+      if (onError != null) onError(e.toString());
+    }
   }
 
   /// Enable auto-listening mode (delegates to AutoListeningCoordinator)

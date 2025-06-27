@@ -1481,8 +1481,17 @@ async def test_tts_single_chunk(
 
 @router.websocket("/ws/tts")
 async def websocket_tts(websocket: WebSocket):
+    """
+    WebSocket TTS endpoint compatible with SimpleTTSService protocol
+    """
     await websocket.accept()
+    
     try:
+        # Send initial tts-hello message (session_id will be sent by client)
+        await websocket.send_text(json.dumps({
+            "type": "tts-hello"
+        }))
+        
         while True:
             data = await websocket.receive_text()
             try:
@@ -1490,6 +1499,7 @@ async def websocket_tts(websocket: WebSocket):
                 text = payload.get("text")
                 voice = payload.get("voice", "sage")
                 params = payload.get("params", {})
+                session_id = payload.get("session_id")  # Get session_id from client request
                 response_format = params.get("response_format", "wav")  # Default to wav
 
                 if not text:
@@ -1506,16 +1516,17 @@ async def websocket_tts(websocket: WebSocket):
                         voice=voice,
                         response_format=response_format
                     ):
-                        await websocket.send_text(json.dumps({
-                            "type": "audio_chunk",
-                            "data": b64_chunk,
-                            "format": response_format
-                        }))
-                    # When done, send a 'done' message
-                    await websocket.send_text(json.dumps({
-                        "type": "done",
-                        "format": response_format
-                    }))
+                        # Decode base64 to get raw binary data
+                        audio_bytes = base64.b64decode(b64_chunk)
+                        # Send as binary WebSocket frame
+                        await websocket.send_bytes(audio_bytes)
+                    
+                    # When done, send a 'tts-done' message with session_id if provided
+                    done_message = {"type": "tts-done"}
+                    if session_id:
+                        done_message["session_id"] = session_id
+                    await websocket.send_text(json.dumps(done_message))
+                    
                 except Exception as tts_error:
                     logger.error(f"TTS WebSocket error: {str(tts_error)}")
                     await websocket.send_text(json.dumps({
@@ -1531,6 +1542,79 @@ async def websocket_tts(websocket: WebSocket):
         logger.info("WebSocket TTS disconnected")
     except Exception as e:
         logger.error(f"WebSocket TTS error: {str(e)}")
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "detail": str(e)
+            }))
+            await websocket.close()
+        except:
+            pass  # WebSocket might already be closed
+
+@router.websocket("/voice/ws/tts")
+async def websocket_voice_tts(websocket: WebSocket):
+    """
+    Alternative path for WebSocket TTS endpoint - same functionality as /ws/tts
+    Compatible with SimpleTTSService protocol
+    """
+    await websocket.accept()
+    
+    try:
+        # Send initial tts-hello message (session_id will be sent by client)
+        await websocket.send_text(json.dumps({
+            "type": "tts-hello"
+        }))
+        
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+                text = payload.get("text")
+                voice = payload.get("voice", "sage")
+                params = payload.get("params", {})
+                session_id = payload.get("session_id")  # Get session_id from client request
+                response_format = params.get("response_format", "wav")  # Default to wav
+
+                if not text:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "detail": "No text provided"
+                    }))
+                    continue
+
+                try:
+                    # Stream audio using unified manager
+                    async for b64_chunk in llm_manager.stream_text_to_speech(
+                        text,
+                        voice=voice,
+                        response_format=response_format
+                    ):
+                        # Decode base64 to get raw binary data
+                        audio_bytes = base64.b64decode(b64_chunk)
+                        # Send as binary WebSocket frame
+                        await websocket.send_bytes(audio_bytes)
+                    
+                    # When done, send a 'tts-done' message with session_id if provided
+                    done_message = {"type": "tts-done"}
+                    if session_id:
+                        done_message["session_id"] = session_id
+                    await websocket.send_text(json.dumps(done_message))
+                    
+                except Exception as tts_error:
+                    logger.error(f"TTS WebSocket error: {str(tts_error)}")
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "detail": f"TTS error: {str(tts_error)}"
+                    }))
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "detail": "Invalid JSON"
+                }))
+    except WebSocketDisconnect:
+        logger.info("WebSocket voice TTS disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket voice TTS error: {str(e)}")
         try:
             await websocket.send_text(json.dumps({
                 "type": "error",

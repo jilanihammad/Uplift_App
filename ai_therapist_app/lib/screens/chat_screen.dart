@@ -720,31 +720,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Add message to Bloc
     context.read<VoiceSessionBloc>().add(AddMessage(aiMessage));
 
-    // If in voice mode, generate TTS for the welcome message
+    // If in voice mode, generate TTS for welcome message WITHOUT LLM processing
     if (state.isVoiceMode) {
-      debugPrint('[ChatScreen] Starting welcome TTS in voice mode');
-
-      // CRITICAL FIX: Coordinate welcome TTS with VoiceService AI speaking state
-      final voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
+      debugPrint('[ChatScreen] Starting welcome TTS without LLM processing');
       
-      // Set AI speaking state to coordinate with VoiceSessionBloc
-      voiceService.updateTTSSpeakingState(true);
-      
-      final ttsService = DependencyContainer().ttsService;
-      ttsService.streamAndPlayTTS(
-        welcomeMessage,
-        onDone: () {
-          debugPrint('[ChatScreen] Welcome TTS completed');
-          // Clear AI speaking state to trigger VoiceSessionBloc coordination
-          voiceService.updateTTSSpeakingState(false);
-          debugPrint('[ChatScreen] AI speaking state cleared - VoiceSessionBloc will handle auto mode');
-        },
-        onError: (error) {
-          debugPrint('Welcome TTS Error: $error');
-          // Clear AI speaking state even on error
-          voiceService.updateTTSSpeakingState(false);
-        },
-      );
+      // Use PlayWelcomeMessage event to ensure proper TTS state management
+      context.read<VoiceSessionBloc>().add(PlayWelcomeMessage(welcomeMessage));
     }
   }
 

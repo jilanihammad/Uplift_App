@@ -2,22 +2,18 @@ import 'dart:convert';
 import 'dart:io' as io;
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import '../data/datasources/remote/api_client.dart';
-import '../data/models/cache_metadata.dart';
 import 'path_manager.dart';
 import '../di/interfaces/i_tts_service.dart';
 import '../di/interfaces/i_audio_file_manager.dart';
-import '../di/interfaces/i_voice_service.dart';
+import 'simple_tts_service.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import '../config/llm_config.dart';
-import 'package:logger/logger.dart';
-import 'package:path_provider/path_provider.dart';
 import '../utils/sentence_boundary_detector.dart';
 
 /// Handles generation of audio from text
@@ -35,9 +31,6 @@ class AudioGenerator {
   // Callback for TTS state updates (to avoid circular dependencies)
   void Function(bool isSpeaking)? _ttsStateCallback;
   
-  // Callback for VAD pause/resume (to prevent echo-loop)
-  Future<void> Function()? _vadPauseCallback;
-  Future<void> Function()? _vadResumeCallback;
 
   // INTELLIGENT CACHE: cache_key -> file_path (PERFORMANCE OPTIMIZED!)
   final Map<String, String> _intelligentCache = {};
@@ -804,9 +797,6 @@ class AudioGenerator {
       
       try {
         if (!hasStarted) {
-          // Hard-mute VAD before TTS starts to prevent echo-loop
-          await _vadPauseCallback?.call();
-          
           // Notify via callback that TTS is starting
           _ttsStateCallback?.call(true);
           onFirstAudioStart();
@@ -823,9 +813,6 @@ class AudioGenerator {
     
     // Notify via callback that TTS is complete
     _ttsStateCallback?.call(false);
-    
-    // Resume VAD after TTS completes
-    await _vadResumeCallback?.call();
     
     onAllAudioComplete();
   }
@@ -854,40 +841,33 @@ class AudioGenerator {
     bool useTherapeuticProcessing = false,
   }) async {
     try {
-      // Convert AI response stream to text stream
+      // Convert AI response stream to text and collect it
       final textStream = createTextStreamFromWebSocket(aiResponseStream);
-      
-      // Use the new intelligent chunking TTS method
-      final sessionId = 'ai_response_${DateTime.now().millisecondsSinceEpoch}';
+      final completeText = StringBuffer();
       bool hasStarted = false;
       
-      await _ttsService.streamAndPlayTTSChunked(
-        textStream,
-        sessionId: sessionId,
-        onDone: () async {
-          log.i('🎵 TTS chunked streaming completed');
-          // Resume VAD after TTS completes
-          await _vadResumeCallback?.call();
-          onTTSComplete();
-        },
-        onError: (error) {
-          log.e('TTS chunked streaming error: $error');
-          onError(error);
-        },
-        onProgress: (progress) {
-          if (!hasStarted) {
-            hasStarted = true;
-            // Hard-mute VAD before TTS starts to prevent echo-loop
-            _vadPauseCallback?.call();
-            // Notify via callback that TTS is starting
-            _ttsStateCallback?.call(true);
-            onTTSStart();
-          }
-        },
-      );
+      // Collect all text from the stream
+      await for (final chunk in textStream) {
+        completeText.write(chunk);
+        // Start TTS after first chunk to begin playback quickly
+        if (!hasStarted && completeText.length > 10) {
+          hasStarted = true;
+          // Notify via callback that TTS is starting
+          _ttsStateCallback?.call(true);
+          onTTSStart();
+        }
+      }
       
-      // Notify via callback that TTS is complete
-      _ttsStateCallback?.call(false);
+      // Notify via callback that TTS is starting
+      _ttsStateCallback?.call(true);
+      
+      // Use new simplified API - single method call!
+      // SimpleTTSService will automatically call _ttsStateCallback(false) when done
+      await _ttsService.speak(completeText.toString());
+      
+      log.i('🎵 TTS streaming completed with simplified API');
+      
+      onTTSComplete();
       
     } catch (e) {
       log.e('Error processing AI response with streaming TTS', e);
@@ -898,21 +878,30 @@ class AudioGenerator {
   /// Set callback for TTS state updates (to coordinate with VoiceService)
   void setTTSStateCallback(void Function(bool isSpeaking)? callback) {
     _ttsStateCallback = callback;
+    
+    // Wire the completion callback to SimpleTTSService if it supports it
+    if (_ttsService is SimpleTTSService) {
+      final simpleTTSService = _ttsService as SimpleTTSService;
+      simpleTTSService.setCompletionCallback(callback);
+      if (kDebugMode && callback != null) {
+        log.i('AudioGenerator: TTS completion callback wired to SimpleTTSService');
+      }
+    }
+    
     if (kDebugMode && callback != null) {
       log.i('AudioGenerator: TTS state callback registered');
     }
   }
 
-  /// Set callbacks for VAD pause/resume (to prevent echo-loop)
+  /// Legacy method for VAD callbacks - now no-op as echo-loop prevention removed
   void setVADCallbacks({
     Future<void> Function()? pauseCallback,
     Future<void> Function()? resumeCallback,
   }) {
-    _vadPauseCallback = pauseCallback;
-    _vadResumeCallback = resumeCallback;
-    if (kDebugMode && pauseCallback != null && resumeCallback != null) {
-      log.i('AudioGenerator: VAD pause/resume callbacks registered');
+    if (kDebugMode) {
+      log.i('AudioGenerator: VAD callbacks disabled (legacy workaround removed)');
     }
+    // No-op: VAD pause/resume logic removed with new TTS architecture
   }
 
   /// Dispose of resources

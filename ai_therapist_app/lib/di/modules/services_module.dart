@@ -10,7 +10,6 @@ import '../../services/progress_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/groq_service.dart';
 import '../../data/repositories/session_repository.dart';
-import '../../services/tts_service.dart';
 import '../../services/websocket_audio_manager.dart';
 import '../../services/memory_manager.dart';
 import '../../services/therapy_service.dart';
@@ -104,12 +103,8 @@ class ServicesModule {
       );
     }
 
-    // Register interface for TTSService (already registered via AudioServicesModule)
-    if (!locator.isRegistered<ITTSService>()) {
-      locator.registerLazySingleton<ITTSService>(
-        () => locator<TTSService>(),
-      );
-    }
+    // TTSService interface registration is handled by AudioServicesModule
+    // which properly registers SimpleTTSService as ITTSService
 
     // Register interface for WebSocketAudioManager (already registered via AudioServicesModule)
     if (!locator.isRegistered<IWebSocketAudioManager>()) {

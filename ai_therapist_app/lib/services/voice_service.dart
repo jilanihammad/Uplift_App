@@ -1019,36 +1019,32 @@ class VoiceService {
   /// This is the clean interface for external TTS state updates
   void updateTTSSpeakingState(bool isSpeaking) {
     _setAiSpeaking(isSpeaking);
-    if (kDebugMode) {
-      print('[VoiceService] updateTTSSpeakingState: $isSpeaking (coordination handled by single TTS restart path)');
+    
+    // NEW: only toggle listening, never touch autoModeEnabled
+    if (!isSpeaking) {
+      autoListeningCoordinator.startListening();   // guarantees VAD on
+      if (kDebugMode) {
+        print('[VoiceService] updateTTSSpeakingState: TTS done, starting listening');
+      }
+    } else {
+      autoListeningCoordinator.stopListening();    // guarantees VAD off
+      if (kDebugMode) {
+        print('[VoiceService] updateTTSSpeakingState: TTS started, stopping listening');
+      }
     }
   }
 
-  /// Pause VAD to prevent echo-loop during TTS playback
+  /// Legacy VAD pause method - now no-op as echo-loop prevention removed
   Future<void> pauseVAD() async {
-    try {
-      await _autoListeningCoordinator.pauseVAD();
-      if (kDebugMode) {
-        print('[VoiceService] pauseVAD: VAD paused successfully');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('[VoiceService] pauseVAD: Error pausing VAD (protected): $e');
-      }
+    if (kDebugMode) {
+      print('[VoiceService] pauseVAD: Legacy method - no action needed with new TTS architecture');
     }
   }
 
-  /// Resume VAD after TTS playback completes
+  /// Legacy VAD resume method - now no-op as echo-loop prevention removed
   Future<void> resumeVAD() async {
-    try {
-      await _autoListeningCoordinator.resumeVAD();
-      if (kDebugMode) {
-        print('[VoiceService] resumeVAD: VAD resumed successfully');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('[VoiceService] resumeVAD: Error resuming VAD (protected): $e');
-      }
+    if (kDebugMode) {
+      print('[VoiceService] resumeVAD: Legacy method - no action needed with new TTS architecture');
     }
   }
 

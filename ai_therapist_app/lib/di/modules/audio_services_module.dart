@@ -13,7 +13,7 @@ import '../../data/datasources/remote/api_client.dart';
 
 // Service implementations  
 import '../../services/audio_recording_service.dart';
-import '../../services/tts_service.dart';
+import '../../services/simple_tts_service.dart';
 import '../../services/websocket_audio_manager.dart';
 import '../../services/audio_file_manager.dart';
 import '../../services/voice_session_coordinator.dart';
@@ -49,15 +49,16 @@ class AudioServicesModule {
       });
     }
 
-    // Register TTSService
+    // Register SimpleTTSService (best-in-class single-owner pattern)
     if (!locator.isRegistered<ITTSService>()) {
       locator.registerLazySingleton<ITTSService>(() {
         if (kDebugMode) {
-          print('[AudioServicesModule] Registering TTSService');
+          print('[AudioServicesModule] Registering SimpleTTSService (best-in-class)');
         }
-        return TTSService(
+        return SimpleTTSService(
           audioPlayerManager: locator<AudioPlayerManager>(),
-          apiClient: locator<ApiClient>(),
+          // Note: onTTSComplete callback will be set by AudioGenerator
+          // when it calls setTTSStateCallback() - no circular dependency
         );
       });
     }
