@@ -46,24 +46,9 @@ import 'package:ai_therapist_app/screens/profile_screen.dart';
 import 'package:ai_therapist_app/screens/onboarding/onboarding_wrapper.dart';
 import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
-import 'debug_api.dart';
-import 'debug_firebase.dart'; // Import for debugging only
-import 'dart:async';
-import 'dart:convert';
-import 'dart:developer';
-import 'dart:isolate';
 
-import 'package:ai_therapist_app/config/api.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
-import 'package:ai_therapist_app/data/repositories/auth_repository.dart';
-import 'package:ai_therapist_app/data/repositories/user_repository.dart';
-import 'package:ai_therapist_app/data/repositories/session_repository.dart';
-import 'package:ai_therapist_app/data/repositories/message_repository.dart';
 import 'package:ai_therapist_app/utils/error_handling.dart';
-import 'package:ai_therapist_app/utils/connectivity_checker.dart';
-import 'package:ai_therapist_app/utils/firestore_helpers.dart';
-import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/data/datasources/local/database_provider.dart';
 import 'services/path_manager.dart';

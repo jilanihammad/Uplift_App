@@ -55,95 +55,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Audio Services Architecture
 
-**Status**: ✅ **Refactored** - The monolithic `VoiceService` (originally 1,419 lines, now 1,033 lines) has been successfully split into focused, single-responsibility services.
+**Status**: ✅ **Refactored** - The monolithic VoiceService has been successfully split into focused, single-responsibility services.
 
-#### Refactored Audio Services
+#### Core Audio Services
 
-**VoiceSessionCoordinator** (`lib/services/voice_session_coordinator.dart`) - ~350 lines
-- **Role**: Main facade implementing `IVoiceService` interface
-- **Responsibilities**: Orchestrates all focused audio services, maintains timing coordination
-- **Key Features**: Preserves 125ms timing buffer for Maya's voice detection, manages service initialization
-- **Usage**: Primary entry point for voice operations, replaces monolithic VoiceService
-
-**AudioRecordingService** (`lib/services/audio_recording_service.dart`) - ~460 lines  
-- **Role**: Handles all audio recording operations
-- **Responsibilities**: Microphone access, recording state management, audio level monitoring
-- **Interface**: `IAudioRecordingService`
-- **Key Features**: VAD integration, noise reduction, recording quality settings
-
-**TTSService** (`lib/services/tts_service.dart`) - ~630 lines
-- **Role**: Text-to-speech generation and playback coordination  
-- **Responsibilities**: TTS streaming, audio playback, timing management
-- **Interface**: `ITTSService`
-- **Key Features**: WebSocket TTS streaming, 125ms timing buffer preservation, multiple voice providers
-- **Critical**: Maintains the timing fix that prevents Maya from detecting her own voice
-
-**WebSocketAudioManager** (`lib/services/websocket_audio_manager.dart`) - ~590 lines
-- **Role**: Real-time audio streaming over WebSocket connections
-- **Responsibilities**: WebSocket lifecycle, audio streaming, session management  
-- **Interface**: `IWebSocketAudioManager`
-- **Key Features**: Connection reuse, automatic reconnection, stream multiplexing
-
-**AudioFileManager** (`lib/services/audio_file_manager.dart`) - ~620 lines
-- **Role**: Audio file operations and resource management
-- **Responsibilities**: File I/O, caching, cleanup, format validation
-- **Interface**: `IAudioFileManager`  
-- **Key Features**: Safe file deletion, cache management, temporary file cleanup, FileCleanupManager
-
-#### Service Registration & Dependency Injection
-
-**AudioServicesModule** (`lib/di/modules/audio_services_module.dart`) - ✅ **Phase 6 Complete**
-- **Purpose**: Centralized registration of all refactored audio services
-- **Architecture**: Interface-based dependency injection with constructor injection
-- **Services**: `VoiceSessionCoordinator`, `TTSService`, `AudioRecordingService`, `WebSocketAudioManager`, `AudioFileManager`
-- **Integration**: Clean dependency resolution through `DependencyContainer`
-- **Validation**: Comprehensive service validation and lifecycle management
+- **VoiceSessionCoordinator** - Main facade implementing `IVoiceService` interface, orchestrates all audio services
+- **AudioRecordingService** - Handles microphone access, recording state management, audio level monitoring
+- **TTSService** - Text-to-speech generation and playback coordination with WebSocket streaming
+- **WebSocketAudioManager** - Real-time audio streaming over WebSocket connections
+- **AudioFileManager** - Audio file operations and resource management with cleanup
 
 #### Architecture Benefits
 
-**Single Responsibility Principle**
-- Each service has a focused, well-defined purpose
-- Easier testing and mocking of individual components
-- Reduced complexity compared to 1,419-line monolith
-
-**Interface-Based Design**
-- All services implement clear interface contracts
-- Better testability and dependency injection
-- Easier to swap implementations or add features
-
-**Preserved Critical Features**  
-- ✅ **Maya's self-detection issue RESOLVED** with engineer's robust solution in AutoListeningCoordinator
-- All existing functionality preserved during refactoring
-- Backward compatibility maintained via dual service registration
-
-**Improved Maintainability**
-- Smaller, focused files (~350-650 lines each)
-- Clear separation of concerns
-- Better error isolation and debugging
-
-#### Migration Status
-
-**✅ Phase 6 Complete**: All audio services refactored and fully integrated with dependency injection
-**✅ Dependency Injection**: All services use interface-based constructor injection
-**✅ Legacy Elimination**: Service locator anti-pattern completely removed
-**✅ Event Integration**: AutoListeningCoordinator and VADManager work seamlessly with new architecture
-
-#### Service Dependencies
-
-```
-VoiceSessionCoordinator (IVoiceService)
-├── AudioRecordingService (IAudioRecordingService)  
-├── TTSService (ITTSService)
-│   └── AudioPlayerManager
-├── WebSocketAudioManager (IWebSocketAudioManager)
-└── AudioFileManager (IAudioFileManager)
-```
-
-**Full Dependency Injection**
-- ✅ All services use interface-based dependency injection
-- ✅ `IVoiceService` (VoiceSessionCoordinator) is the primary voice service
-- ✅ Complete migration achieved - no legacy service locator patterns remain
-- ✅ All components use DependencyContainer for clean dependency resolution
+- **Single Responsibility**: Each service has a focused, well-defined purpose
+- **Interface-Based Design**: All services implement clear interface contracts for better testability
+- **Dependency Injection**: Complete migration to interface-based constructor injection
+- **Improved Maintainability**: Smaller, focused files with clear separation of concerns
 
 #### AI Therapy Pipeline  
 - **TherapyService** (`lib/services/therapy_service.dart`) - Core AI interaction service, implements `ITherapyService` with 86 interface methods
@@ -222,46 +149,13 @@ All repositories use constructor injection with `IApiClient` and `IAppDatabase` 
 
 ### Dependency Injection Architecture
 
-**Status**: ✅ **PHASE 6 COMPLETE** - Full dependency injection migration achieved
-**Pattern**: Interface-based dependency injection with `DependencyContainer`
-**Anti-pattern Eliminated**: Service locator usage reduced from 214 to 0 instances
+**Status**: ✅ **Complete** - Full dependency injection migration achieved with interface-based design
 
-#### Comprehensive Interface Contracts
-All services implement comprehensive interfaces from `lib/di/interfaces/`:
-- `ITherapyService` - AI therapy interactions (86 methods)
-- `IVoiceService` - Voice processing operations via `VoiceSessionCoordinator`
-- `IAuthService` - Authentication with event-driven coordination
-- `IMemoryManager` - Context management with constructor injection
-- `IApiClient` - Backend communication interface
-- `ITTSService` - Text-to-speech with timing coordination
-- `IWebSocketAudioManager` - Real-time audio streaming
-- `IAudioRecordingService` - Microphone and recording operations
-- `IAudioFileManager` - File operations with cleanup management
-- `ISessionRepository` - Session data operations
-- `IMessageRepository` - Message persistence
-- `IUserRepository` - User data management
-- `IAuthRepository` - Authentication data layer
-- `IThemeService` - Theme management
-- `IPreferencesService` - User preferences
-- `INavigationService` - Navigation state
-- `IProgressService` - Gamification features
-- `IUserProfileService` - Profile management
-- `IGroqService` - LLM integration
-- `IOnboardingService` - Onboarding flow
-- `IAuthEventHandler` - Event coordination
-
-#### Modern Service Registration
-Services are registered through modular dependency injection:
-- **CoreModule** (`lib/di/modules/core_module.dart`) - Foundation services (ConfigService, ApiClient, Database)
-- **ServicesModule** (`lib/di/modules/services_module.dart`) - Application services with interface mapping
-- **AudioServicesModule** (`lib/di/modules/audio_services_module.dart`) - Refactored audio pipeline
-- **DependencyContainer** (`lib/di/dependency_container.dart`) - Clean access interface with convenience getters
-
-#### Event-Driven Architecture
-Circular dependencies resolved using event-driven patterns:
-- **AuthCoordinator** - Coordinates authentication and onboarding events
-- **AuthEvents System** - Decouples services with event streams
-- **IAuthEventHandler** - Interface for event handling patterns
+#### Key Features
+- **Interface-Based Design**: All services implement comprehensive interfaces from `lib/di/interfaces/`
+- **Modular Registration**: Services organized through CoreModule, ServicesModule, and AudioServicesModule
+- **Event-Driven Patterns**: Circular dependencies resolved using AuthCoordinator and event streams
+- **Clean Access**: DependencyContainer provides convenient service access
 
 ### Real-Time Features
 
@@ -282,14 +176,14 @@ The `VoiceSessionBloc` manages complex state transitions:
 
 ### Critical Timing Dependencies
 
-**Voice Session Timing**: ✅ **RESOLVED** - Maya's self-detection issue fixed using engineer's robust solution. Replaced race-prone timing buffers with combined stream monitoring (AudioPlayer + TTS) and `firstWhere(!busy)` stable state detection. No more 125ms timing dependencies needed.
+**Voice Session Timing**: ✅ **RESOLVED** - Maya's self-detection issue fixed with robust stream monitoring solution.
 
 ## Development Considerations
 
 ### Completed Architectural Refactoring
 
-✅ **Phase 6 Migration Complete** - The codebase has successfully completed major architectural improvements:
-- **Service Locator Anti-pattern**: ✅ Eliminated (was 214 usages, now 0)
+✅ **Migration Complete** - The codebase has successfully completed major architectural improvements:
+- **Service Locator Anti-pattern**: ✅ Eliminated
 - **Monolithic Services**: ✅ Refactored into focused, single-responsibility components
 - **UI/Logic Separation**: ✅ Clean dependency injection in UI components
 - **Complex State Management**: ✅ Interface-based dependency injection with event-driven patterns
@@ -356,13 +250,10 @@ MyScreen(
 ```
 
 ### Code Quality Improvements
-- ✅ `voice_service.dart` - **REFACTORED** → split into 5 focused services (~350-650 lines each)
-- ✅ `chat_screen.dart` - **MIGRATED** → dependency injection with optional service parameters
-- ✅ `service_locator.dart` - **REPLACED** → `DependencyContainer` with clean interface
-- ✅ `auto_listening_coordinator.dart` - **INTEGRATED** → works with new dependency injection architecture
-- ✅ **All UI Components** - **MIGRATED** → constructor injection with interface dependencies
-- ✅ **All Services** - **MIGRATED** → interface-based dependency injection
-- ✅ **All Repositories** - **MIGRATED** → constructor injection with interface contracts
+- ✅ **Voice Service Refactoring** - Split monolithic service into 5 focused services
+- ✅ **UI Components** - Migrated to constructor injection with interface dependencies
+- ✅ **Services & Repositories** - All use interface-based dependency injection
+- ✅ **Service Locator Replacement** - Clean `DependencyContainer` interface implemented
 
 ### Voice Processing Specifics
 - **RNNoise Integration**: Custom C++ plugin for noise reduction
@@ -433,105 +324,26 @@ MyScreen(
 
 ### Architectural Achievements
 
-#### Code Quality Metrics
 - **Interface Coverage**: 20+ service interfaces implemented
-- **Dependency Injection**: 100% of services migrated from service locator
+- **Dependency Injection**: 100% migration from service locator pattern
 - **Testability**: All components mockable via interface contracts
-- **Coupling**: Reduced from tight coupling to interface-based loose coupling
-- **Maintainability**: Single-responsibility services with clear boundaries
+- **Performance**: Maintained performance with improved compile-time validation
 
-#### Performance Impact
-- **Memory Usage**: Neutral - same service instances with cleaner access
-- **Startup Time**: Maintained - lazy initialization preserved
-- **Runtime Performance**: Improved - compile-time dependency validation
-- **Build Performance**: Enhanced - better tree-shaking support
+## ✅ Dependency Injection Migration Complete
 
-## 🎉 Phase 6 Dependency Injection Migration - COMPLETE
+### Summary
 
-### Migration Summary
-
-The AI Therapist App has successfully completed its Phase 6 architectural migration from service locator anti-pattern to modern interface-based dependency injection. This represents a complete transformation of the codebase architecture.
+The AI Therapist App has successfully completed its architectural migration from service locator anti-pattern to modern interface-based dependency injection.
 
 ### Key Achievements
 
-#### ✅ Service Locator Anti-Pattern Elimination
-- **Before**: 214 `serviceLocator<T>()` usages throughout codebase
-- **After**: 0 service locator usages - complete elimination
-- **Replacement**: Clean `DependencyContainer` with interface-based access
-
-#### ✅ Interface-Based Architecture
-- **20+ Service Interfaces**: Comprehensive interface contracts for all services
+- **Service Locator Elimination**: Complete removal of service locator anti-pattern
+- **Interface-Based Architecture**: 20+ service interfaces with comprehensive contracts
 - **Constructor Injection**: All services use dependency injection via constructors
-- **Testability**: Every component mockable through interface contracts
-- **Type Safety**: Compile-time dependency validation
+- **Event-Driven Patterns**: Circular dependencies resolved using AuthCoordinator
+- **Modular Registration**: Clean service organization through CoreModule, ServicesModule, AudioServicesModule
 
-#### ✅ Event-Driven Patterns
-- **Circular Dependencies Resolved**: AuthService ↔ OnboardingService using `AuthCoordinator`
-- **Event System**: Clean event-driven communication patterns
-- **Loose Coupling**: Services communicate through events rather than direct references
-
-#### ✅ Modular Registration System
-- **CoreModule**: Foundation services (Config, API, Database)
-- **ServicesModule**: Application services with interface mapping
-- **AudioServicesModule**: Refactored audio pipeline services
-- **DependencyContainer**: Clean access interface with convenience getters
-
-### Architectural Benefits Realized
-
-#### Code Quality
-```dart
-// Before: Hidden dependencies and tight coupling
-class OldService {
-  final SomeService _service = serviceLocator<SomeService>();
-}
-
-// After: Clear dependencies and loose coupling  
-class NewService implements INewService {
-  final ISomeService _service;
-  NewService({required ISomeService service}) : _service = service;
-}
-```
-
-#### Testing Excellence
-```dart
-// Easy mocking with interface contracts
-class MockTherapyService implements ITherapyService {
-  @override
-  Future<String> processMessage(String message) async => 'Mock response';
-}
-
-// Clean test setup
-MyWidget(therapyService: MockTherapyService())
-```
-
-#### Developer Experience
-```dart
-// Clean dependency access
-final container = DependencyContainer();
-final therapy = container.therapy;     // ITherapyService
-final auth = container.authService;    // IAuthService
-final voice = container.voiceService;  // IVoiceService
-```
-
-### Migration Phases Completed
-
-1. **Phase 1**: ✅ Foundation Setup - Interfaces and modules created
-2. **Phase 2**: ✅ Simple Services - ThemeService, PreferencesService, NavigationService  
-3. **Phase 3**: ✅ Medium Complexity - ProgressService, UserProfileService, GroqService
-4. **Phase 4**: ✅ UI Components - All screens and BLoCs migrated
-5. **Phase 5**: ✅ Complex Services - AuthService, TherapyService, ApiClient, OnboardingService
-6. **Phase 6**: ✅ **COMPLETE** - Final migration and service locator elimination
-
-### Technical Debt Eliminated
-
-- ❌ Service locator anti-pattern (214 instances)
-- ❌ Hidden service dependencies  
-- ❌ Circular dependency issues
-- ❌ Difficult-to-test components
-- ❌ Tight coupling between services
-- ❌ Mixed concerns in UI components
-
-### New Architecture Standards
+### Developer Standards
 
 #### Service Development
 1. **Interface First**: Always implement service interfaces
@@ -545,48 +357,9 @@ final voice = container.voiceService;  // IVoiceService
 3. **Interface Usage**: Depend on interfaces, not concrete implementations
 4. **Testability**: All components easily mockable
 
-### Performance & Reliability
+### Benefits Achieved
 
-- **Zero Performance Degradation**: Maintained all existing performance characteristics
-- **Enhanced Reliability**: Compile-time dependency validation prevents runtime errors
-- **Better Memory Management**: Proper service lifecycle management
-- **Improved Startup**: Lazy initialization patterns preserved
-
-### Development Workflow Impact
-
-#### Before Phase 6
-```dart
-// Unclear dependencies
-final service = serviceLocator<SomeService>(); // What does this depend on?
-
-// Difficult testing
-// Had to mock the entire service locator
-```
-
-#### After Phase 6
-```dart  
-// Clear dependencies
-class MyService implements IMyService {
-  final ISomeService _someService;
-  MyService({required ISomeService someService}) : _someService = someService;
-}
-
-// Easy testing
-MyService(someService: MockSomeService())
-```
-
-### Next Steps for Developers
-
-1. **Follow New Patterns**: Use the established dependency injection patterns for new services
-2. **Interface Contracts**: Always create interfaces for new services
-3. **Constructor Injection**: Use dependency injection for all service dependencies  
-4. **Testing**: Leverage the mockable interfaces for comprehensive testing
-5. **Documentation**: Keep interface contracts up to date
-
----
-
-**🎯 Result**: The AI Therapist App now has a modern, clean, testable architecture with complete dependency injection. The service locator anti-pattern has been eliminated, and all services use interface-based dependency injection with proper separation of concerns.
-
-**📊 Impact**: 100% of services migrated, 0 service locator usages remaining, 20+ interface contracts implemented, complete testability achieved.
-
-**🚀 Developer Experience**: Clean dependency access, easy testing, clear service boundaries, and maintainable code structure.
+- **Clean Architecture**: Modern, maintainable codebase with clear boundaries
+- **Enhanced Testability**: All components mockable via interface contracts
+- **Better Performance**: Compile-time dependency validation
+- **Developer Experience**: Clean dependency access and easy testing
