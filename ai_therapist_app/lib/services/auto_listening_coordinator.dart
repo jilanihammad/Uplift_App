@@ -70,6 +70,9 @@ class AutoListeningCoordinator {
   // NEW: Handle speech events during processing state
   Timer? _pendingSpeechEndTimer;
   bool _hasPendingSpeechEnd = false;
+  
+  // RACE CONDITION FIX: Monotonic speech sequence counter
+  int _speechSeq = 0;
 
   // Callback for when speech is detected and recording starts
   Function()? onSpeechDetectedCallback;
@@ -344,6 +347,12 @@ class AutoListeningCoordinator {
             '[AutoListeningCoordinator] [VAD] onSpeechStart emitted | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (_autoModeEnabled) {
+        // RACE CONDITION FIX: Increment speech sequence on every speech start
+        _speechSeq++;
+        if (kDebugMode) {
+          print('[AutoListeningCoordinator] [RACE-FIX] Speech sequence incremented to $_speechSeq');
+        }
+        
         if (_currentState == AutoListeningState.listening) {
           if (kDebugMode) {
             print(
@@ -683,29 +692,34 @@ class AutoListeningCoordinator {
   void _startSpeechEndTimer() {
     _cancelSpeechEndTimer(reason: 'Starting new timer');
 
+    // RACE CONDITION FIX: Capture current speech sequence
+    final int currentSeq = _speechSeq;
+    
     if (kDebugMode) {
       print(
-          '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting 1.5s timer. Current state: $_currentState');
+          '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting 1.5s timer. Current state: $_currentState, sequence: $currentSeq');
       print(StackTrace.current);
     }
+    
     // Wait for silence to be detected for 1.5 seconds before stopping recording
     _speechEndDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
       if (kDebugMode) {
         print(
-            '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired. Current state: $_currentState');
+            '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired. Current state: $_currentState, timer seq: $currentSeq, current seq: $_speechSeq');
         print(StackTrace.current);
       }
-      // Only stop recording if still in userSpeaking state
-      if (_currentState == AutoListeningState.userSpeaking) {
+      
+      // RACE CONDITION FIX: Only execute if sequence matches (no newer speech detected)
+      if (currentSeq == _speechSeq && _currentState == AutoListeningState.userSpeaking) {
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording()');
+              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording() (sequence valid)');
         }
         _stopRecording();
       } else {
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired but state is $_currentState, not stopping recording');
+              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired but sequence mismatch or invalid state - ignoring (sequence: $currentSeq vs $_speechSeq, state: $_currentState)');
         }
       }
     });
@@ -733,15 +747,19 @@ class AutoListeningCoordinator {
     // Cancel any existing pending timer
     _cancelPendingSpeechEnd();
     
+    // RACE CONDITION FIX: Capture current speech sequence
+    final int currentSeq = _speechSeq;
+    
     // Set flag and start debounce timer
     _hasPendingSpeechEnd = true;
     _pendingSpeechEndTimer = Timer(const Duration(milliseconds: 200), () {
-      if (_hasPendingSpeechEnd && _currentState == AutoListeningState.processing) {
+      // RACE CONDITION FIX: Only execute if sequence matches
+      if (_hasPendingSpeechEnd && currentSeq == _speechSeq && _currentState == AutoListeningState.processing) {
         // ENGINEER'S FIX: Only call _stopRecording if actually recording (reduces log noise)
         if (_isRecordingActive) {
           if (kDebugMode) {
             print(
-                '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately');
+                '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately (sequence: $currentSeq)');
           }
           // Call stopRecording directly - this bypasses the 1.5s timer
           _stopRecording();
@@ -750,6 +768,9 @@ class AutoListeningCoordinator {
               '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed but recording not active - skipping no-op _stopRecording()');
         }
         _hasPendingSpeechEnd = false;
+      } else if (kDebugMode) {
+        print(
+            '[AutoListeningCoordinator][DEBUG] Pending speech end timer fired but conditions not met - ignoring (sequence: $currentSeq vs $_speechSeq, state: $_currentState, hasPending: $_hasPendingSpeechEnd)');
       }
     });
   }
