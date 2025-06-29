@@ -192,6 +192,9 @@ class VoiceService {
 
   bool isAiSpeaking = false;
 
+  // RACE CONDITION FIX: Track current TTS state to prevent duplicate calls
+  bool _currentTtsState = false;
+
   // Add coordinator and VAD manager
   late final VADManager _vadManager;
   late final AutoListeningCoordinator _autoListeningCoordinator;
@@ -448,6 +451,8 @@ class VoiceService {
           processAudioFileInIsolate, {'recordedFilePath': recordedFilePath});
       if (result['error'] != null) {
         if (kDebugMode) print('❌ VOICE ERROR: ${result['error']}');
+        // RACE CONDITION FIX: Mark transcription complete even on file processing error
+        _recordingManager.markTranscriptionComplete(recordedFilePath);
         await FileCleanupManager.safeDelete(recordedFilePath);
         return "Error: ${result['error']} Please try again.";
       }
@@ -480,6 +485,9 @@ class VoiceService {
           print(
               '⏹️ VOICE DEBUG: processRecordedAudioFile: Transcription result: $transcription');
         }
+        // RACE CONDITION FIX: Mark transcription complete before file cleanup
+        _recordingManager.markTranscriptionComplete(recordedFilePath);
+        
         // Successfully transcribed, now delete the file
         await FileCleanupManager.safeDelete(recordedFilePath);
         return transcription.isNotEmpty ? transcription : "";
@@ -488,6 +496,8 @@ class VoiceService {
           print(
               '❌ VOICE ERROR: processRecordedAudioFile: Error calling transcription API: $e');
         }
+        // RACE CONDITION FIX: Mark transcription complete even on error to prevent path reuse
+        _recordingManager.markTranscriptionComplete(recordedFilePath);
         await FileCleanupManager.safeDelete(recordedFilePath);
         return "Error: Unable to transcribe audio. Please try again.";
       }
@@ -497,6 +507,8 @@ class VoiceService {
             '❌ VOICE ERROR: processRecordedAudioFile: Error processing audio file: $e');
       }
       try {
+        // RACE CONDITION FIX: Mark transcription complete even on processing error
+        _recordingManager.markTranscriptionComplete(recordedFilePath);
         final file = io.File(recordedFilePath);
         if (await file.exists()) {
           await FileCleanupManager.safeDelete(recordedFilePath);
@@ -1018,6 +1030,15 @@ class VoiceService {
   /// Update TTS speaking state for auto-listening coordination
   /// This is the clean interface for external TTS state updates
   void updateTTSSpeakingState(bool isSpeaking) {
+    // RACE CONDITION FIX: Prevent duplicate calls with same state
+    if (_currentTtsState == isSpeaking) {
+      if (kDebugMode) {
+        print('[VoiceService] updateTTSSpeakingState: State already $_currentTtsState, ignoring duplicate call');
+      }
+      return;
+    }
+    
+    _currentTtsState = isSpeaking; // Update tracked state
     _setAiSpeaking(isSpeaking);
     
     // NEW: only toggle listening, never touch autoModeEnabled

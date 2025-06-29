@@ -52,8 +52,8 @@ class EnhancedVADManager {
   double _speechThreshold = 0.8; // RNNoise VAD confidence threshold (raised from 0.6 to reduce false positives)
   int _speechFrames = 0;
   int _silenceFrames = 0;
-  final int _minSpeechFrames = 3; // 30ms at 10fps
-  final int _minSilenceFrames = 10; // 100ms at 10fps
+  final int _minSpeechFrames = 5; // VAD FLAPPING FIX: 50ms at 10fps (was 3/30ms) - more stable speech detection
+  final int _minSilenceFrames = 30; // VAD FLAPPING FIX: 300ms at 10fps (was 10/100ms) - prevents brief pauses from ending speech
   
   // Audio processing parameters
   static const int _sampleRate = 48000; // RNNoise requires 48kHz

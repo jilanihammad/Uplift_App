@@ -74,6 +74,11 @@ class AutoListeningCoordinator {
   // RACE CONDITION FIX: Monotonic speech sequence counter
   int _speechSeq = 0;
 
+  // VAD FLAPPING FIX: Track speech sessions to prevent rapid start/end cycles
+  DateTime? _lastSpeechStartTime;
+  bool _inSpeechSession = false;
+  static const Duration _minSpeechGap = Duration(milliseconds: 300);
+
   // Callback for when speech is detected and recording starts
   Function()? onSpeechDetectedCallback;
 
@@ -347,10 +352,23 @@ class AutoListeningCoordinator {
             '[AutoListeningCoordinator] [VAD] onSpeechStart emitted | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (_autoModeEnabled) {
-        // RACE CONDITION FIX: Increment speech sequence on every speech start
-        _speechSeq++;
-        if (kDebugMode) {
-          print('[AutoListeningCoordinator] [RACE-FIX] Speech sequence incremented to $_speechSeq');
+        // VAD FLAPPING FIX: Only increment sequence for new speech sessions
+        final now = DateTime.now();
+        final isNewSession = !_inSpeechSession || 
+            (_lastSpeechStartTime != null && 
+             now.difference(_lastSpeechStartTime!) > _minSpeechGap);
+        
+        if (isNewSession) {
+          _speechSeq++;
+          _inSpeechSession = true;
+          _lastSpeechStartTime = now;
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [VAD-FLAPPING-FIX] New speech session started, sequence: $_speechSeq');
+          }
+        } else {
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [VAD-FLAPPING-FIX] Continuing speech session $_speechSeq (gap < ${_minSpeechGap.inMilliseconds}ms)');
+          }
         }
         
         if (_currentState == AutoListeningState.listening) {
@@ -394,6 +412,19 @@ class AutoListeningCoordinator {
       }
       if (_autoModeEnabled) {
         if (_currentState == AutoListeningState.userSpeaking) {
+          // VAD FLAPPING FIX: Add hysteresis - don't start timer if speech just started
+          final now = DateTime.now();
+          if (_lastSpeechStartTime != null) {
+            final timeSinceSpeechStart = now.difference(_lastSpeechStartTime!);
+            if (timeSinceSpeechStart < const Duration(milliseconds: 200)) {
+              if (kDebugMode) {
+                print(
+                    '[AutoListeningCoordinator][VAD-FLAPPING-FIX] Ignoring speech end - too soon after start (${timeSinceSpeechStart.inMilliseconds}ms < 200ms)');
+              }
+              return; // Ignore this speech end event
+            }
+          }
+          
           if (kDebugMode) {
             print(
                 '[AutoListeningCoordinator][DEBUG] Calling _startSpeechEndTimer() after onSpeechEnd');
@@ -711,9 +742,11 @@ class AutoListeningCoordinator {
       
       // RACE CONDITION FIX: Only execute if sequence matches (no newer speech detected)
       if (currentSeq == _speechSeq && _currentState == AutoListeningState.userSpeaking) {
+        // VAD FLAPPING FIX: End the speech session when timer fires
+        _inSpeechSession = false;
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording() (sequence valid)');
+              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording() (sequence valid, session ended)');
         }
         _stopRecording();
       } else {
@@ -829,6 +862,9 @@ class AutoListeningCoordinator {
               '[AutoListeningCoordinator][DEBUG] _stopRecording: stopRecording() returned path: $audioPath');
         }
         if (audioPath != null && audioPath.isNotEmpty) {
+          // RACE CONDITION FIX: Mark file as pending transcription to prevent path reuse
+          _recordingManager.markFileAsPendingTranscription(audioPath);
+          
           // Notify listeners that recording has completed
           if (onRecordingCompleteCallback != null) {
             onRecordingCompleteCallback!(audioPath);
@@ -1050,6 +1086,14 @@ class AutoListeningCoordinator {
     }
     _currentState = newState;
     _stateController.add(_currentState);
+    
+    // VAD FLAPPING FIX: Reset speech session when transitioning to idle or listening
+    if (newState == AutoListeningState.idle || newState == AutoListeningState.listening) {
+      _inSpeechSession = false;
+      if (kDebugMode && _lastSpeechStartTime != null) {
+        print('[AutoListeningCoordinator][VAD-FLAPPING-FIX] Speech session reset on transition to $newState');
+      }
+    }
   }
 
   // Clean up resources
