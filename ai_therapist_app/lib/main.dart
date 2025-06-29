@@ -289,6 +289,10 @@ void _initializeLogging() {
     // Set to true to enable more verbose logs in production for troubleshooting
     // Set to false by default to reduce logging overhead in production
     enableVerboseLogsInRelease: false,
+    
+    // Set to true to enable verbose debugging with stack traces in debug builds
+    // Set to false by default to reduce log noise during normal development
+    enableVerboseDebug: false,
   );
 
   // Log the configuration (only visible in appropriate log levels)
