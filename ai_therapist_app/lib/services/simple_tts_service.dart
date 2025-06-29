@@ -159,7 +159,8 @@ class SimpleTTSService implements ITTSService {
         }
       } else if (message is List<int>) {
         audioBuffer.addAll(message);
-        if (kDebugMode && audioBuffer.length % 4096 == 0) {
+        // LOG SPAM FIX: Only log at meaningful milestones (64KB intervals) instead of every 4KB
+        if (kDebugMode && audioBuffer.length % 65536 == 0) {
           print('🔍 [TTS] Buffered ${audioBuffer.length} bytes for ${req.id}');
         }
       }
@@ -171,6 +172,10 @@ class SimpleTTSService implements ITTSService {
     
     if (audioBuffer.isEmpty) {
       throw Exception('No audio data received');
+    }
+    
+    if (kDebugMode) {
+      print('🔍 [TTS] Buffering complete: ${audioBuffer.length} total bytes for ${req.id}');
     }
     
     // Save audio buffer to temporary file and play

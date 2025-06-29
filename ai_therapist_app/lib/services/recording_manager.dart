@@ -131,6 +131,9 @@ class RecordingManager {
   String? _lastRecordedPath;
   String? get lastRecordedPath => _lastRecordedPath;
 
+  // RACE CONDITION FIX: Track files pending transcription to prevent collision
+  final Set<String> _pendingTranscriptionPaths = <String>{};
+
   // Add start time tracking
   DateTime? _recordingStartTime;
 
@@ -310,6 +313,29 @@ class RecordingManager {
     if (_recordingStartTime == null) return Duration.zero;
     return DateTime.now().difference(_recordingStartTime!);
   }
+
+  /// RACE CONDITION FIX: Mark file as pending transcription to prevent path reuse
+  void markFileAsPendingTranscription(String filePath) {
+    _pendingTranscriptionPaths.add(filePath);
+    // Clear _lastRecordedPath to prevent reuse during async transcription
+    if (_lastRecordedPath == filePath) {
+      _lastRecordedPath = null;
+    }
+    if (kDebugMode) {
+      print('🛡️ RecordingManager: Marked $filePath as pending transcription');
+    }
+  }
+
+  /// RACE CONDITION FIX: Mark file transcription as complete and allow cleanup
+  void markTranscriptionComplete(String filePath) {
+    _pendingTranscriptionPaths.remove(filePath);
+    if (kDebugMode) {
+      print('🛡️ RecordingManager: Transcription complete for $filePath, can be cleaned up');
+    }
+  }
+
+  /// Get list of files pending transcription (for debugging)
+  Set<String> get pendingTranscriptionPaths => Set.from(_pendingTranscriptionPaths);
 
   // Clean up resources
   Future<void> dispose() async {
