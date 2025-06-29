@@ -42,6 +42,11 @@ class AudioPlayerManager {
   // Track last emitted playing state to prevent duplicate broadcasts
   bool? _lastEmittedPlayingState;
   
+  // DEBOUNCE FIX: Prevent rapid-fire identical state changes
+  Timer? _stateDebounceTimer;
+  bool? _pendingStateChange;
+  static const Duration _stateDebounceInterval = Duration(milliseconds: 100);
+  
   // Audio queue management
   final List<AudioQueueItem> _audioQueue = [];
   AudioQueueItem? _currentlyPlaying;
@@ -66,13 +71,42 @@ class AudioPlayerManager {
     _initAudioPlayer();
   }
 
-  // Helper method to emit playing state only if it changed
+  // Helper method to emit playing state with debouncing to prevent rapid duplicates
   void _emitPlayingState(bool isPlaying) {
+    // DEBOUNCE FIX: Store pending state and debounce rapid changes
+    _pendingStateChange = isPlaying;
+    
+    // Cancel any existing timer
+    _stateDebounceTimer?.cancel();
+    
+    // Set new timer to emit state after debounce interval
+    _stateDebounceTimer = Timer(_stateDebounceInterval, () {
+      // Only emit if state actually changed from last emitted value
+      if (_lastEmittedPlayingState != _pendingStateChange) {
+        _lastEmittedPlayingState = _pendingStateChange;
+        _playingStateController.add(_pendingStateChange!);
+        if (kDebugMode) {
+          print('🎧 AudioPlayerManager: Playing state changed to $_pendingStateChange (debounced)');
+        }
+      } else if (kDebugMode) {
+        print('🎧 AudioPlayerManager: Duplicate state change to $_pendingStateChange ignored (debounced)');
+      }
+      _pendingStateChange = null;
+    });
+  }
+
+  // DEBOUNCE FIX: Immediate state emission for critical changes (bypasses debouncing)
+  void _emitPlayingStateImmediate(bool isPlaying) {
+    // Cancel any pending debounced emission
+    _stateDebounceTimer?.cancel();
+    _pendingStateChange = null;
+    
+    // Emit immediately if state actually changed
     if (_lastEmittedPlayingState != isPlaying) {
       _lastEmittedPlayingState = isPlaying;
       _playingStateController.add(isPlaying);
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Playing state changed to $isPlaying');
+        print('🎧 AudioPlayerManager: Playing state changed to $isPlaying (immediate)');
       }
     }
   }
@@ -337,7 +371,7 @@ class AudioPlayerManager {
 
       // Force the state to false immediately
       _forceIsPlayingState = false;
-      _emitPlayingState(false);
+      _emitPlayingStateImmediate(false);
 
       if (clearQueue) {
         // Complete all pending items with cancellation
@@ -369,7 +403,7 @@ class AudioPlayerManager {
   // Force reset the playing state
   void forceStopState() {
     _forceIsPlayingState = false;
-    _emitPlayingState(false);
+    _emitPlayingStateImmediate(false);
     if (kDebugMode) {
       print('🎧 AudioPlayerManager: Playing state forced to false');
     }
@@ -451,6 +485,9 @@ class AudioPlayerManager {
   Future<void> dispose() async {
     // Clear queue and complete all pending items
     clearQueue();
+    
+    // DEBOUNCE FIX: Cancel any pending state change timer
+    _stateDebounceTimer?.cancel();
     
     await _audioPlayer.dispose();
     await _playingStateController.close();
