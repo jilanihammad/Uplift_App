@@ -1,7 +1,6 @@
 import os
 from typing import Dict, Any, Optional
 from enum import Enum
-from pydantic import BaseModel
 from dataclasses import dataclass
 
 class ModelProvider(str, Enum):
@@ -39,7 +38,7 @@ class LLMConfig:
     # =============================================================================
     ACTIVE_LLM_PROVIDER = ModelProvider.GOOGLE        # Change this to switch LLM provider
     ACTIVE_TTS_PROVIDER = ModelProvider.OPENAI        # Default TTS provider is OpenAI
-    ACTIVE_TRANSCRIPTION_PROVIDER = ModelProvider.OPENAI  # Change this to switch transcription provider
+    ACTIVE_TRANSCRIPTION_PROVIDER = ModelProvider.GROQ  # Change this to switch transcription provider
     
     # Model overrides (optional - leave None to use provider defaults)
     ACTIVE_LLM_MODEL = None  # e.g., "gpt-4" to override default
@@ -125,11 +124,11 @@ class LLMConfig:
         
         (ModelProvider.GROQ, ModelType.TRANSCRIPTION): ModelConfig(
             provider=ModelProvider.GROQ,
-            model_id=os.getenv("GROQ_TRANSCRIPTION_MODEL_ID", "whisper-large-v3"),
+            model_id=os.getenv("GROQ_TRANSCRIPTION_MODEL_ID", "distil-whisper-large-v3-en"),
             base_url=os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1"),
             api_key_env="GROQ_API_KEY",
             default_params={
-                "response_format": "json",
+                "response_format": "verbose_json",
                 "temperature": 0.0
             },
             supports_streaming=False
@@ -248,20 +247,24 @@ class LLMConfig:
     @classmethod
     def get_model_info(cls) -> Dict[str, Any]:
         """Get information about all currently active models."""
+        llm_config = cls.get_active_model_config(ModelType.LLM)
+        tts_config = cls.get_active_model_config(ModelType.TTS)
+        transcription_config = cls.get_active_model_config(ModelType.TRANSCRIPTION)
+        
         return {
             "llm": {
                 "provider": cls.ACTIVE_LLM_PROVIDER,
-                "model": cls.get_active_model_config(ModelType.LLM).model_id if cls.get_active_model_config(ModelType.LLM) else None,
+                "model": llm_config.model_id if llm_config else None,
                 "available": cls.is_model_available(ModelType.LLM)
             },
             "tts": {
                 "provider": cls.ACTIVE_TTS_PROVIDER,
-                "model": cls.get_active_model_config(ModelType.TTS).model_id if cls.get_active_model_config(ModelType.TTS) else None,
+                "model": tts_config.model_id if tts_config else None,
                 "available": cls.is_model_available(ModelType.TTS)
             },
             "transcription": {
                 "provider": cls.ACTIVE_TRANSCRIPTION_PROVIDER,
-                "model": cls.get_active_model_config(ModelType.TRANSCRIPTION).model_id if cls.get_active_model_config(ModelType.TRANSCRIPTION) else None,
+                "model": transcription_config.model_id if transcription_config else None,
                 "available": cls.is_model_available(ModelType.TRANSCRIPTION)
             }
         }

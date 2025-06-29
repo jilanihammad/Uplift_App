@@ -21,27 +21,29 @@ PORT=8000  # Cloud Run will use this port
 TIMESTAMP=$(date +"%Y%m%d%H%M%S")
 BUILD_TAG="$SERVICE_NAME-$TIMESTAMP"
 
-# Ask for the OpenAI API key
-echo -n "Please enter your OpenAI API key (starts with 'sk-'): "
-read -s openai_api_key
-echo
+# ===== HARDCODED API KEYS =====
+# Replace these with your actual API keys:
+openai_api_key=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    # Replace with your OpenAI key (starts with sk-)
+google_api_key=AIzaSyAa525sLf7FPId43NgvVTJECO8K79SJHzM   # Replace with your Google key
+groq_api_key=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         # Replace with your Groq key (starts with gsk_)
 
-# Validate the OpenAI key format
-if [[ ! $openai_api_key == sk-* ]]; then
-    echo "Error: OpenAI API key should start with 'sk-'"
+# Validate API keys are not placeholders
+if [[ "$openai_api_key" == "YOUR_OPENAI_API_KEY_HERE" ]]; then
+    echo "Error: Please replace 'YOUR_OPENAI_API_KEY_HERE' with your actual OpenAI API key"
     exit 1
 fi
 
-# Ask for the Google API key
-echo -n "Please enter your Google API key: "
-read -s google_api_key
-echo
-
-# Validate the Google key is not empty
-if [[ -z "$google_api_key" ]]; then
-    echo "Error: Google API key cannot be empty"
+if [[ "$google_api_key" == "YOUR_GOOGLE_API_KEY_HERE" ]]; then
+    echo "Error: Please replace 'YOUR_GOOGLE_API_KEY_HERE' with your actual Google API key"
     exit 1
 fi
+
+if [[ "$groq_api_key" == "YOUR_GROQ_API_KEY_HERE" ]]; then
+    echo "Error: Please replace 'YOUR_GROQ_API_KEY_HERE' with your actual Groq API key"
+    exit 1
+fi
+
+echo "Using hardcoded API keys for deployment..."
 
 # Check if gcloud is installed and user is authenticated
 if ! command -v gcloud &> /dev/null; then
@@ -91,6 +93,7 @@ GOOGLE_CLOUD=1
 DATABASE_URL=sqlite:///./app.db
 OPENAI_API_KEY=${openai_api_key}
 GOOGLE_API_KEY=${google_api_key}
+GROQ_API_KEY=${groq_api_key}
 DEBUG=0
 EOF
     echo "Created default .env file"
@@ -137,6 +140,7 @@ ENV GOOGLE_CLOUD=1
 ENV DATABASE_URL=sqlite:///./data/app.db
 ENV OPENAI_API_KEY=$openai_api_key
 ENV GOOGLE_API_KEY=$google_api_key
+ENV GROQ_API_KEY=$groq_api_key
 ENV OPENAI_LLM_MODEL=gpt-3.5-turbo
 ENV OPENAI_TTS_MODEL=gpt-4o-mini-tts
 ENV OPENAI_TTS_VOICE=sage
