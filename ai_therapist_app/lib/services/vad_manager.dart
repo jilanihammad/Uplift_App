@@ -8,6 +8,7 @@ import 'package:rxdart/rxdart.dart';
 
 import 'path_manager.dart';
 import 'recording_manager.dart'; // For SharedRecorderManager
+import '../utils/logging_config.dart';
 
 /// Manages voice activity detection (VAD) functionality
 ///
@@ -460,7 +461,9 @@ class VADManager {
     if (kDebugMode) {
       print(
           '[VADManager][DEBUG] _stopSpeechDetection: Tearing down recorder and state (unconditional)');
-      print(StackTrace.current);
+      if (loggingConfig.isVerboseDebugEnabled) {
+        print(StackTrace.current);
+      }
     }
 
     // Cancel any queued silence timeouts

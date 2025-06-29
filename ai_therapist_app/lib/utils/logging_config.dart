@@ -17,8 +17,12 @@ class LoggingConfig {
   // Flag to enable analytics
   bool _enableAnalytics = false;
 
+  // Flag to enable verbose debugging (stack traces, etc.)
+  // Only effective in debug builds to prevent release overhead
+  bool _enableVerboseDebug = false;
+
   // Initializes logging configuration
-  void init({bool enableVerboseLogsInRelease = false}) {
+  void init({bool enableVerboseLogsInRelease = false, bool enableVerboseDebug = false}) {
     // Configure default log levels based on build type
     if (kDebugMode) {
       // In debug mode, show all logs by default
@@ -32,9 +36,12 @@ class LoggingConfig {
       setLogLevel(enableVerboseLogsInRelease ? LogLevel.info : LogLevel.error);
     }
 
+    // Set verbose debug flag (only effective in debug builds)
+    _enableVerboseDebug = kDebugMode && enableVerboseDebug;
+
     // Log the configuration
     logger.info(
-        'Logging configured: level=${_currentLogLevel.toString().split('.').last}, isDebug=$kDebugMode');
+        'Logging configured: level=${_currentLogLevel.toString().split('.').last}, isDebug=$kDebugMode, verboseDebug=$_enableVerboseDebug');
   }
 
   // Set specific log level
@@ -47,6 +54,12 @@ class LoggingConfig {
   void enableAnalytics(bool enable) {
     _enableAnalytics = enable;
     logger.setAnalyticsLogging(enable);
+  }
+
+  // Enable/disable verbose debugging (stack traces, etc.)
+  // Only effective in debug builds
+  void enableVerboseDebug(bool enable) {
+    _enableVerboseDebug = kDebugMode && enable;
   }
 
   // Get current log level
@@ -62,6 +75,9 @@ class LoggingConfig {
   bool get isInfoEnabled => isLogLevelEnabled(LogLevel.info);
   bool get isWarningEnabled => isLogLevelEnabled(LogLevel.warning);
   bool get isErrorEnabled => isLogLevelEnabled(LogLevel.error);
+
+  // Check if verbose debugging is enabled (stack traces, etc.)
+  bool get isVerboseDebugEnabled => _enableVerboseDebug;
 }
 
 // Global instance for easy access

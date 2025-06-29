@@ -8,6 +8,7 @@ import 'recording_manager.dart';
 import 'vad_manager.dart';
 import 'enhanced_vad_manager.dart';
 import 'voice_service.dart';
+import '../utils/logging_config.dart';
 
 /// Coordinates automatic voice detection and recording
 ///
@@ -78,6 +79,14 @@ class AutoListeningCoordinator {
   DateTime? _lastSpeechStartTime;
   bool _inSpeechSession = false;
   static const Duration _minSpeechGap = Duration(milliseconds: 300);
+
+  // ADAPTIVE TIMER FIX: Track speech bursts to reduce latency
+  int _speechBurstCount = 0;
+  DateTime? _lastSpeechEndTime;
+  static const Duration _burstResetThreshold = Duration(seconds: 3);
+  static const Duration _baseSpeechTimeout = Duration(milliseconds: 1500);
+  static const Duration _secondBurstTimeout = Duration(milliseconds: 1000);
+  static const Duration _subsequentBurstTimeout = Duration(milliseconds: 800);
 
   // Callback for when speech is detected and recording starts
   Function()? onSpeechDetectedCallback;
@@ -362,8 +371,27 @@ class AutoListeningCoordinator {
           _speechSeq++;
           _inSpeechSession = true;
           _lastSpeechStartTime = now;
+          
+          // ADAPTIVE TIMER FIX: Track speech bursts for adaptive timeout
+          if (_lastSpeechEndTime != null) {
+            final timeSinceLastEnd = now.difference(_lastSpeechEndTime!);
+            if (timeSinceLastEnd <= _burstResetThreshold) {
+              _speechBurstCount++;
+              if (kDebugMode) {
+                print('[AutoListeningCoordinator] [ADAPTIVE-TIMER] Speech burst detected, count: $_speechBurstCount (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
+              }
+            } else {
+              _speechBurstCount = 1; // Reset burst count after long pause
+              if (kDebugMode) {
+                print('[AutoListeningCoordinator] [ADAPTIVE-TIMER] Long pause detected, resetting burst count to 1 (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
+              }
+            }
+          } else {
+            _speechBurstCount = 1; // First speech of session
+          }
+          
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [VAD-FLAPPING-FIX] New speech session started, sequence: $_speechSeq');
+            print('[AutoListeningCoordinator] [VAD-FLAPPING-FIX] New speech session started, sequence: $_speechSeq, burst: $_speechBurstCount');
           }
         } else {
           if (kDebugMode) {
@@ -408,7 +436,9 @@ class AutoListeningCoordinator {
       if (kDebugMode) {
         print(
             '[AutoListeningCoordinator][DEBUG] onSpeechEnd event received | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
-        print(StackTrace.current);
+        if (loggingConfig.isVerboseDebugEnabled) {
+          print(StackTrace.current);
+        }
       }
       if (_autoModeEnabled) {
         if (_currentState == AutoListeningState.userSpeaking) {
@@ -726,27 +756,38 @@ class AutoListeningCoordinator {
     // RACE CONDITION FIX: Capture current speech sequence
     final int currentSeq = _speechSeq;
     
+    // ADAPTIVE TIMER FIX: Calculate timeout based on speech burst count
+    final Duration timeout = _getAdaptiveSpeechTimeout();
+    
     if (kDebugMode) {
       print(
-          '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting 1.5s timer. Current state: $_currentState, sequence: $currentSeq');
-      print(StackTrace.current);
+          '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting ${timeout.inMilliseconds}ms timer (burst: $_speechBurstCount). Current state: $_currentState, sequence: $currentSeq');
+      if (loggingConfig.isVerboseDebugEnabled) {
+        print(StackTrace.current);
+      }
     }
     
-    // Wait for silence to be detected for 1.5 seconds before stopping recording
-    _speechEndDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
+    // Wait for silence to be detected for adaptive duration before stopping recording
+    _speechEndDebounceTimer = Timer(timeout, () {
       if (kDebugMode) {
         print(
             '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired. Current state: $_currentState, timer seq: $currentSeq, current seq: $_speechSeq');
-        print(StackTrace.current);
+        if (loggingConfig.isVerboseDebugEnabled) {
+          print(StackTrace.current);
+        }
       }
       
       // RACE CONDITION FIX: Only execute if sequence matches (no newer speech detected)
       if (currentSeq == _speechSeq && _currentState == AutoListeningState.userSpeaking) {
         // VAD FLAPPING FIX: End the speech session when timer fires
         _inSpeechSession = false;
+        
+        // ADAPTIVE TIMER FIX: Track when speech ends for burst calculation
+        _lastSpeechEndTime = DateTime.now();
+        
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording() (sequence valid, session ended)');
+              '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording() (sequence valid, session ended, burst: $_speechBurstCount)');
         }
         _stopRecording();
       } else {
@@ -764,9 +805,25 @@ class AutoListeningCoordinator {
       if (kDebugMode) {
         print(
             '[AutoListeningCoordinator][DEBUG] _cancelSpeechEndTimer: Cancelling timer. Reason: $reason | Current state: $_currentState');
-        print(StackTrace.current);
+        if (loggingConfig.isVerboseDebugEnabled) {
+          print(StackTrace.current);
+        }
       }
       _speechEndDebounceTimer?.cancel();
+    }
+  }
+
+  // ADAPTIVE TIMER FIX: Calculate timeout based on speech burst pattern
+  Duration _getAdaptiveSpeechTimeout() {
+    if (_speechBurstCount == 1) {
+      // First speech burst - use base timeout (1.5s)
+      return _baseSpeechTimeout;
+    } else if (_speechBurstCount == 2) {
+      // Second burst - reduce to 1.0s
+      return _secondBurstTimeout;
+    } else {
+      // Third or subsequent burst - reduce to 0.8s for fastest response
+      return _subsequentBurstTimeout;
     }
   }
 
@@ -790,9 +847,12 @@ class AutoListeningCoordinator {
       if (_hasPendingSpeechEnd && currentSeq == _speechSeq && _currentState == AutoListeningState.processing) {
         // ENGINEER'S FIX: Only call _stopRecording if actually recording (reduces log noise)
         if (_isRecordingActive) {
+          // ADAPTIVE TIMER FIX: Track when speech ends for burst calculation
+          _lastSpeechEndTime = DateTime.now();
+          
           if (kDebugMode) {
             print(
-                '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately (sequence: $currentSeq)');
+                '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately (sequence: $currentSeq, burst: $_speechBurstCount)');
           }
           // Call stopRecording directly - this bypasses the 1.5s timer
           _stopRecording();
@@ -833,7 +893,9 @@ class AutoListeningCoordinator {
       if (kDebugMode) {
         print(
             '[AutoListeningCoordinator][DEBUG] _stopRecording called. Current state: $_currentState, _isStoppingRecording=$_isStoppingRecording');
-        print(StackTrace.current);
+        if (loggingConfig.isVerboseDebugEnabled) {
+          print(StackTrace.current);
+        }
       }
       if (_currentState == AutoListeningState.userSpeaking) {
         // CRITICAL FIX: Stop VAD before stopping recording to prevent buffer race (with crash protection)
