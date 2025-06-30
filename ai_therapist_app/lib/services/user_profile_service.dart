@@ -1,12 +1,13 @@
 // lib/services/user_profile_service.dart
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../di/interfaces/i_user_profile_service.dart';
 
 class UserProfileService implements IUserProfileService {
   static const String _profileKey = 'user_profile';
+  static const String _firstNameKey = 'user_first_name';
   
   // Current profile in memory
   UserProfile? _currentProfile;
@@ -58,6 +59,7 @@ class UserProfileService implements IUserProfileService {
   @override
   Future<void> updateProfile({
     String? name,
+    String? firstName,
     String? email,
     String? gender,
     String? primaryReason,
@@ -75,9 +77,16 @@ class UserProfileService implements IUserProfileService {
         throw Exception('Cannot create a profile without a name');
       }
       
+      // Auto-extract firstName from name if not provided
+      String? autoFirstName = firstName;
+      if (autoFirstName == null && name.isNotEmpty) {
+        autoFirstName = name.split(' ').first;
+      }
+      
       // Create a new profile
       final newProfile = UserProfile(
         name: name,
+        firstName: autoFirstName,
         email: email,
         gender: gender,
         primaryReason: primaryReason,
@@ -96,6 +105,7 @@ class UserProfileService implements IUserProfileService {
       // Update existing profile
       final updatedProfile = _currentProfile!.copyWith(
         name: name,
+        firstName: firstName,
         email: email,
         gender: gender,
         primaryReason: primaryReason,
@@ -110,6 +120,36 @@ class UserProfileService implements IUserProfileService {
       );
       
       await saveProfile(updatedProfile);
+    }
+  }
+  
+  // Update firstName specifically and cache it separately for performance
+  Future<void> updateFirstName(String firstName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Cache firstName separately for quick access
+      await prefs.setString(_firstNameKey, firstName);
+      
+      // Update the full profile
+      await updateProfile(firstName: firstName);
+      
+      if (kDebugMode) {
+        print('FirstName updated and cached: $firstName');
+      }
+    } catch (e) {
+      debugPrint('Error updating firstName: $e');
+    }
+  }
+  
+  // Get cached firstName quickly without parsing full profile
+  Future<String?> getCachedFirstName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_firstNameKey);
+    } catch (e) {
+      debugPrint('Error getting cached firstName: $e');
+      return null;
     }
   }
   

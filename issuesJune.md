@@ -1,4 +1,4 @@
-1 · Persisted Dark / Light Theme Preference
+(Done) 1 · Persisted Dark / Light Theme Preference
 Field	Details
 Goal:	App launches in dark mode by default. If the user toggles to light or back to dark, that choice is written to local storage and applied automatically on the next launch.
 Scope:	Flutter theme state management & persistence.
@@ -10,7 +10,7 @@ d. Update the settings screen toggle to dispatch settingsService.setTheme(ThemeM
 Touch-points:	settings_screen.dart, settings_service.dart, main.dart (or the root Provider).
 Acceptance:	<ul><li>Fresh install ⇒ dark mode.</li><li>User switches to light ⇒ restarts app ⇒ still light.</li><li>CI widget test: mock prefs, ensure correct theme injected.</li></ul>
 
-2 · Persist & Surface User Name
+(done) 2 · Persist & Surface User Name
 Field	Details
 Goal:	Name entered during onboarding must re-appear in Settings → “Your Name” field.
 Scope:	User profile storage & retrieval.

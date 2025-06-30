@@ -216,8 +216,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final hour = DateTime.now().hour;
     String greeting;
 
-    // Get actual user name from UserProfileService
-    String userName = _userProfileService.profile?.name ?? "there";
+    // Get display name using consistent logic
+    String userName = _userProfileService.profile?.displayName ?? "there";
 
     if (hour < 12) {
       greeting = 'Good Morning';

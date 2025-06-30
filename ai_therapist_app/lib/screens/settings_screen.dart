@@ -11,13 +11,15 @@ class SettingsScreen extends StatefulWidget {
   final IPreferencesService? preferencesService;
   final NotificationService? notificationService;
   final IThemeService? themeService;
+  final IUserProfileService? userProfileService;
   
   const SettingsScreen({
-    Key? key,
+    super.key,
     this.preferencesService,
     this.notificationService,
     this.themeService,
-  }) : super(key: key);
+    this.userProfileService,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -27,6 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late IPreferencesService _preferencesService;
   late NotificationService _notificationService;
   late IThemeService _themeService;
+  late IUserProfileService _userProfileService;
   bool _darkModeEnabled = false;
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
@@ -42,6 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _preferencesService = widget.preferencesService ?? DependencyContainer().preferences;
     _notificationService = widget.notificationService ?? DependencyContainer().get<NotificationService>();
     _themeService = widget.themeService ?? DependencyContainer().theme;
+    _userProfileService = widget.userProfileService ?? DependencyContainer().userProfile;
 
     // Load preferences
     _therapistStyleId =
@@ -61,6 +65,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
+          // User Profile Section
+          _buildUserProfileSection(),
+          
           _buildSection(
             title: 'Therapy Experience',
             children: [
@@ -220,9 +227,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSection(
             title: 'About',
             children: [
-              ListTile(
-                title: const Text('Version'),
-                subtitle: const Text('1.0.0 (Beta)'),
+              const ListTile(
+                title: Text('Version'),
+                subtitle: Text('1.0.0 (Beta)'),
               ),
               ListTile(
                 title: const Text('Terms of Service'),
@@ -242,6 +249,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildUserProfileSection() {
+    final userProfile = _userProfileService.profile;
+    final userName = userProfile?.displayName ?? 'User';
+    final userEmail = userProfile?.email;
+    
+    return _buildSection(
+      title: 'Profile',
+      children: [
+        ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            child: Text(
+              userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          title: const Text('Your Name'),
+          subtitle: Text(
+            userProfile?.firstName ?? userProfile?.displayName ?? 'Not set',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
+          trailing: const Icon(Icons.edit),
+          onTap: () => _showEditNameDialog(),
+        ),
+        if (userEmail != null && userEmail.isNotEmpty)
+          ListTile(
+            leading: const Icon(Icons.email_outlined),
+            title: const Text('Email'),
+            subtitle: Text(
+              userEmail,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios),
+            onTap: () {
+              context.push('/profile');
+            },
+          ),
+      ],
     );
   }
 
@@ -348,14 +403,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _formatTimeOfDay(TimeOfDay timeOfDay) {
-    final now = DateTime.now();
-    final dateTime = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      timeOfDay.hour,
-      timeOfDay.minute,
+    return timeOfDay.format(context);
+  }
+
+  Future<void> _showEditNameDialog() async {
+    final currentFirstName = _userProfileService.profile?.firstName ?? 
+                             _userProfileService.profile?.displayName ?? '';
+    
+    final controller = TextEditingController(text: currentFirstName);
+    
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Your Name'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('What would you like to be called?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'First name',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+              textCapitalization: TextCapitalization.words,
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
+                Navigator.of(context).pop(newName);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
     );
-    return '${timeOfDay.format(context)}';
+    
+    if (result != null && result.isNotEmpty) {
+      try {
+        // Update firstName in the service
+        await _userProfileService.updateProfile(firstName: result);
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Name updated to "$result"'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
+          );
+          // Refresh the UI
+          setState(() {});
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error updating name: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+    
+    controller.dispose();
   }
 }
