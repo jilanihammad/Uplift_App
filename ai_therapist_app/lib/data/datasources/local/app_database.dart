@@ -20,7 +20,7 @@ class AppDatabase implements IAppDatabase {
   static Database? _database;
 
   // Current database version - increment when schema changes
-  static const int _databaseVersion = 4;
+  static const int _databaseVersion = 5;
 
   // Database file name
   static const String _databaseName = 'app_database.db';
@@ -139,6 +139,7 @@ class AppDatabase implements IAppDatabase {
             id TEXT PRIMARY KEY,
             title TEXT,
             summary TEXT,
+            action_items TEXT,
             created_at TEXT,
             last_modified TEXT,
             is_synced INTEGER
@@ -253,8 +254,13 @@ class AppDatabase implements IAppDatabase {
           await _migrateToV4(txn);
         }
 
+        // Migration to version 5: Add action_items column to sessions table
+        if (oldVersion < 5) {
+          await _migrateToV5(txn);
+        }
+
         // Add future migrations here:
-        // if (oldVersion < 5) await _migrateToV5(txn);
+        // if (oldVersion < 6) await _migrateToV6(txn);
       });
 
       debugPrint('Database upgraded successfully to version $newVersion');
@@ -483,6 +489,24 @@ class AppDatabase implements IAppDatabase {
     }
 
     debugPrint('Migration to version 4 completed');
+  }
+
+  /// Migration to version 5: Add action_items column to sessions table
+  Future<void> _migrateToV5(Transaction txn) async {
+    debugPrint('Applying migration to version 5...');
+
+    try {
+      // Add action_items column to sessions table
+      await txn.execute('''
+        ALTER TABLE sessions ADD COLUMN action_items TEXT
+      ''');
+      debugPrint('Added action_items column to sessions table');
+    } catch (e) {
+      debugPrint('Error during migration to version 5: $e');
+      rethrow;
+    }
+
+    debugPrint('Migration to version 5 completed');
   }
 
   /// Check if a table exists in the database
