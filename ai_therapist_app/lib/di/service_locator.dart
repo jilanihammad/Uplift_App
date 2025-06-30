@@ -34,6 +34,7 @@ import '../services/navigation_service.dart';
 import '../utils/connectivity_checker.dart';
 import 'interfaces/i_api_client.dart';
 import 'interfaces/i_app_database.dart';
+import 'interfaces/i_database.dart';
 import 'interfaces/i_database_operation_manager.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../services/memory_manager.dart';
@@ -135,6 +136,14 @@ Future<void> setupServiceLocator() async {
         () => serviceLocator<AppDatabase>(),
       );
       debugPrint('Registered IAppDatabase interface');
+    }
+
+    // Register interface mapping for IDatabase (required by SessionDetailsScreen)
+    if (!serviceLocator.isRegistered<IDatabase>()) {
+      serviceLocator.registerLazySingleton<IDatabase>(
+        () => _DatabaseAdapter(serviceLocator<AppDatabase>()),
+      );
+      debugPrint('Registered IDatabase interface');
     }
 
     // ===== FIREBASE SERVICE (Base registration only) =====
@@ -542,4 +551,169 @@ bool validateDependencies() {
   }
 
   return true;
+}
+
+/// Adapter class to bridge AppDatabase to IDatabase interface
+class _DatabaseAdapter implements IDatabase {
+  final AppDatabase _database;
+  
+  _DatabaseAdapter(this._database);
+  
+  @override
+  Future<void> initialize() async {
+    await _database.database; // This will initialize the database
+  }
+  
+  @override
+  Future<void> close() async {
+    // AppDatabase doesn't expose close method directly
+  }
+  
+  @override
+  bool get isOpen => true; // Assume open after initialization
+  
+  @override
+  Future<T> transaction<T>(Future<T> Function() action) async {
+    final db = await _database.database;
+    return await db.transaction((txn) async {
+      return await action();
+    });
+  }
+  
+  @override
+  Future<int> insert(String table, Map<String, dynamic> data) async {
+    final db = await _database.database;
+    return await db.insert(table, data);
+  }
+  
+  @override
+  Future<List<Map<String, dynamic>>> query(
+    String table, {
+    List<String>? columns,
+    String? where,
+    List<dynamic>? whereArgs,
+    String? orderBy,
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await _database.database;
+    return await db.query(
+      table,
+      columns: columns,
+      where: where,
+      whereArgs: whereArgs,
+      orderBy: orderBy,
+      limit: limit,
+      offset: offset,
+    );
+  }
+  
+  @override
+  Future<int> update(
+    String table,
+    Map<String, dynamic> data, {
+    String? where,
+    List<dynamic>? whereArgs,
+  }) async {
+    final db = await _database.database;
+    return await db.update(table, data, where: where, whereArgs: whereArgs);
+  }
+  
+  @override
+  Future<int> delete(
+    String table, {
+    String? where,
+    List<dynamic>? whereArgs,
+  }) async {
+    final db = await _database.database;
+    return await db.delete(table, where: where, whereArgs: whereArgs);
+  }
+  
+  @override
+  Future<List<Map<String, dynamic>>> rawQuery(
+    String sql, [
+    List<dynamic>? arguments,
+  ]) async {
+    final db = await _database.database;
+    return await db.rawQuery(sql, arguments);
+  }
+  
+  @override
+  Future<int> rawInsert(String sql, [List<dynamic>? arguments]) async {
+    final db = await _database.database;
+    return await db.rawInsert(sql, arguments);
+  }
+  
+  @override
+  Future<int> rawUpdate(String sql, [List<dynamic>? arguments]) async {
+    final db = await _database.database;
+    return await db.rawUpdate(sql, arguments);
+  }
+  
+  @override
+  Future<int> rawDelete(String sql, [List<dynamic>? arguments]) async {
+    final db = await _database.database;
+    return await db.rawDelete(sql, arguments);
+  }
+  
+  @override
+  Future<void> execute(String sql, [List<dynamic>? arguments]) async {
+    final db = await _database.database;
+    await db.execute(sql, arguments);
+  }
+  
+  @override
+  Future<bool> tableExists(String tableName) async {
+    final db = await _database.database;
+    final result = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      [tableName],
+    );
+    return result.isNotEmpty;
+  }
+  
+  @override
+  Future<List<String>> getTableNames() async {
+    final db = await _database.database;
+    final result = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table'",
+    );
+    return result.map((row) => row['name'] as String).toList();
+  }
+  
+  @override
+  Future<void> runMigration(int fromVersion, int toVersion) async {
+    // Migration logic would be implemented here
+  }
+  
+  @override
+  int get version => 1; // Default version
+  
+  @override
+  Future<void> batch(Future<void> Function() operations) async {
+    final db = await _database.database;
+    final batch = db.batch();
+    await operations();
+    await batch.commit();
+  }
+  
+  @override
+  Future<bool> healthCheck() async {
+    try {
+      final db = await _database.database;
+      await db.rawQuery('SELECT 1');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  
+  @override
+  Future<Map<String, dynamic>> getStats() async {
+    return {
+      'isOpen': isOpen,
+      'version': version,
+      'healthy': await healthCheck(),
+    };
+  }
 }

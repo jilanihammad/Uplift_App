@@ -523,11 +523,16 @@ class TherapyService implements ITherapyService {
   // End therapy session and generate a summary
   @override
   Future<Map<String, dynamic>> endSessionWithMessages(
-      List<Map<String, dynamic>> messages) async {
+      List<Map<String, dynamic>> messages, {
+      String? sessionTitle,
+      int? userId,
+    }) async {
     try {
       // Use the MessageProcessor to generate the session summary
       return await _messageProcessor.generateSessionSummary(
-          messages, _systemPrompt);
+          messages, _systemPrompt, 
+          sessionTitle: sessionTitle, 
+          userId: userId);
     } catch (e) {
       log.e('Error ending session', e);
       return {

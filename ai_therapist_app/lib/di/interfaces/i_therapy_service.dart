@@ -82,5 +82,8 @@ abstract class ITherapyService {
   
   // Additional methods for backward compatibility
   void setTherapistStyle(String systemPrompt);
-  Future<Map<String, dynamic>> endSessionWithMessages(List<Map<String, dynamic>> messages);
+  Future<Map<String, dynamic>> endSessionWithMessages(List<Map<String, dynamic>> messages, {
+    String? sessionTitle,
+    int? userId,
+  });
 }
