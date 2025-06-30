@@ -329,9 +329,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.lightBlue.withAlpha(51),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.lightBlue, width: 1),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1),
                 ),
                 child: BlocSelector<VoiceSessionBloc, VoiceSessionState, int>(
                   selector: (state) => state.sessionTimerSeconds,
@@ -340,8 +340,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                     final secs = seconds % 60;
                     return Text(
                       "${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}",
-                      style: const TextStyle(
-                        color: Colors.lightBlue,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                       ),
@@ -358,8 +358,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           child: ElevatedButton(
             onPressed: state.isEndingSession ? null : _endSession,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -1065,7 +1065,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         if (!state.isVADActive) {
           // VAD is off: show idle/off mic
           return IconButton(
-            icon: Icon(Icons.mic_off, color: Colors.grey),
+            icon: Icon(Icons.mic_off, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
             onPressed: null,
           );
         } else if (state.isRecording || state.isListeningForVoice) {

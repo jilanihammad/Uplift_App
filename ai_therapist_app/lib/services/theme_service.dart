@@ -24,9 +24,12 @@ class ThemeService extends ChangeNotifier implements IThemeService {
   // Initialize theme service
   @override
   Future<void> init() async {
+    // Ensure PreferencesService is initialized first
+    await _preferencesService.init();
+    
     // Get dark mode preference from PreferencesService
     final darkModeEnabled =
-        _preferencesService.preferences?.darkModeEnabled ?? false;
+        _preferencesService.preferences?.darkModeEnabled ?? true;
     _themeMode = darkModeEnabled ? ThemeMode.dark : ThemeMode.light;
   }
 

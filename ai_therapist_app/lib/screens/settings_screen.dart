@@ -257,10 +257,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
           child: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Colors.blue,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
         ),

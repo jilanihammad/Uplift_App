@@ -28,7 +28,7 @@ Goal:	Prevent premature deletion of synthesized welcome audio (tts_audio_*.wav).
 Scope:	AudioPlayerManager & VoiceService lifecycle.
 Suggested Approach:	
 a. Deletion currently occurs in onComplete() before AudioPlayerManager finishes handing off the file.
-b. Move cleanup into AudioPlayerManager → after player.dispose() fires onPlayerComplete.
+b. Move cleanup into AudioPlayerManager → after player.dispose() fires onPlayerComplete (recommended).
 c. Alternatively, add a simple “in-use” flag on the file path list—delete only when not in queue and not playing.
 Touch-points:	audio_player_manager.dart, voice_service.dart.
 Acceptance:	No more “File not found …wav, using TTS fallback” logs after three consecutive launches with welcome TTS enabled.
