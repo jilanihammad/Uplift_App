@@ -4,11 +4,18 @@ import 'package:flutter/material.dart' show TimeOfDay;
 import '../models/user_preferences.dart';
 import '../models/therapist_style.dart';
 import '../di/interfaces/i_preferences_service.dart';
+import '../data/datasources/local/prefs_manager.dart';
 
-// Mock implementation of user preferences service
+// Implementation of user preferences service with persistent storage
 class PreferencesService implements IPreferencesService {
-  // Mock user preferences
+  static const String _preferencesKey = 'user_preferences';
+  
+  final PrefsManager _prefsManager;
   UserPreferences? _preferences;
+
+  // Constructor with dependency injection
+  PreferencesService({PrefsManager? prefsManager}) 
+      : _prefsManager = prefsManager ?? PrefsManager();
 
   // Get current preferences
   @override
@@ -17,23 +24,68 @@ class PreferencesService implements IPreferencesService {
   // Method to initialize the preferences service
   @override
   Future<void> init() async {
-    // In a real app, this would load preferences from persistent storage
-    // For now, we'll just use default values
-    _preferences = UserPreferences(
-      userId: 'mock-user-1',
-      therapistStyleId: 'cbt', // Default to CBT style
-      reminderEnabled: true,
-      reminderTime: const TimeOfDay(hour: 18, minute: 0),
-      darkModeEnabled: true,
-      notificationsEnabled: true,
-      audioEnabled: true,
-      fontSizeLevel: 2, // Medium font size (1=small, 2=medium, 3=large)
-      aiVoiceId: 'female-1',
-      lastUpdated: DateTime.now(),
-    );
+    // Skip if already initialized
+    if (_preferences != null) {
+      return;
+    }
+    
+    try {
+      // Initialize the preferences manager
+      await _prefsManager.init();
 
-    if (kDebugMode) {
-      print('Preferences service initialized');
+      // Try to load existing preferences from persistent storage
+      final Map<String, dynamic>? savedPrefs = _prefsManager.getJson(_preferencesKey);
+      
+      if (savedPrefs != null) {
+        // Load existing preferences
+        _preferences = UserPreferences.fromJson(savedPrefs);
+        if (kDebugMode) {
+          print('Preferences loaded from storage');
+        }
+      } else {
+        // Create default preferences if none exist
+        _preferences = const UserPreferences(
+          userId: 'default-user',
+          therapistStyleId: 'cbt', // Default to CBT style
+          reminderEnabled: true,
+          reminderTime: TimeOfDay(hour: 18, minute: 0),
+          darkModeEnabled: true, // Default to dark mode
+          notificationsEnabled: true,
+          audioEnabled: true,
+          fontSizeLevel: 2, // Medium font size (1=small, 2=medium, 3=large)
+          aiVoiceId: 'female-1',
+          useVoiceByDefault: false,
+        );
+
+        // Save default preferences to storage
+        await _savePreferences();
+        
+        if (kDebugMode) {
+          print('Default preferences created and saved');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error initializing preferences: $e');
+      }
+      // Fallback to default preferences
+      _preferences = const UserPreferences();
+    }
+  }
+
+  // Helper method to save preferences to storage
+  Future<void> _savePreferences() async {
+    if (_preferences != null) {
+      try {
+        await _prefsManager.setJson(_preferencesKey, _preferences!.toJson());
+        if (kDebugMode) {
+          print('Preferences saved to storage');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error saving preferences: $e');
+        }
+      }
     }
   }
 
@@ -44,7 +96,9 @@ class PreferencesService implements IPreferencesService {
       lastUpdated: DateTime.now(),
     );
 
-    // In a real app, we would save to persistent storage here
+    // Save to persistent storage
+    await _savePreferences();
+
     if (kDebugMode) {
       print('Preferences updated: ${newPreferences.therapistStyleId}');
     }
@@ -82,9 +136,11 @@ class PreferencesService implements IPreferencesService {
       lastUpdated: DateTime.now(),
     );
 
-    // In a real app, we would save to persistent storage here
+    // Save to persistent storage
+    await _savePreferences();
+
     if (kDebugMode) {
-      print('Single preference updated');
+      print('Single preference updated and saved');
     }
   }
 
