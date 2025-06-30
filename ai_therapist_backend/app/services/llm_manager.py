@@ -13,6 +13,7 @@ from google.genai import types
 import anthropic
 
 from app.core.llm_config import LLMConfig, ModelType, ModelProvider, ModelConfig
+from app.utils.audio_path import ensure_wav
 
 logger = logging.getLogger(__name__)
 
@@ -691,17 +692,15 @@ class LLMManager:
         """
         response_format = response_format or "wav"  # Default to WAV for lowest latency streaming
         
-        # Ensure file extension matches format
-        if response_format == "mp3":
-            if not output_file.endswith(".mp3"):
-                output_file = output_file.rsplit(".", 1)[0] + ".mp3"
-        elif response_format == "wav":
-            if not output_file.endswith(".wav"):
-                output_file = output_file.rsplit(".", 1)[0] + ".wav"
-        # Support other formats if explicitly requested
+        # Use centralized utility to ensure proper extension (prevents double extensions)
+        if response_format == "wav":
+            output_file = ensure_wav(output_file)
+        elif response_format == "mp3":
+            # For MP3, use similar logic but with .mp3 extension
+            output_file = output_file if output_file.lower().endswith('.mp3') else f'{output_file}.mp3'
         elif response_format in ["opus", "ogg_opus"]:
-            if not output_file.endswith(".ogg"):
-                output_file = output_file.rsplit(".", 1)[0] + ".ogg"
+            # For OGG, use similar logic but with .ogg extension  
+            output_file = output_file if output_file.lower().endswith('.ogg') else f'{output_file}.ogg'
         
         if not self.tts_config:
             raise ValueError("No TTS configuration available")
@@ -710,11 +709,11 @@ class LLMManager:
         
         # Route to appropriate provider
         if self.tts_config.provider in [ModelProvider.OPENAI, ModelProvider.GROQ]:
-            return await self._openai_text_to_speech(text, voice=voice, response_format=response_format, **kwargs)
+            return await self._openai_text_to_speech(text, output_file, voice=voice, response_format=response_format, **kwargs)
         else:
             raise ValueError(f"Unsupported TTS provider: {self.tts_config.provider}")
 
-    async def _openai_text_to_speech(self, text: str, voice: Optional[str] = None, response_format: Optional[str] = None, **kwargs) -> str:
+    async def _openai_text_to_speech(self, text: str, output_file: str, voice: Optional[str] = None, response_format: Optional[str] = None, **kwargs) -> str:
         """Convert text to speech using OpenAI TTS API and return base64-encoded audio data."""
         try:
             client = self._get_openai_client(self.tts_config)
@@ -737,6 +736,12 @@ class LLMManager:
             )
             # Read audio bytes
             audio_bytes = response.content if hasattr(response, 'content') else response.read()
+            
+            # Save to output file
+            with open(output_file, 'wb') as f:
+                f.write(audio_bytes)
+            logger.info(f"Audio saved to: {output_file} ({len(audio_bytes)} bytes)")
+            
             # Encode to base64 for API response
             audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
             return audio_b64

@@ -8,6 +8,7 @@ import uuid
 import traceback
 
 from app.core.config import settings
+from app.utils.audio_path import ensure_wav, ensure_basename_no_extension
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class VoiceService:
     
     def _create_fallback_audio(self):
         """Create a valid fallback WAV file"""
-        error_file = os.path.join(self.audio_dir, "error.wav")  # Changed to WAV
+        error_file = ensure_wav(os.path.join(self.audio_dir, "error"))
         logger.info(f"[TTS] Checking for fallback audio at: {error_file}")
         if os.path.exists(error_file) and os.path.getsize(error_file) > 1000:
             logger.info(f"[TTS] Fallback audio file already exists: {error_file}")
@@ -96,13 +97,13 @@ class VoiceService:
             
         # Use LLMManager to generate speech
         try:
-            # Get format extension - default to WAV for streaming TTS
+            # Get format type - default to WAV for streaming TTS
             format_type = format_params.get("response_format", "wav") if format_params else "wav"
-            extension = ".wav" if format_type == "wav" else f".{format_type}"
             
-            # Generate a unique filename for the audio file
-            filename = f"{uuid.uuid4()}{extension}"
-            file_path = os.path.join(self.audio_dir, filename)
+            # Generate a unique filename WITHOUT extension - let ensure_wav handle extensions
+            filename_base = str(uuid.uuid4())
+            ensure_basename_no_extension(filename_base)  # Safety check
+            file_path = ensure_wav(os.path.join(self.audio_dir, filename_base))
             logger.info(f"[TTS] Will save audio to: {file_path}")
             
             # Ensure the directory exists
@@ -136,9 +137,10 @@ class VoiceService:
                 logger.error(f"[TTS] TTS failed - no audio data returned")
                 raise Exception("TTS generation failed - no audio data returned")
             
-            # Return the URL to the audio file
-            logger.info(f"[TTS] Returning audio URL to client: /audio/{filename}")
-            return f"/audio/{filename}"
+            # Return the URL to the audio file (get actual filename from file_path)
+            actual_filename = os.path.basename(file_path)
+            logger.info(f"[TTS] Returning audio URL to client: /audio/{actual_filename}")
+            return f"/audio/{actual_filename}"
             
         except Exception as e:
             logger.error(f"[TTS] Error generating speech: {str(e)}")
