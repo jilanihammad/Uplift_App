@@ -287,10 +287,26 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
 
   List<String> _extractActionItems() {
     final session = _session;
-    if (session == null || session.summary.isEmpty) {
+    if (session == null) {
+      debugPrint('Session is null, returning empty action items');
       return [];
     }
 
+    // First priority: Use stored action items from database
+    if (session.actionItems.isNotEmpty) {
+      debugPrint('Using stored action items from database: ${session.actionItems.length} items');
+      debugPrint('Stored action items: ${session.actionItems.join(", ")}');
+      return session.actionItems;
+    }
+
+    debugPrint('No stored action items found for session ${session.id}, falling back to summary extraction');
+
+    // Fallback: Extract from summary text (for legacy sessions)
+    if (session.summary.isEmpty) {
+      return [];
+    }
+    
+    debugPrint('No stored action items found, attempting to extract from summary text (legacy mode)');
     final summary = session.summary;
     List<String> actionItems = [];
 

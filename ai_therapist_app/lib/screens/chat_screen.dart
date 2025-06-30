@@ -898,7 +898,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         extra: {
           'sessionId': sessionIdForNavigation,
           'summary': sessionData['summary'],
-          'actionItems': sessionData['actionItems'],
+          'actionItems': sessionData['action_items'] ?? sessionData['actionItems'],
           'insights': sessionData['insights'],
           'messages': state.messages,
           'initialMood': _initialMood,
@@ -973,7 +973,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       'id': sessionData['id'], // Include backend session ID
       'summary': sessionData['summary'] as String? ??
           'Thank you for your session today. I hope our conversation was helpful.',
-      'actionItems': actionItemsDynamic.map((item) => item.toString()).toList(),
+      'action_items': actionItemsDynamic.map((item) => item.toString()).toList(),
+      'actionItems': actionItemsDynamic.map((item) => item.toString()).toList(), // Keep both for compatibility
       'insights': insightsDynamic.map((item) => item.toString()).toList(),
     };
   }
@@ -994,12 +995,24 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       // If we have a backend session ID, the session is already created on the backend
       // Just save to local database for offline access
       if (backendSessionId != null) {
+        // Extract action items from session data
+        final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
+            sessionData['actionItems'] as List<dynamic>? ??
+            [];
+        final actionItems = actionItemsDynamic.map((item) => item.toString()).toList();
+        
         await sessionRepository.saveSession(
           sessionId: sessionIdToUse,
           title: 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}',
           summary: sessionData['summary'],
+          actionItems: actionItems,
           messages: messages.map((m) => m.toJson()).toList(),
         );
+        
+        if (kDebugMode) {
+          debugPrint('Saved session $sessionIdToUse to local database with ${actionItems.length} action items');
+          debugPrint('Action items saved: ${actionItems.join(", ")}');
+        }
         
         // Update current session ID to the backend ID
         _currentSessionId = sessionIdToUse;
@@ -1019,10 +1032,17 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           }
         }
 
+        // Extract action items from session data for fallback case too
+        final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
+            sessionData['actionItems'] as List<dynamic>? ??
+            [];
+        final actionItems = actionItemsDynamic.map((item) => item.toString()).toList();
+        
         await sessionRepository.saveSession(
           sessionId: _currentSessionId,
           title: sessionTitle,
           summary: sessionData['summary'],
+          actionItems: actionItems,
           messages: messages.map((m) => m.toJson()).toList(),
         );
       }

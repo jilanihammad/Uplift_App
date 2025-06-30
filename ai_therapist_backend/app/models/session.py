@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, SmallInteger, Text
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, SmallInteger, Text, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.mutable import MutableList
 
 from app.db.base_class import Base
 
@@ -16,6 +17,7 @@ class Session(Base):
     summary = Column(Text, nullable=True)
     mood_before = Column(SmallInteger, nullable=True)  # Scale 1-5
     mood_after = Column(SmallInteger, nullable=True)   # Scale 1-5
+    action_items = Column(MutableList.as_mutable(JSON), nullable=True, default=list)  # Store action items as JSON list
     
     # Relationships
     user = relationship("User", backref="sessions")
