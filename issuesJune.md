@@ -33,7 +33,7 @@ c. Alternatively, add a simple “in-use” flag on the file path list—delete 
 Touch-points:	audio_player_manager.dart, voice_service.dart.
 Acceptance:	No more “File not found …wav, using TTS fallback” logs after three consecutive launches with welcome TTS enabled.
 
-4 · Remove Summary JSON Parse Warning
+(done) 4 · Remove Summary JSON Parse Warning
 Field	Details
 Goal:	Silence log spam when backend sends plain-text summaries.
 Scope:	Session summary parsing layer.

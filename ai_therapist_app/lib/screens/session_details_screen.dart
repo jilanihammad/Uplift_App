@@ -65,7 +65,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error loading session details: $e');
+      debugPrint('Error loading session details: $e');
 
       if (!mounted || _isDisposed) return;
 
@@ -99,7 +99,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
               ))
           .toList();
     } catch (e) {
-      print('Error loading session messages: $e');
+      debugPrint('Error loading session messages: $e');
       return [];
     }
   }
@@ -295,17 +295,26 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     List<String> actionItems = [];
 
     try {
-      // First attempt: Try to parse the summary as JSON
-      try {
-        final summaryJson = jsonDecode(summary);
-        if (summaryJson is Map && summaryJson.containsKey('action_items')) {
-          final items = summaryJson['action_items'];
-          if (items is List) {
-            actionItems = items.map((item) => item.toString()).toList();
+      // First attempt: Try to parse the summary as JSON with enhanced format detection
+      if (_isValidJsonFormat(summary)) {
+        try {
+          final summaryJson = jsonDecode(summary);
+          if (summaryJson is Map && summaryJson.containsKey('action_items')) {
+            final items = summaryJson['action_items'];
+            if (items is List) {
+              actionItems = items.map((item) => item.toString()).toList();
+              debugPrint('Successfully extracted ${actionItems.length} action items from JSON summary');
+            }
           }
+        } on FormatException catch (e) {
+          debugPrint('FormatException parsing summary as JSON: ${e.message}');
+          // Continue to text-based extraction
+        } catch (e) {
+          debugPrint('Unexpected error parsing summary as JSON: $e');
+          // Continue to text-based extraction
         }
-      } catch (e) {
-        print('Summary is not in JSON format: $e');
+      } else {
+        debugPrint('Summary format detected as plain text, using text-based action item extraction');
       }
 
       // Second attempt: Look for action items in the text
@@ -350,7 +359,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         ];
       }
     } catch (e) {
-      print('Error extracting action items: $e');
+      debugPrint('Error extracting action items: $e');
       // Fallback action items
       actionItems = [
         'Practice mindfulness regularly',
@@ -361,6 +370,41 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     }
 
     return actionItems;
+  }
+
+  /// Enhanced JSON format validation to reduce false positives
+  bool _isValidJsonFormat(String text) {
+    final trimmed = text.trim();
+    
+    // Basic structure check - must start with { and end with }
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+      return false;
+    }
+    
+    // Must contain at least one colon (key-value pairs)
+    if (!trimmed.contains(':')) {
+      return false;
+    }
+    
+    // Should have matching braces
+    int braceCount = 0;
+    for (int i = 0; i < trimmed.length; i++) {
+      if (trimmed[i] == '{') braceCount++;
+      if (trimmed[i] == '}') braceCount--;
+      if (braceCount < 0) return false; // More closing than opening braces
+    }
+    
+    // Final brace count should be zero
+    if (braceCount != 0) return false;
+    
+    // Quick validation for common JSON patterns
+    if (trimmed.contains('"') && (trimmed.contains('":') || trimmed.contains('" :'))) {
+      return true;
+    }
+    
+    // If it looks like JSON but doesn't have quotes, it might be malformed
+    // In this case, we'll let jsonDecode handle it and catch the FormatException
+    return true;
   }
 
   @override
