@@ -293,6 +293,9 @@ class EndSessionRequest(BaseModel):
     memory_context: str = ""
     therapeutic_approach: str = "supportive"
     visited_nodes: list = []
+    # Optional session metadata for creating session record
+    session_title: Optional[str] = None
+    user_id: Optional[int] = None
 
 class ChatStreamRequestBody(BaseModel):
     history: List[Dict[str, Any]] # Expects keys like 'role', 'content', 'sequence'
@@ -335,8 +338,8 @@ async def ai_response(request: AIRequest):
         raise HTTPException(status_code=500, detail=f"Error generating AI response: {str(e)}")
 
 @app.post("/therapy/end_session")
-async def end_session(request: EndSessionRequest):
-    """Generate therapy session summary using unified LLM manager."""
+async def end_session(request: EndSessionRequest, db: DBSession = Depends(get_db)):
+    """Generate therapy session summary and create session record with rich data."""
     try:
         logger.info("Received end session request with %d messages", len(request.messages))
         
@@ -445,7 +448,16 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
                 result = await _validate_and_clean_summary(result, request.messages)
                 
                 logger.info("Session summary generated successfully using LLM manager")
+                
+                # Create session record in database with rich data
+                session_id = await _create_session_with_summary(
+                    db=db,
+                    summary_data=result,
+                    request=request
+                )
+                
                 return {
+                    "id": session_id,  # Include the backend session ID
                     "summary": result.get("summary", ""),
                     "action_items": result.get("action_items", []),
                     "insights": result.get("insights", []),
@@ -455,12 +467,34 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
             except (json.JSONDecodeError, KeyError, ValueError) as e:
                 logger.warning(f"Failed to parse LLM response as JSON: {str(e)}")
                 logger.warning(f"Raw response: {response_text[:300]}...")
-                return await _generate_conversation_based_summary(request.messages, request.therapeutic_approach)
+                fallback_summary = await _generate_conversation_based_summary(request.messages, request.therapeutic_approach)
+                
+                # Create session record with fallback data
+                session_id = await _create_session_with_summary(
+                    db=db,
+                    summary_data=fallback_summary,
+                    request=request
+                )
+                
+                # Add session ID to fallback response
+                fallback_summary["id"] = session_id
+                return fallback_summary
                 
         except Exception as llm_error:
             logger.warning(f"Error using LLM manager for session summary: {str(llm_error)}")
             logger.warning("Falling back to conversation-based summary")
-            return await _generate_conversation_based_summary(request.messages, request.therapeutic_approach)
+            fallback_summary = await _generate_conversation_based_summary(request.messages, request.therapeutic_approach)
+            
+            # Create session record with fallback data
+            session_id = await _create_session_with_summary(
+                db=db,
+                summary_data=fallback_summary,
+                request=request
+            )
+            
+            # Add session ID to fallback response
+            fallback_summary["id"] = session_id
+            return fallback_summary
             
     except Exception as e:
         logger.error("Error generating session summary: %s", str(e))
@@ -704,7 +738,7 @@ async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] =
                     logger.error(traceback.format_exc())
                     # If we can't create sessions, return mock data
                     logger.warning("Falling back to mock data due to database error")
-                    now = datetime.now().isoformat()
+                    now = datetime.utcnow().isoformat() + 'Z'
                     return [
                         {
                             "id": str(uuid.uuid4()),
@@ -728,7 +762,7 @@ async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] =
             logger.error(traceback.format_exc())
             # If database operations fail, return mock data as fallback
             logger.warning("Falling back to mock data due to database error")
-            now = datetime.now().isoformat()
+            now = datetime.utcnow().isoformat() + 'Z'
             return [
                 {
                     "id": str(uuid.uuid4()),
@@ -757,8 +791,8 @@ async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] =
                 "id": str(session.id),
                 "title": session.title or f"Session {session.id}",
                 "summary": session.summary or "No summary available",
-                "created_at": session.start_time.isoformat(),
-                "last_modified": session.end_time.isoformat() if session.end_time else session.start_time.isoformat(),
+                "created_at": session.start_time.isoformat() + 'Z',
+                "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
                 "isSynced": True
             })
             
@@ -767,7 +801,7 @@ async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] =
         logger.error(f"Unhandled error in get_sessions: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         # Return a user-friendly error response
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat() + 'Z'
         return [
             {
                 "id": str(uuid.uuid4()),
@@ -803,8 +837,8 @@ async def create_session(request: SessionUpdateRequest = None, db: DBSession = D
             "id": str(session.id),
             "title": request.title or f"Session {session.id}",
             "summary": session.summary or "",
-            "created_at": session.start_time.isoformat(),
-            "last_modified": session.start_time.isoformat(),
+            "created_at": session.start_time.isoformat() + 'Z',
+            "last_modified": session.start_time.isoformat() + 'Z',
             "isSynced": True
         }
     except Exception as e:
@@ -830,8 +864,8 @@ async def get_session(session_id: str, db: DBSession = Depends(get_db)):
             "id": str(session.id),
             "title": f"Session {session.id}" if not hasattr(session, 'title') or not session.title else session.title,
             "summary": session.summary or "",
-            "created_at": session.start_time.isoformat(),
-            "last_modified": session.end_time.isoformat() if session.end_time else session.start_time.isoformat(),
+            "created_at": session.start_time.isoformat() + 'Z',
+            "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
             "isSynced": True
         }
     except HTTPException:
@@ -879,8 +913,8 @@ async def update_session(session_id: str, request: SessionUpdateRequest, db: DBS
                 "id": str(session.id),
                 "title": session.title or f"Session {session.id}",
                 "summary": session.summary or "",
-                "created_at": session.start_time.isoformat(),
-                "last_modified": session.end_time.isoformat() if session.end_time else session.start_time.isoformat(),
+                "created_at": session.start_time.isoformat() + 'Z',
+                "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
                 "isSynced": True
             }
             
@@ -891,7 +925,7 @@ async def update_session(session_id: str, request: SessionUpdateRequest, db: DBS
             logger.error(traceback.format_exc())
             
             # Return a mock response as fallback
-            now = datetime.now().isoformat()
+            now = datetime.utcnow().isoformat() + 'Z'
             return {
                 "id": session_id,
                 "title": request.title or f"Session {session_id}",
@@ -907,7 +941,7 @@ async def update_session(session_id: str, request: SessionUpdateRequest, db: DBS
         logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Return a response rather than an error for better user experience
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat() + 'Z'
         return {
             "id": session_id,
             "title": request.title or f"Session {session_id}",
@@ -1211,6 +1245,46 @@ async def stream_chat_from_llm(
     except Exception as e:
         logger.error(f"Error in stream_chat_from_llm for session {session_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An error occurred while streaming the chat response: {str(e)}")
+
+async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, Any], request: EndSessionRequest) -> int:
+    """Create a session record in the database with rich summary data and return the session ID."""
+    try:
+        # Extract session metadata from request or use defaults
+        user_id = request.user_id or 1  # Default to user 1 if not provided
+        session_title = request.session_title or f"Therapy Session {datetime.now().strftime('%b %d, %Y')}"
+        
+        logger.info(f"Creating session record for user {user_id} with title: {session_title}")
+        
+        # Create the session with rich data
+        session = crud_session.create_session(
+            db=db,
+            user_id=user_id,
+            title=session_title
+        )
+        
+        # Update the session with summary data
+        summary_text = summary_data.get("summary", "")
+        if summary_text:
+            crud_session.update_session(db, session.id, {"summary": summary_text})
+        
+        logger.info(f"Session created successfully with ID: {session.id}")
+        return session.id
+        
+    except Exception as e:
+        logger.error(f"Error creating session record: {str(e)}")
+        # If session creation fails, log the error but don't fail the entire request
+        # Return a default ID or create a minimal session
+        try:
+            fallback_session = crud_session.create_session(
+                db=db,
+                user_id=1,  # Default user
+                title="Therapy Session"
+            )
+            return fallback_session.id
+        except Exception as fallback_error:
+            logger.error(f"Fallback session creation also failed: {str(fallback_error)}")
+            # Return a default ID if all else fails
+            return 1
 
 async def _validate_and_clean_summary(result: Dict[str, Any], messages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Validate and clean the summary result, ensuring quality action items."""

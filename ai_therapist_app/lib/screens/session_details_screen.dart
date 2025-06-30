@@ -6,6 +6,7 @@ import '../domain/entities/session.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import '../models/therapy_message.dart';
+import '../utils/date_formatter.dart';
 import 'dart:convert';
 
 class SessionDetailsScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class SessionDetailsScreen extends StatefulWidget {
 
 class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   bool _isLoading = true;
+  bool _isDisposed = false;
   Session? _session;
   List<TherapyMessage> _messages = [];
   String? _errorMessage;
@@ -91,7 +93,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                 id: data['id'] as String,
                 content: data['content'] as String,
                 isUser: (data['is_user'] as int) == 1,
-                timestamp: DateTime.parse(data['timestamp'] as String),
+                timestamp: DateTime.parse(data['timestamp'] as String).toUtc(),
                 audioUrl: data['audio_url'] as String?,
                 sequence: data['sequence'] as int? ?? 0, // Default to 0 if null
               ))
@@ -149,6 +151,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   }
 
   Widget _buildSessionHeader() {
+    final session = _session;
+    if (session == null) {
+      return const SizedBox.shrink();
+    }
+    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -156,7 +163,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _session!.title,
+              session.title,
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -168,7 +175,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                 const Icon(Icons.calendar_today, size: 16),
                 const SizedBox(width: 8),
                 Text(
-                  DateFormat('MMMM d, yyyy').format(_session!.createdAt),
+                  DateFormatter.formatDate(session.createdAt),
                   style: TextStyle(color: Colors.grey[700]),
                 ),
               ],
@@ -179,7 +186,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                 const Icon(Icons.access_time, size: 16),
                 const SizedBox(width: 8),
                 Text(
-                  DateFormat('h:mm a').format(_session!.createdAt),
+                  DateFormatter.formatTime(session.createdAt),
                   style: TextStyle(color: Colors.grey[700]),
                 ),
               ],
@@ -191,6 +198,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   }
 
   Widget _buildSummarySection() {
+    final session = _session;
+    if (session == null) {
+      return const SizedBox.shrink();
+    }
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -205,7 +217,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(_session!.summary),
+            child: Text(session.summary),
           ),
         ),
       ],
@@ -274,11 +286,12 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   }
 
   List<String> _extractActionItems() {
-    if (_session == null || _session!.summary.isEmpty) {
+    final session = _session;
+    if (session == null || session.summary.isEmpty) {
       return [];
     }
 
-    final summary = _session!.summary;
+    final summary = session.summary;
     List<String> actionItems = [];
 
     try {
@@ -355,6 +368,4 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     _isDisposed = true;
     super.dispose();
   }
-
-  bool _isDisposed = false;
 }

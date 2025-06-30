@@ -44,7 +44,7 @@ def update_session(
             setattr(session, field, value)
             
     # Always update the last_modified field
-    session.end_time = datetime.now()
+    session.end_time = datetime.utcnow()
     
     db.commit()
     db.refresh(session)

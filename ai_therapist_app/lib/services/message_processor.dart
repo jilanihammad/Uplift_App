@@ -387,7 +387,10 @@ class MessageProcessor {
 
   /// Generate end of session summary
   Future<Map<String, dynamic>> generateSessionSummary(
-      List<Map<String, dynamic>> messages, String systemPrompt) async {
+      List<Map<String, dynamic>> messages, String systemPrompt, {
+      String? sessionTitle,
+      int? userId,
+    }) async {
     try {
       log.i('Generating session summary for ${messages.length} messages');
 
@@ -396,7 +399,8 @@ class MessageProcessor {
         return await _generateSessionSummaryDirectLLM(messages, systemPrompt);
       } else {
         // Use backend proxy (original behavior)
-        return await _generateSessionSummaryViaBackend(messages, systemPrompt);
+        return await _generateSessionSummaryViaBackend(messages, systemPrompt, 
+          sessionTitle: sessionTitle, userId: userId);
       }
     } catch (e) {
       log.e('Error ending session', e);
@@ -497,7 +501,10 @@ $conversationText''';
 
   /// Generate session summary using backend proxy (original behavior)
   Future<Map<String, dynamic>> _generateSessionSummaryViaBackend(
-      List<Map<String, dynamic>> messages, String systemPrompt) async {
+      List<Map<String, dynamic>> messages, String systemPrompt, {
+      String? sessionTitle,
+      int? userId,
+    }) async {
     try {
       log.i('Making API call to end_session with payload: ${json.encode({
             'messages_count': messages.length,
@@ -505,8 +512,20 @@ $conversationText''';
           })}');
 
       // Make API call to end session and get summary
-      final response = await apiClient.post('/therapy/end_session',
-          {'messages': messages, 'system_prompt': systemPrompt});
+      final payload = {
+        'messages': messages, 
+        'system_prompt': systemPrompt,
+      };
+      
+      // Add optional session metadata if provided
+      if (sessionTitle != null) {
+        payload['session_title'] = sessionTitle;
+      }
+      if (userId != null) {
+        payload['user_id'] = userId;
+      }
+      
+      final response = await apiClient.post('/therapy/end_session', payload);
 
       if (response != null) {
         log.i(

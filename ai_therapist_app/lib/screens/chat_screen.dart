@@ -607,11 +607,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       // End initialization
       bloc.add(SetInitializing(false));
     } else {
-      // Generate a UUID for the session
+      // Generate a temporary UUID for local session tracking
+      // This will be replaced with the backend session ID when the session ends
       _currentSessionId = const Uuid().v4();
 
       if (kDebugMode) {
-        debugPrint('Generated session ID: $_currentSessionId');
+        debugPrint('Generated temporary session ID for local tracking: $_currentSessionId');
       }
 
       // For new sessions, show duration selector first
@@ -889,10 +890,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       // Navigate to summary screen
       if (!mounted) return;
 
+      // Use backend session ID for navigation if available
+      final sessionIdForNavigation = sessionData['id']?.toString() ?? _currentSessionId;
+      
       context.pushReplacement(
         '/session_summary',
         extra: {
-          'sessionId': _currentSessionId,
+          'sessionId': sessionIdForNavigation,
           'summary': sessionData['summary'],
           'actionItems': sessionData['actionItems'],
           'insights': sessionData['insights'],
@@ -948,8 +952,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       debugPrint('Ending therapy session with ${messageList.length} messages');
     }
 
-    // Get session summary from therapy service
-    final sessionData = await _therapyService.endSessionWithMessages(messageList);
+    // Generate session title to pass to backend
+    final sessionTitle = 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+
+    // Get session summary from therapy service, passing session metadata
+    final sessionData = await _therapyService.endSessionWithMessages(
+      messageList, 
+      sessionTitle: sessionTitle,
+      userId: 1, // Default user ID for now
+    );
 
     // Safely extract and convert lists to List<String>
     final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
@@ -959,6 +970,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     final insightsDynamic = sessionData['insights'] as List<dynamic>? ?? [];
 
     return {
+      'id': sessionData['id'], // Include backend session ID
       'summary': sessionData['summary'] as String? ??
           'Thank you for your session today. I hope our conversation was helpful.',
       'actionItems': actionItemsDynamic.map((item) => item.toString()).toList(),
@@ -971,35 +983,49 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     try {
       final sessionRepository = DependencyContainer().sessionRepository;
 
-      // Ensure the session exists in the repository
-      // Generate session title
-      final sessionTitle =
-          'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+      // If we have a backend session ID from the response, use it
+      final backendSessionId = sessionData['id']?.toString();
+      final sessionIdToUse = backendSessionId ?? _currentSessionId;
       
-      try {
-        await sessionRepository.getSession(_currentSessionId);
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('Session not found in repository, creating it now');
-        }
-        // Create the session if it doesn't exist
-        final createdSession = await sessionRepository.createSession(
-          sessionTitle,
-          id: _currentSessionId,
-        );
-        // Update _currentSessionId to backend's returned ID if it differs
-        if (createdSession.id != _currentSessionId) {
-          _currentSessionId = createdSession.id;
-        }
+      if (kDebugMode) {
+        debugPrint('Saving session with ID: $sessionIdToUse (backend ID: $backendSessionId)');
       }
 
-      // Save the session with its summary and messages
-      await sessionRepository.saveSession(
-        sessionId: _currentSessionId,
-        title: sessionTitle,
-        summary: sessionData['summary'],
-        messages: messages.map((m) => m.toJson()).toList(),
-      );
+      // If we have a backend session ID, the session is already created on the backend
+      // Just save to local database for offline access
+      if (backendSessionId != null) {
+        await sessionRepository.saveSession(
+          sessionId: sessionIdToUse,
+          title: 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}',
+          summary: sessionData['summary'],
+          messages: messages.map((m) => m.toJson()).toList(),
+        );
+        
+        // Update current session ID to the backend ID
+        _currentSessionId = sessionIdToUse;
+      } else {
+        // Fallback: old flow for when backend doesn't return an ID
+        final sessionTitle = 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+        
+        try {
+          await sessionRepository.getSession(_currentSessionId);
+        } catch (e) {
+          final createdSession = await sessionRepository.createSession(
+            sessionTitle,
+            id: _currentSessionId,
+          );
+          if (createdSession.id != _currentSessionId) {
+            _currentSessionId = createdSession.id;
+          }
+        }
+
+        await sessionRepository.saveSession(
+          sessionId: _currentSessionId,
+          title: sessionTitle,
+          summary: sessionData['summary'],
+          messages: messages.map((m) => m.toJson()).toList(),
+        );
+      }
 
       if (kDebugMode) {
         debugPrint('Session saved to repository successfully');

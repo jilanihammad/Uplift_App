@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import '../domain/entities/session.dart';
+import '../utils/date_formatter.dart';
 
 class HistoryScreen extends StatefulWidget {
   final ISessionRepository? sessionRepository;
@@ -393,7 +394,7 @@ class SessionHistoryTile extends StatelessWidget {
   }) : super(key: key);
 
   String _formatDate(DateTime date) {
-    return DateFormat('h:mm a').format(date);
+    return DateFormatter.formatTime(date);
   }
 
   void _showRenameDialog(BuildContext context) async {

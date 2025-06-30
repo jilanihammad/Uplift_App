@@ -4,20 +4,24 @@ import 'package:intl/intl.dart';
 
 class DateFormatter {
   static String formatDate(DateTime date) {
-    return DateFormat('MMM d, yyyy').format(date);
+    final localDate = date.toLocal();
+    return DateFormat('MMM d, yyyy').format(localDate);
   }
   
   static String formatDateTime(DateTime date) {
-    return DateFormat('MMM d, yyyy - h:mm a').format(date);
+    final localDate = date.toLocal();
+    return DateFormat('MMM d, yyyy - h:mm a').format(localDate);
   }
   
   static String formatTime(DateTime date) {
-    return DateFormat('h:mm a').format(date);
+    final localDate = date.toLocal();
+    return DateFormat('h:mm a').format(localDate);
   }
   
   static String formatRelativeDate(DateTime date) {
+    final localDate = date.toLocal();
     final now = DateTime.now();
-    final difference = now.difference(date);
+    final difference = now.difference(localDate);
     
     if (difference.inDays == 0) {
       return 'Today';

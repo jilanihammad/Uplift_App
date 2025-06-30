@@ -37,8 +37,8 @@ class SessionRepository implements ISessionRepository {
             id: data['id'] as String,
             title: data['title'] as String,
             summary: data['summary'] as String,
-            createdAt: DateTime.parse(data['created_at'] as String),
-            lastModified: DateTime.parse(data['last_modified'] as String),
+            createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
+            lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
             isSynced: (data['is_synced'] as int) == 1,
           );
         }
@@ -68,8 +68,8 @@ class SessionRepository implements ISessionRepository {
             session.id, // Use the provided ID or the one from the response
         'title': session.title,
         'summary': session.summary,
-        'created_at': session.createdAt.toIso8601String(),
-        'last_modified': session.lastModified.toIso8601String(),
+        'created_at': session.createdAt.toUtc().toIso8601String(),
+        'last_modified': session.lastModified.toUtc().toIso8601String(),
         'is_synced': 1,
       });
 
@@ -80,7 +80,7 @@ class SessionRepository implements ISessionRepository {
       // Create local session if API call fails
       final String localId =
           id ?? 'local_${DateTime.now().millisecondsSinceEpoch}';
-      final now = DateTime.now().toIso8601String();
+      final now = DateTime.now().toUtc().toIso8601String();
 
       await appDatabase.insert('sessions', {
         'id': localId,
@@ -95,8 +95,8 @@ class SessionRepository implements ISessionRepository {
         id: localId,
         title: title,
         summary: '',
-        createdAt: DateTime.now(),
-        lastModified: DateTime.now(),
+        createdAt: DateTime.now().toUtc(),
+        lastModified: DateTime.now().toUtc(),
         isSynced: false,
       );
     }
@@ -124,8 +124,8 @@ class SessionRepository implements ISessionRepository {
               'id': session.id,
               'title': session.title,
               'summary': session.summary,
-              'created_at': session.createdAt.toIso8601String(),
-              'last_modified': session.lastModified.toIso8601String(),
+              'created_at': session.createdAt.toUtc().toIso8601String(),
+              'last_modified': session.lastModified.toUtc().toIso8601String(),
               'is_synced': 1,
             });
           } catch (e) {
@@ -135,7 +135,7 @@ class SessionRepository implements ISessionRepository {
               {
                 'title': session.title,
                 'summary': session.summary,
-                'last_modified': session.lastModified.toIso8601String(),
+                'last_modified': session.lastModified.toUtc().toIso8601String(),
                 'is_synced': 1,
               },
               where: 'id = ?',
@@ -157,8 +157,8 @@ class SessionRepository implements ISessionRepository {
                 id: data['id'] as String,
                 title: data['title'] as String,
                 summary: data['summary'] as String,
-                createdAt: DateTime.parse(data['created_at'] as String),
-                lastModified: DateTime.parse(data['last_modified'] as String),
+                createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
+                lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
                 isSynced: (data['is_synced'] as int) == 1,
               ))
           .toList();
@@ -182,8 +182,8 @@ class SessionRepository implements ISessionRepository {
           'id': session.id,
           'title': session.title,
           'summary': session.summary,
-          'created_at': session.createdAt.toIso8601String(),
-          'last_modified': session.lastModified.toIso8601String(),
+          'created_at': session.createdAt.toUtc().toIso8601String(),
+          'last_modified': session.lastModified.toUtc().toIso8601String(),
           'is_synced': 1,
         });
       } catch (e) {
@@ -193,7 +193,7 @@ class SessionRepository implements ISessionRepository {
           {
             'title': session.title,
             'summary': session.summary,
-            'last_modified': session.lastModified.toIso8601String(),
+            'last_modified': session.lastModified.toUtc().toIso8601String(),
             'is_synced': 1,
           },
           where: 'id = ?',
@@ -221,8 +221,8 @@ class SessionRepository implements ISessionRepository {
         id: data['id'] as String,
         title: data['title'] as String,
         summary: data['summary'] as String,
-        createdAt: DateTime.parse(data['created_at'] as String),
-        lastModified: DateTime.parse(data['last_modified'] as String),
+        createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
+        lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
         isSynced: (data['is_synced'] as int) == 1,
       );
     }
@@ -295,8 +295,8 @@ class SessionRepository implements ISessionRepository {
         id: data['id'] as String,
         title: data['title'] as String,
         summary: data['summary'] as String,
-        createdAt: DateTime.parse(data['created_at'] as String),
-        lastModified: DateTime.parse(data['last_modified'] as String),
+        createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
+        lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
         isSynced: false,
       );
     }
@@ -384,8 +384,8 @@ class SessionRepository implements ISessionRepository {
         id: data['id'] as String,
         title: data['title'] as String,
         summary: data['summary'] as String,
-        createdAt: DateTime.parse(data['created_at'] as String),
-        lastModified: DateTime.parse(data['last_modified'] as String),
+        createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
+        lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
         isSynced: (data['is_synced'] as int) == 1,
       );
     } catch (e) {
