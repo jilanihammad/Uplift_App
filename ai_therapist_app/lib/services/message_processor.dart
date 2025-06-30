@@ -459,15 +459,13 @@ $conversationText''';
       if (response.containsKey('response') && response['response'] != null) {
         final responseText = response['response'] as String;
 
-        try {
-          // Try to parse as JSON
-          final jsonMatch =
-              RegExp(r'\{.*\}', dotAll: true).firstMatch(responseText);
-          if (jsonMatch != null) {
-            final jsonStr = jsonMatch.group(0)!;
-            final parsedJson = json.decode(jsonStr) as Map<String, dynamic>;
+        // Try to parse as JSON with improved format validation
+        final jsonCandidate = _extractJsonFromResponse(responseText);
+        if (jsonCandidate != null && _isValidJsonFormat(jsonCandidate)) {
+          try {
+            final parsedJson = json.decode(jsonCandidate) as Map<String, dynamic>;
 
-            log.i('Session summary generated successfully via direct LLM');
+            log.i('Session summary generated successfully via direct LLM (JSON format)');
             return {
               'summary':
                   parsedJson['summary'] ?? 'Session completed successfully.',
@@ -476,9 +474,15 @@ $conversationText''';
               'topics': parsedJson['topics'] ?? [],
               'generated_via': 'direct_llm',
             };
+          } on FormatException catch (e) {
+            log.w('FormatException parsing LLM response as JSON: ${e.message}');
+            // Continue to plain text processing
+          } catch (e) {
+            log.w('Unexpected error parsing LLM response as JSON: $e');
+            // Continue to plain text processing
           }
-        } catch (e) {
-          log.w('Could not parse LLM response as JSON: $e');
+        } else {
+          log.i('LLM response detected as plain text format, processing accordingly');
         }
 
         // If JSON parsing fails, create summary from text
@@ -708,5 +712,59 @@ $conversationText''';
         'detail': 'Error processing message: ${e.toString()}',
       };
     }
+  }
+
+  /// Extract potential JSON content from LLM response text
+  String? _extractJsonFromResponse(String responseText) {
+    // First try to find JSON wrapped in code blocks
+    final codeBlockRegex = RegExp(r'```(?:json)?\s*(\{.*?\})\s*```', dotAll: true);
+    final codeBlockMatch = codeBlockRegex.firstMatch(responseText);
+    if (codeBlockMatch != null) {
+      return codeBlockMatch.group(1)?.trim();
+    }
+    
+    // Then try to find standalone JSON object
+    final jsonRegex = RegExp(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', dotAll: true);
+    final jsonMatch = jsonRegex.firstMatch(responseText);
+    if (jsonMatch != null) {
+      return jsonMatch.group(0)?.trim();
+    }
+    
+    return null;
+  }
+
+  /// Enhanced JSON format validation to reduce false positives
+  bool _isValidJsonFormat(String text) {
+    final trimmed = text.trim();
+    
+    // Basic structure check - must start with { and end with }
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+      return false;
+    }
+    
+    // Must contain at least one colon (key-value pairs)
+    if (!trimmed.contains(':')) {
+      return false;
+    }
+    
+    // Should have matching braces
+    int braceCount = 0;
+    for (int i = 0; i < trimmed.length; i++) {
+      if (trimmed[i] == '{') braceCount++;
+      if (trimmed[i] == '}') braceCount--;
+      if (braceCount < 0) return false; // More closing than opening braces
+    }
+    
+    // Final brace count should be zero
+    if (braceCount != 0) return false;
+    
+    // Quick validation for common JSON patterns
+    if (trimmed.contains('"') && (trimmed.contains('":') || trimmed.contains('" :'))) {
+      return true;
+    }
+    
+    // If it looks like JSON but doesn't have quotes, it might be malformed
+    // In this case, we'll let jsonDecode handle it and catch the FormatException
+    return true;
   }
 }
