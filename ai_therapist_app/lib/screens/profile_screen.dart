@@ -3,12 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
-import 'package:ai_therapist_app/services/user_profile_service.dart';
-import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/models/user_profile.dart';
 import 'package:go_router/go_router.dart';
 
@@ -17,10 +14,10 @@ class ProfileScreen extends StatefulWidget {
   final IThemeService? themeService;
   
   const ProfileScreen({
-    Key? key,
+    super.key,
     this.userProfileService,
     this.themeService,
-  }) : super(key: key);
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -56,7 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _userProfile = _userProfileService.profile;
 
     if (_userProfile != null) {
-      _nameController.text = _userProfile!.name ?? '';
+      _nameController.text = _userProfile!.name;
       _emailController.text = _userProfile!.email ?? '';
     }
 

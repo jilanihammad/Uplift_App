@@ -36,6 +36,7 @@ enum CBTFamiliarity {
 
 class UserProfile {
   final String name;
+  final String? firstName;
   final String? email;
   final String? gender;
   final String? primaryReason;
@@ -52,6 +53,7 @@ class UserProfile {
 
   UserProfile({
     required this.name,
+    this.firstName,
     this.email,
     this.gender,
     this.primaryReason,
@@ -66,11 +68,24 @@ class UserProfile {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : 
-      this.createdAt = createdAt ?? DateTime.now(),
-      this.updatedAt = updatedAt ?? DateTime.now();
+      createdAt = createdAt ?? DateTime.now(),
+      updatedAt = updatedAt ?? DateTime.now();
+
+  /// Get the display name for greetings and UI
+  /// Priority: firstName -> first word of name -> 'there'
+  String get displayName {
+    if (firstName?.isNotEmpty == true) {
+      return firstName!;
+    }
+    if (name.isNotEmpty) {
+      return name.split(' ').first;
+    }
+    return 'there';
+  }
 
   UserProfile copyWith({
     String? name,
+    String? firstName,
     String? email,
     String? gender,
     String? primaryReason,
@@ -86,6 +101,7 @@ class UserProfile {
   }) {
     return UserProfile(
       name: name ?? this.name,
+      firstName: firstName ?? this.firstName,
       email: email ?? this.email,
       gender: gender ?? this.gender,
       primaryReason: primaryReason ?? this.primaryReason,
@@ -97,7 +113,7 @@ class UserProfile {
       preferredSupportStyle: preferredSupportStyle ?? this.preferredSupportStyle,
       energizers: energizers ?? this.energizers,
       cbtFamiliarity: cbtFamiliarity ?? this.cbtFamiliarity,
-      createdAt: this.createdAt,
+      createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
     );
   }
@@ -105,6 +121,7 @@ class UserProfile {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
+      'firstName': firstName,
       'email': email,
       'gender': gender,
       'primaryReason': primaryReason,
@@ -124,6 +141,7 @@ class UserProfile {
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       name: json['name'] ?? '',
+      firstName: json['firstName'],
       email: json['email'],
       gender: json['gender'],
       primaryReason: json['primaryReason'],

@@ -18,6 +18,7 @@ abstract class IUserProfileService {
   Future<void> saveProfile(UserProfile profile);
   Future<void> updateProfile({
     String? name,
+    String? firstName,
     String? email,
     String? gender,
     String? primaryReason,
