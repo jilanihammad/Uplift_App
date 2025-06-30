@@ -12,6 +12,7 @@ import '../di/interfaces/i_tts_service.dart';
 import 'audio_player_manager.dart';
 import 'path_manager.dart';
 import '../config/app_config.dart';
+import 'package:ai_therapist_app/utils/audio_path_utils.dart';
 
 /// Single-owner TTS service following best-in-class production patterns
 /// 
@@ -205,8 +206,9 @@ class SimpleTTSService implements ITTSService {
   Future<io.File> _saveAudioBuffer(List<int> audioBuffer, String format) async {
     final ext = format == 'wav' ? 'wav' : 
                format == 'opus' ? 'ogg' : 'mp3';
-    final fileName = 'tts_${DateTime.now().microsecondsSinceEpoch}.$ext';
-    final filePath = PathManager.instance.ttsFile(fileName, ext);
+    // Generate clean ID without extension using utility - prevents double extensions
+    final fileId = AudioPathUtils.generateTimestampId('tts');
+    final filePath = PathManager.instance.ttsFile(fileId, ext);
     
     final file = io.File(filePath);
     await file.writeAsBytes(audioBuffer);

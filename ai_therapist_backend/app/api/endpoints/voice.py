@@ -17,6 +17,7 @@ import uuid
 
 # Use unified LLM manager instead of individual services
 from app.services.llm_manager import llm_manager
+from app.utils.audio_path import ensure_wav, ensure_basename_no_extension
 
 # Import our enhanced streaming pipeline
 from app.services.streaming_pipeline import (
@@ -1313,10 +1314,11 @@ async def synthesize_voice(request: Request):
         # Create output directory if it doesn't exist
         os.makedirs("static/audio", exist_ok=True)
         
-        # Generate unique filename
+        # Generate unique filename WITHOUT extension - let ensure_wav handle extensions
         timestamp = int(time.time())
-        extension = ".ogg" if format_params["response_format"] in ["opus", "ogg_opus"] else ".mp3"
-        output_file = f"static/audio/tts_{timestamp}{extension}"
+        filename_base = f"tts_{timestamp}"
+        ensure_basename_no_extension(filename_base)  # Safety check
+        output_file = ensure_wav(f"static/audio/{filename_base}")
         
         # Generate audio using unified manager
         success = await llm_manager.text_to_speech(text, output_file, **format_params)
@@ -1378,9 +1380,11 @@ async def text_to_speech(
         # Create output directory if it doesn't exist
         os.makedirs("static/audio", exist_ok=True)
         
-        # Handle file extension based on format
-        extension = ".ogg" if format in ["opus", "ogg_opus"] else ".mp3"
-        output_file = f"static/audio/tts_{int(time.time())}{extension}"
+        # Generate filename WITHOUT extension - let ensure_wav handle extensions
+        timestamp = int(time.time())
+        filename_base = f"tts_{timestamp}"
+        ensure_basename_no_extension(filename_base)  # Safety check
+        output_file = ensure_wav(f"static/audio/{filename_base}")
         
         logger.info(f"Using TTS parameters: format={format}, voice={voice}")
         
