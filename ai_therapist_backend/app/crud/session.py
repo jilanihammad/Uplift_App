@@ -17,11 +17,23 @@ def get_sessions_by_user(db: DBSession, user_id: int) -> List[Session]:
     return db.query(Session).filter(Session.user_id == user_id).all()
 
 
-def create_session(db: DBSession, user_id: int, title: str = None) -> Session:
+def create_session(
+    db: DBSession, 
+    user_id: int, 
+    title: str = None,
+    action_items: List[str] = None
+) -> Session:
     """Create a new session."""
+    # Generate a meaningful title if not provided
+    if not title:
+        from datetime import datetime
+        title = f"Therapy Session {datetime.now().strftime('%b %d, %Y')}"
+    
     session = Session(
         user_id=user_id,
+        title=title,
         summary=None,
+        action_items=action_items or []
     )
     db.add(session)
     db.commit()

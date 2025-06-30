@@ -1,4 +1,5 @@
 // lib/data/repositories/session_repository.dart
+import 'dart:convert';
 import '../../domain/entities/session.dart';
 import '../../di/interfaces/i_session_repository.dart';
 import '../../di/interfaces/i_api_client.dart';
@@ -37,6 +38,7 @@ class SessionRepository implements ISessionRepository {
             id: data['id'] as String,
             title: data['title'] as String,
             summary: data['summary'] as String,
+            actionItems: _parseActionItems(data['action_items']),
             createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
             lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
             isSynced: (data['is_synced'] as int) == 1,
@@ -68,6 +70,7 @@ class SessionRepository implements ISessionRepository {
             session.id, // Use the provided ID or the one from the response
         'title': session.title,
         'summary': session.summary,
+        'action_items': jsonEncode(session.actionItems),
         'created_at': session.createdAt.toUtc().toIso8601String(),
         'last_modified': session.lastModified.toUtc().toIso8601String(),
         'is_synced': 1,
@@ -86,6 +89,7 @@ class SessionRepository implements ISessionRepository {
         'id': localId,
         'title': title,
         'summary': '',
+        'action_items': jsonEncode([]),
         'created_at': now,
         'last_modified': now,
         'is_synced': 0,
@@ -95,6 +99,7 @@ class SessionRepository implements ISessionRepository {
         id: localId,
         title: title,
         summary: '',
+        actionItems: [],
         createdAt: DateTime.now().toUtc(),
         lastModified: DateTime.now().toUtc(),
         isSynced: false,
@@ -124,6 +129,7 @@ class SessionRepository implements ISessionRepository {
               'id': session.id,
               'title': session.title,
               'summary': session.summary,
+              'action_items': jsonEncode(session.actionItems),
               'created_at': session.createdAt.toUtc().toIso8601String(),
               'last_modified': session.lastModified.toUtc().toIso8601String(),
               'is_synced': 1,
@@ -135,6 +141,7 @@ class SessionRepository implements ISessionRepository {
               {
                 'title': session.title,
                 'summary': session.summary,
+                'action_items': jsonEncode(session.actionItems),
                 'last_modified': session.lastModified.toUtc().toIso8601String(),
                 'is_synced': 1,
               },
@@ -157,6 +164,7 @@ class SessionRepository implements ISessionRepository {
                 id: data['id'] as String,
                 title: data['title'] as String,
                 summary: data['summary'] as String,
+                actionItems: _parseActionItems(data['action_items']),
                 createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
                 lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
                 isSynced: (data['is_synced'] as int) == 1,
@@ -169,19 +177,20 @@ class SessionRepository implements ISessionRepository {
   @override
   Future<Session> getSession(String sessionId) async {
     try {
-      // Try to get session from the server
+      // Try to get session from the server first
       print('Fetching session $sessionId from server');
       final response = await apiClient.get('/sessions/$sessionId');
       print('Server response for session $sessionId: $response');
 
       final session = Session.fromJson(response);
 
-      // Update local database
+      // Update local database with server data
       try {
         await appDatabase.insert('sessions', {
           'id': session.id,
           'title': session.title,
           'summary': session.summary,
+          'action_items': jsonEncode(session.actionItems),
           'created_at': session.createdAt.toUtc().toIso8601String(),
           'last_modified': session.lastModified.toUtc().toIso8601String(),
           'is_synced': 1,
@@ -193,6 +202,7 @@ class SessionRepository implements ISessionRepository {
           {
             'title': session.title,
             'summary': session.summary,
+            'action_items': jsonEncode(session.actionItems),
             'last_modified': session.lastModified.toUtc().toIso8601String(),
             'is_synced': 1,
           },
@@ -221,6 +231,7 @@ class SessionRepository implements ISessionRepository {
         id: data['id'] as String,
         title: data['title'] as String,
         summary: data['summary'] as String,
+        actionItems: _parseActionItems(data['action_items']),
         createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
         lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
         isSynced: (data['is_synced'] as int) == 1,
@@ -295,6 +306,7 @@ class SessionRepository implements ISessionRepository {
         id: data['id'] as String,
         title: data['title'] as String,
         summary: data['summary'] as String,
+        actionItems: _parseActionItems(data['action_items']),
         createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
         lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
         isSynced: false,
@@ -329,12 +341,14 @@ class SessionRepository implements ISessionRepository {
     required String sessionId,
     required String title,
     required String summary,
+    List<String> actionItems = const [],
     required List<Map<String, dynamic>> messages,
     bool sync = true,
   }) async {
     final now = DateTime.now();
 
     print('Saving session $sessionId with title: $title, summary length: ${summary.length}');
+    print('Action items being saved: ${actionItems.length} items: ${actionItems.join(", ")}');
 
     try {
       // Save to local DB (transactional)
@@ -345,12 +359,15 @@ class SessionRepository implements ISessionRepository {
           {
             'title': title,
             'summary': summary,
+            'action_items': jsonEncode(actionItems),
             'last_modified': now.toIso8601String(),
             'is_synced': sync ? 0 : 0, // Mark as not synced for now
           },
           where: 'id = ?',
           whereArgs: [sessionId],
         );
+        
+        print('Updated $updated existing sessions with action items for session $sessionId');
 
         // If no rows were updated, insert the session row
         if (updated == 0) {
@@ -358,10 +375,12 @@ class SessionRepository implements ISessionRepository {
             'id': sessionId,
             'title': title,
             'summary': summary,
+            'action_items': jsonEncode(actionItems),
             'created_at': now.toIso8601String(),
             'last_modified': now.toIso8601String(),
             'is_synced': 0,
           });
+          print('Inserted new session $sessionId with ${actionItems.length} action items');
         }
 
         // Save messages to local DB within the same transaction
@@ -380,10 +399,13 @@ class SessionRepository implements ISessionRepository {
       }
 
       final data = results.first;
+      final sessionActionItems = _parseActionItems(data['action_items']);
+      print('Returning saved session $sessionId with ${sessionActionItems.length} action items from local database');
       return Session(
         id: data['id'] as String,
         title: data['title'] as String,
         summary: data['summary'] as String,
+        actionItems: sessionActionItems,
         createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
         lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
         isSynced: (data['is_synced'] as int) == 1,
@@ -392,6 +414,34 @@ class SessionRepository implements ISessionRepository {
       print('Error in saveSession: $e');
       rethrow;
     }
+  }
+
+
+  // Helper method to parse action items from database
+  List<String> _parseActionItems(dynamic actionItemsData) {
+    if (actionItemsData == null) return [];
+    
+    try {
+      if (actionItemsData is String) {
+        if (actionItemsData.isEmpty) return [];
+        // Try to parse as JSON array
+        final decoded = jsonDecode(actionItemsData);
+        if (decoded is List) {
+          return decoded.map((item) => item.toString()).toList();
+        }
+        // If not a JSON array, treat as single item
+        return [actionItemsData];
+      } else if (actionItemsData is List) {
+        return actionItemsData.map((item) => item.toString()).toList();
+      }
+    } catch (e) {
+      // If parsing fails, return empty list
+      if (kDebugMode) {
+        print('Error parsing action items: $e');
+      }
+    }
+    
+    return [];
   }
 
   // Helper method to save messages to local DB using a transaction

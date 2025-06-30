@@ -791,6 +791,7 @@ async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] =
                 "id": str(session.id),
                 "title": session.title or f"Session {session.id}",
                 "summary": session.summary or "No summary available",
+                "action_items": session.action_items or [],
                 "created_at": session.start_time.isoformat() + 'Z',
                 "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
                 "isSynced": True
@@ -864,6 +865,7 @@ async def get_session(session_id: str, db: DBSession = Depends(get_db)):
             "id": str(session.id),
             "title": f"Session {session.id}" if not hasattr(session, 'title') or not session.title else session.title,
             "summary": session.summary or "",
+            "action_items": session.action_items or [],
             "created_at": session.start_time.isoformat() + 'Z',
             "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
             "isSynced": True
@@ -1255,11 +1257,13 @@ async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, An
         
         logger.info(f"Creating session record for user {user_id} with title: {session_title}")
         
-        # Create the session with rich data
+        # Create the session with rich data including action items
+        action_items = summary_data.get("action_items", [])
         session = crud_session.create_session(
             db=db,
             user_id=user_id,
-            title=session_title
+            title=session_title,
+            action_items=action_items
         )
         
         # Update the session with summary data
@@ -1278,7 +1282,8 @@ async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, An
             fallback_session = crud_session.create_session(
                 db=db,
                 user_id=1,  # Default user
-                title="Therapy Session"
+                title="Therapy Session",
+                action_items=summary_data.get("action_items", [])
             )
             return fallback_session.id
         except Exception as fallback_error:
