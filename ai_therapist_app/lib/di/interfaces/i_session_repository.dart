@@ -29,6 +29,7 @@ abstract class ISessionRepository {
     required String sessionId,
     required String title,
     required String summary,
+    List<String> actionItems = const [],
     required List<Map<String, dynamic>> messages,
     bool sync = true,
   });
