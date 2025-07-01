@@ -777,6 +777,16 @@ Future<void> _initializeConfigAndApi() async {
       logger.debug('[Main] TherapyService initialized successfully');
     }
 
+    // Initialize UserProfileService to load profile from SharedPreferences
+    try {
+      logger.debug('[Main] Initializing UserProfileService...');
+      final userProfileService = serviceLocator<UserProfileService>();
+      await userProfileService.init();
+      logger.debug('[Main] UserProfileService initialized ✓');
+    } catch (e) {
+      logger.error('[Main] Error initializing UserProfileService', error: e);
+    }
+
     // Validate that all dependencies are registered
     final allDepsValid = validateDependencies();
     logger.info(
@@ -834,7 +844,7 @@ Future<void> initializeHeavyServices() async {
       }
       // Schedule database optimization for later (after app is visible)
       if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
-        Future.delayed(Duration(seconds: 3), () {
+        Future.delayed(const Duration(seconds: 3), () {
           final dbManager = DependencyContainer().databaseOperationManagerConcrete;
           dbManager.optimizeDatabase(appDatabase).then((_) {
             logger.debug('[Main] Database optimization completed');
