@@ -6,7 +6,7 @@ import logging
 import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import httpx
 import uuid
 import json
@@ -688,6 +688,7 @@ class SessionResponse(BaseModel):
     id: str
     title: str
     summary: Optional[str] = None
+    action_items: List[str] = Field(default_factory=list)
     created_at: str
     last_modified: str
     isSynced: bool = True

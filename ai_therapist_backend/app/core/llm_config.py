@@ -182,7 +182,7 @@ class LLMConfig:
         # Google (Gemini) Models
         (ModelProvider.GOOGLE, ModelType.LLM): ModelConfig(
             provider=ModelProvider.GOOGLE,
-            model_id=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash-preview-05-20"),
+            model_id=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash-lite-preview-06-17"),
             base_url="https://generativelanguage.googleapis.com/v1beta",
             api_key_env="GOOGLE_API_KEY",
             default_params={
