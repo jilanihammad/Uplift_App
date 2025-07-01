@@ -103,9 +103,15 @@ class UserProfileService implements IUserProfileService {
       await saveProfile(newProfile);
     } else {
       // Update existing profile
+      // Auto-extract firstName from name if firstName is not explicitly provided but name is updated
+      String? finalFirstName = firstName;
+      if (firstName == null && name != null && name.isNotEmpty) {
+        finalFirstName = name.split(' ').first;
+      }
+      
       final updatedProfile = _currentProfile!.copyWith(
         name: name,
-        firstName: firstName,
+        firstName: finalFirstName,
         email: email,
         gender: gender,
         primaryReason: primaryReason,

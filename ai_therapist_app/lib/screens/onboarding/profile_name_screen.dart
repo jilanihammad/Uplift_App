@@ -45,16 +45,25 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
     });
     
     try {
+      final name = _nameController.text.trim();
+      final email = _emailController.text.trim();
+      
+      // Extract firstName from name for better display in settings
+      final firstName = name.isNotEmpty ? name.split(' ').first : '';
+      
       await _userProfileService.updateProfile(
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
+        name: name,
+        firstName: firstName,
+        email: email,
       );
       
       await _onboardingService.goToNextStep();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving profile: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving profile: $e')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
