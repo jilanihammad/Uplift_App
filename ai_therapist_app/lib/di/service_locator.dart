@@ -226,11 +226,9 @@ Future<void> setupServiceLocator() async {
           memoryService: serviceLocator<service_ms.MemoryService>(),
         );
 
-        // Initialize only if needed when first accessed
-        manager.initializeOnlyIfNeeded().then((_) {
-          DependencyStatus.markInitialized('MemoryManager');
-          debugPrint('MemoryManager initialized on first access');
-        });
+        // Note: Initialization will be handled when the service is actually used
+        // This prevents race conditions from automatic initialization during registration
+        debugPrint('MemoryManager instance created - initialization deferred until first use');
 
         return manager;
       });

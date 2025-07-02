@@ -96,7 +96,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
     try {
       // Create WebSocket URL - using the same pattern as VoiceService
       final backendUrl = AppConfig().backendUrl;
-      final wsUrl = '${backendUrl.replaceAll('http', 'ws')}/voice/ws/audio';
+      final wsUrl = '${backendUrl.replaceAll('http', 'ws')}/ws/audio';
       
       if (kDebugMode) {
         debugPrint('[WebSocketAudioManager] Connecting to: $wsUrl');
