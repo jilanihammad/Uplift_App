@@ -5,8 +5,10 @@ import os
 import base64
 import traceback
 import asyncio
-from typing import Optional, List, Dict, Any, AsyncGenerator
-from tenacity import retry, stop_after_attempt, wait_exponential
+from pathlib import Path
+from typing import Optional, List, Dict, Any, AsyncGenerator, Final
+from tenacity import retry, stop_after_attempt, wait_exponential, wait_random_exponential, retry_if_exception, retry_if_exception_type
+from httpx import ReadTimeout, RemoteProtocolError, HTTPStatusError, ConnectTimeout
 from openai import OpenAI, AsyncOpenAI
 from google import genai
 from google.genai import types
@@ -16,6 +18,74 @@ from app.core.llm_config import LLMConfig, ModelType, ModelProvider, ModelConfig
 from app.utils.audio_path import ensure_wav
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# GROQ STT CLIENT - Module-level singleton for connection pooling
+# =============================================================================
+
+GROQ_STT_URL: Final = "https://api.groq.com/openai/v1/audio/transcriptions"
+MAX_CONCURRENT_STT: Final = 8
+STT_TIMEOUT_SECONDS: Final = 5.0  # Hard timeout for entire operation
+
+# Singleton client with complete timeout control
+_groq_stt_client: Final = httpx.AsyncClient(
+    timeout=httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0),
+    follow_redirects=True,
+    headers={"User-Agent": "maya-stt/1.0"}
+)
+
+# Semaphore for concurrency control
+_stt_semaphore = asyncio.Semaphore(MAX_CONCURRENT_STT)
+
+def _is_retryable_stt_error(exc):
+    """Check if STT error is retryable (5xx or 429 only)"""
+    return isinstance(exc, HTTPStatusError) and (
+        500 <= exc.response.status_code < 600 or 
+        exc.response.status_code == 429
+    )
+
+async def _do_post(audio_path: Path, model: str, api_key: str) -> str:
+    """One network round-trip to Groq with hard 5s timeout."""
+    async def _groq_post():
+        with audio_path.open("rb") as f:
+            resp = await _groq_stt_client.post(
+                GROQ_STT_URL,
+                files={"file": ("audio.m4a", f, "audio/mp4")},
+                data={
+                    "model": model,
+                    "temperature": "0.0",
+                    "response_format": "verbose_json"  # Get full metadata
+                },
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            resp.raise_for_status()
+            
+            # Defensive JSON parsing
+            data = resp.json()
+            text = data.get("text", "").strip()
+            if not text:
+                raise ValueError(f"Groq response missing 'text': {data}")
+            return text
+    
+    async with _stt_semaphore:
+        # Hard timeout wrapper - kills any operation exceeding 5s
+        try:
+            return await asyncio.wait_for(_groq_post(), timeout=STT_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            raise ReadTimeout(f"Groq STT exceeded {STT_TIMEOUT_SECONDS}s hard timeout")
+
+# Wrap with tenacity for retries - returns a coroutine function
+transcribe_groq = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_random_exponential(multiplier=0.2, max=1.0),
+    retry=(
+        retry_if_exception(_is_retryable_stt_error) |
+        retry_if_exception_type(ReadTimeout) |
+        retry_if_exception_type(ConnectTimeout) |
+        retry_if_exception_type(RemoteProtocolError)
+    ),
+    reraise=True
+)(_do_post)
 
 class LLMManager:
     """
@@ -843,7 +913,9 @@ class LLMManager:
             raise ValueError("Transcription service unavailable - API key not set")
         
         # Route to appropriate provider
-        if self.transcription_config.provider in [ModelProvider.OPENAI, ModelProvider.GROQ]:
+        if self.transcription_config.provider == ModelProvider.GROQ:
+            return await self._transcribe_with_groq(audio_file_path)
+        elif self.transcription_config.provider in [ModelProvider.OPENAI]:
             return await self._openai_transcribe_audio(audio_file_path, **kwargs)
         else:
             raise ValueError(f"Unsupported transcription provider: {self.transcription_config.provider}")
@@ -876,6 +948,19 @@ class LLMManager:
             logger.error(f"Error in OpenAI transcription: {str(e)}")
             logger.error(traceback.format_exc())
             raise
+
+    async def _transcribe_with_groq(self, audio_path: str) -> str:
+        """Transcribe using Groq with aggressive timeout and retry"""
+        api_key = LLMConfig.get_api_key(self.transcription_config)
+        if not api_key:
+            raise ValueError("Groq API key not found")
+        
+        # transcribe_groq is a coroutine function, so we await it
+        return await transcribe_groq(
+            audio_path=Path(audio_path),
+            model=self.transcription_config.model_id,
+            api_key=api_key
+        )
     
     # =============================================================================
     # UTILITY METHODS
