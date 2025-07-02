@@ -9,8 +9,6 @@ import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
-import 'package:ai_therapist_app/services/memory_manager.dart';
-import 'package:ai_therapist_app/services/audio_generator.dart';
 import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 
@@ -52,19 +50,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _loadUserData();
 
-    // Defer heavy initializations to after navigation
-    Future.microtask(() async {
-      final container = DependencyContainer();
-      if (container.isRegistered<MemoryManager>()) {
-        final memoryManager = container.get<MemoryManager>();
-        await memoryManager.initializeOnlyIfNeeded();
-      }
-      if (container.isRegistered<AudioGenerator>()) {
-        final audioGenerator = container.get<AudioGenerator>();
-        await audioGenerator.initializeOnlyIfNeeded();
-      }
-      // Add any other heavy service initializations here
-    });
+    // Services are automatically initialized through dependency injection
+    // No manual initialization needed here - services initialize when first accessed
   }
 
   void _onProgressChanged() {

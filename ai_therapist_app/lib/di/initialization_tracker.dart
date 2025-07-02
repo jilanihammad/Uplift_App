@@ -21,6 +21,9 @@ class InitializationTracker {
   // Map to track retry counts
   final Map<String, int> _retryCount = {};
 
+  // Map to track ongoing initialization futures to prevent concurrent attempts
+  final Map<String, Completer<bool>> _initializationCompleters = {};
+
   // Maximum retries allowed
   final int maxRetries = 3;
 
@@ -51,27 +54,44 @@ class InitializationTracker {
   Future<bool> initializeWithRetry(
       String serviceName, Future<void> Function() initFunction) async {
     if (isInitialized(serviceName)) {
+      logger.debug('$serviceName already initialized');
       return true;
     }
 
-    _retryCount[serviceName] = _retryCount[serviceName] ?? 0;
-
-    if (_retryCount[serviceName]! >= maxRetries) {
-      logger.error('Max retries reached for $serviceName initialization');
-      return false;
+    // Check if initialization is already in progress
+    if (_initializationCompleters.containsKey(serviceName)) {
+      logger.debug('$serviceName initialization already in progress, waiting...');
+      return await _initializationCompleters[serviceName]!.future;
     }
 
+    // Start new initialization
+    final completer = Completer<bool>();
+    _initializationCompleters[serviceName] = completer;
+
     try {
+      _retryCount[serviceName] = _retryCount[serviceName] ?? 0;
+
+      if (_retryCount[serviceName]! >= maxRetries) {
+        logger.error('Max retries reached for $serviceName initialization');
+        completer.complete(false);
+        return false;
+      }
+
       logger.debug(
           'Initializing service: $serviceName (attempt: ${_retryCount[serviceName]! + 1})');
+      
       await initFunction();
       markInitialized(serviceName);
+      completer.complete(true);
       return true;
     } catch (e) {
       _retryCount[serviceName] = (_retryCount[serviceName] ?? 0) + 1;
       markInitializationFailed(serviceName, e);
 
       if (_retryCount[serviceName]! < maxRetries) {
+        // Remove completer before retry
+        _initializationCompleters.remove(serviceName);
+        
         // Exponential backoff for retries
         final backoffMs = 500 * (1 << _retryCount[serviceName]!);
         logger.debug('Retrying $serviceName initialization in ${backoffMs}ms');
@@ -79,7 +99,10 @@ class InitializationTracker {
         return initializeWithRetry(serviceName, initFunction);
       }
 
+      completer.complete(false);
       return false;
+    } finally {
+      _initializationCompleters.remove(serviceName);
     }
   }
 

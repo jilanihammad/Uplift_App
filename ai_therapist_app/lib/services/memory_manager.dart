@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../models/conversation_memory.dart';
+import 'package:mutex/mutex.dart';
 import '../services/memory_service.dart';
 import '../utils/logging_service.dart';
 import '../di/initialization_tracker.dart';
@@ -8,6 +8,12 @@ import '../di/interfaces/i_memory_manager.dart';
 
 /// Handles management of conversation memory and context for therapy sessions
 class MemoryManager implements IMemoryManager {
+  // Static mutex to guard initialization across all instances
+  static final Mutex _initMutex = Mutex();
+  
+  // Static initialization tracking to prevent double initialization
+  static bool _staticInitialized = false;
+  
   // The underlying memory service
   final MemoryService _memoryService;
 
@@ -18,6 +24,7 @@ class MemoryManager implements IMemoryManager {
   String? _lastInitError;
   int _initAttempts = 0;
   static const int _maxInitAttempts = 3;
+
 
   // Constructor
   MemoryManager({required MemoryService memoryService})
@@ -31,28 +38,56 @@ class MemoryManager implements IMemoryManager {
 
   /// Legacy initialization method - use initialize() instead
   Future<void> init() async {
-    if (_isInitialized) return;
+    // Fast path: Check if already initialized without acquiring mutex
+    if (_staticInitialized && _isInitialized) {
+      if (kDebugMode) {
+        logger.debug('MemoryManager already initialized (fast path)');
+      }
+      return;
+    }
 
+    // Acquire mutex to prevent concurrent initialization
+    await _initMutex.acquire();
+    
     try {
+      // Double-check inside mutex
+      if (_staticInitialized && _isInitialized) {
+        if (kDebugMode) {
+          logger.debug('MemoryManager already initialized (mutex path)');
+        }
+        return;
+      }
+
       _initAttempts++;
-      logger.debug(
+      
+      // Add stack trace to understand where initialization is called from
+      if (kDebugMode) {
+        logger.debug(
+          'Initializing MemoryManager (attempt $_initAttempts of $_maxInitAttempts)\n'
+          'Called from: ${StackTrace.current.toString().split('\n').take(5).join('\n')}'
+        );
+      } else {
+        logger.debug(
           'Initializing MemoryManager (attempt $_initAttempts of $_maxInitAttempts)');
+      }
 
       // Use initialization tracker for consistent initialization pattern
       final success =
           await initTracker.initializeWithRetry('MemoryManager', () async {
         await _memoryService.initializeIfNeeded();
         _isInitialized = true;
+        _staticInitialized = true; // Mark static initialization complete
         _lastInitError = null;
       });
 
       if (success) {
-        logger.info('Memory manager initialized successfully');
+        logger.info('MemoryManager initialized ✓');
       } else {
         _isInitialized = false;
         _lastInitError = 'Failed to initialize after multiple attempts';
         logger
             .error('Failed to initialize memory manager after maximum retries');
+        throw Exception(_lastInitError!);
       }
     } catch (e) {
       _lastInitError = e.toString();
@@ -60,6 +95,9 @@ class MemoryManager implements IMemoryManager {
 
       // Allow continued operation with limited functionality even after failed init
       _isInitialized = false;
+      rethrow;
+    } finally {
+      _initMutex.release();
     }
   }
 
@@ -71,16 +109,32 @@ class MemoryManager implements IMemoryManager {
   String? get lastInitError => _lastInitError;
 
   /// Initialize only if not already initialized
-  @override
   Future<void> initializeIfNeeded() async {
+    // Fast path: Check if already initialized without logging
+    if (_staticInitialized && _isInitialized) {
+      return;
+    }
+    
     if (!_isInitialized && _initAttempts < _maxInitAttempts) {
+      if (kDebugMode) {
+        logger.debug('MemoryManager.initializeIfNeeded() - triggering initialization');
+      }
       await init();
+    } else if (_isInitialized) {
+      if (kDebugMode) {
+        logger.debug('MemoryManager.initializeIfNeeded() - already initialized');
+      }
+    } else {
+      logger.warning('MemoryManager.initializeIfNeeded() - max attempts reached');
     }
   }
 
   /// Legacy method for backward compatibility
   @override
   Future<void> initializeOnlyIfNeeded() async {
+    if (kDebugMode) {
+      logger.debug('MemoryManager.initializeOnlyIfNeeded() - delegating to initializeIfNeeded()');
+    }
     return initializeIfNeeded();
   }
 
@@ -206,7 +260,7 @@ class MemoryManager implements IMemoryManager {
               graphResult['analysis']['emotion'],
               graphResult['analysis']['emotionIntensity'],
               userMessage.length > 50
-                  ? userMessage.substring(0, 50) + '...'
+                  ? '${userMessage.substring(0, 50)}...'
                   : userMessage);
         } catch (e) {
           logger.warning('Error updating emotional state: $e');
@@ -220,18 +274,27 @@ class MemoryManager implements IMemoryManager {
 
   /// Safely initialize the service, handling errors gracefully
   Future<void> _safeInitialize() async {
-    if (_isInitialized) return;
+    // Fast path: Check if already initialized
+    if (_staticInitialized && _isInitialized) return;
 
     try {
       if (_initAttempts < _maxInitAttempts) {
         await initializeIfNeeded();
       } else if (_initAttempts == _maxInitAttempts) {
-        // One final attempt
-        _initAttempts++;
-        logger.warning('Making final attempt to initialize MemoryManager');
-        await _memoryService.initializeIfNeeded();
-        _isInitialized = true;
-        logger.info('MemoryManager initialized successfully on final attempt');
+        // One final attempt with mutex protection
+        await _initMutex.acquire();
+        try {
+          if (!_isInitialized) {
+            _initAttempts++;
+            logger.warning('Making final attempt to initialize MemoryManager');
+            await _memoryService.initializeIfNeeded();
+            _isInitialized = true;
+            _staticInitialized = true;
+            logger.info('MemoryManager initialized ✓ (final attempt)');
+          }
+        } finally {
+          _initMutex.release();
+        }
       }
     } catch (e) {
       // Log but allow operation to continue

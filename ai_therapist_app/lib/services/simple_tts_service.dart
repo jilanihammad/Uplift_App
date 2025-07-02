@@ -90,7 +90,7 @@ class SimpleTTSService implements ITTSService {
       _state = _State.connecting;
       
       // Create fresh WebSocket for this request (simple pattern)
-      final wsUrl = '$_backendUrl/voice/ws/tts'.replaceFirst('http', 'ws');
+      final wsUrl = '$_backendUrl/ws/tts'.replaceFirst('http', 'ws');
       if (kDebugMode) print('🔍 [TTS] Creating WebSocket connection to: $wsUrl');
       
       final ws = WebSocketChannel.connect(Uri.parse(wsUrl));
