@@ -5,16 +5,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 import logging
 import os
 from fastapi.staticfiles import StaticFiles
-from fastapi.openapi.docs import get_swagger_ui_html
 from pydantic import BaseModel, Field
-import httpx
 import uuid
 import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import traceback
 import base64
-import sys
 from sqlalchemy.orm import Session as DBSession
 from fastapi import Depends
 
@@ -140,9 +137,6 @@ app = FastAPI(
     docs_url=None,  # Disable default docs
     redoc_url=None,  # Disable default ReDoc
 )
-
-# Initialize fallback flag
-fallback_app = False
 
 # Add middleware - order matters!
 try:
