@@ -27,9 +27,8 @@ def init_db():
     try:
         # Try to connect to database first
         from app.core.config import settings
-        connection = engine.connect()
-        logger.info(f"Successfully connected to database: {settings.SQLALCHEMY_DATABASE_URI}")
-        connection.close()
+        with engine.connect() as connection:
+            logger.info(f"Successfully connected to database: {settings.SQLALCHEMY_DATABASE_URI}")
         
         # Create tables
         Base.metadata.create_all(bind=engine)
@@ -64,6 +63,7 @@ try:
     from app.core.security_middleware import SecurityMiddleware
     from app.core.logger import setup_logging
     from app.core.health import get_health_status
+    from app.services.llm_manager import llm_manager, _groq_stt_client
     
     # Configure structured logging
     setup_logging()
@@ -140,6 +140,9 @@ app = FastAPI(
     docs_url=None,  # Disable default docs
     redoc_url=None,  # Disable default ReDoc
 )
+
+# Initialize fallback flag
+fallback_app = False
 
 # Add middleware - order matters!
 try:
@@ -561,7 +564,7 @@ async def transcribe_audio(request: Request):
         # Get the request body as JSON
         json_data = await request.json()
         audio_data = json_data.get("audio_data")
-        audio_format = json_data.get("audio_format", "aac")  # Default to aac if not specified
+        audio_format = json_data.get("audio_format", "mp3")  # Default to mp3 if not specified
         # Model selection is now handled by unified LLM manager
         requested_model = json_data.get("model")  # Optional override
         
@@ -1092,83 +1095,11 @@ async def custom_405_handler(request: Request, exc):
         content={"detail": f"Method {request.method} not allowed for {request.url.path}"}
     )
 
-# Define a router for root paths (non-prefixed) for compatibility
-root_router = APIRouter()
+# Duplicate routes removed - all paths now served by main app and API router
 
-@root_router.post("/ai/response")
-async def root_ai_response(request: AIRequest):
-    """Root endpoint for AI responses using Groq's LLM."""
-    return await ai_response(request)
+# Router mounting moved to earlier in the file to avoid duplicates
 
-@root_router.post("/voice/synthesize")
-async def root_voice_synthesize(request: VoiceRequest):
-    """Root endpoint for text-to-speech requests."""
-    return await voice_synthesize(request)
-
-@root_router.post("/voice/transcribe")
-async def root_transcribe_audio(request: TranscriptionRequest):
-    return await transcribe_audio(request)
-
-@root_router.post("/therapy/end_session")
-async def root_end_session(request: EndSessionRequest):
-    return await end_session(request)
-
-@root_router.get("/sessions")
-async def root_get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] = None):
-    return await get_sessions(db=db, user_id=user_id)
-
-@root_router.post("/sessions")
-async def root_create_session():
-    return await create_session()
-
-@root_router.get("/sessions/{session_id}")
-async def root_get_session(session_id: str):
-    return await get_session(session_id)
-
-@root_router.patch("/sessions/{session_id}")
-async def root_update_session(session_id: str, request: SessionUpdateRequest):
-    return await update_session(session_id, request)
-
-@root_router.delete("/sessions/{session_id}")
-async def root_delete_session(session_id: str):
-    return await delete_session(session_id)
-
-@root_router.post("/sessions/{session_id}/messages")
-async def root_add_session_message(session_id: str, message: dict):
-    return await add_session_message(session_id, message)
-
-@root_router.post("/sessions/{session_id}/messages/batch")
-async def root_add_session_messages_batch(session_id: str, messages: List[dict]):
-    return await add_session_messages_batch(session_id, messages)
-
-# Include the root router
-app.include_router(root_router)
-
-# API version routing - include routers with proper error handling
-try:
-    from app.api.api_v1.api import api_router
-    app.include_router(api_router, prefix=settings.API_V1_STR)
-    logger.info(f"Successfully mounted API router at {settings.API_V1_STR}")
-except Exception as e:
-    logger.error(f"Failed to mount API router: {str(e)}")
-    fallback_app = True
-
-# Include voice router at root level for backward compatibility
-try:
-    from app.api.endpoints import voice
-    app.include_router(voice.router, prefix="/voice", tags=["voice"])
-    logger.info("Successfully mounted voice router at /voice")
-except Exception as e:
-    logger.error(f"Failed to mount voice router: {str(e)}")
-    fallback_app = True
-
-# Replace old service imports with unified LLM manager
-try:
-    from app.services.llm_manager import llm_manager
-    logger.info("Successfully imported unified LLM manager")
-except Exception as e:
-    logger.warning(f"Error importing unified LLM manager: {str(e)}")
-    llm_manager = None
+# LLM manager is now imported at the top level
 
 @app.get("/debug/env")
 def debug_env():
@@ -1436,6 +1367,17 @@ async def root_websocket_tts(websocket: WebSocket):
             await websocket.close(code=1011, reason="Internal server error")
         except:
             pass
+
+# App lifecycle events
+@app.on_event("shutdown")
+async def close_groq_stt_client():
+    """Clean up httpx client on app shutdown"""
+    if _groq_stt_client:
+        try:
+            await _groq_stt_client.aclose()
+            logger.info("Groq STT client closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing Groq STT client: {e}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
