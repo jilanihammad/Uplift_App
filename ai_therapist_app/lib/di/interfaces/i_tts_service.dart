@@ -6,7 +6,7 @@ import 'dart:async';
 /// Handles speech generation, streaming, and playback functionality
 abstract class ITTSService {
   // Primary TTS method - simple and clean API
-  Future<void> speak(String text, {String voice = 'sage', String format = 'wav'});
+  Future<void> speak(String text, {String voice = 'sage', String format = 'wav', bool makeBackupFile = true});
   
   // TTS generation (legacy)
   Future<String> generateSpeech(String text, {String voice = 'alloy'});

@@ -8,6 +8,7 @@ class TtsRequest {
   final String text;
   final String voice;
   final String format;
+  final bool makeBackupFile;
   final Completer<void> done;
   final DateTime createdAt;
   final String id;
@@ -16,6 +17,7 @@ class TtsRequest {
     required this.text,
     required this.voice,
     required this.format,
+    this.makeBackupFile = true,
   }) : done = Completer<void>(),
        createdAt = DateTime.now(),
        id = DateTime.now().microsecondsSinceEpoch.toString();

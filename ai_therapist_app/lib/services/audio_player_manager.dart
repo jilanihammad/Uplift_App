@@ -344,6 +344,9 @@ class AudioPlayerManager {
       // Wait for playback to complete
       await playbackCompleter.future;
       
+      // Clean up temporary TTS file after playback completion
+      _safeDeleteTempFile(item.audioPath);
+      
       // Complete the item's completer
       if (!item.completer.isCompleted) {
         item.completer.complete();
@@ -507,6 +510,31 @@ class AudioPlayerManager {
       _errorController.add('Error setting volume: $e');
       if (kDebugMode) {
         print('❌ Error setting volume: $e');
+      }
+    }
+  }
+
+  /// Check if a file path is a temporary TTS file that should be auto-cleaned
+  bool _isTempTTSFile(String path) {
+    return path.contains('/tts_') && 
+           (path.endsWith('.wav') || path.endsWith('.mp3') || path.endsWith('.ogg'));
+  }
+
+  /// Safely delete temporary TTS files after playback
+  void _safeDeleteTempFile(String path) {
+    if (!_isTempTTSFile(path)) return;
+    
+    try {
+      final file = File(path);
+      if (file.existsSync()) {
+        file.deleteSync();
+        if (kDebugMode) {
+          print('🗑️ AudioPlayerManager: Deleted temp TTS file: $path');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('⚠️ AudioPlayerManager: Failed to delete temp TTS file: $e');
       }
     }
   }
