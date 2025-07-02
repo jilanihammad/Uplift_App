@@ -30,19 +30,25 @@ class SimpleTTSService implements ITTSService {
   @override
   Future<void> speak(String text, {
     String voice = 'sage',
-    String format = 'wav'
+    String format = 'wav',
+    bool makeBackupFile = true,
   }) async {
     if (text.trim().isEmpty) {
       if (kDebugMode) print('❌ [TTS] Empty text, skipping');
       return;
     }
 
-    final req = TtsRequest(text: text.trim(), voice: voice, format: format);
+    final req = TtsRequest(
+      text: text.trim(), 
+      voice: voice, 
+      format: format,
+      makeBackupFile: makeBackupFile,
+    );
     _queue.add(req);
     _pendingStreams++; // Track this TTS request
     
     if (kDebugMode) {
-      print('🔍 [TTS] Queued request: ${req.id} (queue length: ${_queue.length}, pending: $_pendingStreams)');
+      print('🔍 [TTS] Queued request: ${req.id} (queue length: ${_queue.length}, pending: $_pendingStreams, backup: ${req.makeBackupFile})');
     }
     
     _pumpQueue(); // Fire-and-forget
@@ -179,27 +185,27 @@ class SimpleTTSService implements ITTSService {
       print('🔍 [TTS] Buffering complete: ${audioBuffer.length} total bytes for ${req.id}');
     }
     
-    // Save audio buffer to temporary file and play
-    final audioFile = await _saveAudioBuffer(audioBuffer, req.format);
-    
-    try {
-      if (kDebugMode) print('🔍 [TTS] Starting audio playback for ${req.id}');
+    // Only create and play backup file if requested (optimization for welcome messages)
+    if (req.makeBackupFile) {
+      // Save audio buffer to temporary file and play
+      final audioFile = await _saveAudioBuffer(audioBuffer, req.format);
       
-      // Wait for audio playback to completely finish
-      await _audioPlayerManager.playAudio(audioFile.path);
-      
-      if (kDebugMode) print('✅ [TTS] Audio playback completed for ${req.id}');
-    } catch (audioError) {
-      if (kDebugMode) print('❌ [TTS] Audio playback failed: $audioError');
-      rethrow;
-    } finally {
-      // Clean up temporary file after playback (success or failure)
       try {
-        await audioFile.delete();
-        if (kDebugMode) print('🔍 [TTS] Cleaned up temp file for ${req.id}');
-      } catch (e) {
-        if (kDebugMode) print('⚠️ [TTS] Could not delete temp file: $e');
+        if (kDebugMode) print('🔍 [TTS] Starting backup file playback for ${req.id}');
+        
+        // Wait for audio playback to completely finish
+        await _audioPlayerManager.playAudio(audioFile.path);
+        
+        if (kDebugMode) print('✅ [TTS] Backup file playback completed for ${req.id}');
+      } catch (audioError) {
+        if (kDebugMode) print('❌ [TTS] Backup file playback failed: $audioError');
+        rethrow;
       }
+      // Note: Temp file cleanup is now handled by AudioPlayerManager after playback completion
+    } else {
+      if (kDebugMode) print('🔍 [TTS] Stream-only mode, no backup file needed for ${req.id}');
+      // For welcome messages: user already heard the audio via real-time streaming
+      // No backup file generation or additional playback needed
     }
   }
 
