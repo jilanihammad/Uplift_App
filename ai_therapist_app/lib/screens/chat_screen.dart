@@ -31,6 +31,7 @@ import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
+import '../widgets/debug_drawer.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
@@ -291,6 +292,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             body: state.isVoiceMode
                 ? _buildVoiceChatView()
                 : _buildTextChatView(),
+            endDrawer: kDebugMode ? const DebugDrawer() : null,
           ),
         );
       },
