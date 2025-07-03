@@ -46,6 +46,8 @@ import '../services/vad_manager.dart';
 import 'modules/audio_services_module.dart';
 import 'interfaces/i_tts_service.dart';
 import 'interfaces/i_audio_file_manager.dart';
+import '../services/simple_tts_service.dart';
+import '../services/audio_player_manager.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -78,6 +80,37 @@ class DependencyStatus {
   static bool isInitialized(String serviceName) {
     return initializedServices[serviceName] ?? false;
   }
+}
+
+/// Register TTS Service (always needed by AudioGenerator)
+/// Ensures ITTSService is available regardless of feature flag state
+void _registerTtsService(GetIt locator, bool useRefactoredVoicePipeline) {
+  if (locator.isRegistered<ITTSService>()) {
+    debugPrint('ITTSService already registered, skipping');
+    return;
+  }
+
+  // Register AudioPlayerManager first (required by SimpleTTSService)
+  if (!locator.isRegistered<AudioPlayerManager>()) {
+    locator.registerLazySingleton<AudioPlayerManager>(() {
+      debugPrint('Registering AudioPlayerManager for TTS service');
+      return AudioPlayerManager();
+    });
+  }
+
+  if (useRefactoredVoicePipeline) {
+    debugPrint('🔄 Registering SimpleTTSService for NEW pipeline');
+    locator.registerLazySingleton<ITTSService>(() => SimpleTTSService(
+      audioPlayerManager: locator<AudioPlayerManager>(),
+    ));
+  } else {
+    debugPrint('🔄 Registering SimpleTTSService for LEGACY pipeline');
+    locator.registerLazySingleton<ITTSService>(() => SimpleTTSService(
+      audioPlayerManager: locator<AudioPlayerManager>(),
+    ));
+  }
+  
+  debugPrint('✅ ITTSService registered successfully');
 }
 
 /// Main service locator setup function
@@ -307,12 +340,15 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
       debugPrint('Registered AudioGenerator with true lazy initialization');
     }
 
+    // === TTS SERVICE REGISTRATION (Always needed by AudioGenerator) ===
+    _registerTtsService(serviceLocator, useRefactoredVoicePipeline);
+
     // === VOICE SERVICE REGISTRATION (Feature Flag Controlled) ===
     if (useRefactoredVoicePipeline) {
       debugPrint('🔄 Using NEW refactored voice pipeline');
       
       // Register refactored audio services using AudioServicesModule
-      // This provides the new focused, single-responsibility services
+      // Note: TTS service already registered above
       AudioServicesModule.registerServices(serviceLocator);
       
       // Mark audio services as initialized for dependency tracking
