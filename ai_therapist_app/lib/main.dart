@@ -730,18 +730,20 @@ Future<void> _initializeConfigAndApi() async {
       logger.error('[Main] Error initializing VoiceService', error: e);
     }
 
-    try {
-      logger.debug('[Main] Initializing AudioGenerator...');
-      final container = DependencyContainer();
-      final audioGenerator = container.audioGenerator;
-      await audioGenerator.initialize();
-      logger.debug('[Main] AudioGenerator initialized ✓');
+    // AudioGenerator initialization commented out to prevent order-of-registration issues
+    // It will be initialized lazily when first needed, after ApiClient is available
+    // try {
+    //   logger.debug('[Main] Initializing AudioGenerator...');
+    //   final container = DependencyContainer();
+    //   final audioGenerator = container.audioGenerator;
+    //   await audioGenerator.initialize();
+    //   logger.debug('[Main] AudioGenerator initialized ✓');
 
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e) {
-      logger.error('[Main] Error initializing AudioGenerator', error: e);
-    }
+    //   // Small delay between service initializations
+    //   await Future.delayed(const Duration(milliseconds: 100));
+    // } catch (e) {
+    //   logger.error('[Main] Error initializing AudioGenerator', error: e);
+    // }
 
     // 2. Initialize database-dependent services
     try {
