@@ -48,6 +48,7 @@ import 'interfaces/i_tts_service.dart';
 import 'interfaces/i_audio_file_manager.dart';
 import '../services/simple_tts_service.dart';
 import '../services/audio_player_manager.dart';
+import '../services/audio_file_manager.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -82,35 +83,37 @@ class DependencyStatus {
   }
 }
 
-/// Register TTS Service (always needed by AudioGenerator)
-/// Ensures ITTSService is available regardless of feature flag state
-void _registerTtsService(GetIt locator, bool useRefactoredVoicePipeline) {
-  if (locator.isRegistered<ITTSService>()) {
-    debugPrint('ITTSService already registered, skipping');
-    return;
-  }
-
+/// Register Audio Infrastructure (always needed by AudioGenerator)
+/// Ensures ITTSService and IAudioFileManager are available regardless of feature flag state
+void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
   // Register AudioPlayerManager first (required by SimpleTTSService)
   if (!locator.isRegistered<AudioPlayerManager>()) {
     locator.registerLazySingleton<AudioPlayerManager>(() {
-      debugPrint('Registering AudioPlayerManager for TTS service');
+      debugPrint('Registering AudioPlayerManager for audio infrastructure');
       return AudioPlayerManager();
     });
   }
 
-  if (useRefactoredVoicePipeline) {
-    debugPrint('🔄 Registering SimpleTTSService for NEW pipeline');
+  // Register ITTSService (needed by AudioGenerator)
+  if (!locator.isRegistered<ITTSService>()) {
+    if (useRefactoredVoicePipeline) {
+      debugPrint('🔄 Registering SimpleTTSService for NEW pipeline');
+    } else {
+      debugPrint('🔄 Registering SimpleTTSService for LEGACY pipeline');
+    }
+    
     locator.registerLazySingleton<ITTSService>(() => SimpleTTSService(
       audioPlayerManager: locator<AudioPlayerManager>(),
     ));
-  } else {
-    debugPrint('🔄 Registering SimpleTTSService for LEGACY pipeline');
-    locator.registerLazySingleton<ITTSService>(() => SimpleTTSService(
-      audioPlayerManager: locator<AudioPlayerManager>(),
-    ));
+    debugPrint('✅ ITTSService registered successfully');
   }
-  
-  debugPrint('✅ ITTSService registered successfully');
+
+  // Register IAudioFileManager (needed by AudioGenerator)
+  if (!locator.isRegistered<IAudioFileManager>()) {
+    debugPrint('🔄 Registering AudioFileManager for audio infrastructure');
+    locator.registerLazySingleton<IAudioFileManager>(() => AudioFileManager());
+    debugPrint('✅ IAudioFileManager registered successfully');
+  }
 }
 
 /// Main service locator setup function
@@ -340,8 +343,8 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
       debugPrint('Registered AudioGenerator with true lazy initialization');
     }
 
-    // === TTS SERVICE REGISTRATION (Always needed by AudioGenerator) ===
-    _registerTtsService(serviceLocator, useRefactoredVoicePipeline);
+    // === AUDIO INFRASTRUCTURE REGISTRATION (Always needed by AudioGenerator) ===
+    _registerAudioInfra(serviceLocator, useRefactoredVoicePipeline);
 
     // === VOICE SERVICE REGISTRATION (Feature Flag Controlled) ===
     if (useRefactoredVoicePipeline) {

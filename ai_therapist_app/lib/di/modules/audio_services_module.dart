@@ -86,6 +86,7 @@ class AudioServicesModule {
     }
 
     // Register AudioFileManager
+    // Note: IAudioFileManager may already be registered by service_locator.dart
     if (!locator.isRegistered<IAudioFileManager>()) {
       locator.registerLazySingleton<IAudioFileManager>(() {
         if (kDebugMode) {
@@ -93,6 +94,10 @@ class AudioServicesModule {
         }
         return AudioFileManager();
       });
+    } else {
+      if (kDebugMode) {
+        print('[AudioServicesModule] IAudioFileManager already registered, skipping');
+      }
     }
 
     // Register VoiceSessionCoordinator as IVoiceService
