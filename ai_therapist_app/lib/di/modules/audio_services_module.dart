@@ -30,6 +30,7 @@ class AudioServicesModule {
     }
 
     // Register AudioPlayerManager (required by TTSService)
+    // Note: AudioPlayerManager may already be registered by service_locator.dart
     if (!locator.isRegistered<AudioPlayerManager>()) {
       locator.registerLazySingleton<AudioPlayerManager>(() {
         if (kDebugMode) {
@@ -37,6 +38,10 @@ class AudioServicesModule {
         }
         return AudioPlayerManager();
       });
+    } else {
+      if (kDebugMode) {
+        print('[AudioServicesModule] AudioPlayerManager already registered, skipping');
+      }
     }
 
     // Register AudioRecordingService
@@ -50,6 +55,7 @@ class AudioServicesModule {
     }
 
     // Register SimpleTTSService (best-in-class single-owner pattern)
+    // Note: ITTSService may already be registered by service_locator.dart
     if (!locator.isRegistered<ITTSService>()) {
       locator.registerLazySingleton<ITTSService>(() {
         if (kDebugMode) {
@@ -61,6 +67,10 @@ class AudioServicesModule {
           // when it calls setTTSStateCallback() - no circular dependency
         );
       });
+    } else {
+      if (kDebugMode) {
+        print('[AudioServicesModule] ITTSService already registered, skipping');
+      }
     }
 
     // Register WebSocketAudioManager
