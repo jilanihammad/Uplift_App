@@ -97,7 +97,9 @@ class DependencyStatus {
 /// - Repositories (depend on ApiClient)
 /// - AuthService, TherapyService (depend on repositories)
 /// - Firebase-dependent services (complex async initialization)
-Future<void> setupServiceLocator() async {
+///
+/// @param useRefactoredVoicePipeline Feature flag to control voice service registration
+Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) async {
   // Prevent duplicate registration if already called
   if (DependencyStatus.coreServicesRegistered) {
     debugPrint(
@@ -107,6 +109,7 @@ Future<void> setupServiceLocator() async {
 
   try {
     debugPrint('Starting core service registration...');
+    debugPrint('Feature flag useRefactoredVoicePipeline: $useRefactoredVoicePipeline');
 
     // Register utilities first
     if (!serviceLocator.isRegistered<DatabaseOperationManager>()) {
@@ -304,32 +307,40 @@ Future<void> setupServiceLocator() async {
       debugPrint('Registered AudioGenerator with true lazy initialization');
     }
 
-    // Register the original monolithic VoiceService (still needed by AudioGenerator)
-    if (!serviceLocator.isRegistered<VoiceService>()) {
-      serviceLocator.registerLazySingleton<VoiceService>(() {
-        debugPrint('Creating VoiceService instance (lazy initialization)');
-        final service = VoiceService(
-          apiClient: serviceLocator<ApiClient>(),
-        );
+    // === VOICE SERVICE REGISTRATION (Feature Flag Controlled) ===
+    if (useRefactoredVoicePipeline) {
+      debugPrint('🔄 Using NEW refactored voice pipeline');
+      
+      // Register refactored audio services using AudioServicesModule
+      // This provides the new focused, single-responsibility services
+      AudioServicesModule.registerServices(serviceLocator);
+      
+      // Mark audio services as initialized for dependency tracking
+      DependencyStatus.markInitialized('AudioServicesModule');
+      debugPrint('✅ Registered refactored audio services via AudioServicesModule');
+      
+    } else {
+      debugPrint('🔄 Using LEGACY VoiceService');
+      
+      // Register the original monolithic VoiceService (legacy)
+      if (!serviceLocator.isRegistered<VoiceService>()) {
+        serviceLocator.registerLazySingleton<VoiceService>(() {
+          debugPrint('Creating VoiceService instance (lazy initialization)');
+          final service = VoiceService(
+            apiClient: serviceLocator<ApiClient>(),
+          );
 
-        // Initialize only if needed when first accessed
-        service.initializeOnlyIfNeeded().then((_) {
-          DependencyStatus.markInitialized('VoiceService');
-          debugPrint('VoiceService initialized on first access');
+          // Initialize only if needed when first accessed
+          service.initializeOnlyIfNeeded().then((_) {
+            DependencyStatus.markInitialized('VoiceService');
+            debugPrint('VoiceService initialized on first access');
+          });
+
+          return service;
         });
-
-        return service;
-      });
-      debugPrint('Registered VoiceService with true lazy initialization');
+        debugPrint('✅ Registered legacy VoiceService with true lazy initialization');
+      }
     }
-
-    // Register refactored audio services using AudioServicesModule
-    // This provides the new focused, single-responsibility services via IVoiceService
-    AudioServicesModule.registerServices(serviceLocator);
-    
-    // Mark audio services as initialized for dependency tracking
-    DependencyStatus.markInitialized('AudioServicesModule');
-    debugPrint('Registered refactored audio services via AudioServicesModule');
 
     if (!serviceLocator.isRegistered<service_tgs.TherapyGraphService>()) {
       serviceLocator.registerLazySingleton<service_tgs.TherapyGraphService>(

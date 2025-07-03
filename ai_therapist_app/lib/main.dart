@@ -66,6 +66,9 @@ import 'utils/database_helper.dart';
 // Import the new database health checker
 import 'utils/database_health_checker.dart';
 
+// Import feature flags
+import 'utils/feature_flags.dart';
+
 // Global variables for crucial service references
 FirebaseApp? _firebaseApp;
 ConfigService? _configService;
@@ -160,6 +163,12 @@ Future<void> main() async {
     AppConfig().logConfig();
     debugPrint('[main.dart] AppConfig initialized');
     logger.info('[Main] AppConfig initialized with environment variables.');
+    
+    // 1.6. Initialize FeatureFlags early (before service locator)
+    await FeatureFlags.init();
+    FeatureFlags.debugPrintFlags();
+    debugPrint('[main.dart] FeatureFlags initialized');
+    logger.info('[Main] FeatureFlags initialized with SharedPreferences.');
 
     // 2. Now initialize Firebase using the synchronized method ensureFirebaseInitialized()
     // This will be the single point of Firebase initialization in the main isolate.
@@ -212,11 +221,15 @@ Future<void> main() async {
       logger.debug('[Main] Set up Bloc observer for debugging.');
     }
 
-    // 6. Initialize service locator (GetIt)
+    // 6. Initialize service locator (GetIt) with feature flag
     debugPrint('[main.dart] Setting up service locator...');
     logger.info('[Main] Setting up service locator...');
+    final useNewVoicePipeline = FeatureFlags.useNewVoicePipeline;
+    debugPrint('[main.dart] useRefactoredVoicePipeline = $useNewVoicePipeline');
+    logger.info('[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
+    
     try {
-      await setupServiceLocator();
+      await setupServiceLocator(useRefactoredVoicePipeline: useNewVoicePipeline);
       debugPrint('[main.dart] Service locator setup complete.');
       logger.info('[Main] Service locator setup complete.');
     } catch (e) {
