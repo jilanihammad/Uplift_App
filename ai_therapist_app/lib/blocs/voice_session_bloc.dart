@@ -36,6 +36,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   final VoiceService voiceService;
   final VADManager vadManager;
   final ITherapyService? therapyService;
+  // Phase 6B-1: Optional IVoiceService parameter for gradual migration
+  final IVoiceService? interfaceVoiceService;
   StreamSubscription? _recordingStateSub;
   StreamSubscription? _audioPlaybackSub;
   StreamSubscription? _ttsStateSub;
@@ -44,6 +46,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     required this.voiceService,
     required this.vadManager,
     this.therapyService,
+    this.interfaceVoiceService, // Optional for backward compatibility
   }) : super(VoiceSessionState.initial()) {
     on<StartSession>(_onStartSession);
     on<EndSession>(_onEndSession);
