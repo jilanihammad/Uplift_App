@@ -45,11 +45,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 4. **Interface Segregation**: 20+ interfaces in `lib/di/interfaces/` for complete testability and loose coupling
 5. **Event-Driven Architecture**: Circular dependencies resolved using event bus pattern (`AuthCoordinator`)
 
+### Phase 6 Interface Migration (✅ COMPLETED)
+
+The codebase has successfully completed Phase 6 of the interface migration, achieving a robust hybrid architecture that enables gradual migration from concrete implementations to interface-based design.
+
+#### Migration Strategy
+1. **Phase 6A**: Emergency fixes and preparation
+2. **Phase 6B**: Gradual interface adoption
+   - 6B-1: Added optional IVoiceService parameter to VoiceSessionBloc
+   - 6B-2: ChatScreen passes interface service to VoiceSessionBloc
+   - 6B-3: Migrated 18 method calls to use interface pattern via `_safeVoiceService` helper
+3. **Phase 6C**: Consolidation and cleanup
+   - 6C-1: Extended IVoiceService interface with critical methods
+   - 6C-2: Eliminated 20+ lines of dead code and obsolete comments
+4. **Phase 6D**: Validation and documentation
+
+#### Key Achievements
+- **Hybrid Architecture**: VoiceSessionBloc works with both legacy VoiceService and new IVoiceService
+- **Safe Migration**: Helper method pattern (`_safeVoiceService`) ensures backward compatibility
+- **Interface Extensions**: Added stopAudio(), resetTTSState(), enableAutoMode(), etc. to IVoiceService
+- **Zero Regressions**: All functionality preserved, app tested and working perfectly
+- **Clean Codebase**: Removed placeholder typedefs, obsolete TODOs, and commented code
+
+#### Current State
+- **VoiceSessionBloc**: Uses interface methods for all possible operations
+- **VoiceSessionCoordinator**: Implements extended IVoiceService with smart delegation
+- **Legacy Dependencies**: autoListeningCoordinator, recordingState stream still use concrete service
+- **Future Ready**: Architecture prepared for complete interface migration in future phases
+
 ### Critical Service Dependencies
 
 #### Voice Processing Pipeline
 - **VoiceService** (`lib/services/voice_service.dart`) - 1,033 lines, legacy service with reduced functionality (TTS/WebSocket methods moved to TTSService)
-- **VoiceSessionBloc** (`lib/blocs/voice_session_bloc.dart`) - Coordinates real-time voice interactions
+- **VoiceSessionBloc** (`lib/blocs/voice_session_bloc.dart`) - Coordinates real-time voice interactions with hybrid architecture supporting both VoiceService and IVoiceService
 - **AutoListeningCoordinator** (`lib/services/auto_listening_coordinator.dart`) - Manages voice activity detection
 - **RNNoiseService** - Custom noise reduction using RNNoise C++ integration
 
