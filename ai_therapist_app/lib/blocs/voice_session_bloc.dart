@@ -9,7 +9,6 @@ import 'voice_session_event.dart';
 import 'voice_session_state.dart';
 import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
-// Removed service_locator import - now using dependency injection
 import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import 'package:flutter/foundation.dart';
@@ -17,20 +16,6 @@ import '../models/therapy_message.dart';
 import '../services/recording_manager.dart';
 import 'package:uuid/uuid.dart';
 
-// Placeholder imports - replace with actual paths or remove if not used
-// import '../services/memory_service.dart';
-// import '../services/therapy_graph_service.dart';
-// import '../services/notification_service.dart';
-// import '../services/conversation_buffer_memory.dart';
-
-// Assuming these service types are still needed,
-// you might need to define them or import them correctly.
-// For now, let's use dynamic to resolve analyzer errors,
-// but this should be replaced with actual types.
-typedef MemoryService = dynamic;
-typedef TherapyGraphService = dynamic;
-typedef NotificationService = dynamic;
-typedef ConversationBufferMemory = dynamic;
 
 class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   final VoiceService voiceService;
@@ -78,9 +63,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<SetInitializing>(_onSetInitializing);
     on<SetEndingSession>(_onSetEndingSession);
     on<UpdateSessionTimer>(_onUpdateSessionTimer);
-    // on<ProcessAudioFile>(_onProcessAudioFile); // Commented out: ProcessAudioFile event/handler not found
-    // on<SendTextMessage>(_onSendTextMessage); // Commented out: SendTextMessage event/handler not found
-    // on<ProcessWelcomeMessage>(_onProcessWelcomeMessage); // Commented out: ProcessWelcomeMessage event/handler not found
+    
     _recordingStateSub = voiceService.recordingState.listen((recState) {
       final isRecording = recState.toString().contains('recording');
       add(SetRecordingState(isRecording));
@@ -106,7 +89,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     return interfaceVoiceService ?? voiceService as IVoiceService;
   }
 
-  // Phase 6B-3: Helper for legacy-only methods until fully migrated
+  // Phase 6B-3: Helper for legacy-only methods that haven't migrated to interface yet
+  // Currently unused but kept for future migration of autoListeningCoordinator, recordingState stream, etc.
   VoiceService get _legacyVoiceService {
     return voiceService;
   }
