@@ -4,6 +4,7 @@
 
 import 'package:equatable/equatable.dart';
 import '../models/therapy_message.dart';
+import '../models/therapist_style.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
 
 enum VoiceSessionStatus {
@@ -45,6 +46,7 @@ class VoiceSessionState extends Equatable {
   final bool
       isInitialGreetingPlayed; // Tracks if the initial greeting TTS has been played
   final String? activeTherapyStyleName;
+  final TherapistStyle? therapistStyle; // Full therapist style object (Phase 1A.1)
   final bool isAutoListeningEnabled; // From AutoListeningCoordinator
   final int currentMessageSequence; // Added for message sequencing
   final bool speakerMuted; // Track speaker mute state
@@ -71,6 +73,7 @@ class VoiceSessionState extends Equatable {
     this.isVoiceMode = true, // Default to voice mode
     this.isInitialGreetingPlayed = false,
     this.activeTherapyStyleName,
+    this.therapistStyle, // Phase 1A.1: Full therapist style object
     this.isAutoListeningEnabled = false,
     required this.currentMessageSequence, // Added
     this.speakerMuted = false,
@@ -103,6 +106,7 @@ class VoiceSessionState extends Equatable {
       isVoiceMode: true, // Default to voice mode
       isInitialGreetingPlayed: false,
       activeTherapyStyleName: therapyStyleName,
+      therapistStyle: null, // Phase 1A.1: Will be set when mood is selected
       isAutoListeningEnabled: false,
       currentMessageSequence: 0, // Initialize sequence
       speakerMuted: false,
@@ -133,6 +137,7 @@ class VoiceSessionState extends Equatable {
     bool? isVoiceMode,
     bool? isInitialGreetingPlayed,
     String? activeTherapyStyleName,
+    TherapistStyle? therapistStyle, // Phase 1A.1
     bool? isAutoListeningEnabled,
     int? currentMessageSequence, // Added
     bool? speakerMuted,
@@ -164,6 +169,7 @@ class VoiceSessionState extends Equatable {
           isInitialGreetingPlayed ?? this.isInitialGreetingPlayed,
       activeTherapyStyleName:
           activeTherapyStyleName ?? this.activeTherapyStyleName,
+      therapistStyle: therapistStyle ?? this.therapistStyle, // Phase 1A.1
       isAutoListeningEnabled:
           isAutoListeningEnabled ?? this.isAutoListeningEnabled,
       currentMessageSequence:
@@ -195,6 +201,7 @@ class VoiceSessionState extends Equatable {
         isVoiceMode,
         isInitialGreetingPlayed,
         activeTherapyStyleName,
+        therapistStyle, // Phase 1A.1
         isAutoListeningEnabled,
         currentMessageSequence, // Added
         speakerMuted,
