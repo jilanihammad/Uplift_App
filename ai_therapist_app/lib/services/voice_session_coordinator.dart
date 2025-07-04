@@ -139,6 +139,11 @@ class VoiceSessionCoordinator implements IVoiceService {
   }
 
   @override
+  Future<void> stopAudio() async {
+    await _ttsService.stopAudio();
+  }
+
+  @override
   Future<Uint8List?> processAudioWithRNNoise(Uint8List audioData) async {
     // This would need to be implemented based on RNNoise integration
     // For now, return the audio data unchanged
@@ -146,6 +151,48 @@ class VoiceSessionCoordinator implements IVoiceService {
       print('[VoiceSessionCoordinator] RNNoise processing not yet implemented');
     }
     return audioData;
+  }
+
+  @override
+  Future<String> processRecordedAudioFile(String audioPath) async {
+    if (kDebugMode) {
+      print('[VoiceSessionCoordinator] Processing recorded audio file: $audioPath');
+    }
+    // For now, delegate to legacy VoiceService until we implement transcription
+    try {
+      final serviceLocator = GetIt.instance;
+      if (serviceLocator.isRegistered<VoiceService>()) {
+        final legacyVoiceService = serviceLocator<VoiceService>();
+        return await legacyVoiceService.processRecordedAudioFile(audioPath);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceSessionCoordinator] Error delegating to legacy service: $e');
+      }
+    }
+    
+    throw UnimplementedError('Audio transcription not yet implemented in VoiceSessionCoordinator');
+  }
+
+  @override
+  void setSpeakerMuted(bool isMuted) {
+    // For now, delegate to legacy VoiceService until we implement muting
+    try {
+      final serviceLocator = GetIt.instance;
+      if (serviceLocator.isRegistered<VoiceService>()) {
+        final legacyVoiceService = serviceLocator<VoiceService>();
+        legacyVoiceService.setSpeakerMuted(isMuted);
+        return;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceSessionCoordinator] Error delegating setSpeakerMuted: $e');
+      }
+    }
+    
+    if (kDebugMode) {
+      print('[VoiceSessionCoordinator] Speaker muting not yet implemented');
+    }
   }
 
   @override
@@ -358,21 +405,52 @@ class VoiceSessionCoordinator implements IVoiceService {
     }
   }
 
-  /// Enable auto-listening mode (delegates to AutoListeningCoordinator)
+  @override
   Future<void> enableAutoMode() async {
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Enabling auto-listening mode');
     }
-    // This will need to be implemented based on AutoListeningCoordinator integration
-    // await _autoListening.enableAutoMode();
+    // For now, delegate to legacy VoiceService for auto-listening
+    try {
+      final serviceLocator = GetIt.instance;
+      if (serviceLocator.isRegistered<VoiceService>()) {
+        final legacyVoiceService = serviceLocator<VoiceService>();
+        await legacyVoiceService.enableAutoMode();
+        return;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceSessionCoordinator] Error delegating enableAutoMode: $e');
+      }
+    }
+    
+    if (kDebugMode) {
+      print('[VoiceSessionCoordinator] Auto-listening not yet implemented');
+    }
   }
 
-  /// Disable auto-listening mode
+  @override
   Future<void> disableAutoMode() async {
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Disabling auto-listening mode');
     }
-    // await _autoListening.disableAutoMode();
+    // For now, delegate to legacy VoiceService for auto-listening
+    try {
+      final serviceLocator = GetIt.instance;
+      if (serviceLocator.isRegistered<VoiceService>()) {
+        final legacyVoiceService = serviceLocator<VoiceService>();
+        await legacyVoiceService.autoListeningCoordinator.disableAutoMode();
+        return;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceSessionCoordinator] Error delegating disableAutoMode: $e');
+      }
+    }
+    
+    if (kDebugMode) {
+      print('[VoiceSessionCoordinator] Auto-listening not yet implemented');
+    }
   }
 
   /// Get auto-listening coordinator for advanced control
@@ -382,12 +460,14 @@ class VoiceSessionCoordinator implements IVoiceService {
   Stream<RecordingState> get recordingStateStream => _recordingService.recordingStateStream;
 
   /// Get TTS speaking state stream
+  @override
   Stream<bool> get isTtsActuallySpeaking => _ttsService.speakingStateStream;
 
   /// Get audio playback state stream
   Stream<bool> get audioPlaybackStream => _ttsService.playbackStateStream;
 
   /// Reset TTS state
+  @override
   void resetTTSState() {
     _ttsService.resetTTSState();
   }
