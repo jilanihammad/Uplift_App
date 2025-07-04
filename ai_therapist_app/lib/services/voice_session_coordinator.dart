@@ -10,7 +10,7 @@ import '../di/interfaces/i_websocket_audio_manager.dart';
 import '../di/interfaces/i_audio_file_manager.dart';
 import 'base_voice_service.dart';
 import 'voice_service.dart';
-// TODO: Add back in Phase 5 when integrating AutoListeningCoordinator
+// Future enhancement: Direct AutoListeningCoordinator integration
 // import 'auto_listening_coordinator.dart';
 // import 'vad_manager.dart';
 
@@ -22,7 +22,7 @@ class VoiceSessionCoordinator implements IVoiceService {
   final IWebSocketAudioManager _wsManager;
   final IAudioFileManager _fileManager;
   
-  // TODO: Integrate AutoListeningCoordinator and VADManager in Phase 5
+  // Future enhancement: Direct AutoListeningCoordinator integration
   // late final AutoListeningCoordinator _autoListening;
   // late final VADManager _vadManager;
 
@@ -46,7 +46,7 @@ class VoiceSessionCoordinator implements IVoiceService {
   }
 
   void _initializeCoordinator() {
-    // TODO: Initialize VAD manager and auto-listening coordinator in Phase 5
+    // Future enhancement: Initialize VAD manager and auto-listening coordinator
     // _vadManager = VADManager();
     // _autoListening = AutoListeningCoordinator(...);
 
@@ -262,7 +262,7 @@ class VoiceSessionCoordinator implements IVoiceService {
     }
     
     // For now, try to coordinate with legacy VoiceService AutoListeningCoordinator if available
-    // TODO: Integrate direct AutoListeningCoordinator in Phase 5
+    // Future enhancement: Integrate direct AutoListeningCoordinator
     try {
       // Import at runtime to avoid circular dependency
       final serviceLocator = GetIt.instance;
@@ -452,9 +452,6 @@ class VoiceSessionCoordinator implements IVoiceService {
       print('[VoiceSessionCoordinator] Auto-listening not yet implemented');
     }
   }
-
-  /// Get auto-listening coordinator for advanced control
-  // AutoListeningCoordinator get autoListeningCoordinator => _autoListening;
 
   /// Get recording state stream from recording service
   Stream<RecordingState> get recordingStateStream => _recordingService.recordingStateStream;
