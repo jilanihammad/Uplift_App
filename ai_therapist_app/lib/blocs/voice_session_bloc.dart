@@ -45,6 +45,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<StopListening>(_onStopListening);
     on<SelectMood>(_onSelectMood);
     on<ChangeDuration>(_onChangeDuration);
+    // Phase 1A.3: New event handlers for refactoring
+    on<SessionStarted>(_onSessionStarted);
+    on<MoodSelected>(_onMoodSelected); 
+    on<DurationSelected>(_onDurationSelected);
+    on<TextMessageSent>(_onTextMessageSent);
+    on<EndSessionRequested>(_onEndSessionRequested);
     on<SwitchMode>(_onSwitchMode);
     on<ProcessAudio>(_onProcessAudio);
     on<HandleError>(_onHandleError);

@@ -12,8 +12,19 @@ class StartSession extends VoiceSessionEvent {
   const StartSession();
 }
 
+// Phase 1A.2: New events for refactoring
+class SessionStarted extends VoiceSessionEvent {
+  final String? sessionId;
+  const SessionStarted(this.sessionId);
+}
+
 class EndSession extends VoiceSessionEvent {
   const EndSession();
+}
+
+// Phase 1A.2: Alias for end session (matches plan naming)
+class EndSessionRequested extends VoiceSessionEvent {
+  const EndSessionRequested();
 }
 
 class StartListening extends VoiceSessionEvent {
@@ -29,9 +40,21 @@ class SelectMood extends VoiceSessionEvent {
   const SelectMood(this.mood);
 }
 
+// Phase 1A.2: Alias for mood selection (matches plan naming)
+class MoodSelected extends VoiceSessionEvent {
+  final Mood mood;
+  const MoodSelected(this.mood);
+}
+
 class ChangeDuration extends VoiceSessionEvent {
   final int minutes;
   const ChangeDuration(this.minutes);
+}
+
+// Phase 1A.2: Duration selected with Duration object
+class DurationSelected extends VoiceSessionEvent {
+  final Duration duration;
+  const DurationSelected(this.duration);
 }
 
 class SwitchMode extends VoiceSessionEvent {
@@ -72,6 +95,12 @@ class SetRecordingState extends VoiceSessionEvent {
 class ProcessTextMessage extends VoiceSessionEvent {
   final String text;
   const ProcessTextMessage(this.text);
+}
+
+// Phase 1A.2: Alias for text message (matches plan naming)
+class TextMessageSent extends VoiceSessionEvent {
+  final String message;
+  const TextMessageSent(this.message);
 }
 
 class ShowMoodSelector extends VoiceSessionEvent {
