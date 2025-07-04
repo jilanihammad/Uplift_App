@@ -59,8 +59,15 @@ class AudioFileManager implements IAudioFileManager {
   // Configuration  
   static const List<String> _supportedFormats = ['wav', 'mp3', 'ogg', 'm4a'];
   
+  // Self-initializing pattern: start initialization immediately in constructor
+  late final Future<void> _initFuture;
   bool _initialized = false;
   
+  // Constructor kicks off initialization immediately
+  AudioFileManager() {
+    _initFuture = _realInit();
+  }
+
   @override
   Stream<String> get fileDeletedStream => _fileDeletedController.stream;
   
@@ -68,16 +75,21 @@ class AudioFileManager implements IAudioFileManager {
   Stream<String> get fileCachedStream => _fileCachedController.stream;
 
   @override
-  Future<void> initialize() async {
+  Future<void> initialize() => _initFuture; // Idempotent - just returns the same Future
+
+  // Private method that does the actual initialization work
+  Future<void> _realInit() async {
     if (_initialized) return;
     
     try {
       // Initialize PathManager if not already done
       await PathManager.instance.init();
       
-      // Create cache directories
-      await _ensureDirectoryExists(getCacheDirectory());
-      await _ensureDirectoryExists(getTempDirectory());
+      // Create cache directories (use PathManager directly to avoid circular dependency)
+      final cacheDir = p.join(PathManager.instance.cacheDir, 'audio_cache');
+      final tempDir = p.join(PathManager.instance.cacheDir, 'temp');
+      await _ensureDirectoryExists(cacheDir);
+      await _ensureDirectoryExists(tempDir);
       
       if (kDebugMode) {
         print('🎵 AudioFileManager initialized successfully');
@@ -177,7 +189,7 @@ class AudioFileManager implements IAudioFileManager {
       
       // Generate cache file path
       final fileName = 'cached_${_generateUrlHash(url)}.$extension';
-      final cacheDir = getCacheDirectory();
+      final cacheDir = await getCacheDirectory();
       final filePath = p.join(cacheDir, fileName);
       
       // Write to cache
@@ -204,10 +216,11 @@ class AudioFileManager implements IAudioFileManager {
 
   @override
   Future<void> cleanupTempFiles() async {
-    _ensureInitialized();
+    await _ensureInitialized();
     
     try {
-      final tempDir = Directory(getTempDirectory());
+      final tempDirPath = await getTempDirectory();
+      final tempDir = Directory(tempDirPath);
       if (!await tempDir.exists()) return;
       
       final entities = await tempDir.list().toList();
@@ -239,11 +252,11 @@ class AudioFileManager implements IAudioFileManager {
 
   @override
   Future<void> cleanupOldFiles(Duration maxAge) async {
-    _ensureInitialized();
+    await _ensureInitialized();
     
     try {
       final now = DateTime.now();
-      final directories = [getTempDirectory(), getCacheDirectory()];
+      final directories = [await getTempDirectory(), await getCacheDirectory()];
       int deletedCount = 0;
       
       for (final dirPath in directories) {
@@ -351,23 +364,23 @@ class AudioFileManager implements IAudioFileManager {
   }
 
   @override
-  String getTempDirectory() {
-    _ensureInitialized();
+  Future<String> getTempDirectory() async {
+    await _ensureInitialized();
     return p.join(PathManager.instance.cacheDir, 'temp');
   }
 
   @override
-  String getCacheDirectory() {
-    _ensureInitialized();
+  Future<String> getCacheDirectory() async {
+    await _ensureInitialized();
     return p.join(PathManager.instance.cacheDir, 'audio_cache');
   }
 
   @override
   Future<String> getAudioFilePath(String fileName) async {
-    _ensureInitialized();
+    await _ensureInitialized();
     
     final sanitizedName = PathManager.instance.sanitizeFileName(fileName);
-    final tempDir = getTempDirectory();
+    final tempDir = await getTempDirectory();
     return p.join(tempDir, sanitizedName);
   }
 
@@ -400,7 +413,8 @@ class AudioFileManager implements IAudioFileManager {
   @override
   Future<void> clearCache() async {
     try {
-      final cacheDir = Directory(getCacheDirectory());
+      final cacheDirPath = await getCacheDirectory();
+      final cacheDir = Directory(cacheDirPath);
       if (await cacheDir.exists()) {
         final entities = await cacheDir.list().toList();
         int deletedCount = 0;
@@ -470,7 +484,7 @@ class AudioFileManager implements IAudioFileManager {
     int totalSize = 0;
     
     try {
-      final directories = [getCacheDirectory(), getTempDirectory()];
+      final directories = [await getCacheDirectory(), await getTempDirectory()];
       
       for (final dirPath in directories) {
         final dir = Directory(dirPath);
@@ -509,7 +523,7 @@ class AudioFileManager implements IAudioFileManager {
       
       // Get all cached files with their timestamps
       final List<FileInfo> fileInfos = [];
-      final directories = [getCacheDirectory(), getTempDirectory()];
+      final directories = [await getCacheDirectory(), await getTempDirectory()];
       
       for (final dirPath in directories) {
         final dir = Directory(dirPath);
@@ -574,11 +588,7 @@ class AudioFileManager implements IAudioFileManager {
 
   // Private helper methods
 
-  void _ensureInitialized() {
-    if (!_initialized) {
-      throw StateError('AudioFileManager not initialized. Call initialize() first.');
-    }
-  }
+  Future<void> _ensureInitialized() => _initFuture;
 
   Future<void> _ensureDirectoryExists(String dirPath) async {
     try {
