@@ -20,6 +20,7 @@ import '../di/interfaces/interfaces.dart';
 import 'package:flutter/foundation.dart';
 import '../models/therapy_message.dart';
 import '../services/recording_manager.dart';
+import '../widgets/mood_selector.dart'; // For Mood enum
 import 'package:uuid/uuid.dart';
 
 
@@ -732,6 +733,153 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onUpdateSessionTimer(
       UpdateSessionTimer event, Emitter<VoiceSessionState> emit) {}
+
+  // ========== Phase 1A.3: New Event Handlers for Refactoring ==========
+
+  /// Handles session initialization with optional sessionId
+  void _onSessionStarted(SessionStarted event, Emitter<VoiceSessionState> emit) {
+    if (kDebugMode) {
+      print('[VoiceSessionBloc] Session started with ID: ${event.sessionId}');
+    }
+    
+    emit(state.copyWith(
+      currentSessionId: event.sessionId,
+      status: VoiceSessionStatus.loading,
+    ));
+  }
+
+  /// Handles mood selection - moves logic from ChatScreen._handleMoodSelection
+  void _onMoodSelected(MoodSelected event, Emitter<VoiceSessionState> emit) {
+    if (kDebugMode) {
+      print('[VoiceSessionBloc] Mood selected: ${event.mood}');
+    }
+    
+    emit(state.copyWith(
+      selectedMood: event.mood,
+      showMoodSelector: false,
+      status: VoiceSessionStatus.loading,
+    ));
+    
+    // Add initial AI welcome message based on mood
+    _addInitialAIMessage(event.mood, emit);
+  }
+
+  /// Handles duration selection with Duration object
+  void _onDurationSelected(DurationSelected event, Emitter<VoiceSessionState> emit) {
+    if (kDebugMode) {
+      print('[VoiceSessionBloc] Duration selected: ${event.duration.inMinutes} minutes');
+    }
+    
+    emit(state.copyWith(
+      selectedDuration: event.duration,
+      showDurationSelector: false,
+    ));
+  }
+
+  /// Handles text message sending - delegates to existing ProcessTextMessage
+  void _onTextMessageSent(TextMessageSent event, Emitter<VoiceSessionState> emit) {
+    if (kDebugMode) {
+      print('[VoiceSessionBloc] Text message sent: "${event.message}"');
+    }
+    
+    // Delegate to existing ProcessTextMessage handler
+    add(ProcessTextMessage(event.message));
+  }
+
+  /// Handles session end request - moves core logic from ChatScreen._endSession  
+  void _onEndSessionRequested(EndSessionRequested event, Emitter<VoiceSessionState> emit) {
+    if (kDebugMode) {
+      print('[VoiceSessionBloc] Session end requested');
+    }
+    
+    // Prevent multiple end session calls
+    if (state.status == VoiceSessionStatus.ended) {
+      return;
+    }
+    
+    emit(state.copyWith(
+      status: VoiceSessionStatus.ended,
+      speakerMuted: true, // Mute speaker immediately to stop any ongoing TTS
+    ));
+    
+    // Note: Wakelock, navigation, VAD stopping remain in UI layer for now
+    // These are UI concerns that will be handled by ChatScreen
+  }
+
+  /// Helper method to add initial AI message based on mood
+  void _addInitialAIMessage(Mood mood, Emitter<VoiceSessionState> emit) {
+    final welcomeMessage = _getWelcomeMessage(mood);
+    
+    final aiMessage = TherapyMessage(
+      id: '${DateTime.now().millisecondsSinceEpoch}_ai',
+      content: welcomeMessage,
+      isUser: false,
+      timestamp: DateTime.now(),
+      sequence: 1,
+    );
+    
+    emit(state.copyWith(
+      messages: [...state.messages, aiMessage],
+      status: VoiceSessionStatus.idle,
+    ));
+    
+    // If in voice mode, should generate TTS for welcome message
+    // This will be handled by ChatScreen for now to maintain UI separation
+  }
+
+  /// Helper method to generate welcome message based on mood
+  String _getWelcomeMessage(Mood mood) {
+    final messages = {
+      Mood.happy: [
+        "Heyyy! What's keeping your spirits high today?",
+        "Hello hello! Your positivity is contagious! What's on your mind?",
+        "Hey there! Glad you're feeling upbeat! How can I support you today?",
+        "Heyyy! Hearing you're happy makes me happy! Anything special you'd like to talk about?",
+        "Hello hello! Would you like to share more about what's brightening your day?"
+      ],
+      Mood.sad: [
+        "I'm here for you. What's been weighing on your heart lately?",
+        "Thank you for trusting me with your feelings. How can I support you today?",
+        "I hear you're going through a tough time. Would you like to share what's on your mind?",
+        "It takes courage to reach out when you're feeling down. I'm glad you're here.",
+        "I'm here to listen. What's been making you feel this way?"
+      ],
+      Mood.anxious: [
+        "I understand you're feeling anxious. Let's take this one step at a time. What's on your mind?",
+        "Anxiety can feel overwhelming. I'm here to help you work through it. What's been triggering these feelings?",
+        "Thank you for reaching out. Anxiety is tough, but you're not alone. What would you like to talk about?",
+        "I can sense you're feeling anxious. Let's explore what's been causing these feelings together.",
+        "It's okay to feel anxious. I'm here to support you. What's been on your mind lately?"
+      ],
+      Mood.angry: [
+        "I can feel the intensity of your emotions. What's been frustrating you?",
+        "Anger often signals that something important to you has been affected. What's going on?",
+        "Thank you for being honest about your anger. What's been triggering these feelings?",
+        "I'm here to listen without judgment. What's been making you feel this way?",
+        "Anger can be a powerful emotion. Let's explore what's behind it together."
+      ],
+      Mood.neutral: [
+        "Hello! I'm here to listen. What's been on your mind lately?",
+        "Thanks for reaching out today. What would you like to talk about?",
+        "I'm glad you're here. What's been going on in your life?",
+        "How are you feeling today? What would you like to explore together?",
+        "I'm here to support you. What's been on your mind?"
+      ],
+      Mood.stressed: [
+        "I can sense you're feeling stressed. Let's work through this together. What's been weighing on you?",
+        "Stress can feel overwhelming. I'm here to help you find some relief. What's been the biggest challenge?",
+        "Thank you for sharing that you're stressed. What's been contributing to these feelings?",
+        "I understand stress can be exhausting. Let's take this one step at a time. What's been most difficult?",
+        "It takes strength to recognize when you're stressed. What would help you feel more balanced?"
+      ],
+    };
+    
+    final moodMessages = messages[mood] ?? [
+      "Thank you for sharing how you're feeling. What's been on your mind lately?",
+    ];
+    
+    return moodMessages[DateTime.now().millisecond % moodMessages.length];
+  }
 
   List<Map<String, String>> _buildConversationHistory(
       List<TherapyMessage> messages) {
