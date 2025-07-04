@@ -60,6 +60,7 @@ class SimpleTTSService implements ITTSService {
   final ListQueue<TtsRequest> _queue = ListQueue();
   final AudioPlayerManager _audioPlayerManager;
   void Function(bool isSpeaking)? _onTTSComplete;
+  void Function(bool isSpeaking)? _voiceServiceUpdateCallback;
   
   // Production-grade completion tracking
   int _pendingStreams = 0; // Monotonic counter for overlapping instances
@@ -71,8 +72,10 @@ class SimpleTTSService implements ITTSService {
   SimpleTTSService({
     required AudioPlayerManager audioPlayerManager,
     void Function(bool isSpeaking)? onTTSComplete,
+    void Function(bool isSpeaking)? voiceServiceUpdateCallback,
   }) : _audioPlayerManager = audioPlayerManager,
-       _onTTSComplete = onTTSComplete {
+       _onTTSComplete = onTTSComplete,
+       _voiceServiceUpdateCallback = voiceServiceUpdateCallback {
     _backendUrl = AppConfig().backendUrl;
   }
 
@@ -81,6 +84,14 @@ class SimpleTTSService implements ITTSService {
     _onTTSComplete = callback;
     if (kDebugMode) {
       print('🔍 [TTS] Completion callback ${callback != null ? 'set' : 'cleared'}');
+    }
+  }
+
+  /// Set the VoiceService update callback (for TTS-VAD coordination)
+  void setVoiceServiceUpdateCallback(void Function(bool isSpeaking)? callback) {
+    _voiceServiceUpdateCallback = callback;
+    if (kDebugMode) {
+      print('🔍 [TTS] VoiceService update callback ${callback != null ? 'set' : 'cleared'}');
     }
   }
 
@@ -94,6 +105,10 @@ class SimpleTTSService implements ITTSService {
     
     try {
       _state = _State.connecting;
+      
+      // CRITICAL: Notify that TTS is starting BEFORE WebSocket connection
+      // This prevents Maya from listening to herself during TTS
+      _notifyTTSStart();
       
       // Create fresh WebSocket for this request (simple pattern)
       final wsUrl = '$_backendUrl/ws/tts'.replaceFirst('http', 'ws');
@@ -119,7 +134,8 @@ class SimpleTTSService implements ITTSService {
         print('❌ [TTS] Request failed: ${req.id} - $e');
       }
       req.completeError(e, stackTrace);
-      _fireCompletionSafely(false); // Reset TTS state on ANY error
+      _notifyTTSEnd(); // Reset TTS state on ANY error
+      _fireCompletionSafely(false);
     } finally {
       _pendingStreams--; // Decrement when done (success or error)
       if (kDebugMode) {
@@ -128,6 +144,7 @@ class SimpleTTSService implements ITTSService {
       
       // Only fire completion when ALL streams are done
       if (_pendingStreams <= 0) {
+        _notifyTTSEnd();
         _fireCompletionSafely(false);
       }
       
@@ -340,6 +357,30 @@ class SimpleTTSService implements ITTSService {
     // AudioPlayerManager handles cleanup
   }
 
+  /// Notify VoiceService that TTS is starting (Maya stops listening)
+  void _notifyTTSStart() {
+    if (_voiceServiceUpdateCallback != null) {
+      scheduleMicrotask(() {
+        _voiceServiceUpdateCallback!(true);
+        if (kDebugMode) {
+          print('🔍 [TTS] Notified VoiceService: TTS started (Maya stops listening)');
+        }
+      });
+    }
+  }
+
+  /// Notify VoiceService that TTS has ended (Maya can listen again)
+  void _notifyTTSEnd() {
+    if (_voiceServiceUpdateCallback != null) {
+      scheduleMicrotask(() {
+        _voiceServiceUpdateCallback!(false);
+        if (kDebugMode) {
+          print('🔍 [TTS] Notified VoiceService: TTS ended (Maya can listen again)');
+        }
+      });
+    }
+  }
+
   /// Safely fire completion callback on main thread (handles background isolate events)
   void _fireCompletionSafely(bool isSpeaking) {
     if (_onTTSComplete != null) {
@@ -365,6 +406,7 @@ class SimpleTTSService implements ITTSService {
     }
     
     // Reset TTS state on disposal
+    _notifyTTSEnd();
     _fireCompletionSafely(false);
     
     if (kDebugMode) print('🔍 [TTS] Service disposed');

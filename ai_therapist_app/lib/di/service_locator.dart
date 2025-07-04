@@ -36,6 +36,7 @@ import 'interfaces/i_api_client.dart';
 import 'interfaces/i_app_database.dart';
 import 'interfaces/i_database.dart';
 import 'interfaces/i_database_operation_manager.dart';
+import 'interfaces/i_voice_service.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../services/memory_manager.dart';
 import '../services/message_processor.dart';
@@ -102,9 +103,35 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
       debugPrint('🔄 Registering SimpleTTSService for LEGACY pipeline');
     }
     
-    locator.registerLazySingleton<ITTSService>(() => SimpleTTSService(
-      audioPlayerManager: locator<AudioPlayerManager>(),
-    ));
+    locator.registerLazySingleton<ITTSService>(() {
+      // Create SimpleTTSService with VoiceService callback for TTS-VAD coordination
+      final simpleTTSService = SimpleTTSService(
+        audioPlayerManager: locator<AudioPlayerManager>(),
+      );
+      
+      // Wire the VoiceService callback after both services are available
+      // This is done lazily to avoid circular dependency during registration
+      Future.microtask(() {
+        try {
+          // For new pipeline, wire to VoiceSessionCoordinator
+          if (useRefactoredVoicePipeline && locator.isRegistered<IVoiceService>()) {
+            final voiceService = locator<IVoiceService>();
+            simpleTTSService.setVoiceServiceUpdateCallback(voiceService.updateTTSSpeakingState);
+            debugPrint('✅ SimpleTTSService wired to VoiceSessionCoordinator for TTS-VAD coordination');
+          }
+          // For legacy pipeline, wire to legacy VoiceService
+          else if (!useRefactoredVoicePipeline && locator.isRegistered<VoiceService>()) {
+            final voiceService = locator<VoiceService>();
+            simpleTTSService.setVoiceServiceUpdateCallback(voiceService.updateTTSSpeakingState);
+            debugPrint('✅ SimpleTTSService wired to legacy VoiceService for TTS-VAD coordination');
+          }
+        } catch (e) {
+          debugPrint('Warning: Could not wire SimpleTTSService for TTS-VAD coordination: $e');
+        }
+      });
+      
+      return simpleTTSService;
+    });
     debugPrint('✅ ITTSService registered successfully');
   }
 
@@ -353,6 +380,26 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
       // Register refactored audio services using AudioServicesModule
       // Note: TTS service already registered above
       AudioServicesModule.registerServices(serviceLocator);
+      
+      // ALSO register legacy VoiceService for AutoListeningCoordinator coordination
+      // This allows VoiceSessionCoordinator to coordinate VAD through legacy service
+      if (!serviceLocator.isRegistered<VoiceService>()) {
+        serviceLocator.registerLazySingleton<VoiceService>(() {
+          debugPrint('Creating legacy VoiceService for AutoListeningCoordinator coordination');
+          final service = VoiceService(
+            apiClient: serviceLocator<ApiClient>(),
+          );
+
+          // Initialize only if needed when first accessed
+          service.initializeOnlyIfNeeded().then((_) {
+            DependencyStatus.markInitialized('VoiceService');
+            debugPrint('Legacy VoiceService initialized for VAD coordination');
+          });
+
+          return service;
+        });
+        debugPrint('✅ Legacy VoiceService registered for VAD coordination');
+      }
       
       // Mark audio services as initialized for dependency tracking
       DependencyStatus.markInitialized('AudioServicesModule');
