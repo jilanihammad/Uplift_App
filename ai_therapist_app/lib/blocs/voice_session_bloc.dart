@@ -98,6 +98,19 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     });
   }
 
+  // Phase 6B-3: Helper method to safely choose between interface and legacy service
+  // For methods that exist in IVoiceService interface, use interface service
+  // For methods that don't exist yet, fall back to legacy service  
+  IVoiceService get _safeVoiceService {
+    // If we have the interface service, use it; otherwise cast legacy service to interface
+    return interfaceVoiceService ?? voiceService as IVoiceService;
+  }
+
+  // Phase 6B-3: Helper for legacy-only methods until fully migrated
+  VoiceService get _legacyVoiceService {
+    return voiceService;
+  }
+
   void _onStartSession(StartSession event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(
       status: VoiceSessionStatus.initial,
@@ -547,7 +560,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     emit(state.copyWith(isProcessingAudio: true));
 
     try {
-      await voiceService.initialize();
+      await _safeVoiceService.initialize();
 
       final therapyServiceInstance = therapyService ?? DependencyContainer().therapy;
       await therapyServiceInstance.init();
@@ -638,7 +651,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     
     try {
       // Use VoiceService TTS state management to properly coordinate with auto-listening
-      voiceService.updateTTSSpeakingState(true); // Stops auto-listening
+      _safeVoiceService.updateTTSSpeakingState(true); // Stops auto-listening
       
       // Use SimpleTTSService directly for welcome messages
       final ttsService = DependencyContainer().ttsService;
@@ -647,14 +660,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint('[VoiceSessionBloc] Welcome TTS streaming completed');
       
       // Use VoiceService TTS state management to trigger auto-listening
-      voiceService.updateTTSSpeakingState(false); // Starts auto-listening
+      _safeVoiceService.updateTTSSpeakingState(false); // Starts auto-listening
       
       // Fire the welcome message completed event if needed
       add(const WelcomeMessageCompleted());
       
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error playing welcome message: $e');
-      voiceService.updateTTSSpeakingState(false); // Reset state on error
+      _safeVoiceService.updateTTSSpeakingState(false); // Reset state on error
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
