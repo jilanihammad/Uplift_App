@@ -13,17 +13,13 @@ import '../blocs/voice_session_bloc.dart';
 import '../blocs/voice_session_state.dart';
 import '../blocs/voice_session_event.dart';
 import '../services/voice_service.dart';
-import '../services/vad_manager.dart';
-
 import '../di/interfaces/i_therapy_service.dart';
 import '../di/dependency_container.dart';
-import '../di/service_locator.dart';
 import '../di/interfaces/i_progress_service.dart';
 import '../di/interfaces/i_navigation_service.dart';
 import '../widgets/mood_selector.dart';
 import '../models/therapist_style.dart';
 import '../models/therapy_message.dart';
-import '../data/datasources/remote/api_client.dart';
 import '../utils/list_extensions.dart';
 import '../services/native_wakelock_service.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
@@ -35,36 +31,26 @@ import '../widgets/debug_drawer.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
-  final ITherapyService? therapyService;
-  final ApiClient? apiClient;
-  final VoiceService? voiceService;
-  final VADManager? vadManager;
   
   const ChatScreen({
     super.key, 
     this.sessionId,
-    this.therapyService,
-    this.apiClient,
-    this.voiceService,
-    this.vadManager,
   });
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider<VoiceSessionBloc>(
       create: (context) => VoiceSessionBloc(
-        voiceService: voiceService ?? serviceLocator<VoiceService>(),
-        vadManager: vadManager ?? DependencyContainer().vadManager,
-        therapyService: therapyService ?? DependencyContainer().therapy,
-        // Phase 6B-2: Pass IVoiceService interface for gradual migration
+        // Phase 1B.2: Standardized DI - use DependencyContainer for UI layer
+        voiceService: DependencyContainer().get<VoiceService>(),
+        vadManager: DependencyContainer().vadManager,
+        therapyService: DependencyContainer().therapy,
         interfaceVoiceService: DependencyContainer().voiceService,
+        progressService: DependencyContainer().progress,
+        navigationService: DependencyContainer().navigation,
       ),
       child: _ChatScreenBody(
         sessionId: sessionId,
-        therapyService: therapyService,
-        apiClient: apiClient,
-        voiceService: voiceService,
-        vadManager: vadManager,
       ),
     );
   }
@@ -72,18 +58,10 @@ class ChatScreen extends StatelessWidget {
 
 class _ChatScreenBody extends StatefulWidget {
   final String? sessionId;
-  final ITherapyService? therapyService;
-  final ApiClient? apiClient;
-  final VoiceService? voiceService;
-  final VADManager? vadManager;
   
   const _ChatScreenBody({
     super.key, 
     this.sessionId,
-    this.therapyService,
-    this.apiClient,
-    this.voiceService,
-    this.vadManager,
   });
 
   @override
@@ -195,8 +173,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     debugPrint('[ChatScreen] initState called');
     WidgetsBinding.instance.addObserver(this);
     
-    // Initialize services using dependency injection
-    _therapyService = widget.therapyService ?? DependencyContainer().therapy;
+    // Phase 1B.2: Standardized DI - use DependencyContainer for UI layer
+    _therapyService = DependencyContainer().therapy;
     _progressService = DependencyContainer().progress;
     _navigationService = DependencyContainer().navigation;
 
@@ -212,7 +190,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     );
 
     // Initialize services
-    _voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
+    _voiceService = DependencyContainer().get<VoiceService>();
     _initializeServices();
     _loadTherapistStyle();
 

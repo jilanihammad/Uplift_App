@@ -30,6 +30,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   final ITherapyService? therapyService;
   // Phase 6B-1: Optional IVoiceService parameter for gradual migration
   final IVoiceService? interfaceVoiceService;
+  // Phase 1B.1: Standardized service injection
+  final IProgressService? progressService;
+  final INavigationService? navigationService;
   StreamSubscription? _recordingStateSub;
   StreamSubscription? _audioPlaybackSub;
   StreamSubscription? _ttsStateSub;
@@ -39,6 +42,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     required this.vadManager,
     this.therapyService,
     this.interfaceVoiceService, // Optional for backward compatibility
+    // Phase 1B.1: Standardized service injection
+    this.progressService,
+    this.navigationService,
   }) : super(VoiceSessionState.initial()) {
     on<StartSession>(_onStartSession);
     on<EndSession>(_onEndSession);
@@ -106,10 +112,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   // Phase 6B-3: Helper for legacy-only methods that haven't migrated to interface yet
-  // Currently unused but kept for future migration of autoListeningCoordinator, recordingState stream, etc.
-  VoiceService get _legacyVoiceService {
-    return voiceService;
-  }
 
   void _onStartSession(StartSession event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(
