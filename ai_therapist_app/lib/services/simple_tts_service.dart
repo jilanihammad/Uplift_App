@@ -38,6 +38,15 @@ class SimpleTTSService implements ITTSService {
       return;
     }
 
+    // 🔍 TTS DUPLICATION TRACKING
+    final caller = _getCallerInfo();
+    if (kDebugMode) {
+      print('🎯 [TTS-TRACK] speak() called by: $caller');
+      print('🎯 [TTS-TRACK] Text: "${text.substring(0, text.length.clamp(0, 50))}${text.length > 50 ? "..." : ""}"');
+      print('🎯 [TTS-TRACK] Voice: $voice, Format: $format');
+      print('🎯 [TTS-TRACK] Current queue size: ${_queue.length}, Pending: $_pendingStreams');
+    }
+
     final req = TtsRequest(
       text: text.trim(), 
       voice: voice, 
@@ -391,6 +400,27 @@ class SimpleTTSService implements ITTSService {
           print('🔍 [TTS] Fired completion callback: isSpeaking=$isSpeaking (pending: $_pendingStreams)');
         }
       });
+    }
+  }
+
+  /// Get caller information for TTS duplication tracking
+  String _getCallerInfo() {
+    try {
+      final trace = StackTrace.current.toString();
+      final lines = trace.split('\n');
+      // Find the first line that's not in SimpleTTSService
+      for (final line in lines) {
+        if (line.contains('simple_tts_service.dart')) continue;
+        if (line.contains('VoiceSessionBloc')) return 'VoiceSessionBloc';
+        if (line.contains('AudioGenerator')) return 'AudioGenerator';
+        if (line.contains('TherapyService')) return 'TherapyService';
+        if (line.contains('VoiceSessionCoordinator')) return 'VoiceSessionCoordinator';
+        if (line.contains('DependencyContainer')) return 'DependencyContainer.direct';
+        if (line.contains('_onPlayWelcomeMessage')) return 'VoiceSessionBloc.welcomeMessage';
+      }
+      return 'Unknown';
+    } catch (e) {
+      return 'Error-getting-caller';
     }
   }
 
