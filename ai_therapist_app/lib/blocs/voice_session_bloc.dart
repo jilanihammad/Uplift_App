@@ -713,7 +713,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   void _onWelcomeMessageCompleted(
-      WelcomeMessageCompleted event, Emitter<VoiceSessionState> emit) {}
+      WelcomeMessageCompleted event, Emitter<VoiceSessionState> emit) {
+    emit(state.copyWith(isInitialGreetingPlayed: true));
+  }
 
   void _onSetInitializing(
       SetInitializing event, Emitter<VoiceSessionState> emit) {
