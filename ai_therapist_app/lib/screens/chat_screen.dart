@@ -56,6 +56,8 @@ class ChatScreen extends StatelessWidget {
         voiceService: voiceService ?? serviceLocator<VoiceService>(),
         vadManager: vadManager ?? DependencyContainer().vadManager,
         therapyService: therapyService ?? DependencyContainer().therapy,
+        // Phase 6B-2: Pass IVoiceService interface for gradual migration
+        interfaceVoiceService: DependencyContainer().voiceService,
       ),
       child: _ChatScreenBody(
         sessionId: sessionId,
