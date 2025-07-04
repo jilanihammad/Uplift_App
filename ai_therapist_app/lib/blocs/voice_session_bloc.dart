@@ -83,6 +83,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     });
 
     _ttsStateSub = voiceService.isTtsActuallySpeaking.listen((isSpeaking) {
+      if (kDebugMode) {
+        debugPrint('🎯 [TTS-TRACK] Legacy VoiceService TTS state: $isSpeaking');
+      }
       add(TtsStateChanged(isSpeaking));
     });
   }
@@ -641,6 +644,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     
     try {
       // Use VoiceService TTS state management to properly coordinate with auto-listening
+      if (kDebugMode) {
+        debugPrint('🎯 [TTS-TRACK] updateTTSSpeakingState(true) - Welcome message starting');
+      }
       _safeVoiceService.updateTTSSpeakingState(true); // Stops auto-listening
       
       // Use SimpleTTSService directly for welcome messages
@@ -650,6 +656,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint('[VoiceSessionBloc] Welcome TTS streaming completed');
       
       // Use VoiceService TTS state management to trigger auto-listening
+      if (kDebugMode) {
+        debugPrint('🎯 [TTS-TRACK] updateTTSSpeakingState(false) - Welcome message completed');
+      }
       _safeVoiceService.updateTTSSpeakingState(false); // Starts auto-listening
       
       // Fire the welcome message completed event if needed
@@ -657,6 +666,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error playing welcome message: $e');
+      if (kDebugMode) {
+        debugPrint('🎯 [TTS-TRACK] updateTTSSpeakingState(false) - Welcome message error recovery');
+      }
       _safeVoiceService.updateTTSSpeakingState(false); // Reset state on error
       emit(state.copyWith(errorMessage: e.toString()));
     }
