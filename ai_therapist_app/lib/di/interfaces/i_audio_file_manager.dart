@@ -20,8 +20,8 @@ abstract class IAudioFileManager {
   
   // Path management
   String generateTempFileName(String extension);
-  String getTempDirectory();
-  String getCacheDirectory();
+  Future<String> getTempDirectory();
+  Future<String> getCacheDirectory();
   Future<String> getAudioFilePath(String fileName);
   
   // Caching
