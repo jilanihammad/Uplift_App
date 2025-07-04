@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -13,6 +14,10 @@ import 'audio_player_manager.dart';
 import 'path_manager.dart';
 import '../config/app_config.dart';
 import 'package:ai_therapist_app/utils/audio_path_utils.dart';
+
+/// Feature flag to enable in-memory TTS playback (eliminates temp WAV files)
+/// Set to true to avoid writing ~1 MiB temp files per TTS response
+const bool kTTSUseInMemoryPlayback = true;
 
 /// Single-owner TTS service following best-in-class production patterns
 /// 
@@ -211,9 +216,9 @@ class SimpleTTSService implements ITTSService {
       print('🔍 [TTS] Buffering complete: ${audioBuffer.length} total bytes for ${req.id}');
     }
     
-    // Only create and play backup file if requested (optimization for welcome messages)
+    // Choose playback method based on backup file preference and feature flag
     if (req.makeBackupFile) {
-      // Save audio buffer to temporary file and play
+      // Traditional file-based playback (fallback mode)
       final audioFile = await _saveAudioBuffer(audioBuffer, req.format);
       
       try {
@@ -228,10 +233,28 @@ class SimpleTTSService implements ITTSService {
         rethrow;
       }
       // Note: Temp file cleanup is now handled by AudioPlayerManager after playback completion
+    } else if (kTTSUseInMemoryPlayback && audioBuffer.isNotEmpty) {
+      // 🚀 OPTIMIZED PATH: In-memory playback (eliminates file I/O)
+      try {
+        if (kDebugMode) print('🚀 [TTS] Starting in-memory playback for ${req.id} (${audioBuffer.length} bytes)');
+        
+        // Play audio directly from memory - no disk I/O!
+        await _audioPlayerManager.playAudioBytes(
+          Uint8List.fromList(audioBuffer),
+          debugName: 'tts_${req.id}',
+        );
+        
+        if (kDebugMode) print('✅ [TTS] In-memory playback completed for ${req.id}');
+      } catch (audioError) {
+        if (kDebugMode) print('❌ [TTS] In-memory playback failed, falling back to file: $audioError');
+        
+        // Fallback to file-based playback if in-memory fails
+        final audioFile = await _saveAudioBuffer(audioBuffer, req.format);
+        await _audioPlayerManager.playAudio(audioFile.path);
+      }
     } else {
-      if (kDebugMode) print('🔍 [TTS] Stream-only mode, no backup file needed for ${req.id}');
-      // For welcome messages: user already heard the audio via real-time streaming
-      // No backup file generation or additional playback needed
+      if (kDebugMode) print('🔍 [TTS] Stream-only mode, no playback needed for ${req.id}');
+      // For cases where streaming already played the audio and no backup is needed
     }
   }
 

@@ -651,7 +651,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       
       // Use SimpleTTSService directly for welcome messages
       final ttsService = DependencyContainer().ttsService;
-      await ttsService.speak(event.welcomeMessage);
+      await ttsService.speak(event.welcomeMessage, makeBackupFile: false);
       
       debugPrint('[VoiceSessionBloc] Welcome TTS streaming completed');
       
