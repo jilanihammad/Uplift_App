@@ -94,6 +94,13 @@ class AudioServicesModule {
         }
         return AudioFileManager();
       });
+      
+      // CRITICAL FIX: Initialize AudioFileManager immediately after registration
+      // This ensures AFM is ready before VoiceSessionCoordinator tries to use it
+      if (kDebugMode) {
+        print('[AudioServicesModule] Initializing AudioFileManager to prevent VSC initialization errors');
+      }
+      locator<IAudioFileManager>().initialize();
     } else {
       if (kDebugMode) {
         print('[AudioServicesModule] IAudioFileManager already registered, skipping');
