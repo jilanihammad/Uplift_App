@@ -10,7 +10,7 @@ class FeatureFlags {
   
   // Default values
   static const Map<String, bool> _defaults = {
-    useRefactoredVoicePipeline: false, // Default to legacy VoiceService
+    useRefactoredVoicePipeline: true, // Enable new pipeline to test Maya self-detection fix
   };
   
   static SharedPreferences? _prefs;

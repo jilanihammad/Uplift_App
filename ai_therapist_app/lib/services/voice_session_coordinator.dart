@@ -2,12 +2,14 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import '../di/interfaces/i_voice_service.dart';
 import '../di/interfaces/i_audio_recording_service.dart';
 import '../di/interfaces/i_tts_service.dart';
 import '../di/interfaces/i_websocket_audio_manager.dart';
 import '../di/interfaces/i_audio_file_manager.dart';
 import 'base_voice_service.dart';
+import 'voice_service.dart';
 // TODO: Add back in Phase 5 when integrating AutoListeningCoordinator
 // import 'auto_listening_coordinator.dart';
 // import 'vad_manager.dart';
@@ -208,10 +210,39 @@ class VoiceSessionCoordinator implements IVoiceService {
 
   @override
   void updateTTSSpeakingState(bool isSpeaking) {
-    // Delegate to TTS service for now
-    // TODO: In Phase 5, coordinate with AutoListeningCoordinator
     if (kDebugMode) {
-      print('VoiceSessionCoordinator: updateTTSSpeakingState($isSpeaking)');
+      print('VoiceSessionCoordinator: updateTTSSpeakingState($isSpeaking) - coordinating VAD');
+    }
+    
+    // For now, try to coordinate with legacy VoiceService AutoListeningCoordinator if available
+    // TODO: Integrate direct AutoListeningCoordinator in Phase 5
+    try {
+      // Import at runtime to avoid circular dependency
+      final serviceLocator = GetIt.instance;
+      if (serviceLocator.isRegistered<VoiceService>()) {
+        final legacyVoiceService = serviceLocator<VoiceService>();
+        
+        // Use the legacy coordination logic for TTS-VAD timing
+        if (!isSpeaking) {
+          legacyVoiceService.autoListeningCoordinator.startListening();
+          if (kDebugMode) {
+            print('VoiceSessionCoordinator: TTS done, VAD enabled via legacy AutoListeningCoordinator');
+          }
+        } else {
+          legacyVoiceService.autoListeningCoordinator.stopListening();
+          if (kDebugMode) {
+            print('VoiceSessionCoordinator: TTS started, VAD disabled via legacy AutoListeningCoordinator');
+          }
+        }
+      } else {
+        if (kDebugMode) {
+          print('VoiceSessionCoordinator: Legacy VoiceService not available, VAD coordination skipped');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('VoiceSessionCoordinator: Error coordinating with legacy AutoListeningCoordinator: $e');
+      }
     }
   }
 
