@@ -823,8 +823,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       status: VoiceSessionStatus.idle,
     ));
     
-    // If in voice mode, should generate TTS for welcome message
-    // This will be handled by ChatScreen for now to maintain UI separation
+    // If in voice mode, generate TTS for welcome message
+    if (state.isVoiceMode) {
+      if (kDebugMode) {
+        print('[VoiceSessionBloc] Starting welcome TTS for voice mode');
+      }
+      // Use existing PlayWelcomeMessage event to ensure proper TTS state management
+      add(PlayWelcomeMessage(welcomeMessage));
+    }
   }
 
   /// Helper method to generate welcome message based on mood

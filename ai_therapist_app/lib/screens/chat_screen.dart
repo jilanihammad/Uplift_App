@@ -638,11 +638,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   void _handleMoodSelection(Mood selectedMood) {
     final bloc = context.read<VoiceSessionBloc>();
+    
+    // Phase 1A.4: Dispatch BLoC event instead of direct logic
+    bloc.add(MoodSelected(selectedMood));
+    
+    debugPrint('Mood selected: $selectedMood, session is now active');
+
+    // UI concerns remain in UI layer (as planned)
     setState(() {
       _initialMood = selectedMood;
     });
-    bloc.add(ShowMoodSelector(false));
-    debugPrint('Mood selected: $selectedMood, session is now active');
 
     // Hide bottom navigation bar during therapy session to prevent accidental navigation
     _navigationService.hideBottomNav();
@@ -653,7 +658,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Enable wakelock now that therapy session is starting
     _enableWakelock();
 
-    _addInitialAIMessage(selectedMood);
+    // Start session timer (UI concern)
     _startSessionTimer();
   }
 
@@ -756,7 +761,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
 
     debugPrint('[ChatScreen] Sending text message: "$text"');
-    context.read<VoiceSessionBloc>().add(ProcessTextMessage(text));
+    // Phase 1A.4: Dispatch BLoC event instead of direct logic
+    context.read<VoiceSessionBloc>().add(TextMessageSent(text));
     _messageController.clear();
   }
 
@@ -777,23 +783,24 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     final bloc = context.read<VoiceSessionBloc>();
     final state = bloc.state;
 
-    // Mute speaker immediately to stop any ongoing TTS
-    bloc.add(SetSpeakerMuted(true));
-
-    // Disable wakelock immediately since session is ending
-    try {
-      await NativeWakelockService.disable();
-      debugPrint('[ChatScreen] Wakelock disabled successfully in _endSession');
-    } catch (e) {
-      debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
-    }
-
     // Prevent multiple end session calls
     if (state.isEndingSession) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Session ending in progress...')),
       );
       return;
+    }
+
+    // Phase 1A.4: Dispatch BLoC event for core business logic
+    bloc.add(const EndSessionRequested());
+
+    // UI concerns remain in UI layer (as planned)
+    // Disable wakelock immediately since session is ending
+    try {
+      await NativeWakelockService.disable();
+      debugPrint('[ChatScreen] Wakelock disabled successfully in _endSession');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
     }
 
     // Explicitly stop VAD immediately to prevent it from continuing to run
