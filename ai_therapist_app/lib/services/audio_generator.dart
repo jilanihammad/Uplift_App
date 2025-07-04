@@ -863,7 +863,7 @@ class AudioGenerator {
       
       // Use new simplified API - single method call!
       // SimpleTTSService will automatically call _ttsStateCallback(false) when done
-      await _ttsService.speak(completeText.toString());
+      await _ttsService.speak(completeText.toString(), makeBackupFile: false);
       
       log.i('🎵 TTS streaming completed with simplified API');
       

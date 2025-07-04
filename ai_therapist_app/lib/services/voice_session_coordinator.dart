@@ -136,7 +136,7 @@ class VoiceSessionCoordinator implements IVoiceService {
 
   @override
   Future<void> speakText(String text, {String voice = 'alloy'}) async {
-    await _ttsService.speak(text, voice: voice);
+    await _ttsService.speak(text, voice: voice, makeBackupFile: false);
   }
 
   @override
@@ -400,7 +400,7 @@ class VoiceSessionCoordinator implements IVoiceService {
 
     try {
       // Use new simplified API
-      await _ttsService.speak(text);
+      await _ttsService.speak(text, makeBackupFile: false);
       
       if (kDebugMode) {
         print('[VoiceSessionCoordinator] TTS completed, coordinating with auto-listening');

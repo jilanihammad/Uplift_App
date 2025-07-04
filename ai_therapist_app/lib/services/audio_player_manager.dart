@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -511,6 +513,79 @@ class AudioPlayerManager {
       if (kDebugMode) {
         print('❌ Error setting volume: $e');
       }
+    }
+  }
+
+  /// Play audio directly from memory bytes (eliminates file I/O)
+  /// This is the optimized path for TTS that avoids unnecessary disk writes
+  Future<void> playAudioBytes(Uint8List audioBytes, {String? debugName}) async {
+    if (audioBytes.isEmpty) {
+      _errorController.add('Empty audio bytes provided for playback');
+      throw ArgumentError('Empty audio bytes provided for playback');
+    }
+
+    // Generate unique ID for this audio request  
+    final id = '${DateTime.now().microsecondsSinceEpoch}_memory_${audioBytes.hashCode}';
+    final displayName = debugName ?? 'in-memory-audio';
+    
+    if (kDebugMode) {
+      print('🎧 AudioPlayerManager: Playing ${audioBytes.length} bytes in-memory: $displayName (ID: $id)');
+    }
+
+    try {
+      // Stop any current playback
+      await _audioPlayer.stop();
+      
+      // Clear force override when starting new playback
+      _forceIsPlayingState = null;
+      
+      // Load audio from memory bytes - this is the key optimization!
+      // Create a data URI from bytes for just_audio
+      final base64Audio = base64Encode(audioBytes);
+      final dataUri = 'data:audio/wav;base64,$base64Audio';
+      await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(dataUri)));
+      
+      // Create a completer for playback completion
+      final playbackCompleter = Completer<void>();
+      
+      // Listen for completion
+      StreamSubscription? subscription;
+      subscription = _audioPlayer.processingStateStream.listen((state) {
+        if (state == ProcessingState.completed ||
+            state == ProcessingState.idle ||
+            (state == ProcessingState.ready && !_audioPlayer.playing)) {
+          subscription?.cancel();
+          
+          if (kDebugMode) {
+            print('🎧 In-memory audio playback completed: $displayName');
+          }
+          
+          // Force playing state to false when completed
+          _forceIsPlayingState = false;
+          _emitPlayingState(false);
+          
+          if (!playbackCompleter.isCompleted) {
+            playbackCompleter.complete();
+          }
+        }
+      });
+      
+      // Start playback
+      await _audioPlayer.play();
+      
+      // Wait for playback to complete
+      await playbackCompleter.future;
+      
+      if (kDebugMode) {
+        print('✅ In-memory audio playback finished: $displayName');
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error playing in-memory audio: $e');
+      }
+      _errorController.add('Audio playback error: $e');
+      rethrow;
     }
   }
 
