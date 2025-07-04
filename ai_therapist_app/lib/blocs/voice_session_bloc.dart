@@ -1,6 +1,12 @@
 /// VoiceSessionBloc manages the entire therapy session state including voice/text mode switching,
 /// audio recording, TTS playback, message processing, and session lifecycle (mood selection, timer, etc).
 /// This is the central brain that coordinates all real-time interactions during a therapy session.
+///
+/// Phase 6 Migration Status: ✅ COMPLETED
+/// - Supports both legacy VoiceService and new IVoiceService interface
+/// - Uses _safeVoiceService helper for gradual migration
+/// - 18 method calls migrated to interface pattern
+/// - Maintains full backward compatibility
 
 import 'dart:async';
 import 'dart:math';

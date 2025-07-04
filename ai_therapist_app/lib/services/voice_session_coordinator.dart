@@ -16,6 +16,12 @@ import 'voice_service.dart';
 
 /// Coordinates voice session workflow by orchestrating focused audio services
 /// Acts as a facade implementing IVoiceService while delegating to specialized services
+/// 
+/// Phase 6 Enhancement: Extended IVoiceService implementation
+/// - Added stopAudio(), resetTTSState(), isTtsActuallySpeaking stream
+/// - Added processRecordedAudioFile(), setSpeakerMuted()  
+/// - Added enableAutoMode(), disableAutoMode()
+/// - Smart delegation to legacy VoiceService for unimplemented features
 class VoiceSessionCoordinator implements IVoiceService {
   final IAudioRecordingService _recordingService;
   final ITTSService _ttsService;
