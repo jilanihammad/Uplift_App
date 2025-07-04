@@ -21,6 +21,7 @@ abstract class IVoiceService {
   // Audio playback
   Future<void> playAudio(String audioPath);
   Future<void> stopPlayback();
+  Future<void> stopAudio(); // Legacy compatibility
   Future<void> pausePlayback();
   Future<void> resumePlayback();
   bool get isPlaying;
@@ -32,9 +33,12 @@ abstract class IVoiceService {
   
   // TTS State Management (for auto-listening coordination)
   void updateTTSSpeakingState(bool isSpeaking);
+  Stream<bool> get isTtsActuallySpeaking;
+  void resetTTSState();
   
   // Audio processing
   Future<Uint8List?> processAudioWithRNNoise(Uint8List audioData);
+  Future<String> processRecordedAudioFile(String audioPath);
   
   // WebSocket streaming
   Future<void> connectToBackend();
@@ -50,6 +54,11 @@ abstract class IVoiceService {
   // Configuration
   void setAudioQuality(String quality);
   void setVoiceSettings(Map<String, dynamic> settings);
+  void setSpeakerMuted(bool isMuted);
+  
+  // Auto-listening mode
+  Future<void> enableAutoMode();
+  Future<void> disableAutoMode();
   
   // Lifecycle
   Future<void> initialize();

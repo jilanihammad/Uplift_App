@@ -130,15 +130,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         '[VoiceSessionBloc] Ending session - cleaning up audio and resources...');
 
     try {
-      await voiceService.stopAudio();
+      await _safeVoiceService.stopAudio();
       debugPrint('[VoiceSessionBloc] Audio stopped successfully');
 
-      voiceService.resetTTSState();
+      _safeVoiceService.resetTTSState();
 
       await voiceService.autoListeningCoordinator.disableAutoMode();
 
       try {
-        await voiceService.stopRecording();
+        await _safeVoiceService.stopRecording();
       } on NotRecordingException {
         // Not recording, that's fine
       }
@@ -197,16 +197,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           isInitialGreetingPlayed: false,
         ));
 
-        await voiceService.stopAudio();
+        await _safeVoiceService.stopAudio();
         debugPrint('[VoiceSessionBloc] Audio stopped successfully');
 
-        voiceService.resetTTSState();
+        _safeVoiceService.resetTTSState();
 
         await Future.delayed(const Duration(milliseconds: 200));
 
         // ALWAYS enable auto mode when switching to voice mode
         // Keep autoModeEnabled=true throughout voice sessions
-        await voiceService.enableAutoMode();
+        await _safeVoiceService.enableAutoMode();
         debugPrint('[VoiceSessionBloc] Auto mode enabled for voice session');
         
         // Only start listening immediately if this is a manual mode switch (user has messages)
@@ -231,7 +231,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         await voiceService.autoListeningCoordinator.disableAutoMode();
         String? path;
         try {
-          path = await voiceService.stopRecording();
+          path = await _safeVoiceService.stopRecording();
         } on NotRecordingException {
           path = null;
         }
@@ -258,7 +258,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     try {
       final transcription =
-          await voiceService.processRecordedAudioFile(event.audioPath);
+          await _safeVoiceService.processRecordedAudioFile(event.audioPath);
       debugPrint('[VoiceSessionBloc] Transcription: "$transcription"');
 
       if (transcription.trim().isEmpty || transcription.startsWith("Error:")) {
@@ -550,7 +550,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onSetSpeakerMuted(
       SetSpeakerMuted event, Emitter<VoiceSessionState> emit) {
-    voiceService.setSpeakerMuted(event.isMuted);
+    _safeVoiceService.setSpeakerMuted(event.isMuted);
     emit(state.copyWith(speakerMuted: event.isMuted));
   }
 
@@ -584,16 +584,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
 
     try {
-      await voiceService.stopAudio();
+      await _safeVoiceService.stopAudio();
       debugPrint('[VoiceSessionBloc] Audio stopped successfully');
 
-      voiceService.resetTTSState();
+      _safeVoiceService.resetTTSState();
 
       // Add buffer delay to prevent Maya from detecting her own voice
       debugPrint('[VoiceSessionBloc] Adding 125ms buffer before enabling auto-listening...');
       await Future.delayed(const Duration(milliseconds: 125));
 
-      await voiceService.enableAutoMode();
+      await _safeVoiceService.enableAutoMode();
       emit(state.copyWith(isAutoListeningEnabled: true));
 
       voiceService.autoListeningCoordinator.triggerListening();
@@ -624,7 +624,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       StopAudio event, Emitter<VoiceSessionState> emit) async {
     debugPrint('[VoiceSessionBloc] Stopping audio...');
     try {
-      await voiceService.stopAudio();
+      await _safeVoiceService.stopAudio();
       emit(state.copyWith(isAiSpeaking: false));
       debugPrint('[VoiceSessionBloc] Audio stopped successfully');
     } catch (e) {
@@ -637,7 +637,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       PlayAudio event, Emitter<VoiceSessionState> emit) async {
     debugPrint('[VoiceSessionBloc] Playing audio: ${event.audioPath}');
     try {
-      await voiceService.playAudio(event.audioPath);
+      await _safeVoiceService.playAudio(event.audioPath);
       debugPrint('[VoiceSessionBloc] Audio played successfully');
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Failed to play audio: $e');
