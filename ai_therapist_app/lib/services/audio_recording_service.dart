@@ -49,9 +49,10 @@ class AudioRecordingService implements IAudioRecordingService {
   // Timer for audio level monitoring
   Timer? _audioLevelTimer;
   
-  /// Constructor
-  AudioRecordingService() {
-    _recordingManager = RecordingManager();
+  /// Constructor with required RecordingManager injection
+  /// This prevents race conditions by ensuring all services use the same instance
+  AudioRecordingService({required RecordingManager recordingManager}) {
+    _recordingManager = recordingManager;
     _initializeDefaultSettings();
   }
   

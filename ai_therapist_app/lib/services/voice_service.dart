@@ -31,6 +31,7 @@ import 'auto_listening_coordinator.dart';
 import 'vad_manager.dart';
 import 'audio_player_manager.dart';
 import 'recording_manager.dart';
+import 'audio_recording_service.dart';
 import 'base_voice_service.dart' as base_voice;
 import 'path_manager.dart';
 
@@ -138,9 +139,9 @@ class VoiceService {
   //   _ensureStreamControllerIsActive();
   //   return _recordingStateStream!;
   // }
-  // Expose RecordingManager's stream directly
+  // Phase 2.1.1: Expose AudioRecordingService's stream (delegates to RecordingManager)
   Stream<base_voice.RecordingState> get recordingState =>
-      _recordingManager.recordingStateStream;
+      _audioRecordingService.recordingStateStream;
 
   // Current state of recording - REMOVED
   // RecordingState _currentState = RecordingState.ready;
@@ -200,6 +201,7 @@ class VoiceService {
   late final AutoListeningCoordinator _autoListeningCoordinator;
   late final AudioPlayerManager _audioPlayerManager;
   late final RecordingManager _recordingManager;
+  late final AudioRecordingService _audioRecordingService;
 
   // Expose coordinator's streams
   Stream<AutoListeningState> get autoListeningStateStream =>
@@ -258,6 +260,7 @@ class VoiceService {
     // _ensureStreamControllerIsActive(); // REMOVED, no local controller
     _audioPlayerManager = AudioPlayerManager();
     _recordingManager = RecordingManager(); // Already initialized here
+    _audioRecordingService = AudioRecordingService(recordingManager: _recordingManager); // Phase 2.1.1: Inject shared RecordingManager
     _vadManager = VADManager();
     _autoListeningCoordinator = AutoListeningCoordinator(
       audioPlayerManager: _audioPlayerManager,
@@ -266,6 +269,7 @@ class VoiceService {
     );
     if (kDebugMode) {
       print('VoiceService initialized with constructor injection');
+      print('[VoiceService] AudioRecordingService added with shared RecordingManager - Phase 2.1.1 Hotfix');
       print(
           '[VoiceService] AutoListeningCoordinator initialized. Forcing auto mode enabled.');
     }
@@ -321,6 +325,15 @@ class VoiceService {
       // Reset the conversation context
       _conversationContext = [];
 
+      // Phase 2.1.1: Initialize AudioRecordingService
+      if (kDebugMode) {
+        print('[VoiceService] Initializing AudioRecordingService...');
+      }
+      await _audioRecordingService.initialize();
+      if (kDebugMode) {
+        print('[VoiceService] AudioRecordingService initialized successfully');
+      }
+
       // _currentState = RecordingState.ready; // REMOVED
       // _recordingStateController!.add(_currentState); // REMOVED
 
@@ -356,27 +369,23 @@ class VoiceService {
 
   // Start recording
   Future<void> startRecording() async {
-    // try { // REMOVED outer try-catch, delegate to RecordingManager
+    // Phase 2.1.1: Delegate to AudioRecordingService instead of RecordingManager directly
     if (kDebugMode) {
       print(
-          '⏺️ VOICE DEBUG: VoiceService.startRecording called - delegating to RecordingManager');
+          '⏺️ VOICE DEBUG: VoiceService.startRecording called - delegating to AudioRecordingService');
     }
 
     if (_isWeb) {
-      // Simulate recording in web mode - Potentially remove if RecordingManager handles web differently or not at all
-      // _currentState = RecordingState.recording; // REMOVED
-      // _recordingStateController!.add(_currentState); // REMOVED
+      // Simulate recording in web mode - AudioRecordingService handles web compatibility
       if (kDebugMode) {
         print(
-            'Recording started (web mode simulation in VoiceService) - Review if RecordingManager handles this');
+            'Recording started (web mode) - AudioRecordingService handles web compatibility');
       }
-      // For now, web will be a no-op here as RecordingManager likely handles native.
-      // If web recording is needed, RecordingManager should support it.
-      return;
+      // AudioRecordingService will handle web mode appropriately
     }
 
-    // Delegate to RecordingManager
-    await _recordingManager.startRecording();
+    // Phase 2.1.1: Delegate to AudioRecordingService
+    await _audioRecordingService.startRecording();
 
     // } catch (e) { // REMOVED
     //   _currentState = RecordingState.error;
@@ -412,8 +421,8 @@ class VoiceService {
 
     if (!_isWeb) {
       try {
-        // Delegate to RecordingManager
-        recordedFilePath = await _recordingManager.stopRecording();
+        // Phase 2.1.1: Delegate to AudioRecordingService
+        recordedFilePath = await _audioRecordingService.stopRecording();
         _recordingPath = recordedFilePath;
       } on NotRecordingException catch (e) {
         if (kDebugMode) {
@@ -930,6 +939,9 @@ class VoiceService {
     // }
 
     _recordingManager.dispose();
+    
+    // Phase 2.1.1: Dispose AudioRecordingService
+    _audioRecordingService.dispose();
 
     // Clean up any temporary files (only on non-web platforms)
     if (!_isWeb &&

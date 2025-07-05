@@ -9,6 +9,7 @@ import '../data/datasources/local/app_database.dart';
 import '../utils/database_helper.dart';
 import '../services/memory_manager.dart';
 import '../services/config_service.dart';
+import '../services/recording_manager.dart';
 
 /// New dependency injection container to replace service locator pattern
 /// This provides a clean interface for dependency injection with proper lifecycle management
@@ -99,6 +100,7 @@ class DependencyContainer {
   AudioGenerator get audioGenerator => get<AudioGenerator>();
   ITTSService get ttsService => get<ITTSService>();
   VADManager get vadManager => get<VADManager>();
+  RecordingManager get recordingManager => get<RecordingManager>();
   
   // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;
