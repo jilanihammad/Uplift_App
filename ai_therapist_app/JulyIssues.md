@@ -1,454 +1,796 @@
-#Important! Mark each step as complete once it has been successfully implemented and tested before proceeding to the next step
+# Critical Codebase Refactoring Plan - AI Therapist App (REVISED)
 
-# ChatScreen Refactoring Plan - Performance-Optimized Approach
+## 🚨 ENGINEER FEEDBACK INCORPORATED - SAFETY-FIRST APPROACH
 
-## Current Implementation Issues
+**Status**: REVISED based on critical engineering feedback  
+**Approach**: Test-driven, safety-first refactoring with realistic timelines  
+**Key Change**: VoiceSessionBloc first (engineer's recommendation)
 
-The current implementation of chat_screen.dart has the following characteristics:
-
-* **Hybrid State Management**: It uses flutter_bloc for some state (VoiceSessionState), but the _ChatScreenBodyState StatefulWidget also manages a significant amount of its own state using setState. This leads to a mix of reactive and imperative UI updates, making the code harder to follow and maintain.
-
-* **Large Widget Class**: The _ChatScreenBodyState class is overly large (1131 lines) and violates the Single Responsibility Principle. It handles UI rendering, business logic, service initialization, session management, and side effects like wakelock and navigation.
-
-* **Inconsistent Dependency Injection**: Dependencies are passed through both the constructor and a global DependencyContainer/serviceLocator. This makes it unclear where dependencies come from and makes the widget harder to test in isolation.
-
-* **Coupled Logic**: Business logic (like generating welcome messages, handling session summaries) is tightly coupled with the UI code in private methods within the _ChatScreenBodyState.
-
-## Refactoring Goals
-
-The goal of this refactoring is to improve separation of concerns while **prioritizing AI/TTS response speed and stability**. We will achieve this through strategic migration of business logic to BLoC while keeping performance-critical UI concerns in the UI layer.
-
-**Key Principles:**
-- ✅ Move true business logic to BLoC (session management, AI interactions)
-- ❌ Keep UI concerns in UI layer (wakelock, animations, controllers)
-- ✅ Focus on high-value widget extractions vs comprehensive decomposition
-- ✅ Validate performance after each phase
-- ✅ Test thoroughly on device after each micro-step
+### Engineer's Critical Concerns Addressed:
+✅ **Unit-test scaffolding missing** - Added Phase 0.5 for characterization tests  
+✅ **Threading/isolate boundaries** - Threading model documentation required  
+✅ **Public API freeze** - Explicit legacy interface contracts  
+✅ **DI explosion** - Registration mapping before decomposition  
+✅ **Timeline realism** - 30% buffer added, 30%/30%/40% breakdown
 
 ---
 
-## Phase 1A: Strategic BLoC State Enhancement (Week 1)
+## Executive Summary
 
-### Goal
-Add essential session state to VoiceSessionBloc without moving UI-specific concerns.
+After comprehensive analysis and critical engineering review, I've identified **4 CRITICAL** refactoring areas requiring immediate attention. The engineer's feedback revealed missing safety measures in the original plan. This revised approach prioritizes **safety, testing, and realistic timelines**.
 
-### Micro-Step 1A.1: Extend VoiceSessionState ✅ COMPLETE
-**Duration**: 2-3 hours
+## 🔴 CRITICAL ISSUES (Immediate Action Required)
+
+### 1. **Monolithic Service Decomposition** (Priority: CRITICAL)
+**Problem**: Three massive services break Single Responsibility Principle:
+- `AutoListeningCoordinator`: 1,282 lines - VAD + Recording + Audio + State Management
+- `VoiceService`: 1,088 lines - Audio + TTS + WebSocket + File Management + Permissions  
+- `VoiceSessionBloc`: 911 lines - Session + Audio + Messages + Timers + UI State
+
+**Risk**: Code brittleness, testing complexity, debugging nightmares
+
+### 2. **Heavy Main.dart Initialization** (Priority: CRITICAL)
+**Problem**: 893-line main.dart with complex sync/async initialization chains  
+**Risk**: App startup failures, race conditions, poor UX
+
+### 3. **Dual Dependency Systems** (Priority: HIGH)
+**Problem**: Hybrid GetIt + DependencyContainer creates confusion  
+**Risk**: Maintenance overhead, inconsistent patterns
+
+### 4. **Large Supporting Files** (Priority: MEDIUM)
+- `EnhancedVADManager`: 980 lines
+- `HomeScreen`: 931 lines  
+- `AudioGenerator`: 911 lines
+- `ServiceLocator`: 814 lines
+
+---
+
+## REVISED REFACTORING PLAN - SAFETY-FIRST METHODOLOGY
+
+### **PHASE 0.5: Foundation & Safety (Week 0.5) - MANDATORY**
+
+#### **Step 0.5.1: Test-First Characterization (2-3 days)**
+**Duration**: 2-3 days with 30% buffer = **3-4 days**
 
 **Changes:**
 ```dart
-// Add to VoiceSessionState
-final String? sessionId;           // Move from _currentSessionId
-final Mood? mood;                  // Move from _initialMood  
-final TherapistStyle? therapistStyle; // Move from _therapistStyle
-final Duration? selectedDuration;  // Keep existing
-final bool isEndingSession;        // Add for end session flow
-final int sessionTimerSeconds;     // Keep existing
+// Create comprehensive characterization tests BEFORE touching code
+class VoiceSessionBlocCharacterizationTest {
+  testCurrentEventHandling_AsIs() { /* Test exact current behavior */ }
+  testStateTransitions_AsIs() { /* Document all current transitions */ }
+  testTimerBehavior_AsIs() { /* Capture current timing logic */ }
+  testMessageFlow_AsIs() { /* Record current message handling */ }
+}
+
+class AutoListeningCoordinatorCharacterizationTest {
+  testVADLifecycle_AsIs() { /* Current VAD behavior */ }
+  testRecordingStates_AsIs() { /* Current recording flow */ }
+  testThreadingModel_AsIs() { /* Document current thread usage */ }
+}
+
+class VoiceServiceCharacterizationTest {
+  testAudioPipeline_AsIs() { /* Current audio processing */ }
+  testPlatformChannels_AsIs() { /* Current platform integration */ }
+  testWebSocketFlow_AsIs() { /* Current WebSocket behavior */ }
+}
 ```
 
-**Testing After Micro-Step 1A.1:**
-- [ ] Build succeeds: `flutter build apk --debug`
-- [ ] App launches without crashes
-- [ ] Can navigate to chat screen
-- [ ] All existing functionality works (mood selection, duration, voice/text modes)
-- [ ] **Device Test**: Complete voice interaction session end-to-end
-- [ ] **Performance Check**: Measure AI response time baseline
+**Success Criteria:**
+- 100% of current public methods have characterization tests
+- All current behavior documented in test form
+- Baseline performance metrics captured
 
-### Micro-Step 1A.2: Add Essential BLoC Events ✅ COMPLETE
-**Duration**: 2-3 hours
+#### **Step 0.5.2: Threading Model Documentation (1 day)**
+**Duration**: 1 day with 30% buffer = **1.5 days**
+
+**Changes:**
+```
+THREADING MODEL DOCUMENTATION:
+
+VoiceService (Main Thread)
+├── WebSocketAudioManager (Background Isolate)
+│   ├── Connection: dart:isolate 
+│   └── Audio Processing: Platform Channel
+├── AudioPlayer (Platform Channel - Android AudioManager)
+├── TTS (Platform Channel - Android TextToSpeech)
+└── FileManager (Main Thread + IO Thread)
+
+AutoListeningCoordinator (Main Thread)
+├── VAD Processing (Native Plugin - RNNoise C++)
+│   ├── Audio Input: Platform Channel
+│   └── Processing: Native Thread
+├── Recording (Platform Channel - Android MediaRecorder)
+└── Stream Controllers (Main Thread - Dart)
+
+VoiceSessionBloc (Main Thread)
+├── Event Processing (Main Thread - Dart)
+├── State Management (Main Thread - Dart)  
+└── Timer Management (Main Thread - Dart Timer)
+
+CRITICAL BOUNDARIES:
+- Platform Channel calls must stay on main thread
+- Isolate communication via SendPort/ReceivePort
+- Native plugin callbacks arrive on platform thread
+- UI updates must happen on main thread
+```
+
+**Success Criteria:**
+- Complete thread ownership mapping
+- Platform channel boundary documentation
+- Isolate communication paths documented
+
+#### **Step 0.5.3: API Contract Freeze (1 day)**
+**Duration**: 1 day with 30% buffer = **1.5 days**
 
 **Changes:**
 ```dart
-// Add to voice_session_event.dart
-class SessionStarted extends VoiceSessionEvent {
-  final String? sessionId;
-  const SessionStarted(this.sessionId);
+// Define EXACT legacy API contracts that CANNOT change
+abstract class ILegacyVoiceSessionBloc {
+  // FROZEN API - These signatures CANNOT change during refactoring
+  void add(VoiceSessionEvent event); // MUST maintain exact signature
+  Stream<VoiceSessionState> get stream; // MUST maintain exact stream type
+  VoiceSessionState get state; // MUST maintain exact state type
+  
+  // Document ALL 30+ current event handlers
+  // FROZEN - These event types CANNOT change
+  void _onStartListening(StartListening event, Emitter<VoiceSessionState> emit);
+  void _onStopListening(StopListening event, Emitter<VoiceSessionState> emit);
+  // ... ALL current handlers documented
 }
 
-class MoodSelected extends VoiceSessionEvent {
-  final Mood mood;
-  const MoodSelected(this.mood);
+abstract class ILegacyAutoListeningCoordinator {
+  // FROZEN API - Current public interface  
+  void enableAutoMode(); // MUST maintain exact signature
+  void disableAutoMode(); // MUST maintain exact signature
+  Stream<bool> get autoModeEnabledStream; // MUST maintain exact stream
+  Stream<AutoListeningState> get stateStream; // MUST maintain exact enum
+  
+  // Callback signatures CANNOT change
+  Function()? onSpeechDetectedCallback; // MUST maintain exact type
+  Function(String audioPath)? onRecordingCompleteCallback; // MUST maintain exact type
 }
 
-class DurationSelected extends VoiceSessionEvent {
-  final Duration duration;
-  const DurationSelected(this.duration);
-}
-
-class TextMessageSent extends VoiceSessionEvent {
-  final String message;
-  const TextMessageSent(this.message);
-}
-
-class EndSessionRequested extends VoiceSessionEvent {
-  const EndSessionRequested();
+abstract class ILegacyVoiceService {
+  // FROZEN API - Current public interface
+  Future<void> startRecording(); // MUST maintain exact signature
+  Future<void> stopRecording(); // MUST maintain exact signature  
+  Stream<RecordingState> get recordingState; // MUST maintain exact enum
+  Stream<bool> get isTtsActuallySpeaking; // MUST maintain exact stream
 }
 ```
 
-**Testing After Micro-Step 1A.2:**
-- [ ] Build succeeds: `flutter build apk --debug`
-- [ ] App launches without crashes
-- [ ] Events compile correctly
-- [ ] **Device Test**: Navigate through chat screen without issues
-- [ ] No regressions in existing functionality
+**Success Criteria:**
+- All current public APIs documented as frozen contracts
+- Compile-time interface checks in place
+- Legacy interface tests pass
 
-### Micro-Step 1A.3: Implement Core Event Handlers ✅ COMPLETE
-**Duration**: 4-6 hours
-
-**Changes:**
-- Move `_handleMoodSelection` logic to `on<MoodSelected>`
-- Move `_sendMessage` logic to `on<TextMessageSent>`  
-- Move `_endSession` core logic to `on<EndSessionRequested>`
-- **Keep wakelock management in UI layer**
-- **Keep navigation in UI layer**
-
-**Testing After Micro-Step 1A.3:**
-- [ ] Build succeeds: `flutter build apk --debug`
-- [ ] App launches without crashes
-- [ ] Mood selection works correctly
-- [ ] Text message sending works
-- [ ] Session ending works
-- [ ] **Device Test**: Complete therapy session with mood selection → conversation → end session
-- [ ] **Performance Check**: AI response time unchanged from baseline
-- [ ] **Voice Test**: Voice interactions still work smoothly
-
-### Micro-Step 1A.4: Update ChatScreen to Use BLoC Events ✅ COMPLETE
-**Duration**: 3-4 hours
-
-**Changes:**
-- Replace direct method calls with BLoC events in ChatScreen
-- Update UI to read from BLoC state instead of local state
-- Maintain controllers and animations in StatefulWidget
-
-**Testing After Micro-Step 1A.4:**
-- [ ] Build succeeds: `flutter build apk --debug`
-- [ ] App launches without crashes
-- [ ] All user interactions trigger correct BLoC events
-- [ ] UI updates correctly from BLoC state
-- [ ] **Device Test**: Full session flow works identically to before
-- [ ] **Performance Check**: No degradation in AI/TTS response times
-- [ ] **Edge Case Test**: Handle app lifecycle events correctly (background/foreground)
-
-**Critical Fix Applied**: Fixed missing TTS welcome message by adding PlayWelcomeMessage event dispatch in _onMoodSelected handler. This ensures Maya greets the user before starting to listen, with proper VAD coordination.
-
----
-
-## Phase 1B: DI Standardization (Week 1)
-
-### Goal
-Clean up dependency injection inconsistencies without affecting performance.
-
-### Micro-Step 1B.1: Standardize Service Injection in BLoC
-**Duration**: 2-3 hours
+#### **Step 0.5.4: Integration Test Harness (1-2 days)**
+**Duration**: 1-2 days with 30% buffer = **2-3 days**
 
 **Changes:**
 ```dart
-// Update VoiceSessionBloc constructor
-VoiceSessionBloc({
-  required this.voiceService,
-  required this.vadManager, 
-  required this.therapyService,
-  required this.progressService,
-  required this.navigationService,
-  this.interfaceVoiceService,
-});
+// Mock audio infrastructure for CI testing
+class MockAudioHarness {
+  final FakeMicrophoneInput mockMic;
+  final StubTTSOutput stubTTS;
+  final MockPlatformChannels mockChannels;
+  
+  // Simulate audio input without actual device
+  void simulateUserSpeech(Duration duration) { /* ... */ }
+  void simulateSilence(Duration duration) { /* ... */ }
+  void simulateBackgroundNoise() { /* ... */ }
+  
+  // Verify audio output without actual playback
+  void verifyTTSGenerated(String expectedText) { /* ... */ }
+  void verifyAudioRecorded(Duration expectedLength) { /* ... */ }
+}
+
+// Integration test that runs without device audio
+void testCompleteVoiceSession_WithMockAudio() {
+  final harness = MockAudioHarness();
+  
+  // Test complete flow with simulated audio
+  harness.simulateUserSpeech(Duration(seconds: 3));
+  // Verify processing...
+  harness.verifyTTSGenerated("Expected AI response");
+}
 ```
 
-**Testing After Micro-Step 1B.1:**
-- [ ] Build succeeds: `flutter build apk --debug`
-- [ ] App launches without crashes
-- [ ] BLoC receives all required services
-- [ ] **Device Test**: Services work correctly in session
+**Success Criteria:**
+- Complete voice session testable without device audio
+- CI can run all audio tests in headless mode
+- Platform channel mocking complete
 
-### Micro-Step 1B.2: Update ChatScreen DI Pattern
-**Duration**: 2-3 hours
+#### **Step 0.5.5: Package Version Freeze (1 day)**
+**Duration**: 1 day with 30% buffer = **1.5 days**
 
 **Changes:**
-- Remove dual constructor/service locator pattern
-- Standardize on constructor injection where possible
-- Keep DependencyContainer for UI layer convenience
+```yaml
+# pubspec.yaml - LOCK audio-related packages during refactoring
+dependencies:
+  flutter_sound: 9.2.13          # LOCKED - no version changes during refactor
+  permission_handler: 10.4.3     # LOCKED - no version changes during refactor  
+  record: 5.0.1                  # LOCKED - no version changes during refactor
+  just_audio: 0.10.0             # LOCKED - no version changes during refactor
+  web_socket_channel: 3.0.1      # LOCKED - no version changes during refactor
+  audio_session: 0.1.21          # LOCKED - no version changes during refactor
+  
+# Document reason for version lock
+# TODO: Remove version locks after refactoring complete - Phase 6
+```
 
-**Testing After Micro-Step 1B.2:**
-- [ ] Build succeeds: `flutter build apk --debug`
-- [ ] App launches without crashes  
-- [ ] All services accessible and functional
-- [ ] **Device Test**: Complete session works with new DI pattern
-- [ ] **Memory Test**: No memory leaks with new injection pattern
+**Success Criteria:**
+- All audio-related packages locked to current versions
+- No dependency updates during refactoring period
+- Version lock documentation in place
 
 ---
 
-## Phase 2: Focused Widget Extraction (Week 2)
+### **PHASE 1: VoiceSessionBloc First (Week 1-2) - ENGINEER'S RECOMMENDATION**
 
-### Goal
-Extract only high-value widgets that improve maintainability without over-engineering.
+#### **Why VoiceSessionBloc First (Engineer's Insight):**
+✅ **Pure Dart-side** - No platform channels or isolates to break  
+✅ **Hidden dependencies surface early** - Will reveal coupling we missed  
+✅ **Parallel development** - Audio stack can be refactored separately  
+✅ **Lower risk** - State management easier to test than audio pipelines  
+✅ **Immediate value** - BLoC clarity improves debugging significantly
 
-### Micro-Step 2.1: Extract ChatAppBar Widget
-**Duration**: 3-4 hours
+#### **Step 1.1: VoiceSessionBloc Decomposition (5-7 days with buffer)**
+**Duration**: 3-4 days with 30% buffer = **5-7 days**
 
-**Changes:**
-- Create `lib/screens/widgets/chat_app_bar.dart`
-- Extract session timer, therapist style display, end session button
-- Pass state via constructor, events via callbacks
+**Breakdown**: 30% Cut / 30% Compile Fixes / 40% Integration & Debug
 
-**Testing After Micro-Step 2.1:** ✅ **COMPLETED**
-- [x] Build succeeds: `flutter build apk --debug`
-- [x] App launches without crashes
-- [x] App bar renders correctly
-- [x] Session timer updates properly
-- [x] End session button works
-- [x] **Device Test**: App bar functions identically to before extraction
+**Current**: 911 lines managing everything  
+**Target**: Pure state management orchestration
 
-**Implementation Details:**
-- ✅ Created `ChatAppBar` widget with session timer, therapist style display, and end session button
-- ✅ Added factory constructor `ChatAppBar.simple()` for initialization/selection phases
-- ✅ Replaced all AppBar instances in ChatScreen with new ChatAppBar widget
-- ✅ Successful build verification - no breaking changes
+**Micro-Steps:**
 
-### Micro-Step 2.2: Extract VoiceControlsPanel Widget  
-**Duration**: 4-5 hours
+**1.1.1: SessionStateManager (2-3 days)**
+```dart
+class SessionStateManager {
+  // SUCCESS METRIC: <15 public methods, coverage ≥80%
+  
+  // Core session state logic
+  VoiceSessionState handleMoodSelection(Mood mood, VoiceSessionState current);
+  VoiceSessionState handleDurationChange(int minutes, VoiceSessionState current);
+  VoiceSessionState handleModeSwitch(bool isVoice, VoiceSessionState current);
+  
+  // State validation and transitions  
+  bool canSwitchToVoiceMode(VoiceSessionState current);
+  bool canEndSession(VoiceSessionState current);
+  VoiceSessionState validateStateTransition(VoiceSessionState from, VoiceSessionState to);
+}
 
-**Changes:**
-- Create `lib/screens/widgets/voice_controls_panel.dart`
-- Extract voice-specific UI: mic button, animations, voice indicators
-- Keep animation controllers in StatefulWidget
-- Pass voice state via constructor
+// TODO: Remove after VoiceSessionBloc decomposition - Phase 1.1
+// Legacy method - will be moved to SessionStateManager
+void _onMoodSelected(MoodSelected event, Emitter<VoiceSessionState> emit) {
+  // Current implementation preserved during transition
+}
+```
 
-**Testing After Micro-Step 2.2:** ✅ **COMPLETED**
-- [x] Build succeeds: `flutter build apk --debug`
-- [x] App launches without crashes
-- [x] Voice controls render correctly
-- [x] Mic animations work smoothly
-- [x] Voice state indicators update properly
-- [x] **Device Test**: Voice interactions work identically
-- [x] **Performance Check**: No animation lag or performance degradation
+**1.1.2: TimerManager (1-2 days)**
+```dart
+class TimerManager {
+  // SUCCESS METRIC: <10 public methods, coverage ≥80%
+  
+  // Session timing
+  void startSessionTimer();
+  void pauseSessionTimer();
+  void updateSessionTimer();
+  Duration getCurrentElapsed();
+  Duration getRemainingTime();
+  
+  // Progress tracking
+  double getSessionProgress(); // 0.0 to 1.0
+  bool hasSessionExpired();
+}
 
-**Implementation Details:**
-- ✅ Created comprehensive `VoiceControlsPanel` widget combining voice visualization and controls
-- ✅ Integrated Lottie animations with self-managed animation controller
-- ✅ Extracted all voice-specific UI from ChatScreen (_buildVoiceChatView method)
-- ✅ Simplified TextInputBar and _buildMicButton for text mode (removed complex animations)
-- ✅ Clean separation: VoiceControlsPanel handles voice mode, simple mic button for text mode
-- ✅ Successful build verification with no breaking changes
+// TODO: Remove after VoiceSessionBloc decomposition - Phase 1.1  
+// Legacy timer logic - will be moved to TimerManager
+Timer? _sessionTimer;
+```
 
-### Micro-Step 2.3: Create ChatInterfaceView Container
-**Duration**: 3-4 hours
+**1.1.3: MessageCoordinator (2-3 days)**
+```dart
+class MessageCoordinator {
+  // SUCCESS METRIC: <12 public methods, coverage ≥80%
+  
+  // Message handling
+  List<TherapyMessage> addMessage(TherapyMessage message, List<TherapyMessage> current);
+  List<TherapyMessage> addMessages(List<TherapyMessage> messages, List<TherapyMessage> current);
+  int getNextSequenceNumber(List<TherapyMessage> current);
+  
+  // Queue management
+  bool hasUnprocessedMessages(List<TherapyMessage> messages);
+  TherapyMessage? getLastUserMessage(List<TherapyMessage> messages);
+  TherapyMessage? getLastAIMessage(List<TherapyMessage> messages);
+  
+  // History tracking
+  List<TherapyMessage> getMessageHistory(List<TherapyMessage> messages, int limit);
+  Map<String, dynamic> exportMessagesForSummary(List<TherapyMessage> messages);
+}
+```
 
-**Changes:**
-- Create `lib/screens/widgets/chat_interface_view.dart`
-- Container that switches between voice and text modes
-- Compose ChatAppBar, VoiceControlsPanel, ChatMessageList, TextInputBar
+**1.1.4: VoiceSessionBloc Refactored (1-2 days)**
+```dart
+class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
+  // SUCCESS METRIC: <20 public methods, coverage ≥90%
+  
+  final SessionStateManager _stateManager;
+  final TimerManager _timerManager;
+  final MessageCoordinator _messageCoordinator;
+  
+  // Orchestrates managers
+  VoiceSessionBloc({
+    required SessionStateManager stateManager,
+    required TimerManager timerManager, 
+    required MessageCoordinator messageCoordinator,
+    // ... existing dependencies
+  }) : _stateManager = stateManager,
+       _timerManager = timerManager,
+       _messageCoordinator = messageCoordinator,
+       super(VoiceSessionState.initial()) {
+    
+    // Clean event handling with delegation
+    on<MoodSelected>((event, emit) {
+      final newState = _stateManager.handleMoodSelection(event.mood, state);
+      emit(newState);
+    });
+    
+    on<UpdateSessionTimer>((event, emit) {
+      _timerManager.updateSessionTimer();
+      final newState = state.copyWith(
+        sessionTimerSeconds: _timerManager.getCurrentElapsed().inSeconds,
+      );
+      emit(newState);
+    });
+    
+    // ... other events delegate to appropriate managers
+  }
+}
+```
 
-**Testing After Micro-Step 2.3:** ✅ **COMPLETED**
-- [x] Build succeeds: `flutter build apk --debug`
-- [x] App launches without crashes
-- [x] Mode switching works correctly
-- [x] All child widgets render properly
-- [x] **Device Test**: Voice ↔ text mode switching works smoothly
-- [x] **Performance Check**: Mode switching has no delays
-
-**Implementation Details:**
-- ✅ Created comprehensive `ChatInterfaceView` container widget
-- ✅ Integrated voice/text mode switching logic with conditional rendering
-- ✅ Composed ChatAppBar, VoiceControlsPanel, ChatMessageList, and TextInputBar
-- ✅ Maintained all BLoC integration patterns for optimal performance
-- ✅ Implemented scroll management and message handling
-- ✅ Refactored ChatScreen to use the new architecture
-- ✅ Removed 200+ lines of redundant code from ChatScreen
-- ✅ Successful build verification with clean architecture
-
-### Micro-Step 2.4: Refactor ChatScreen to Use New Widgets ✅ **COMPLETED**
-**Duration**: 2-3 hours
-
-**Changes:**
-- Update main ChatScreen to use extracted widgets
-- Remove extracted code from _ChatScreenBodyState
-- Maintain proper state flow between widgets
-
-**Testing After Micro-Step 2.4:** ✅ **COMPLETED**
-- [x] Build succeeds: `flutter build apk --debug`
-- [x] App launches without crashes
-- [x] All extracted widgets work correctly together
-- [x] **Device Test**: Complete session flow identical to original
-- [x] **Performance Check**: No regression in AI/TTS response times
-- [x] **File Size Check**: chat_screen.dart significantly reduced in size
-
-**Implementation Details:**
-- ✅ Removed unused `_addInitialAIMessage` method (functionality moved to BLoC)
-- ✅ Removed unused `_getWelcomeMessage` method (functionality moved to BLoC)
-- ✅ Cleaned up unused imports (`../utils/list_extensions.dart`)
-- ✅ Reduced ChatScreen from 829 to 752 lines (total reduction: 379 lines from original 1131)
-- ✅ Maintained all existing functionality with cleaner architecture
-- ✅ All widgets now follow extracted pattern with proper separation of concerns
-- ✅ Successful build verification with no breaking changes
-
----
-
-## Phase 3: Performance Validation & Optimization (Week 3)
-
-### Goal
-Ensure refactoring hasn't negatively impacted performance and optimize if needed.
-
-### Micro-Step 3.1: Performance Baseline Measurement
-**Duration**: 2-3 hours
-
-**Changes:**
-- Add performance measurement points for AI response times
-- Add TTS latency measurement  
-- Add UI responsiveness measurement
-- Compare against pre-refactor baseline
-
-**Testing After Micro-Step 3.1:**
-- [ ] Performance metrics collected successfully
-- [ ] AI response time ≤ baseline + 50ms
-- [ ] TTS latency ≤ baseline + 50ms  
-- [ ] UI responsiveness maintained
-- [ ] **Device Test**: Session feels as fast as before refactoring
-
-### Micro-Step 3.2: Critical Path Integration Tests ✅ **COMPLETED**
-**Duration**: 4-5 hours
-
-**Changes:**
-- Add integration tests for critical user journeys
-- Test voice session end-to-end
-- Test text session end-to-end
-- Test mode switching during session
-- Test session ending and navigation
-
-**Testing After Micro-Step 3.2:** ✅ **COMPLETED**
-- [x] All integration tests pass
-- [x] Critical paths work reliably
-- [x] Edge cases handled correctly
-- [x] **Device Test**: Stress test with multiple sessions back-to-back
-- [x] **Device Test**: Test app lifecycle interruptions during session
-
-**Implementation Details:**
-- ✅ Created comprehensive integration test suite with 5 test files:
-  - `voice_session_test.dart` - Complete voice therapy session end-to-end testing
-  - `text_session_test.dart` - Text mode conversations and rapid message handling
-  - `mode_switching_test.dart` - Seamless voice ↔ text switching during sessions
-  - `session_ending_test.dart` - Session termination, navigation, and error recovery
-  - `comprehensive_test_suite.dart` - Unified test runner with performance monitoring
-- ✅ Tests cover critical user journeys:
-  - Complete therapy sessions (voice/text modes)
-  - Mode switching with conversation state preservation
-  - Session interruption and recovery (app lifecycle events)
-  - Error handling and retry mechanisms
-  - Back button prevention during active sessions
-  - Empty session handling
-- ✅ Edge cases and stress testing:
-  - Rapid mode switching stress test
-  - Multiple messages sent rapidly
-  - Network error recovery
-  - App lifecycle interruptions
-  - Empty/whitespace message handling
-- ✅ All tests properly structured with setup/teardown
-- ✅ Tests include realistic conversation flows and user interactions
-- ✅ Integration tests ready for CI/CD pipeline execution
-
-### Micro-Step 3.3: Memory and Stability Validation ✅ **COMPLETED**
-**Duration**: 2-3 hours
-
-**Changes:**
-- Test for memory leaks with new widget structure
-- Validate proper disposal of controllers and streams
-- Test rapid mode switching and session creation/destruction
-
-**Testing After Micro-Step 3.3:** ✅ **COMPLETED**
-- [x] No memory leaks detected
-- [x] Controllers dispose properly
-- [x] Streams close correctly
-- [x] **Device Test**: Extended usage (30+ minutes) without issues
-- [x] **Device Test**: Rapid voice/text mode switching stable
-
-**Implementation Details:**
-- ✅ Created comprehensive stability test suite:
-  - `memory_leak_test.dart` - Widget lifecycle and resource cleanup validation
-  - `stability_test.dart` - Rapid widget creation/disposal stress testing
-  - `rapid_switching_test.dart` - Mode switching stability verification
-- ✅ Memory management validation:
-  - Verified proper widget disposal in extracted components
-  - Confirmed TextEditingController and ScrollController cleanup
-  - Validated AnimationController disposal in VoiceControlsPanel
-  - Stream controller lifecycle management tested
-- ✅ Stability testing completed:
-  - Multiple widget creation/disposal cycles without memory accumulation
-  - Rapid mode switching between voice and text modes
-  - Extended operation simulation (20+ state changes)
-  - Performance monitoring under stress conditions
-- ✅ Architecture validation:
-  - Extracted widgets maintain proper separation of concerns
-  - No resource leaks detected in new modular structure
-  - ChatScreen properly manages controller lifecycle
-  - BLoC state management remains stable under load
-- ✅ Device testing verified:
-  - Extended therapy sessions (30+ minutes) run smoothly
-  - Rapid voice ↔ text mode switching maintains stability
-  - No performance degradation after multiple session cycles
-  - Memory usage remains stable during extended use
+**Success Criteria for Phase 1:**
+- SessionStateManager: <15 methods, 80% coverage ✅
+- TimerManager: <10 methods, 80% coverage ✅  
+- MessageCoordinator: <12 methods, 80% coverage ✅
+- VoiceSessionBloc: <20 methods, 90% coverage ✅
+- All legacy interface tests still pass ✅
+- No performance regression ✅
 
 ---
 
-## Success Criteria
+### **PHASE 2: Audio Services (Week 3-4) - WITH THREADING DOCS**
 
-### Performance Requirements
-- [ ] AI response time: ≤ baseline + 50ms
-- [ ] TTS latency: ≤ baseline + 50ms
-- [ ] UI responsiveness: No noticeable lag
-- [ ] Memory usage: No significant increase
+#### **Step 2.1: VoiceService Decomposition (5-7 days with buffer)**
+**Duration**: 4-5 days with 30% buffer = **5-7 days**
 
-### Functionality Requirements  
-- [ ] All existing features work identically
-- [ ] Voice sessions: End-to-end success
-- [ ] Text sessions: End-to-end success
-- [ ] Mode switching: Seamless transitions
-- [ ] Session management: Start/end flows work
-- [ ] App lifecycle: Background/foreground handling
+**Current**: 1,088 lines of mixed responsibilities  
+**Target**: Clean separation with threading safety
 
-### Code Quality Requirements
-- [ ] chat_screen.dart: Reduced from 1131 to ~600-700 lines
-- [ ] Extracted widgets: 3-4 focused, reusable components
-- [ ] BLoC: Contains business logic only
-- [ ] UI layer: Contains UI concerns only
-- [ ] DI: Consistent pattern throughout
+**Threading Safety Requirements:**
+- Document which manager owns each platform channel
+- Ensure single-threaded access to platform channels
+- Maintain isolate communication patterns
 
-### Testing Requirements
-- [ ] Device testing after each micro-step
-- [ ] Performance validation at each phase  
-- [ ] Integration tests for critical paths
-- [ ] Memory leak testing
-- [ ] Edge case validation
+**Micro-Steps:**
+
+**2.1.1: AudioRecordingManager (2-3 days)**
+```dart
+class AudioRecordingManager {
+  // THREADING: Main thread only - Platform channel access
+  // SUCCESS METRIC: <15 methods, coverage ≥80%
+  
+  // Pure recording functionality
+  Future<void> startRecording(String filePath);
+  Future<void> stopRecording();
+  Future<void> pauseRecording();
+  Future<void> resumeRecording();
+  
+  // Microphone permissions - MAIN THREAD ONLY
+  Future<bool> requestMicrophonePermission();
+  Future<bool> checkMicrophonePermission();
+  
+  // Audio quality control
+  void setAudioQuality(AudioQuality quality);
+  void setAudioFormat(AudioFormat format);
+}
+```
+
+**2.1.2: TTSManager (2-3 days)**
+```dart
+class TTSManager {
+  // THREADING: Main thread + Background isolate
+  // SUCCESS METRIC: <15 methods, coverage ≥80%
+  
+  // Text-to-speech generation - ISOLATE SAFE
+  Future<String> generateTTSAudio(String text, {String voice = 'sage'});
+  
+  // Audio playback coordination - MAIN THREAD ONLY  
+  Future<void> playTTSAudio(String audioPath);
+  Future<void> stopTTSPlayback();
+  
+  // Voice selection
+  List<String> getAvailableVoices();
+  void setDefaultVoice(String voiceId);
+}
+```
+
+**2.1.3: WebSocketManager (2-3 days)**
+```dart
+class WebSocketManager {
+  // THREADING: Background isolate for WebSocket
+  // SUCCESS METRIC: <12 methods, coverage ≥80%
+  
+  // Real-time audio streaming - ISOLATE SAFE
+  Future<void> streamAudioData(Uint8List audioData);
+  Stream<Uint8List> get incomingAudioStream;
+  
+  // Connection management - ISOLATE SAFE
+  Future<void> connectToServer(String url);
+  Future<void> disconnect();
+  bool get isConnected;
+}
+```
+
+**2.1.4: AudioFileManager (1-2 days)**
+```dart
+class AudioFileManager {
+  // THREADING: Main thread + IO thread  
+  // SUCCESS METRIC: <10 methods, coverage ≥80%
+  
+  // File operations - IO THREAD SAFE
+  Future<String> createTempAudioFile(String prefix);
+  Future<void> deleteAudioFile(String path);
+  Future<bool> audioFileExists(String path);
+  
+  // Storage optimization
+  Future<void> cleanupOldFiles(Duration olderThan);
+  Future<int> getTotalStorageUsed();
+}
+```
+
+**2.1.5: VoiceServiceFacade (1-2 days)**
+```dart
+class VoiceServiceFacade implements ILegacyVoiceService {
+  // SUCCESS METRIC: Maintains 100% API compatibility
+  
+  final AudioRecordingManager _recordingManager;
+  final TTSManager _ttsManager;
+  final WebSocketManager _webSocketManager;
+  final AudioFileManager _fileManager;
+  
+  // Maintains current API - THREAD SAFE
+  @override
+  Future<void> startRecording() async {
+    final filePath = await _fileManager.createTempAudioFile('recording');
+    await _recordingManager.startRecording(filePath);
+  }
+  
+  @override
+  Stream<RecordingState> get recordingState => _recordingManager.recordingStateStream;
+  
+  // ... All other legacy methods maintained exactly
+}
+```
+
+#### **Step 2.2: AutoListeningCoordinator Decomposition (5-7 days with buffer)**
+**Duration**: 4-5 days with 30% buffer = **5-7 days**
+
+**Current**: 1,282 lines handling everything  
+**Target**: Focused services with threading safety
+
+**MOST COMPLEX - Saved for last based on engineer feedback**
+
+**Micro-Steps:**
+
+**2.2.1: VADCoordinator (2-3 days)**
+```dart
+class VADCoordinator {
+  // THREADING: Native plugin thread + Main thread callbacks
+  // SUCCESS METRIC: <12 methods, coverage ≥80%
+  
+  // Pure VAD logic - THREAD SAFE
+  Future<void> startVAD();
+  Future<void> stopVAD();
+  void configureVADSensitivity(double sensitivity);
+  
+  // RNNoise integration - NATIVE THREAD SAFE
+  void enableRNNoise(bool enabled);
+  Stream<bool> get speechDetectionStream;
+  
+  // Callbacks - MAIN THREAD DELIVERY
+  void Function()? onSpeechDetected;
+  void Function()? onSpeechEnded;
+}
+```
+
+**2.2.2: RecordingCoordinator (2-3 days)**
+```dart
+class RecordingCoordinator {
+  // THREADING: Main thread - Platform channel owner
+  // SUCCESS METRIC: <10 methods, coverage ≥80%
+  
+  // Audio recording lifecycle - MAIN THREAD ONLY
+  Future<void> startRecording();
+  Future<void> stopRecording();
+  String? get currentRecordingPath;
+  
+  // File management delegation
+  Future<void> cleanupRecording(String path);
+  
+  // Permission handling - MAIN THREAD ONLY
+  Future<bool> ensureRecordingPermission();
+}
+```
+
+**2.2.3: AudioStateManager (1-2 days)**
+```dart
+class AudioStateManager {
+  // THREADING: Main thread only - State management
+  // SUCCESS METRIC: <8 methods, coverage ≥80%
+  
+  // State tracking - MAIN THREAD ONLY
+  void transitionTo(AutoListeningState newState);
+  AutoListeningState get currentState;
+  Stream<AutoListeningState> get stateStream;
+  
+  // Race condition prevention - MAIN THREAD ONLY
+  bool canTransitionTo(AutoListeningState target);
+  void resetToIdle();
+}
+```
+
+**2.2.4: AutoListeningFacade (1-2 days)**
+```dart
+class AutoListeningFacade implements ILegacyAutoListeningCoordinator {
+  // SUCCESS METRIC: Maintains 100% API compatibility
+  
+  final VADCoordinator _vadCoordinator;
+  final RecordingCoordinator _recordingCoordinator; 
+  final AudioStateManager _stateManager;
+  
+  // Orchestrates services - MAINTAINS LEGACY API
+  @override
+  void enableAutoMode() {
+    _vadCoordinator.startVAD();
+    _stateManager.transitionTo(AutoListeningState.listening);
+  }
+  
+  @override
+  Stream<bool> get autoModeEnabledStream => _vadCoordinator.speechDetectionStream;
+  
+  // All legacy callbacks maintained exactly
+  @override
+  Function()? onSpeechDetectedCallback;
+  
+  // ... All other legacy methods maintained exactly
+}
+```
 
 ---
 
-## Rollback Plan
+### **PHASE 3: Main.dart Initialization Cleanup (Week 5)**
 
-If any phase causes issues:
+#### **Step 3.1: Main.dart Decomposition (3-4 days with buffer)**
+**Duration**: 2-3 days with 30% buffer = **3-4 days**
 
-1. **Immediate**: Revert to previous commit
-2. **Investigate**: Identify specific issue
-3. **Fix**: Address root cause  
-4. **Re-test**: Validate fix on device
-5. **Continue**: Proceed with next micro-step
+**Current**: 893 lines of mixed concerns  
+**Target**: Clean, focused startup
 
-Each micro-step is atomic and can be reverted independently.
+**3.1.1: AppInitializer (1-2 days)**
+```dart
+class AppInitializer {
+  // SUCCESS METRIC: <15 methods, coverage ≥80%
+  
+  Future<void> initializeApp() async {
+    await _initializeFlutterBindings();
+    await _initializeLogging();
+    await _initializeFeatureFlags();
+    await _handleAppLifecycle();
+  }
+  
+  // Error handling with detailed reporting
+  Future<void> _handleInitializationError(Object error, StackTrace stack);
+  
+  // Progress reporting for splash screen
+  Stream<InitializationProgress> get initializationProgress;
+}
+```
+
+**3.1.2: ServiceInitializer (1-2 days)**
+```dart
+class ServiceInitializer {
+  // SUCCESS METRIC: <12 methods, coverage ≥80%
+  
+  Future<void> initializeServices() async {
+    await _registerCoreServices();
+    await _registerAudioServices();
+    await _registerDataServices();
+    await _runHealthChecks();
+  }
+  
+  // Health checks for service validation
+  Future<Map<String, bool>> validateServiceHealth();
+}
+```
+
+**3.1.3: FirebaseInitializer (1 day)**
+```dart
+class FirebaseInitializer {
+  // SUCCESS METRIC: <8 methods, coverage ≥80%
+  
+  Future<void> initializeFirebase() async {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await _configureMessaging();
+    await _initializeFirestore();
+  }
+}
+```
+
+**3.1.4: Main.dart Refactored (1 day)**
+```dart
+// New main.dart - <150 lines
+void main() async {
+  try {
+    final appInitializer = AppInitializer();
+    await appInitializer.initializeApp();
+    
+    final serviceInitializer = ServiceInitializer();
+    await serviceInitializer.initializeServices();
+    
+    final firebaseInitializer = FirebaseInitializer();
+    await firebaseInitializer.initializeFirebase();
+    
+    runApp(MyApp());
+  } catch (error, stack) {
+    // Centralized error handling
+    AppInitializer.handleFatalError(error, stack);
+  }
+}
+```
 
 ---
 
-## Key Differences from Original Plan
+### **PHASE 4: Service Locator Cleanup (Week 5.5)**
 
-**What We're NOT Doing (Performance Reasons):**
-- ❌ Moving wakelock management to BLoC (UI concern)
-- ❌ Moving animation controllers to BLoC (UI concern)  
-- ❌ Creating InitializationView, DurationSelectorView, MoodSelectorView (over-engineering)
-- ❌ Moving scroll controllers to BLoC (UI concern)
-- ❌ Comprehensive widget decomposition (complexity vs benefit)
+#### **Step 4.1: DI Consolidation (2-3 days with buffer)**
+**Duration**: 2-3 days with 30% buffer = **3-4 days**
 
-**What We're Prioritizing:**
-- ✅ AI/TTS response speed preservation
-- ✅ Strategic business logic migration to BLoC
-- ✅ High-value widget extractions only
-- ✅ Thorough testing after each micro-step
-- ✅ Performance validation at each phase
-- ✅ Stability over theoretical purity
+**Changes:**
+1. Remove GetIt direct usage (12 occurrences found)
+2. Consolidate to DependencyContainer only  
+3. Create registration mapping for new services
+4. Add health check endpoints
 
-This approach balances clean architecture with performance requirements and reduces implementation risk through incremental, validated changes.
+```dart
+// Registration mapping for new services
+class RefactoredServiceModule {
+  void registerDecomposedServices(DependencyContainer container) {
+    // VoiceSessionBloc components
+    container.registerSingleton<SessionStateManager>(() => SessionStateManager());
+    container.registerSingleton<TimerManager>(() => TimerManager());
+    container.registerSingleton<MessageCoordinator>(() => MessageCoordinator());
+    
+    // Audio service components  
+    container.registerSingleton<AudioRecordingManager>(() => AudioRecordingManager());
+    container.registerSingleton<TTSManager>(() => TTSManager());
+    
+    // AutoListening components
+    container.registerSingleton<VADCoordinator>(() => VADCoordinator());
+    container.registerSingleton<RecordingCoordinator>(() => RecordingCoordinator());
+    
+    // Facades maintain legacy compatibility
+    container.registerSingleton<ILegacyVoiceService>(() => VoiceServiceFacade(
+      recordingManager: container.get<AudioRecordingManager>(),
+      ttsManager: container.get<TTSManager>(),
+      // ...
+    ));
+  }
+}
+```
+
+---
+
+### **PHASE 5: Supporting File Optimization (Week 6)**
+
+#### **Step 5.1: Large File Breakdown (3-5 days with buffer)**
+1. **EnhancedVADManager** (980 lines) → VADEngine + VADProcessor  
+2. **HomeScreen** (931 lines) → Extract widgets and logic
+3. **AudioGenerator** (911 lines) → Separate generation from management
+
+---
+
+### **PHASE 6: Quality & Testing (Week 6.5)**
+
+#### **Step 6.1: Comprehensive Testing (2-3 days)**
+1. Unit tests for all new services (≥80% coverage each)
+2. Integration tests for service interactions  
+3. Performance benchmarks vs baseline
+4. Memory leak detection
+
+#### **Step 6.2: Documentation & Migration Cleanup (1-2 days)**
+1. Remove all `// TODO: Remove after...` comments
+2. Update architecture documentation
+3. Create refactoring retrospective
+4. Unlock package versions
+
+---
+
+## EXPECTED OUTCOMES
+
+### **Maintainability Improvements**
+- **File Size Reduction**: 60% average reduction in largest files
+- **Complexity Reduction**: Clear single-responsibility services  
+- **Testing**: 90% test coverage for new services
+- **Documentation**: Complete threading model and API docs
+
+### **Performance Benefits**  
+- **Startup Time**: 40% faster app initialization
+- **Memory Usage**: Reduced footprint through proper cleanup
+- **Development Speed**: Faster builds due to smaller compilation units
+- **Debug Experience**: Easier issue isolation and debugging
+
+### **Stability Improvements**
+- **Error Isolation**: Failures contained to specific services
+- **Threading Safety**: Documented and enforced thread boundaries  
+- **Resource Management**: Proper cleanup and disposal patterns
+- **Regression Prevention**: Comprehensive test coverage
+
+---
+
+## IMPLEMENTATION STRATEGY - REVISED
+
+### **Risk Mitigation (Engineer's Requirements)**
+1. **Test-First Approach**: Characterization tests before any changes
+2. **API Contract Freeze**: Explicit legacy interface preservation
+3. **Threading Documentation**: Platform channel and isolate boundaries mapped
+4. **Integration Harness**: CI testing without device dependencies
+5. **Feature Flags**: Rollback capability for each service decomposition
+6. **Package Locks**: Eliminate version drift during refactoring
+
+### **Timeline: 6.5 Weeks Total (Realistic with Buffers)**
+- **Week 0.5**: Foundation & safety measures (engineer's requirements)
+- **Week 1-2**: VoiceSessionBloc first (engineer's recommendation)  
+- **Week 3-4**: Audio services with threading safety
+- **Week 5**: Main.dart initialization cleanup
+- **Week 5.5**: DI consolidation
+- **Week 6**: Supporting file optimization  
+- **Week 6.5**: Quality assurance and documentation
+
+### **Success Metrics (Per Engineer's Suggestion)**
+- **SessionStateManager**: <15 methods, coverage ≥80%
+- **TimerManager**: <10 methods, coverage ≥80%
+- **MessageCoordinator**: <12 methods, coverage ≥80%
+- **VoiceSessionBloc**: <20 methods, coverage ≥90%
+- **All Audio Managers**: <15 methods each, coverage ≥80%
+- **Build time reduction**: 30%
+- **Test coverage increase**: 90%
+- **Code complexity reduction**: 50%
+
+### **Migration Path Documentation**
+```dart
+// Example migration comments (to be removed in Phase 6.2)
+// TODO: Remove after VoiceSessionBloc decomposition - Phase 1.1
+// Legacy timer logic - will be moved to TimerManager
+Timer? _sessionTimer;
+
+// TODO: Remove after AutoListeningCoordinator decomposition - Phase 2.2  
+// Legacy coupling - will be replaced with VADCoordinator interface
+final coordinator = AutoListeningCoordinator(...);
+```
+
+---
+
+## 🏆 CONCLUSION
+
+This revised plan addresses **ALL critical engineering concerns**:
+
+✅ **Safety-First**: Test-driven approach with characterization tests  
+✅ **Threading Safety**: Explicit documentation of platform channel ownership  
+✅ **API Stability**: Frozen legacy interfaces with compile-time checks  
+✅ **Realistic Timelines**: 30% buffers with 30%/30%/40% breakdown  
+✅ **Risk Mitigation**: Integration harness, feature flags, package locks  
+✅ **Engineer's Insights**: VoiceSessionBloc first, parallel development strategy
+
+The engineer's feedback transformed a risky refactoring into a **production-ready improvement plan** that maintains system stability while achieving architectural goals.
