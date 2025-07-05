@@ -79,6 +79,10 @@ class SimpleTTSService implements ITTSService {
   // Production-grade completion tracking
   int _pendingStreams = 0; // Monotonic counter for overlapping instances
   
+  // Phase 1: Event-driven speaking state stream
+  late final StreamController<bool> _speakingStateController;
+  bool _lastSpeakingState = false;
+  
   _State _state = _State.idle;
   late String _backendUrl;
   bool _disposed = false;
@@ -91,6 +95,8 @@ class SimpleTTSService implements ITTSService {
        _onTTSComplete = onTTSComplete,
        _voiceServiceUpdateCallback = voiceServiceUpdateCallback {
     _backendUrl = AppConfig().backendUrl;
+    // Phase 1: Initialize broadcast stream controller for speaking state
+    _speakingStateController = StreamController<bool>.broadcast(sync: true);
   }
 
   /// Set the TTS completion callback (for wiring to AudioGenerator)
@@ -355,8 +361,7 @@ class SimpleTTSService implements ITTSService {
   Stream<bool> get playbackStateStream => _audioPlayerManager.isPlayingStream;
 
   @override
-  Stream<bool> get speakingStateStream => 
-      Stream.periodic(const Duration(milliseconds: 100), (_) => isSpeaking);
+  Stream<bool> get speakingStateStream => _speakingStateController.stream;
 
   @override
   void setVoiceSettings(String voice, double speed, double pitch) {
@@ -389,8 +394,24 @@ class SimpleTTSService implements ITTSService {
     // AudioPlayerManager handles cleanup
   }
 
+  /// Update speaking state with deduplication
+  void _updateSpeakingState(bool newState) {
+    if (newState != _lastSpeakingState) {
+      _lastSpeakingState = newState;
+      if (!_speakingStateController.isClosed) {
+        _speakingStateController.add(newState);
+        if (kDebugMode) {
+          print('🎯 [TTS-TRACK] TTS state: $newState');
+        }
+      }
+    }
+  }
+
   /// Notify VoiceService that TTS is starting (Maya stops listening)
   void _notifyTTSStart() {
+    // Phase 1: Update speaking state stream
+    _updateSpeakingState(true);
+    
     if (_voiceServiceUpdateCallback != null) {
       scheduleMicrotask(() {
         _voiceServiceUpdateCallback!(true);
@@ -403,6 +424,9 @@ class SimpleTTSService implements ITTSService {
 
   /// Notify VoiceService that TTS has ended (Maya can listen again)
   void _notifyTTSEnd() {
+    // Phase 1: Update speaking state stream
+    _updateSpeakingState(false);
+    
     if (_voiceServiceUpdateCallback != null) {
       scheduleMicrotask(() {
         _voiceServiceUpdateCallback!(false);
@@ -461,6 +485,11 @@ class SimpleTTSService implements ITTSService {
     // Reset TTS state on disposal
     _notifyTTSEnd();
     _fireCompletionSafely(false);
+    
+    // Phase 1: Close the speaking state stream controller
+    if (!_speakingStateController.isClosed) {
+      _speakingStateController.close();
+    }
     
     if (kDebugMode) print('🔍 [TTS] Service disposed');
   }

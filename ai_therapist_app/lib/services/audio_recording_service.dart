@@ -390,16 +390,21 @@ class AudioRecordingService implements IAudioRecordingService {
   void _startAudioLevelMonitoring() {
     _stopAudioLevelMonitoring(); // Stop any existing monitoring
     
-    _audioLevelTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+    // Phase 3: Real amplitude monitoring at 20Hz (50ms intervals)
+    _audioLevelTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (!isRecording) {
         timer.cancel();
         return;
       }
       
-      // Generate simulated audio level (0.0 to 1.0)
-      // In a real implementation, this would get actual audio levels from the recorder
-      final level = _generateSimulatedAudioLevel();
-      _audioLevelController.add(level);
+      // Get real amplitude from microphone (async, fire-and-forget)
+      _getRealAmplitude().then((level) {
+        if (!_audioLevelController.isClosed) {
+          _audioLevelController.add(level);
+        }
+      }).catchError((e) {
+        // Ignore errors, will fall back to 0.0 in getRealAmplitude
+      });
     });
   }
   
@@ -408,18 +413,59 @@ class AudioRecordingService implements IAudioRecordingService {
     _audioLevelTimer?.cancel();
     _audioLevelTimer = null;
     
+    // Phase 3: Clear amplitude history to avoid stale data
+    _amplitudeHistory.clear();
+    
     // Send final zero level
     if (!_audioLevelController.isClosed) {
       _audioLevelController.add(0.0);
     }
   }
   
-  /// Generate simulated audio level for demonstration
-  /// In a real implementation, this would interface with the actual recorder
-  double _generateSimulatedAudioLevel() {
-    // Simple simulation - varies between 0.1 and 0.8
-    final randomValue = (DateTime.now().millisecondsSinceEpoch % 1000) / 1000.0;
-    return 0.1 + (randomValue * 0.7);
+  // Phase 3: Amplitude smoothing variables
+  final List<double> _amplitudeHistory = [];
+  static const int _smoothingWindow = 3;
+  
+  /// Get real amplitude from microphone with error handling and smoothing
+  Future<double> _getRealAmplitude() async {
+    try {
+      if (!isRecording) {
+        return 0.0;
+      }
+      
+      // Get amplitude from the recording manager
+      final amplitudeData = await _recordingManager.getCurrentAmplitude();
+      if (amplitudeData == null) {
+        return 0.0;
+      }
+      
+      if (amplitudeData.current == double.negativeInfinity || 
+          amplitudeData.current.isNaN) {
+        return 0.0;
+      }
+      
+      // Normalize dB to 0.0-1.0 range (typical range: -60dB to 0dB for speech)
+      double normalized = (amplitudeData.current + 60.0) / 60.0;
+      normalized = normalized.clamp(0.0, 1.0);
+      
+      // Add to smoothing window
+      _amplitudeHistory.add(normalized);
+      if (_amplitudeHistory.length > _smoothingWindow) {
+        _amplitudeHistory.removeAt(0);
+      }
+      
+      // Return moving average
+      return _amplitudeHistory.reduce((a, b) => a + b) / _amplitudeHistory.length;
+      
+    } catch (e) {
+      if (kDebugMode) {
+        // Only log occasionally to avoid spam
+        if (DateTime.now().millisecondsSinceEpoch % 1000 < 100) {
+          print('AudioRecordingService: Error getting amplitude: $e, falling back to silence');
+        }
+      }
+      return 0.0; // Safe fallback to silence
+    }
   }
   
   @override

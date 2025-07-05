@@ -337,6 +337,24 @@ class RecordingManager {
   /// Get list of files pending transcription (for debugging)
   Set<String> get pendingTranscriptionPaths => Set.from(_pendingTranscriptionPaths);
 
+  /// Get current microphone amplitude (for audio level monitoring)
+  /// Returns null if not recording or recorder unavailable
+  Future<Amplitude?> getCurrentAmplitude() async {
+    final recorder = _recorder;
+    if (recorder == null || _currentState != RecordingState.recording) {
+      return null;
+    }
+    
+    try {
+      return await recorder.getAmplitude();
+    } catch (e) {
+      if (kDebugMode) {
+        print('RecordingManager: Error getting amplitude: $e');
+      }
+      return null;
+    }
+  }
+
   // Clean up resources
   Future<void> dispose() async {
     final recorder = _recorder;
