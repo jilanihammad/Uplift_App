@@ -60,19 +60,23 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel>
             children: [
               // Voice visualization container with Lottie animations
               BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                  ({bool rec, double amp, bool listening})>(
+                  ({bool rec, double amp, bool listening, bool processing, bool speaking})>(
                 selector: (blocState) => (
                   rec: blocState.isRecording,
                   amp: blocState.amplitude,
                   listening: blocState.isListeningForVoice,
+                  processing: blocState.isProcessingAudio,
+                  speaking: blocState.isAiSpeaking,
                 ),
                 builder: (context, data) {
-                  // Mic animation logic
-                  if ((data.rec || data.listening) &&
+                  // Animation logic - animate during recording/listening, processing, or AI speaking
+                  if ((data.rec || data.listening || data.processing || data.speaking) &&
                       !_micAnimationController.isAnimating) {
                     _micAnimationController.repeat(reverse: true);
                   } else if (!data.rec &&
                       !data.listening &&
+                      !data.processing &&
+                      !data.speaking &&
                       _micAnimationController.isAnimating) {
                     _micAnimationController.stop();
                     _micAnimationController.reset();
@@ -88,12 +92,19 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel>
                             height: 120,
                             fit: BoxFit.contain,
                           )
-                        : Lottie.asset(
-                            'assets/animations/Session Animation.json',
-                            width: 120,
-                            height: 120,
-                            fit: BoxFit.contain,
-                          ),
+                        : (data.processing || data.speaking)
+                            ? Lottie.asset(
+                                'assets/animations/Session Animation.json',
+                                width: 120,
+                                height: 120,
+                                fit: BoxFit.contain,
+                              )
+                            : Lottie.asset(
+                                'assets/animations/Session Animation.json',
+                                width: 120,
+                                height: 120,
+                                fit: BoxFit.contain,
+                              ),
                   );
                 },
               ),
