@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lottie/lottie.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../blocs/voice_session_bloc.dart';
 import '../blocs/voice_session_state.dart';
@@ -24,10 +23,10 @@ import '../utils/list_extensions.dart';
 import '../services/native_wakelock_service.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
-import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_app_bar.dart';
+import 'package:ai_therapist_app/screens/widgets/voice_controls_panel.dart';
 import '../widgets/debug_drawer.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -80,8 +79,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   TherapistStyle? _therapistStyle;
 
   // Voice recording variables
-  late AnimationController _micAnimationController;
-  late Animation<double> _micAnimation;
   late VoiceService _voiceService;
 
   // Services - Use dependency injection with fallback to DependencyContainer
@@ -181,15 +178,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Don't enable wakelock here - only enable during active therapy session
 
-    // Set up microphone animation
-    _micAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _micAnimation = Tween(begin: 1.0, end: 1.3).animate(
-      CurvedAnimation(parent: _micAnimationController, curve: Curves.easeInOut),
-    );
-
     // Initialize services
     _voiceService = DependencyContainer().get<VoiceService>();
     _initializeServices();
@@ -216,7 +204,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
-    _micAnimationController.dispose();
     _sessionTimer?.cancel();
     _navigationService.showBottomNav();
     super.dispose();
@@ -303,93 +290,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Widget _buildVoiceChatView() {
-    return Column(
-      children: [
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                  ({bool rec, double amp, bool listening})>(
-                selector: (blocState) => (
-                  rec: blocState.isRecording,
-                  amp: blocState.amplitude,
-                  listening: blocState.isListeningForVoice,
-                ),
-                builder: (context, data) {
-                  // Mic animation logic
-                  if ((data.rec || data.listening) &&
-                      !_micAnimationController.isAnimating) {
-                    _micAnimationController.repeat(reverse: true);
-                  } else if (!data.rec &&
-                      !data.listening &&
-                      _micAnimationController.isAnimating) {
-                    _micAnimationController.stop();
-                    _micAnimationController.reset();
-                  }
-                  return Container(
-                    width: 120,
-                    height: 120,
-                    child: (data.rec || data.listening)
-                        ? Lottie.asset(
-                            'assets/animations/Microphone Animation.json',
-                            width: 120,
-                            height: 120,
-                            fit: BoxFit.contain,
-                          )
-                        : Lottie.asset(
-                            'assets/animations/Session Animation.json',
-                            width: 120,
-                            height: 120,
-                            fit: BoxFit.contain,
-                          ),
-                  );
-                },
-              ),
-              const SizedBox(height: 32),
-              BlocSelector<VoiceSessionBloc, VoiceSessionState, bool>(
-                selector: (blocState) => blocState.isRecording,
-                builder: (context, isRecording) => Text(
-                  isRecording ? "Listening to you..." : 'Press "Talk" to speak',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        BlocSelector<VoiceSessionBloc, VoiceSessionState,
-            ({bool rec, bool proc, bool muted, bool listening})>(
-          selector: (state) => (
-            rec: state.isRecording,
-            proc: state.isProcessing,
-            muted: state.isSpeakerMuted,
-            listening: state.isListeningForVoice,
-          ),
-          builder: (context, data) => VoiceControls(
-            isRecording: data.rec,
-            isProcessing: data.proc,
-            isSpeakerMuted: data.muted,
-            micAnimation: _micAnimation,
-            onMicTap: () {
-              final bloc = context.read<VoiceSessionBloc>();
-              if (data.rec) {
-                bloc.add(StopListening());
-              } else {
-                bloc.add(StartListening());
-              }
-            },
-            onSpeakerToggle: () async {
-              final bloc = context.read<VoiceSessionBloc>();
-              final newMuted = !data.muted;
-              bloc.add(SetSpeakerMuted(newMuted));
-            },
-            onSwitchMode: _toggleChatMode,
-          ),
-        ),
-      ],
+    return VoiceControlsPanel(
+      onSwitchMode: _toggleChatMode,
     );
   }
 
@@ -435,7 +337,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                   }
                   return TextInputBar(
                     messageController: _messageController,
-                    micAnimation: _micAnimation,
                     micButton: _buildMicButton(),
                     isProcessing: data.isProcessing,
                     onSend: _sendMessage,
@@ -1010,35 +911,26 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           );
         } else if (state.isRecording || state.isListeningForVoice) {
           // Recording or listening: show active/recording mic
-          return ScaleTransition(
-            scale: _micAnimation,
-            child: IconButton(
-              icon: Lottie.asset(
-                'assets/animations/Microphone Animation.json',
-                width: 24,
-                height: 24,
-                fit: BoxFit.contain,
-              ),
+          return IconButton(
+            icon: Icon(
+              Icons.mic,
               color: state.isRecording ? Colors.red : Colors.blue,
-              onPressed: () {
-                if (state.isRecording) {
-                  context.read<VoiceSessionBloc>().add(StopListening());
-                } else {
-                  context.read<VoiceSessionBloc>().add(StartListening());
-                }
-              },
             ),
+            onPressed: () {
+              if (state.isRecording) {
+                context.read<VoiceSessionBloc>().add(StopListening());
+              } else {
+                context.read<VoiceSessionBloc>().add(StartListening());
+              }
+            },
           );
         } else {
           // VAD is on, not recording or listening: show listening/pulse mic
-          return ScaleTransition(
-            scale: _micAnimation,
-            child: IconButton(
-              icon: Icon(Icons.mic, color: Colors.blue),
-              onPressed: () {
-                context.read<VoiceSessionBloc>().add(StartListening());
-              },
-            ),
+          return IconButton(
+            icon: const Icon(Icons.mic, color: Colors.blue),
+            onPressed: () {
+              context.read<VoiceSessionBloc>().add(StartListening());
+            },
           );
         }
       },
