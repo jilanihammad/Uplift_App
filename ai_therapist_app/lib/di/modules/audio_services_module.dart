@@ -18,6 +18,7 @@ import '../../services/websocket_audio_manager.dart';
 import '../../services/audio_file_manager.dart';
 import '../../services/voice_session_coordinator.dart';
 import '../../services/audio_player_manager.dart';
+import '../../services/recording_manager.dart';
 
 /// Module for registering refactored audio services
 /// Replaces the monolithic VoiceService with focused, single-responsibility services
@@ -44,13 +45,27 @@ class AudioServicesModule {
       }
     }
 
-    // Register AudioRecordingService
+    // Register RecordingManager as SINGLETON - prevents race conditions
+    if (!locator.isRegistered<RecordingManager>()) {
+      locator.registerLazySingleton<RecordingManager>(() {
+        if (kDebugMode) {
+          print('[AudioServicesModule] Registering RecordingManager as singleton');
+        }
+        return RecordingManager();
+      });
+    } else {
+      if (kDebugMode) {
+        print('[AudioServicesModule] RecordingManager already registered, skipping');
+      }
+    }
+
+    // Register AudioRecordingService with singleton RecordingManager
     if (!locator.isRegistered<IAudioRecordingService>()) {
       locator.registerLazySingleton<IAudioRecordingService>(() {
         if (kDebugMode) {
-          print('[AudioServicesModule] Registering AudioRecordingService');
+          print('[AudioServicesModule] Registering AudioRecordingService with singleton RecordingManager');
         }
-        return AudioRecordingService();
+        return AudioRecordingService(recordingManager: locator<RecordingManager>());
       });
     }
 
