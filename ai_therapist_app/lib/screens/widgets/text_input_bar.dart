@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 class TextInputBar extends StatelessWidget {
   final TextEditingController messageController;
-  final Animation<double> micAnimation;
   final Widget micButton;
   final bool isProcessing;
   final VoidCallback onSend;
@@ -12,7 +11,6 @@ class TextInputBar extends StatelessWidget {
   const TextInputBar({
     Key? key,
     required this.messageController,
-    required this.micAnimation,
     required this.micButton,
     required this.isProcessing,
     required this.onSend,
@@ -39,10 +37,7 @@ class TextInputBar extends StatelessWidget {
         children: [
           Row(
             children: [
-              ScaleTransition(
-                scale: micAnimation,
-                child: micButton,
-              ),
+              micButton,
               Expanded(
                 child: TextField(
                   controller: messageController,
