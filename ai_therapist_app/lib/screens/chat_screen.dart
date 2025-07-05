@@ -27,6 +27,7 @@ import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/voice_controls.dart';
 import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
+import 'package:ai_therapist_app/screens/widgets/chat_app_bar.dart';
 import '../widgets/debug_drawer.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -229,7 +230,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Handle initialization state
         if (state.isInitializing) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Ongoing Session')),
+            appBar: const ChatAppBar.simple(),
             body: const Center(child: CircularProgressIndicator()),
           );
         }
@@ -237,7 +238,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Handle duration selector
         if (state.showDurationSelector) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Ongoing Session')),
+            appBar: const ChatAppBar.simple(),
             body: DurationSelector(
               selectedDuration: state.sessionDurationMinutes,
               onDurationSelected: _handleDurationSelection,
@@ -248,7 +249,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Handle mood selector
         if (state.showMoodSelector) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Ongoing Session')),
+            appBar: const ChatAppBar.simple(),
             body: MoodSelectorScreen(
               selectedMood: _initialMood,
               onMoodSelected: _handleMoodSelection,
@@ -268,7 +269,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             }
           },
           child: Scaffold(
-            appBar: _buildAppBar(state),
+            appBar: ChatAppBar(
+              therapistStyle: _therapistStyle,
+              onEndSession: _endSession,
+            ),
             body: state.isVoiceMode
                 ? _buildVoiceChatView()
                 : _buildTextChatView(),
@@ -279,79 +283,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     );
   }
 
-  AppBar _buildAppBar(VoiceSessionState state) {
-    return AppBar(
-      title: Row(
-        children: [
-          const Text('Ongoing Session'),
-          if (_therapistStyle != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 8.0),
-              child: Tooltip(
-                message: _therapistStyle!.name,
-                child: Icon(
-                  _therapistStyle!.icon,
-                  size: 16,
-                  color: _therapistStyle!.color,
-                ),
-              ),
-            ),
-        ],
-      ),
-      actions: [
-        // Session timer
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1),
-                ),
-                child: BlocSelector<VoiceSessionBloc, VoiceSessionState, int>(
-                  selector: (state) => state.sessionTimerSeconds,
-                  builder: (context, seconds) {
-                    final minutes = (seconds / 60).floor();
-                    final secs = seconds % 60;
-                    return Text(
-                      "${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}",
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        // End session button
-        Padding(
-          padding: const EdgeInsets.only(right: 8.0),
-          child: ElevatedButton(
-            onPressed: state.isEndingSession ? null : _endSession,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-            child: const Text('End'),
-          ),
-        ),
-      ],
-    );
-  }
 
   Future<bool> _handleBackPress(VoiceSessionState state) async {
     debugPrint('[ChatScreen] onWillPop called');
