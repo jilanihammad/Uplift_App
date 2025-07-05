@@ -23,48 +23,34 @@ import '../../services/recording_manager.dart';
 /// Module for registering refactored audio services
 /// Replaces the monolithic VoiceService with focused, single-responsibility services
 class AudioServicesModule {
+  static bool _firstRun = true;
   
   /// Register all audio services with dependency injection
   static void registerServices(GetIt locator) {
-    if (kDebugMode) {
+    // Phase 2.2.5: Guard verbose DI logging to prevent spam during rebuilds
+    if (kDebugMode && _firstRun) {
       print('[AudioServicesModule] Registering refactored audio services...');
+      _firstRun = false;
     }
 
     // Register AudioPlayerManager (required by TTSService)
     // Note: AudioPlayerManager may already be registered by service_locator.dart
     if (!locator.isRegistered<AudioPlayerManager>()) {
       locator.registerLazySingleton<AudioPlayerManager>(() {
-        if (kDebugMode) {
-          print('[AudioServicesModule] Registering AudioPlayerManager');
-        }
         return AudioPlayerManager();
       });
-    } else {
-      if (kDebugMode) {
-        print('[AudioServicesModule] AudioPlayerManager already registered, skipping');
-      }
     }
 
     // Register RecordingManager as SINGLETON - prevents race conditions
     if (!locator.isRegistered<RecordingManager>()) {
       locator.registerLazySingleton<RecordingManager>(() {
-        if (kDebugMode) {
-          print('[AudioServicesModule] Registering RecordingManager as singleton');
-        }
         return RecordingManager();
       });
-    } else {
-      if (kDebugMode) {
-        print('[AudioServicesModule] RecordingManager already registered, skipping');
-      }
     }
 
     // Register AudioRecordingService with singleton RecordingManager
     if (!locator.isRegistered<IAudioRecordingService>()) {
       locator.registerLazySingleton<IAudioRecordingService>(() {
-        if (kDebugMode) {
-          print('[AudioServicesModule] Registering AudioRecordingService with singleton RecordingManager');
-        }
         return AudioRecordingService(recordingManager: locator<RecordingManager>());
       });
     }
@@ -73,27 +59,17 @@ class AudioServicesModule {
     // Note: ITTSService may already be registered by service_locator.dart
     if (!locator.isRegistered<ITTSService>()) {
       locator.registerLazySingleton<ITTSService>(() {
-        if (kDebugMode) {
-          print('[AudioServicesModule] Registering SimpleTTSService (best-in-class)');
-        }
         return SimpleTTSService(
           audioPlayerManager: locator<AudioPlayerManager>(),
           // Note: onTTSComplete callback will be set by AudioGenerator
           // when it calls setTTSStateCallback() - no circular dependency
         );
       });
-    } else {
-      if (kDebugMode) {
-        print('[AudioServicesModule] ITTSService already registered, skipping');
-      }
     }
 
     // Register WebSocketAudioManager
     if (!locator.isRegistered<IWebSocketAudioManager>()) {
       locator.registerLazySingleton<IWebSocketAudioManager>(() {
-        if (kDebugMode) {
-          print('[AudioServicesModule] Registering WebSocketAudioManager');
-        }
         return WebSocketAudioManager(
           apiClient: locator<ApiClient>(),
         );
@@ -104,24 +80,14 @@ class AudioServicesModule {
     // Note: IAudioFileManager may already be registered by service_locator.dart
     if (!locator.isRegistered<IAudioFileManager>()) {
       locator.registerLazySingleton<IAudioFileManager>(() {
-        if (kDebugMode) {
-          print('[AudioServicesModule] Registering AudioFileManager');
-        }
         return AudioFileManager();
       });
-    } else {
-      if (kDebugMode) {
-        print('[AudioServicesModule] IAudioFileManager already registered, skipping');
-      }
     }
 
     // Register VoiceSessionCoordinator as IVoiceService
     // This replaces the old monolithic VoiceService registration
     if (!locator.isRegistered<IVoiceService>()) {
       locator.registerLazySingleton<IVoiceService>(() {
-        if (kDebugMode) {
-          print('[AudioServicesModule] Registering VoiceSessionCoordinator as IVoiceService');
-        }
         return VoiceSessionCoordinator(
           recordingService: locator<IAudioRecordingService>(),
           ttsService: locator<ITTSService>(),
@@ -131,9 +97,7 @@ class AudioServicesModule {
       });
     }
 
-    if (kDebugMode) {
-      print('[AudioServicesModule] All refactored audio services registered successfully');
-    }
+    // Phase 2.2.5: Removed verbose completion logging
   }
 
   /// Unregister all audio services (for testing or cleanup)
