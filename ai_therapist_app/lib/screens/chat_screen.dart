@@ -18,7 +18,6 @@ import '../di/interfaces/i_navigation_service.dart';
 import '../widgets/mood_selector.dart';
 import '../models/therapist_style.dart';
 import '../models/therapy_message.dart';
-import '../utils/list_extensions.dart';
 import '../services/native_wakelock_service.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
@@ -409,82 +408,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _startSessionTimer();
   }
 
-  String _getWelcomeMessage(Mood mood) {
-    switch (mood) {
-      case Mood.happy:
-        return [
-          "Heyyy! What's keeping your spirits high today?",
-          "Hello hello! Your positivity is contagious! What's on your mind?",
-          "Hey there! Glad you're feeling upbeat! How can I support you today?",
-          "Heyyy! Hearing you're happy makes me happy! Anything special you'd like to talk about?",
-          "Hello hello! Would you like to share more about what's brightening your day?"
-        ].random();
-      case Mood.sad:
-        return [
-          "I'm here for you. Would you like to talk about what's making you feel this way?",
-          "I'm sorry things feel tough right now. I'm ready to listen whenever you're comfortable sharing.",
-          "It's okay to feel sad sometimes. What's weighing on your mind?",
-          "I understand you're feeling down, and I'd like to help. What's troubling you today?",
-          "You're not alone—let's take some time to talk about how you're feeling."
-        ].random();
-      case Mood.anxious:
-        return [
-          "Let's take a moment together and gently explore what's causing your anxiety today.",
-          "I see you're feeling anxious, and I'm here with you. What's making you feel this way?",
-          "It's perfectly natural to feel anxious sometimes. Do you want to talk about what's on your mind?",
-          "I'm here to help you navigate these feelings. What's causing your anxiety right now?",
-          "Anxiety can feel overwhelming. Let's slow down together and discuss what's triggering these feelings."
-        ].random();
-      case Mood.angry:
-        return [
-          "It's good that you're acknowledging your anger. Would talking about what's causing it help?",
-          "I can sense you're upset right now. I'm here to listen when you're ready.",
-          "Your feelings matter—would you like to share what's behind this frustration?",
-          "It's understandable to feel this way sometimes. Want to discuss what's triggering these emotions?",
-          "I'm glad you're recognizing these feelings. What's causing your anger today?"
-        ].random();
-      case Mood.stressed:
-        return [
-          "It sounds like you're dealing with a lot. Would you like to share what's stressing you out?",
-          "Stress can be really challenging. Let's talk it through and find ways to ease the burden.",
-          "I'm here to help you unpack this stress. What's been heavy on your mind?",
-          "I see things are feeling tough right now. Want to talk about what's making you feel this way?",
-          "You're managing a lot. Let's discuss what's going on and explore some helpful strategies."
-        ].random();
-      default:
-        return [
-          "Hey there! Thanks for opening up about how you're feeling. What should we explore today?",
-          "Hello hello! What would you like to talk about?",
-          "Heyyy! Thanks for sharing with me. How can I best support you today?",
-          "Hey there! What brings you here today?",
-          "Hello hello! I'm glad you're here. Where should we start our conversation today?"
-        ].random();
-    }
-  }
 
-  void _addInitialAIMessage(Mood mood) {
-    final state = context.read<VoiceSessionBloc>().state;
-    String welcomeMessage = _getWelcomeMessage(mood);
-
-    final aiMessage = TherapyMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString() + '_ai',
-      content: welcomeMessage,
-      isUser: false,
-      timestamp: DateTime.now(),
-      sequence: 1,
-    );
-
-    // Add message to Bloc
-    context.read<VoiceSessionBloc>().add(AddMessage(aiMessage));
-
-    // If in voice mode, generate TTS for welcome message WITHOUT LLM processing
-    if (state.isVoiceMode) {
-      debugPrint('[ChatScreen] Starting welcome TTS without LLM processing');
-      
-      // Use PlayWelcomeMessage event to ensure proper TTS state management
-      context.read<VoiceSessionBloc>().add(PlayWelcomeMessage(welcomeMessage));
-    }
-  }
 
   void _startSessionTimer() {
     // Cancel any existing timer
