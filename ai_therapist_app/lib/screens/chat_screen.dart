@@ -23,10 +23,8 @@ import '../utils/list_extensions.dart';
 import '../services/native_wakelock_service.dart';
 import 'package:ai_therapist_app/screens/widgets/duration_selector.dart';
 import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
-import 'package:ai_therapist_app/screens/widgets/text_input_bar.dart';
-import 'package:ai_therapist_app/screens/widgets/chat_message_list.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_app_bar.dart';
-import 'package:ai_therapist_app/screens/widgets/voice_controls_panel.dart';
+import 'package:ai_therapist_app/screens/widgets/chat_interface_view.dart';
 import '../widgets/debug_drawer.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -88,7 +86,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Session timer
   Timer? _sessionTimer;
-  int _previousMessageCount = 0;
 
   // Wakelock management - simplified and safe
   Future<void> _enableWakelock() async {
@@ -260,9 +257,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
               therapistStyle: _therapistStyle,
               onEndSession: _endSession,
             ),
-            body: state.isVoiceMode
-                ? _buildVoiceChatView()
-                : _buildTextChatView(),
+            body: ChatInterfaceView(
+              onSwitchMode: _toggleChatMode,
+              onSendMessage: _sendMessage,
+              messageController: _messageController,
+              scrollController: _scrollController,
+            ),
             endDrawer: kDebugMode ? const DebugDrawer() : null,
           ),
         );
@@ -289,68 +289,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     return true;
   }
 
-  Widget _buildVoiceChatView() {
-    return VoiceControlsPanel(
-      onSwitchMode: _toggleChatMode,
-    );
-  }
-
-  Widget _buildTextChatView() {
-    debugPrint('[ChatScreen] _buildTextChatView called');
-    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
-      builder: (context, state) {
-        return Container(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          child: Column(
-            children: [
-              Expanded(
-                child: ChatMessageList(
-                  messages: state.messages,
-                  scrollController: _scrollController,
-                  onNewMessage: (count) {
-                    // Scroll to bottom when new messages are added
-                    if (count > _previousMessageCount) {
-                      _scrollToBottom();
-                    }
-                    _previousMessageCount = count;
-                  },
-                ),
-              ),
-              BlocSelector<VoiceSessionBloc, VoiceSessionState, bool>(
-                selector: (state) => state.isProcessing,
-                builder: (context, isProcessing) {
-                  return isProcessing
-                      ? const LinearProgressIndicator()
-                      : const SizedBox.shrink();
-                },
-              ),
-              BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                  ({bool isVoice, bool isProcessing, bool canSend})>(
-                selector: (state) => (
-                  isVoice: state.isVoiceMode,
-                  isProcessing: state.isProcessing,
-                  canSend: state.canSend
-                ),
-                builder: (context, data) {
-                  if (data.isVoice) {
-                    return const SizedBox.shrink();
-                  }
-                  return TextInputBar(
-                    messageController: _messageController,
-                    micButton: _buildMicButton(),
-                    isProcessing: data.isProcessing,
-                    onSend: _sendMessage,
-                    onSwitchMode: _toggleChatMode,
-                    enabled: data.canSend,
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _initializeServices() async {
     debugPrint('[ChatScreen] _initializeServices called');
@@ -576,18 +514,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _messageController.clear();
   }
 
-  void _scrollToBottom() {
-    // Wait for layout to complete before scrolling
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
 
   Future<void> _endSession() async {
     final bloc = context.read<VoiceSessionBloc>();
@@ -900,40 +826,4 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     debugPrint('🔄 Mode switch complete');
   }
 
-  Widget _buildMicButton() {
-    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
-      builder: (context, state) {
-        if (!state.isVADActive) {
-          // VAD is off: show idle/off mic
-          return IconButton(
-            icon: Icon(Icons.mic_off, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
-            onPressed: null,
-          );
-        } else if (state.isRecording || state.isListeningForVoice) {
-          // Recording or listening: show active/recording mic
-          return IconButton(
-            icon: Icon(
-              Icons.mic,
-              color: state.isRecording ? Colors.red : Colors.blue,
-            ),
-            onPressed: () {
-              if (state.isRecording) {
-                context.read<VoiceSessionBloc>().add(StopListening());
-              } else {
-                context.read<VoiceSessionBloc>().add(StartListening());
-              }
-            },
-          );
-        } else {
-          // VAD is on, not recording or listening: show listening/pulse mic
-          return IconButton(
-            icon: const Icon(Icons.mic, color: Colors.blue),
-            onPressed: () {
-              context.read<VoiceSessionBloc>().add(StartListening());
-            },
-          );
-        }
-      },
-    );
-  }
 }
