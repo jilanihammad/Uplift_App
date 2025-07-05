@@ -2,6 +2,12 @@
 /// audio recording, TTS playback, message processing, and session lifecycle (mood selection, timer, etc).
 /// This is the central brain that coordinates all real-time interactions during a therapy session.
 ///
+/// Phase 1.1.4 Migration Status: ✅ REFACTORED WITH MANAGER FACADE
+/// - Uses SessionStateManager, TimerManager, and MessageCoordinator internally
+/// - Maintains exact public API compatibility (all 30+ events, full state contract)
+/// - Facade pattern preserves backward compatibility while improving internal structure
+/// - Thread safety and timing requirements preserved
+///
 /// Phase 6 Migration Status: ✅ COMPLETED
 /// - Supports both legacy VoiceService and new IVoiceService interface
 /// - Uses _safeVoiceService helper for gradual migration
@@ -23,6 +29,11 @@ import '../services/recording_manager.dart';
 import '../widgets/mood_selector.dart'; // For Mood enum
 import 'package:uuid/uuid.dart';
 
+// Phase 1.1.4: Import new managers
+import 'managers/session_state_manager.dart';
+import 'managers/timer_manager.dart';
+import 'managers/message_coordinator.dart';
+
 
 class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   final VoiceService voiceService;
@@ -37,6 +48,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   StreamSubscription? _audioPlaybackSub;
   StreamSubscription? _ttsStateSub;
 
+  // Phase 1.1.4: Manager instances (internal implementation details)
+  late final SessionStateManager _sessionManager;
+  late final TimerManager _timerManager;
+  late final MessageCoordinator _messageCoordinator;
+
   VoiceSessionBloc({
     required this.voiceService,
     required this.vadManager,
@@ -46,6 +62,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     this.progressService,
     this.navigationService,
   }) : super(VoiceSessionState.initial()) {
+    // Phase 1.1.4: Initialize managers
+    _sessionManager = SessionStateManager();
+    _timerManager = TimerManager();
+    _messageCoordinator = MessageCoordinator();
+    
+    // Set up timer callbacks for session coordination
+    _timerManager.onTimeUpdate = _onTimerUpdate;
+    _timerManager.onSessionExpired = _onSessionExpired;
+    _timerManager.onTimeWarning = _onTimeWarning;
     on<StartSession>(_onStartSession);
     on<EndSession>(_onEndSession);
     on<StartListening>(_onStartListening);
@@ -114,16 +139,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   // Phase 6B-3: Helper for legacy-only methods that haven't migrated to interface yet
 
   void _onStartSession(StartSession event, Emitter<VoiceSessionState> emit) {
-    emit(state.copyWith(
-      status: VoiceSessionStatus.initial,
-      isListening: false,
-      isRecording: false,
-      isProcessingAudio: false,
-      errorMessage: null,
-      messages: [],
-      isInitialGreetingPlayed: false,
-      currentMessageSequence: 0,
-    ));
+    // Phase 1.1.4: Use SessionStateManager for session start
+    final newState = _sessionManager.startNewSession();
+    
+    // Reset managers
+    _messageCoordinator.resetMessages();
+    _timerManager.stopTimer();
+    
+    emit(newState);
   }
 
   Future<void> _onEndSession(
@@ -391,20 +414,17 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   Future<void> _onAddMessage(
       AddMessage event, Emitter<VoiceSessionState> emit) async {
     try {
-      final newSequence = state.currentMessageSequence + 1;
-      final messageWithSequence = event.message.copyWith(sequence: newSequence);
-
-      final updatedMessages = List<TherapyMessage>.from(state.messages)
-        ..add(messageWithSequence);
+      // Phase 1.1.4: Use MessageCoordinator for message addition
+      final addedMessage = _messageCoordinator.addMessage(event.message);
 
       emit(state.copyWith(
-        messages: updatedMessages,
-        currentMessageSequence: newSequence,
+        messages: _messageCoordinator.messages,
+        currentMessageSequence: _messageCoordinator.currentSequence,
       ));
 
       if (state.currentSessionId != null) {
         debugPrint(
-            '[VoiceSessionBloc] Message would be added to repository: ${messageWithSequence.content.substring(0, min(messageWithSequence.content.length, 20))}... Seq: ${messageWithSequence.sequence}');
+            '[VoiceSessionBloc] Message would be added to repository: ${addedMessage.content.substring(0, min(addedMessage.content.length, 20))}... Seq: ${addedMessage.sequence}');
       } else {
         debugPrint(
             '[VoiceSessionBloc] CurrentSessionId is null, message not saved to repo.');
@@ -433,23 +453,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     emit(state.copyWith(isProcessingAudio: true));
 
     try {
-      final nextUserSequence = state.currentMessageSequence + 1;
+      // Phase 1.1.4: Use MessageCoordinator for user message
+      final userMessage = _messageCoordinator.addUserMessage(event.text);
 
-      final userMessage = TherapyMessage(
-        id: const Uuid().v4(),
-        content: event.text,
-        isUser: true,
-        timestamp: DateTime.now(),
-        sequence: nextUserSequence,
-      );
-
-      final messagesWithUser = List.of(state.messages)..add(userMessage);
       emit(state.copyWith(
-        messages: messagesWithUser,
-        currentMessageSequence: nextUserSequence,
+        messages: _messageCoordinator.messages,
+        currentMessageSequence: _messageCoordinator.currentSequence,
       ));
 
-      final history = _buildConversationHistory(messagesWithUser);
+      // Use MessageCoordinator for conversation history
+      final history = _messageCoordinator.buildConversationHistory();
 
       final therapyServiceInstance = therapyService ?? DependencyContainer().therapy;
       String mayaResponseText;
@@ -486,21 +499,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         debugPrint('[VoiceSessionBloc] Received therapy response: "${mayaResponseText.substring(0, 50)}..."');
       }
 
-      final nextAISequence = state.currentMessageSequence + 1;
+      // Phase 1.1.4: Use MessageCoordinator for AI message
+      final mayaResponse = _messageCoordinator.addAIMessage(mayaResponseText);
 
-      final mayaResponse = TherapyMessage(
-        id: const Uuid().v4(),
-        content: mayaResponseText,
-        isUser: false,
-        timestamp: DateTime.now(),
-        sequence: nextAISequence,
-      );
-
-      final finalMessages = List.of(messagesWithUser)..add(mayaResponse);
       emit(state.copyWith(
-        messages: finalMessages,
+        messages: _messageCoordinator.messages,
         isProcessingAudio: false,
-        currentMessageSequence: nextAISequence,
+        currentMessageSequence: _messageCoordinator.currentSequence,
       ));
 
       debugPrint('[VoiceSessionBloc] Text message processing complete');
@@ -515,19 +520,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         hasError: true,
       ));
       
-      // Also add a fallback error message to chat
-      final errorMessage = TherapyMessage(
-        id: const Uuid().v4(),
-        content: "I'm sorry, I'm having trouble responding right now. Please try again.",
-        isUser: false,
-        timestamp: DateTime.now(),
-        sequence: state.currentMessageSequence + 1,
+      // Phase 1.1.4: Add fallback error message using MessageCoordinator
+      final errorMessage = _messageCoordinator.addAIMessage(
+        "I'm sorry, I'm having trouble responding right now. Please try again."
       );
       
-      final messagesWithError = List.of(state.messages)..add(errorMessage);
       emit(state.copyWith(
-        messages: messagesWithError,
-        currentMessageSequence: state.currentMessageSequence + 1,
+        messages: _messageCoordinator.messages,
+        currentMessageSequence: _messageCoordinator.currentSequence,
       ));
     }
   }
@@ -535,13 +535,17 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onShowMoodSelector(
       ShowMoodSelector event, Emitter<VoiceSessionState> emit) {
     debugPrint('[VoiceSessionBloc] Show mood selector: ${event.show}');
-    emit(state.copyWith(showMoodSelector: event.show));
+    // Phase 1.1.4: Use SessionStateManager for UI state
+    final newState = _sessionManager.setMoodSelectorVisibility(event.show);
+    emit(newState);
   }
 
   void _onShowDurationSelector(
       ShowDurationSelector event, Emitter<VoiceSessionState> emit) {
     debugPrint('[VoiceSessionBloc] Show duration selector: ${event.show}');
-    emit(state.copyWith(showDurationSelector: event.show));
+    // Phase 1.1.4: Use SessionStateManager for UI state
+    final newState = _sessionManager.setDurationSelectorVisibility(event.show);
+    emit(newState);
   }
 
   void _onToggleMicMute(ToggleMicMute event, Emitter<VoiceSessionState> emit) {
@@ -716,15 +720,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onWelcomeMessageCompleted(
       WelcomeMessageCompleted event, Emitter<VoiceSessionState> emit) {
-    emit(state.copyWith(isInitialGreetingPlayed: true));
+    // Phase 1.1.4: Use SessionStateManager for greeting played state
+    final newState = _sessionManager.setInitialGreetingPlayed();
+    emit(newState);
   }
 
   void _onSetInitializing(
       SetInitializing event, Emitter<VoiceSessionState> emit) {
-    emit(state.copyWith(
-        status: event.isInitializing
-            ? VoiceSessionStatus.loading
-            : VoiceSessionStatus.idle));
+    // Phase 1.1.4: Use SessionStateManager for initialization state
+    final newState = _sessionManager.setInitializing(event.isInitializing);
+    emit(newState);
   }
 
   void _onSetEndingSession(
@@ -746,10 +751,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       print('[VoiceSessionBloc] Session started with ID: ${event.sessionId}');
     }
     
-    emit(state.copyWith(
-      currentSessionId: event.sessionId,
-      status: VoiceSessionStatus.loading,
-    ));
+    // Phase 1.1.4: Use SessionStateManager for session started
+    final newState = _sessionManager.setSessionStarted(event.sessionId);
+    emit(newState);
   }
 
   /// Handles mood selection - moves logic from ChatScreen._handleMoodSelection
@@ -758,14 +762,31 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       print('[VoiceSessionBloc] Mood selected: ${event.mood}');
     }
     
-    emit(state.copyWith(
-      selectedMood: event.mood,
-      showMoodSelector: false,
-      status: VoiceSessionStatus.loading,
-    ));
+    // Phase 1.1.4: Use SessionStateManager for mood selection
+    var newState = _sessionManager.selectMood(event.mood);
     
-    // Add initial AI welcome message based on mood
-    _addInitialAIMessage(event.mood, emit);
+    // Add welcome message using MessageCoordinator
+    final welcomeMessage = _messageCoordinator.addWelcomeMessage(event.mood);
+    
+    // Update state with new message and sequence
+    newState = newState.copyWith(
+      messages: _messageCoordinator.messages,
+      currentMessageSequence: _messageCoordinator.currentSequence,
+      status: VoiceSessionStatus.idle, // Session ready after welcome message
+    );
+    
+    // Sync managers with updated state
+    _sessionManager.updateState(newState);
+    
+    emit(newState);
+    
+    // If in voice mode, generate TTS for welcome message
+    if (newState.isVoiceMode) {
+      if (kDebugMode) {
+        print('[VoiceSessionBloc] Starting welcome TTS for voice mode');
+      }
+      add(PlayWelcomeMessage(welcomeMessage.content));
+    }
   }
 
   /// Handles duration selection with Duration object
@@ -774,10 +795,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       print('[VoiceSessionBloc] Duration selected: ${event.duration.inMinutes} minutes');
     }
     
-    emit(state.copyWith(
-      selectedDuration: event.duration,
-      showDurationSelector: false,
-    ));
+    // Phase 1.1.4: Use SessionStateManager and TimerManager for duration
+    final newState = _sessionManager.selectDuration(event.duration);
+    _timerManager.setSessionDuration(event.duration);
+    
+    emit(newState);
   }
 
   /// Handles text message sending - delegates to existing ProcessTextMessage
@@ -796,103 +818,26 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       print('[VoiceSessionBloc] Session end requested');
     }
     
-    // Prevent multiple end session calls
-    if (state.status == VoiceSessionStatus.ended) {
-      return;
-    }
+    // Phase 1.1.4: Use SessionStateManager for session ending
+    final newState = _sessionManager.setSessionEnding();
     
-    emit(state.copyWith(
-      status: VoiceSessionStatus.ended,
-      speakerMuted: true, // Mute speaker immediately to stop any ongoing TTS
-    ));
+    // Stop timer
+    _timerManager.stopTimer();
+    
+    emit(newState);
     
     // Note: Wakelock, navigation, VAD stopping remain in UI layer for now
     // These are UI concerns that will be handled by ChatScreen
   }
 
-  /// Helper method to add initial AI message based on mood
-  void _addInitialAIMessage(Mood mood, Emitter<VoiceSessionState> emit) {
-    final welcomeMessage = _getWelcomeMessage(mood);
-    
-    final aiMessage = TherapyMessage(
-      id: '${DateTime.now().millisecondsSinceEpoch}_ai',
-      content: welcomeMessage,
-      isUser: false,
-      timestamp: DateTime.now(),
-      sequence: 1,
-    );
-    
-    emit(state.copyWith(
-      messages: [...state.messages, aiMessage],
-      status: VoiceSessionStatus.idle,
-    ));
-    
-    // If in voice mode, generate TTS for welcome message
-    if (state.isVoiceMode) {
-      if (kDebugMode) {
-        print('[VoiceSessionBloc] Starting welcome TTS for voice mode');
-      }
-      // Use existing PlayWelcomeMessage event to ensure proper TTS state management
-      add(PlayWelcomeMessage(welcomeMessage));
-    }
-  }
-
-  /// Helper method to generate welcome message based on mood
-  String _getWelcomeMessage(Mood mood) {
-    final messages = {
-      Mood.happy: [
-        "Heyyy! What's keeping your spirits high today?",
-        "Hello hello! Your positivity is contagious! What's on your mind?",
-        "Hey there! Glad you're feeling upbeat! How can I support you today?",
-        "Heyyy! Hearing you're happy makes me happy! Anything special you'd like to talk about?",
-        "Hello hello! Would you like to share more about what's brightening your day?"
-      ],
-      Mood.sad: [
-        "I'm here for you. What's been weighing on your heart lately?",
-        "Thank you for trusting me with your feelings. How can I support you today?",
-        "I hear you're going through a tough time. Would you like to share what's on your mind?",
-        "It takes courage to reach out when you're feeling down. I'm glad you're here.",
-        "I'm here to listen. What's been making you feel this way?"
-      ],
-      Mood.anxious: [
-        "I understand you're feeling anxious. Let's take this one step at a time. What's on your mind?",
-        "Anxiety can feel overwhelming. I'm here to help you work through it. What's been triggering these feelings?",
-        "Thank you for reaching out. Anxiety is tough, but you're not alone. What would you like to talk about?",
-        "I can sense you're feeling anxious. Let's explore what's been causing these feelings together.",
-        "It's okay to feel anxious. I'm here to support you. What's been on your mind lately?"
-      ],
-      Mood.angry: [
-        "I can feel the intensity of your emotions. What's been frustrating you?",
-        "Anger often signals that something important to you has been affected. What's going on?",
-        "Thank you for being honest about your anger. What's been triggering these feelings?",
-        "I'm here to listen without judgment. What's been making you feel this way?",
-        "Anger can be a powerful emotion. Let's explore what's behind it together."
-      ],
-      Mood.neutral: [
-        "Hello! I'm here to listen. What's been on your mind lately?",
-        "Thanks for reaching out today. What would you like to talk about?",
-        "I'm glad you're here. What's been going on in your life?",
-        "How are you feeling today? What would you like to explore together?",
-        "I'm here to support you. What's been on your mind?"
-      ],
-      Mood.stressed: [
-        "I can sense you're feeling stressed. Let's work through this together. What's been weighing on you?",
-        "Stress can feel overwhelming. I'm here to help you find some relief. What's been the biggest challenge?",
-        "Thank you for sharing that you're stressed. What's been contributing to these feelings?",
-        "I understand stress can be exhausting. Let's take this one step at a time. What's been most difficult?",
-        "It takes strength to recognize when you're stressed. What would help you feel more balanced?"
-      ],
-    };
-    
-    final moodMessages = messages[mood] ?? [
-      "Thank you for sharing how you're feeling. What's been on your mind lately?",
-    ];
-    
-    return moodMessages[DateTime.now().millisecond % moodMessages.length];
-  }
+  // Phase 1.1.4: Welcome message generation moved to MessageCoordinator
+  // Old _addInitialAIMessage and _getWelcomeMessage methods removed
+  // All welcome message logic now handled by MessageCoordinator.addWelcomeMessage()
 
   List<Map<String, String>> _buildConversationHistory(
       List<TherapyMessage> messages) {
+    // Phase 1.1.4: Could use MessageCoordinator.buildConversationHistory() 
+    // but keeping this method for backward compatibility in existing calls
     return messages
         .map((message) => {
               'role': message.isUser ? 'user' : 'assistant',
@@ -901,11 +846,49 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         .toList();
   }
 
+  // Phase 1.1.4: Timer callback methods for coordination
+  void _onTimerUpdate(int elapsedSeconds, int remainingSeconds) {
+    // Timer updates can trigger state updates for UI refresh
+    // For now, we emit the current state with updated timer info
+    // This preserves the existing timer behavior without breaking changes
+    add(const UpdateSessionTimer());
+  }
+
+  void _onSessionExpired() {
+    if (kDebugMode) {
+      debugPrint('[VoiceSessionBloc] Session time expired - requesting session end');
+    }
+    add(const EndSessionRequested());
+  }
+
+  void _onTimeWarning() {
+    if (kDebugMode) {
+      debugPrint('[VoiceSessionBloc] Session time warning - 5 minutes remaining');
+    }
+    // Could add a warning state or event here if needed in the future
+  }
+
+  // Phase 1.1.4: Synchronize manager states with bloc state
+  void _syncManagersWithState() {
+    // Update session manager state
+    _sessionManager.updateState(state);
+    
+    // Update message coordinator
+    _messageCoordinator.updateMessages(state.messages, state.currentMessageSequence);
+    
+    // Update timer if duration is set
+    if (state.selectedDuration != null && _timerManager.sessionDuration != state.selectedDuration) {
+      _timerManager.setSessionDuration(state.selectedDuration!);
+    }
+  }
+
   @override
   Future<void> close() {
     _recordingStateSub?.cancel();
     _audioPlaybackSub?.cancel();
     _ttsStateSub?.cancel();
+    // Phase 1.1.4: Dispose managers
+    _timerManager.dispose();
     return super.close();
   }
 }
