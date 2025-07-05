@@ -26,7 +26,6 @@ import 'package:record/record.dart';
 import '../config/app_config.dart'; // Import AppConfig
 import 'dart:io';
 import 'package:audio_session/audio_session.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 import 'auto_listening_coordinator.dart';
 import 'vad_manager.dart';
 import 'audio_player_manager.dart';
@@ -112,18 +111,7 @@ class VoiceService {
   // Singleton instance
   static VoiceService? _instance;
 
-  // WebSocket connection reuse with proper stream handling
-  WebSocketChannel? _reusableChannel;
-  DateTime? _lastUsed;
-  Timer? _keepAliveTimer;
-  static const Duration _connectionTimeout = Duration(seconds: 30);
-  
-  // Stream controller to broadcast WebSocket messages
-  StreamController<dynamic>? _messageStreamController;
-  StreamSubscription? _wsSubscription;
-  
-  // Track active TTS sessions to handle concurrent requests
-  final Map<String, StreamController<dynamic>> _activeSessions = {};
+  // WebSocket functionality removed - now handled by WebSocketAudioManager
   
   // Mutex to prevent concurrent TTS operations
   final Mutex _ttsLock = Mutex();
