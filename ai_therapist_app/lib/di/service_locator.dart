@@ -1,4 +1,5 @@
 // lib/di/service_locator.dart
+import 'dart:async';
 import 'package:get_it/get_it.dart';
 import 'package:flutter/foundation.dart';
 import 'dependency_container.dart';
@@ -53,6 +54,10 @@ import '../services/audio_file_manager.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
+
+/// Phase 2.2.5: Sync-once setup to prevent duplicate registrations and race conditions
+final Completer<void> _setupCompleter = Completer<void>();
+bool _setupStarted = false;
 
 /// Dependency Registration Status - helps track initialized services
 /// and prevent duplicate or missing registrations
@@ -163,13 +168,17 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
 ///
 /// @param useRefactoredVoicePipeline Feature flag to control voice service registration
 Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) async {
-  // Prevent duplicate registration if already called
-  if (DependencyStatus.coreServicesRegistered) {
-    debugPrint(
-        'Core services already registered, skipping setupServiceLocator()');
-    return;
+  // Phase 2.2.5: Sync-once pattern prevents race conditions and duplicate logging
+  if (_setupCompleter.isCompleted) {
+    return _setupCompleter.future;  // Return existing completion
   }
-
+  
+  if (_setupStarted) {
+    return _setupCompleter.future;  // Wait for ongoing setup
+  }
+  
+  _setupStarted = true;
+  
   try {
     debugPrint('Starting core service registration...');
     debugPrint('Feature flag useRefactoredVoicePipeline: $useRefactoredVoicePipeline');
@@ -512,9 +521,15 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
     // Mark core services as registered
     DependencyStatus.coreServicesRegistered = true;
     debugPrint('Core service registration complete');
+    
+    // Phase 2.2.5: Complete the sync-once setup
+    _setupCompleter.complete();
   } catch (e, stackTrace) {
     debugPrint('ERROR during setupServiceLocator: $e');
     debugPrint('Stack trace: $stackTrace');
+    
+    // Phase 2.2.5: Complete with error for sync-once pattern
+    _setupCompleter.completeError(e, stackTrace);
     rethrow; // Re-throw to allow caller to handle the error
   }
 }

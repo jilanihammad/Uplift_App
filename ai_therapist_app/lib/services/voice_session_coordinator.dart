@@ -263,9 +263,7 @@ class VoiceSessionCoordinator implements IVoiceService {
 
   @override
   void updateTTSSpeakingState(bool isSpeaking) {
-    if (kDebugMode) {
-      print('🎯 [TTS-TRACK] VoiceSessionCoordinator.updateTTSSpeakingState($isSpeaking) - coordinating VAD');
-    }
+    // Phase 2.2.5: Removed duplicate TTS logging - VoiceSessionBloc logs this
     
     // For now, try to coordinate with legacy VoiceService AutoListeningCoordinator if available
     // Future enhancement: Integrate direct AutoListeningCoordinator
@@ -279,15 +277,7 @@ class VoiceSessionCoordinator implements IVoiceService {
         legacyVoiceService.updateTTSSpeakingState(isSpeaking);
         
         // Use the legacy coordination logic for TTS-VAD timing  
-        if (!isSpeaking) {
-          if (kDebugMode) {
-            print('🎯 [TTS-TRACK] VoiceSessionCoordinator: TTS done, VAD coordination handled by legacy service');
-          }
-        } else {
-          if (kDebugMode) {
-            print('🎯 [TTS-TRACK] VoiceSessionCoordinator: TTS started, VAD coordination handled by legacy service');
-          }
-        }
+        // Phase 2.2.5: Removed verbose VAD coordination logging
       } else {
         if (kDebugMode) {
           print('VoiceSessionCoordinator: Legacy VoiceService not available, VAD coordination skipped');

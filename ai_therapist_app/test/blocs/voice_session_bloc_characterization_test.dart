@@ -23,6 +23,7 @@ import 'package:ai_therapist_app/models/therapy_message.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:ai_therapist_app/services/audio_player_manager.dart';
 import 'package:ai_therapist_app/services/base_voice_service.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
 
 import 'voice_session_bloc_characterization_test.mocks.dart';
 
@@ -51,7 +52,15 @@ void main() {
     late StreamController<bool> isPlayingController;
     late StreamController<bool> ttsStateController;
 
-    setUp(() {
+    setUp(() async {
+      // Initialize DependencyContainer for tests
+      try {
+        final container = DependencyContainer();
+        await container.initialize();
+      } catch (e) {
+        // Container may already be initialized, ignore
+      }
+      
       mockVoiceService = MockVoiceService();
       mockVadManager = MockVADManager();
       mockTherapyService = MockITherapyService();
