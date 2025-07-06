@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import '../di/interfaces/i_audio_settings.dart';
 
 /// Audio queue item containing all necessary information for queued playback
 class AudioQueueItem {
@@ -27,6 +28,11 @@ class AudioQueueItem {
 class AudioPlayerManager {
   // Audio player instance
   final AudioPlayer _audioPlayer = AudioPlayer();
+  
+  // Audio settings for global mute functionality
+  final IAudioSettings? _audioSettings;
+  double _lastRequestedVolume = 1.0;
+  bool _disposed = false;
 
   // Force override for isPlaying state
   bool? _forceIsPlayingState;
@@ -69,8 +75,51 @@ class AudioPlayerManager {
       _audioPlayer.processingStateStream;
 
   // Constructor
-  AudioPlayerManager() {
+  AudioPlayerManager({IAudioSettings? audioSettings}) 
+    : _audioSettings = audioSettings {
     _initAudioPlayer();
+    
+    // Listen for mute changes if settings provided
+    _audioSettings?.addListener(_onMuteChanged);
+    
+    // CRITICAL: Apply initial mute state
+    _applyEffectiveVolume();
+  }
+  
+  void _onMuteChanged() {
+    if (_disposed) return; // Guard against post-dispose callbacks
+    _applyEffectiveVolume();
+  }
+  
+  double _getEffectiveVolume(double requestedVolume) {
+    final multiplier = _audioSettings?.volumeMultiplier ?? 1.0;
+    return requestedVolume * multiplier;
+  }
+  
+  void _applyEffectiveVolume() {
+    if (_disposed) return; // Guard against post-dispose calls
+    
+    final effective = _getEffectiveVolume(_lastRequestedVolume);
+    try {
+      _audioPlayer.setVolume(effective);
+      if (kDebugMode) {
+        print('🔊 AudioPlayerManager: Volume applied - '
+              'requested=$_lastRequestedVolume, '
+              'muted=${_audioSettings?.isMuted ?? false}, '
+              'effective=$effective');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ AudioPlayerManager: Failed to set volume: $e');
+      }
+    }
+  }
+  
+  // Wrapper to ensure volume is applied after source changes
+  Future<void> _setSourceAndApplyVolume(Future<void> Function() setSourceFn) async {
+    await setSourceFn();
+    // Re-apply volume after source change in case player reset it
+    _applyEffectiveVolume();
   }
 
   // Helper method to emit playing state with debouncing to prevent rapid duplicates
@@ -304,8 +353,10 @@ class AudioPlayerManager {
       // Clear force override when starting new playback
       _forceIsPlayingState = null;
 
-      // Load and play the audio
-      await _audioPlayer.setFilePath(item.audioPath);
+      // Load and play the audio with volume protection
+      await _setSourceAndApplyVolume(
+        () => _audioPlayer.setFilePath(item.audioPath)
+      );
       
       // Create a completer for playback completion
       final playbackCompleter = Completer<void>();
@@ -488,13 +539,21 @@ class AudioPlayerManager {
 
   // Clean up resources
   Future<void> dispose() async {
+    _disposed = true; // Set flag first
+    
+    // Remove listener before disposing player
+    _audioSettings?.removeListener(_onMuteChanged);
+    
     // Clear queue and complete all pending items
     clearQueue();
     
     // DEBOUNCE FIX: Cancel any pending state change timer
     _stateDebounceTimer?.cancel();
     
+    // Now safe to dispose player
     await _audioPlayer.dispose();
+    
+    // Close streams
     await _playingStateController.close();
     await _errorController.close();
     await _queueLengthController.close();
@@ -503,17 +562,8 @@ class AudioPlayerManager {
 
   /// Set the playback volume (0.0 = mute, 1.0 = full volume)
   Future<void> setVolume(double volume) async {
-    try {
-      await _audioPlayer.setVolume(volume);
-      if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Volume set to $volume');
-      }
-    } catch (e) {
-      _errorController.add('Error setting volume: $e');
-      if (kDebugMode) {
-        print('❌ Error setting volume: $e');
-      }
-    }
+    _lastRequestedVolume = volume;
+    _applyEffectiveVolume();
   }
 
   /// Play audio directly from memory bytes (eliminates file I/O)
@@ -543,7 +593,9 @@ class AudioPlayerManager {
       // Create a data URI from bytes for just_audio
       final base64Audio = base64Encode(audioBytes);
       final dataUri = 'data:audio/wav;base64,$base64Audio';
-      await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(dataUri)));
+      await _setSourceAndApplyVolume(
+        () => _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(dataUri)))
+      );
       
       // Create a completer for playback completion
       final playbackCompleter = Completer<void>();

@@ -9,6 +9,7 @@ import '../interfaces/i_tts_service.dart';
 import '../interfaces/i_websocket_audio_manager.dart';
 import '../interfaces/i_audio_file_manager.dart';
 import '../interfaces/i_voice_service.dart';
+import '../interfaces/i_audio_settings.dart';
 import '../../data/datasources/remote/api_client.dart';
 
 // Service implementations  
@@ -34,10 +35,11 @@ class AudioServicesModule {
     }
 
     // Register AudioPlayerManager (required by TTSService)
-    // Note: AudioPlayerManager may already be registered by service_locator.dart
+    // Note: AudioPlayerManager is typically already registered by service_locator.dart with AudioSettings
+    // This fallback ensures it exists if not already registered
     if (!locator.isRegistered<AudioPlayerManager>()) {
       locator.registerLazySingleton<AudioPlayerManager>(() {
-        return AudioPlayerManager();
+        return AudioPlayerManager(audioSettings: locator<IAudioSettings>());
       });
     }
 
@@ -60,7 +62,7 @@ class AudioServicesModule {
     if (!locator.isRegistered<ITTSService>()) {
       locator.registerLazySingleton<ITTSService>(() {
         return SimpleTTSService(
-          audioPlayerManager: locator<AudioPlayerManager>(),
+          audioSettings: locator<IAudioSettings>(),
           // Note: onTTSComplete callback will be set by AudioGenerator
           // when it calls setTTSStateCallback() - no circular dependency
         );

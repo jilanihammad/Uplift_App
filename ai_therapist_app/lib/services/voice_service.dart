@@ -33,6 +33,7 @@ import 'recording_manager.dart';
 import 'audio_recording_service.dart';
 import 'base_voice_service.dart' as base_voice;
 import 'path_manager.dart';
+import '../di/interfaces/i_audio_settings.dart';
 
 /// File cleanup manager to prevent race conditions from multiple deletion attempts
 class FileCleanupManager {
@@ -154,6 +155,9 @@ class VoiceService {
 
   // API client for making requests to backend
   final ApiClient _apiClient;
+  
+  // Audio settings for global mute functionality
+  final IAudioSettings? _audioSettings;
 
   // Backend server URL
   late String _backendUrl;
@@ -227,7 +231,10 @@ class VoiceService {
   }
 
   // Factory constructor to enforce singleton pattern
-  factory VoiceService({required ApiClient apiClient}) {
+  factory VoiceService({
+    required ApiClient apiClient,
+    IAudioSettings? audioSettings,
+  }) {
     // Return existing instance if already created
     if (_instance != null) {
       if (kDebugMode) {
@@ -237,16 +244,22 @@ class VoiceService {
     }
 
     // Create new instance if first time
-    _instance = VoiceService._internal(apiClient: apiClient);
+    _instance = VoiceService._internal(
+      apiClient: apiClient, 
+      audioSettings: audioSettings,
+    );
     return _instance!;
   }
 
   // Private constructor for singleton pattern
-  VoiceService._internal({required ApiClient apiClient})
-      : _apiClient = apiClient {
+  VoiceService._internal({
+    required ApiClient apiClient,
+    IAudioSettings? audioSettings,
+  }) : _apiClient = apiClient,
+        _audioSettings = audioSettings {
     // _audioRecorder = AudioRecorder(); // REMOVED
     // _ensureStreamControllerIsActive(); // REMOVED, no local controller
-    _audioPlayerManager = AudioPlayerManager();
+    _audioPlayerManager = AudioPlayerManager(audioSettings: audioSettings);
     _recordingManager = RecordingManager(); // Already initialized here
     _audioRecordingService = AudioRecordingService(recordingManager: _recordingManager); // Phase 2.1.1: Inject shared RecordingManager
     _vadManager = VADManager();
@@ -1079,10 +1092,19 @@ class VoiceService {
 
   /// Mute or unmute the speaker (local device only, does not affect streams)
   Future<void> setSpeakerMuted(bool muted) async {
-    final volume = muted ? 0.0 : 1.0;
-    await _audioPlayerManager.setVolume(volume);
-    if (kDebugMode) {
-      print('[VoiceService] setSpeakerMuted: muted=$muted (volume=$volume)');
+    // Use AudioSettings if available for global mute
+    if (_audioSettings != null) {
+      _audioSettings!.setMuted(muted);
+      if (kDebugMode) {
+        print('[VoiceService] Updated global mute to $muted via AudioSettings');
+      }
+    } else {
+      // Fallback to old behavior for backward compatibility
+      final volume = muted ? 0.0 : 1.0;
+      await _audioPlayerManager.setVolume(volume);
+      if (kDebugMode) {
+        print('[VoiceService] setSpeakerMuted: muted=$muted (volume=$volume) - legacy mode');
+      }
     }
   }
 }

@@ -19,6 +19,8 @@ import '../services/notification_service.dart' as service_ns;
 import '../services/voice_service.dart';
 import '../services/therapy_service.dart';
 import 'interfaces/i_therapy_service.dart';
+import 'interfaces/i_audio_settings.dart';
+import '../services/audio_settings.dart';
 import '../services/preferences_service.dart';
 import '../services/progress_service.dart';
 import '../services/user_profile_service.dart';
@@ -95,8 +97,8 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
   // Register AudioPlayerManager first (required by SimpleTTSService)
   if (!locator.isRegistered<AudioPlayerManager>()) {
     locator.registerLazySingleton<AudioPlayerManager>(() {
-      debugPrint('Registering AudioPlayerManager for audio infrastructure');
-      return AudioPlayerManager();
+      debugPrint('Registering AudioPlayerManager for audio infrastructure with AudioSettings');
+      return AudioPlayerManager(audioSettings: locator<IAudioSettings>());
     });
   }
 
@@ -379,6 +381,12 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
       debugPrint('Registered AudioGenerator with true lazy initialization');
     }
 
+    // === AUDIO SETTINGS REGISTRATION (Required by all audio services) ===
+    if (!serviceLocator.isRegistered<IAudioSettings>()) {
+      serviceLocator.registerLazySingleton<IAudioSettings>(() => AudioSettings());
+      debugPrint('✅ Registered IAudioSettings for global mute functionality');
+    }
+
     // === AUDIO INFRASTRUCTURE REGISTRATION (Always needed by AudioGenerator) ===
     _registerAudioInfra(serviceLocator, useRefactoredVoicePipeline);
 
@@ -397,6 +405,7 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
           debugPrint('Creating legacy VoiceService for AutoListeningCoordinator coordination');
           final service = VoiceService(
             apiClient: serviceLocator<ApiClient>(),
+            audioSettings: serviceLocator<IAudioSettings>(),
           );
 
           // Initialize only if needed when first accessed
@@ -423,6 +432,7 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
           debugPrint('Creating VoiceService instance (lazy initialization)');
           final service = VoiceService(
             apiClient: serviceLocator<ApiClient>(),
+            audioSettings: serviceLocator<IAudioSettings>(),
           );
 
           // Initialize only if needed when first accessed

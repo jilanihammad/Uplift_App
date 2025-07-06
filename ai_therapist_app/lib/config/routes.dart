@@ -354,8 +354,6 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
                   BottomNavigationBarItem(
                       icon: Icon(Icons.home), label: 'Home'),
                   BottomNavigationBarItem(
-                      icon: Icon(Icons.chat), label: 'Chat'),
-                  BottomNavigationBarItem(
                       icon: Icon(Icons.history), label: 'History'),
                 ],
               )
@@ -367,8 +365,7 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
   int _calculateSelectedIndex(BuildContext context) {
     final String location = GoRouterState.of(context).matchedLocation;
     if (location.startsWith(AppRouter.home)) return 0;
-    if (location.startsWith(AppRouter.chat)) return 1;
-    if (location.startsWith(AppRouter.history)) return 2;
+    if (location.startsWith(AppRouter.history)) return 1;
     return 0;
   }
 
@@ -378,9 +375,6 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
         GoRouter.of(context).go(AppRouter.home);
         break;
       case 1:
-        GoRouter.of(context).go(AppRouter.chat);
-        break;
-      case 2:
         GoRouter.of(context).go(AppRouter.history);
         break;
     }
