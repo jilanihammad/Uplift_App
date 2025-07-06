@@ -450,26 +450,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       return;
     }
 
-    // Phase 1A.4: Dispatch BLoC event for core business logic
-    bloc.add(const EndSessionRequested());
-
-    // UI concerns remain in UI layer (as planned)
-    // Disable wakelock immediately since session is ending
-    try {
-      await NativeWakelockService.disable();
-      debugPrint('[ChatScreen] Wakelock disabled successfully in _endSession');
-    } catch (e) {
-      debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
-    }
-
-    // Explicitly stop VAD immediately to prevent it from continuing to run
-    try {
-      await DependencyContainer().vadManager.stopListening();
-      debugPrint('[ChatScreen] VAD explicitly stopped in _endSession');
-    } catch (e) {
-      debugPrint('[ChatScreen] Failed to stop VAD in _endSession: $e');
-    }
-
     // Don't generate a summary if the session didn't actually start
     if (state.messages.isEmpty ||
         state.showDurationSelector ||
@@ -485,7 +465,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       return;
     }
 
-    // Show confirmation dialog
+    // Show confirmation dialog FIRST - before any state changes
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -504,7 +484,30 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       ),
     );
 
+    // If user cancels, exit early with NO state changes
     if (result != true || !mounted) return;
+
+    // Only execute session ending logic AFTER user confirms
+    
+    // Phase 1A.4: Dispatch BLoC event for core business logic
+    bloc.add(const EndSessionRequested());
+
+    // UI concerns remain in UI layer (as planned)
+    // Disable wakelock since session is ending (confirmed)
+    try {
+      await NativeWakelockService.disable();
+      debugPrint('[ChatScreen] Wakelock disabled successfully in _endSession');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
+    }
+
+    // Explicitly stop VAD to prevent it from continuing to run
+    try {
+      await DependencyContainer().vadManager.stopListening();
+      debugPrint('[ChatScreen] VAD explicitly stopped in _endSession');
+    } catch (e) {
+      debugPrint('[ChatScreen] Failed to stop VAD in _endSession: $e');
+    }
 
     // Start ending session
     bloc.add(SetEndingSession(true));
