@@ -2,6 +2,7 @@
 
 import 'package:get_it/get_it.dart';
 import 'interfaces/interfaces.dart';
+import 'interfaces/i_audio_settings.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../services/audio_generator.dart';
 import '../services/vad_manager.dart';
@@ -101,6 +102,7 @@ class DependencyContainer {
   ITTSService get ttsService => get<ITTSService>();
   VADManager get vadManager => get<VADManager>();
   RecordingManager get recordingManager => get<RecordingManager>();
+  IAudioSettings get audioSettings => get<IAudioSettings>();
   
   // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;

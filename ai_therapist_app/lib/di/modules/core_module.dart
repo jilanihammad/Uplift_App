@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import 'dart:typed_data';
 import '../interfaces/interfaces.dart';
 import '../../services/config_service.dart';
+import '../../services/audio_settings.dart';
 import '../../data/datasources/remote/api_client.dart';
 import '../../data/datasources/local/app_database.dart';
 import '../../data/datasources/local/prefs_manager.dart';
@@ -12,6 +13,7 @@ import '../../utils/connectivity_checker.dart';
 import '../../utils/database_helper.dart';
 import '../interfaces/i_database_operation_manager.dart';
 import '../interfaces/i_app_database.dart';
+import '../interfaces/i_audio_settings.dart';
 
 /// Core dependency module
 /// Registers fundamental services that other services depend on
@@ -21,6 +23,11 @@ class CoreModule {
     if (locator.isRegistered<IConfigService>()) {
       return;
     }
+
+    // Register AudioSettings early, before any services that might depend on it
+    locator.registerLazySingleton<IAudioSettings>(
+      () => AudioSettings(),
+    );
 
     // Register utilities first (no dependencies)
     locator.registerLazySingleton<ConnectivityChecker>(
@@ -73,6 +80,10 @@ class CoreModule {
     locator.registerSingleton<IDatabaseOperationManager>(
       locator<DatabaseOperationManager>(),
     );
+
+    // Verify critical registrations succeeded
+    assert(locator.isRegistered<IAudioSettings>(), 
+      'IAudioSettings must be registered in CoreModule');
   }
 
   static void registerMocks(GetIt locator) {

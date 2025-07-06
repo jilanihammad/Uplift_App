@@ -10,6 +10,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/tts_request.dart';
 import '../di/interfaces/i_tts_service.dart';
+import '../di/interfaces/i_audio_settings.dart';
 import 'audio_player_manager.dart';
 import 'path_manager.dart';
 import '../config/app_config.dart';
@@ -88,12 +89,19 @@ class SimpleTTSService implements ITTSService {
   bool _disposed = false;
 
   SimpleTTSService({
-    required AudioPlayerManager audioPlayerManager,
+    AudioPlayerManager? audioPlayerManager,
+    IAudioSettings? audioSettings,
     void Function(bool isSpeaking)? onTTSComplete,
     void Function(bool isSpeaking)? voiceServiceUpdateCallback,
-  }) : _audioPlayerManager = audioPlayerManager,
+  }) : _audioPlayerManager = audioPlayerManager ?? AudioPlayerManager(audioSettings: audioSettings),
        _onTTSComplete = onTTSComplete,
        _voiceServiceUpdateCallback = voiceServiceUpdateCallback {
+    // Verify AudioPlayerManager has AudioSettings for mute functionality
+    if (kDebugMode && audioSettings != null && audioPlayerManager != null) {
+      print('🔊 SimpleTTSService: Using provided AudioPlayerManager with global mute support');
+    } else if (kDebugMode && audioSettings != null) {
+      print('🔊 SimpleTTSService: Created AudioPlayerManager with AudioSettings for mute support');
+    }
     _backendUrl = AppConfig().backendUrl;
     // Phase 1: Initialize broadcast stream controller for speaking state
     _speakingStateController = StreamController<bool>.broadcast(sync: true);
