@@ -109,7 +109,12 @@ WORKDIR /app
 # Add build timestamp as an argument to force rebuild without cache
 ENV BUILD_TIMESTAMP=$TIMESTAMP
 
-# Install dependencies with --no-cache-dir to avoid cache issues
+# Install system dependencies including FFmpeg for OPUS audio conversion
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies with --no-cache-dir to avoid cache issues
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

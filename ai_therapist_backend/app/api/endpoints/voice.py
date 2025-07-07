@@ -947,6 +947,41 @@ async def websocket_streaming_tts(
                 # Handle init message for protocol versioning (Issue #5)
                 if message_type == "init":
                     client_protocol_version = message_data.get("proto_version", 1)
+                    
+                    # Handle enhanced format negotiation for OPUS support
+                    accept_formats = message_data.get("accept_formats", ["wav"])
+                    preferred_format = message_data.get("preferred_format", "wav")
+                    opus_params = message_data.get("opus_params", {})
+                    
+                    # Validate and negotiate format
+                    supported_formats = ["wav", "opus"]  # Backend supported formats
+                    negotiated_format = "wav"  # Default fallback
+                    
+                    # Prefer OPUS if client supports it and includes proper parameters
+                    if preferred_format in supported_formats and preferred_format in accept_formats:
+                        negotiated_format = preferred_format
+                    elif "opus" in accept_formats and "opus" in supported_formats:
+                        negotiated_format = "opus"
+                    elif "wav" in accept_formats:
+                        negotiated_format = "wav"
+                    
+                    # Store negotiated format in client metadata
+                    if client_id in connection_manager.active_connections:
+                        connection_manager.active_connections[client_id]["negotiated_format"] = negotiated_format
+                        connection_manager.active_connections[client_id]["opus_params"] = opus_params
+                    
+                    logger.info(f"🎵 Format negotiation for client {client_id}: "
+                               f"accept_formats={accept_formats}, preferred={preferred_format}, "
+                               f"negotiated={negotiated_format}, opus_params={opus_params}")
+                    
+                    # Send negotiation response
+                    await websocket.send_text(json.dumps({
+                        "type": "format_negotiated",
+                        "negotiated_format": negotiated_format,
+                        "supported_formats": supported_formats,
+                        "opus_params": opus_params if negotiated_format == "opus" else None,
+                        "fallback_format": "wav"
+                    }))
                     server_protocol_version = 2  # Current server protocol version
                     
                     # Version compatibility check
@@ -1141,6 +1176,13 @@ async def websocket_streaming_tts(
                     params = message_data.get("params", {})
                     request_id = message_data.get("request_id", f"req_{int(time.time() * 1000)}")
                     
+                    # Get negotiated format and OPUS parameters from connection
+                    connection_info = connection_manager.active_connections.get(client_id, {})
+                    negotiated_format = connection_info.get("negotiated_format", "wav")
+                    opus_params = connection_info.get("opus_params", {})
+                    
+                    logger.info(f"🎵 TTS request for client {client_id}: format={negotiated_format}, opus_params={opus_params}")
+                    
                     if not text_content.strip():
                         await websocket.send_text(json.dumps({
                             "type": "error",
@@ -1178,10 +1220,11 @@ async def websocket_streaming_tts(
                         metadata={
                             "client_id": client_id,
                             "voice": voice_param,
-                            "format": format,
+                            "format": negotiated_format,  # Use negotiated format instead of URL param
                             "user_id": user_info["user_id"],
                             "supports_binary": supports_binary,
                             "tts_params": params,
+                            "opus_params": opus_params,  # Include OPUS parameters
                             "request_type": "audio_request",
                             "is_tts_only": True  # 🎯 KEY FLAG: Tells pipeline to skip LLM and go straight to TTS
                         }

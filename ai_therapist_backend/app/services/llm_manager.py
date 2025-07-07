@@ -820,18 +820,22 @@ class LLMManager:
             logger.error(traceback.format_exc())
             return ""
     
-    async def stream_text_to_speech(self, text: str, voice: Optional[str] = None, response_format: Optional[str] = None, **kwargs):
+    async def stream_text_to_speech(self, text: str, voice: Optional[str] = None, response_format: Optional[str] = None, 
+                                   opus_params: Optional[Dict[str, Any]] = None, **kwargs):
         """
         Stream text-to-speech audio chunks as base64-encoded strings.
+        Supports both WAV and OPUS/OGG formats with format negotiation.
+        
         Args:
             text: Text to convert to speech
             voice: Voice to use (optional)
-            response_format: Audio format to return (e.g., 'wav', 'mp3'). Defaults to 'wav' for lowest latency.
+            response_format: Audio format to return ('wav', 'opus', 'ogg_opus'). Defaults to 'wav'.
+            opus_params: OPUS-specific parameters (sample_rate, channels, bitrate)
             **kwargs: Additional parameters to override defaults
         Yields:
             Base64-encoded audio chunks
         """
-        response_format = response_format or "wav"  # Default to WAV for lowest latency streaming
+        response_format = response_format or "wav"  # Default to WAV for compatibility
         
         if not self.tts_config:
             raise ValueError("No TTS configuration available")
@@ -839,56 +843,224 @@ class LLMManager:
             raise ValueError("TTS service unavailable - API key not set")
         
         if self.tts_config.provider == ModelProvider.OPENAI:
-            # Use the correct OpenAI SDK streaming method
+            # Route to OPUS or WAV streaming based on format
+            if response_format in ['opus', 'ogg_opus']:
+                async for chunk in self._stream_openai_opus(text, voice, opus_params, **kwargs):
+                    yield chunk
+            else:
+                # Use the correct OpenAI SDK streaming method for WAV
+                client = self._get_openai_client(self.tts_config)
+                
+                params = self.tts_config.default_params.copy()
+                params.update(kwargs)
+                if voice:
+                    params['voice'] = voice
+                if response_format:
+                    params['response_format'] = response_format
+                else:
+                    response_format = params.get('response_format', 'wav')  # Default to WAV
+                
+                # Remove model from params if it exists to avoid duplicate parameter error
+                params.pop('model', None)
+                
+                # Use OpenAI SDK's proper streaming method
+                try:
+                    logger.info(f"🎤 OpenAI TTS: Starting WAV streaming for text='{text[:50]}...' (length: {len(text)} chars), voice={params['voice']}, format={response_format}")
+                    
+                    total_chunks = 0
+                    total_bytes = 0
+                    first_chunk_logged = False
+                    
+                    with client.audio.speech.with_streaming_response.create(
+                        model=self.tts_config.model_id,
+                        input=text,
+                        voice=params['voice'],
+                        response_format=response_format,
+                    ) as response:
+                        if response.status_code != 200:
+                            raise Exception(f"TTS streaming failed: {response.status_code}")
+                        
+                        logger.info(f"🎤 OpenAI TTS: WAV stream started, status={response.status_code}")
+                        
+                        # Stream chunks as they arrive
+                        for chunk in response.iter_bytes(chunk_size=4096):
+                            if chunk:
+                                total_chunks += 1
+                                total_bytes += len(chunk)
+                                
+                                # Debug first chunk to check WAV header
+                                if not first_chunk_logged:
+                                    first_16_bytes = chunk[:16].hex() if len(chunk) >= 16 else chunk.hex()
+                                    logger.info(f"🔍 OpenAI TTS: First chunk header (hex): {first_16_bytes}")
+                                    first_chunk_logged = True
+                                
+                                b64_chunk = base64.b64encode(chunk).decode('utf-8')
+                                logger.debug(f"🎤 OpenAI TTS: WAV chunk {total_chunks}, size={len(chunk)} bytes")
+                                yield b64_chunk
+                    
+                    logger.info(f"🎤 OpenAI TTS: WAV completed - generated {total_chunks} chunks, {total_bytes} total bytes for text: '{text[:50]}...'")
+                    
+                except Exception as e:
+                    logger.error(f"OpenAI TTS WAV streaming error: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    raise
+        else:
+            raise ValueError(f"Streaming TTS not implemented for provider: {self.tts_config.provider}")
+    
+    async def _stream_openai_opus(self, text: str, voice: Optional[str] = None, 
+                                 opus_params: Optional[Dict[str, Any]] = None, **kwargs):
+        """
+        Stream OPUS/OGG audio by first getting WAV from OpenAI then encoding to OPUS.
+        
+        Args:
+            text: Text to convert to speech
+            voice: Voice to use
+            opus_params: OPUS encoding parameters (sample_rate, channels, bitrate)
+            **kwargs: Additional parameters
+        Yields:
+            Base64-encoded OPUS/OGG chunks
+        """
+        try:
+            import subprocess
+            import tempfile
+            import os
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor
+            
+            # Set default OPUS parameters based on engineer requirements
+            default_opus_params = {
+                'sample_rate': 48000,  # 48kHz from OpenAI TTS (stereo)
+                'channels': 1,         # Mono downmix for efficiency
+                'bitrate': 64000,      # 64 kbps VBR for speech
+            }
+            
+            # Merge with provided parameters
+            if opus_params:
+                default_opus_params.update(opus_params)
+            
+            logger.info(f"🎵 Starting OPUS streaming: text='{text[:50]}...' (length: {len(text)} chars), "
+                       f"voice={voice}, opus_params={default_opus_params}")
+            
+            # Step 1: Get WAV audio from OpenAI first (OpenAI doesn't support OPUS directly)
             client = self._get_openai_client(self.tts_config)
             
             params = self.tts_config.default_params.copy()
             params.update(kwargs)
             if voice:
                 params['voice'] = voice
-            if response_format:
-                params['response_format'] = response_format
-            else:
-                response_format = params.get('response_format', 'wav')  # Default to WAV
+            params['response_format'] = 'wav'  # Force WAV from OpenAI
             
-            # Remove model from params if it exists to avoid duplicate parameter error
+            # Remove model from params if it exists
             params.pop('model', None)
             
-            # Use OpenAI SDK's proper streaming method
+            # Create temporary files for processing
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as wav_temp:
+                wav_path = wav_temp.name
+            
+            with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as ogg_temp:
+                ogg_path = ogg_temp.name
+            
             try:
-                logger.info(f"🎤 OpenAI TTS: Starting streaming for text='{text[:50]}...' (length: {len(text)} chars), voice={params['voice']}, format={response_format}")
+                # Step 2: Stream WAV from OpenAI and save to temporary file
+                logger.info(f"🎵 Fetching WAV audio from OpenAI for OPUS conversion...")
                 
-                total_chunks = 0
-                total_bytes = 0
-                
+                total_wav_bytes = 0
                 with client.audio.speech.with_streaming_response.create(
                     model=self.tts_config.model_id,
                     input=text,
                     voice=params['voice'],
-                    response_format=response_format,
+                    response_format='wav',
                 ) as response:
                     if response.status_code != 200:
-                        raise Exception(f"TTS streaming failed: {response.status_code}")
+                        raise Exception(f"OpenAI TTS failed: {response.status_code}")
                     
-                    logger.info(f"🎤 OpenAI TTS: Stream started, status={response.status_code}")
+                    # Save WAV to temporary file
+                    with open(wav_path, 'wb') as wav_file:
+                        for chunk in response.iter_bytes(chunk_size=8192):
+                            if chunk:
+                                wav_file.write(chunk)
+                                total_wav_bytes += len(chunk)
+                
+                logger.info(f"🎵 WAV audio saved: {total_wav_bytes} bytes")
+                
+                # Step 3: Convert WAV to OPUS using ffmpeg in streaming mode
+                logger.info(f"🎵 Converting to OPUS with params: {default_opus_params}")
+                
+                # Build ffmpeg command for OPUS encoding with streaming-friendly parameters
+                ffmpeg_cmd = [
+                    'ffmpeg',
+                    '-i', wav_path,                                    # Input WAV file
+                    '-f', 'ogg',                                       # OGG container format
+                    '-c:a', 'libopus',                                 # OPUS codec
+                    '-ar', str(default_opus_params['sample_rate']),    # Sample rate
+                    '-ac', str(default_opus_params['channels']),       # Channel count (mono)
+                    '-b:a', str(default_opus_params['bitrate']),       # Bitrate
+                    '-application', 'voip',                            # OPUS application mode for speech
+                    '-frame_duration', '20',                           # 20ms frames for low latency
+                    '-packet_loss', '5',                               # Expect 5% packet loss (network resilience)
+                    '-compression_level', '5',                         # Balance quality/CPU
+                    '-y',                                              # Overwrite output
+                    ogg_path                                           # Output OGG file
+                ]
+                
+                # Execute ffmpeg conversion
+                logger.info(f"🎵 Running ffmpeg: {' '.join(ffmpeg_cmd)}")
+                
+                def run_ffmpeg():
+                    """Run ffmpeg conversion in thread pool"""
+                    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        raise Exception(f"FFmpeg conversion failed: {result.stderr}")
+                    return result
+                
+                # Run conversion in thread pool to avoid blocking
+                loop = asyncio.get_event_loop()
+                with ThreadPoolExecutor() as executor:
+                    await loop.run_in_executor(executor, run_ffmpeg)
+                
+                # Step 4: Stream the OPUS/OGG file in chunks
+                if not os.path.exists(ogg_path) or os.path.getsize(ogg_path) == 0:
+                    raise Exception("OPUS conversion produced empty file")
+                
+                ogg_size = os.path.getsize(ogg_path)
+                logger.info(f"🎵 OPUS conversion successful: {ogg_size} bytes")
+                
+                # Stream OPUS chunks
+                total_chunks = 0
+                total_opus_bytes = 0
+                chunk_size = 4096  # 4KB chunks for streaming
+                
+                with open(ogg_path, 'rb') as ogg_file:
+                    while True:
+                        chunk = ogg_file.read(chunk_size)
+                        if not chunk:
+                            break
+                        
+                        total_chunks += 1
+                        total_opus_bytes += len(chunk)
+                        b64_chunk = base64.b64encode(chunk).decode('utf-8')
+                        
+                        logger.debug(f"🎵 OPUS chunk {total_chunks}, size={len(chunk)} bytes")
+                        yield b64_chunk
+                
+                logger.info(f"🎵 OPUS streaming completed: {total_chunks} chunks, {total_opus_bytes} total bytes, "
+                           f"compression: {total_wav_bytes} -> {total_opus_bytes} bytes "
+                           f"({100 * total_opus_bytes / total_wav_bytes:.1f}%)")
+                
+            finally:
+                # Clean up temporary files
+                try:
+                    if os.path.exists(wav_path):
+                        os.unlink(wav_path)
+                    if os.path.exists(ogg_path):
+                        os.unlink(ogg_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"Error cleaning up temp files: {cleanup_error}")
                     
-                    # Stream chunks as they arrive
-                    for chunk in response.iter_bytes(chunk_size=4096):
-                        if chunk:
-                            total_chunks += 1
-                            total_bytes += len(chunk)
-                            b64_chunk = base64.b64encode(chunk).decode('utf-8')
-                            logger.debug(f"🎤 OpenAI TTS: Chunk {total_chunks}, size={len(chunk)} bytes")
-                            yield b64_chunk
-                
-                logger.info(f"🎤 OpenAI TTS: Completed - generated {total_chunks} chunks, {total_bytes} total bytes for text: '{text[:50]}...'")
-                
-            except Exception as e:
-                logger.error(f"OpenAI TTS streaming error: {str(e)}")
-                logger.error(traceback.format_exc())
-                raise
-        else:
-            raise ValueError(f"Streaming TTS not implemented for provider: {self.tts_config.provider}")
+        except Exception as e:
+            logger.error(f"🎵 OPUS streaming error: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
     
     # =============================================================================
     # TRANSCRIPTION METHODS
