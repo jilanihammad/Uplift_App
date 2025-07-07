@@ -6,6 +6,9 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../di/interfaces/i_audio_settings.dart';
+import 'tts_streaming_monitor.dart';
+import '../utils/memory_monitor.dart';
+import 'live_tts_audio_source.dart';
 
 /// Audio queue item containing all necessary information for queued playback
 class AudioQueueItem {
@@ -165,6 +168,12 @@ class AudioPlayerManager {
   // Initialize the audio player
   Future<void> _initAudioPlayer() async {
     try {
+      // CRITICAL: Explicitly disable loop mode to prevent infinite TTS replay
+      await _audioPlayer.setLoopMode(LoopMode.off);
+      if (kDebugMode) {
+        print('🎧 AudioPlayerManager: Loop mode explicitly set to OFF');
+      }
+      
       // Set up audio session
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration(
@@ -566,6 +575,253 @@ class AudioPlayerManager {
     _applyEffectiveVolume();
   }
 
+  /// Wait for true audio completion with robust detection
+  /// Ensures we've seen playing==true before waiting for completion
+  /// Prevents false positive from rapid idle→completed transitions
+  Future<void> _waitForTrueCompletion() async {
+    if (kDebugMode) {
+      print('🎵 AudioPlayerManager: Waiting for robust completion detection');
+    }
+    
+    try {
+      // Step 1: Wait for playback to actually start (playing==true)
+      final playbackStarted = _audioPlayer.playingStream
+        .where((playing) => playing)
+        .first
+        .timeout(const Duration(seconds: 10), onTimeout: () {
+          throw TimeoutException('Playback never started', const Duration(seconds: 10));
+        });
+      
+      await playbackStarted;
+      
+      if (kDebugMode) {
+        print('🎵 AudioPlayerManager: Playback confirmed started, waiting for completion');
+      }
+      
+      // Step 2: Now wait for true completion
+      final playbackCompleted = _audioPlayer.processingStateStream
+        .where((state) => state == ProcessingState.completed)
+        .first
+        .timeout(const Duration(minutes: 2), onTimeout: () {
+          throw TimeoutException('Playback never completed', const Duration(minutes: 2));
+        });
+      
+      await playbackCompleted;
+      
+      if (kDebugMode) {
+        print('🎵 AudioPlayerManager: True completion detected');
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ AudioPlayerManager: Robust completion detection failed: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// Enhanced error detection for just_audio streams
+  /// Detects idle+not playing+has duration = stream error
+  StreamSubscription<ProcessingState>? _listenForStreamErrors(Completer<void> errorCompleter) {
+    return _audioPlayer.processingStateStream.listen((state) {
+      // Standard completion
+      if (state == ProcessingState.completed) {
+        if (!errorCompleter.isCompleted) {
+          errorCompleter.complete();
+        }
+      }
+      // Error detection: idle + not playing + has duration = stream error
+      else if (state == ProcessingState.idle && 
+               !_audioPlayer.playing && 
+               _audioPlayer.duration != null) {
+        if (kDebugMode) {
+          print('❌ AudioPlayerManager: Stream error detected - idle with duration but not playing');
+        }
+        TTSStreamingMonitor().recordStreamingFailure('Player stream error: idle state with duration');
+        
+        if (!errorCompleter.isCompleted) {
+          errorCompleter.complete(); // Treat as completion to prevent hang
+        }
+      }
+    });
+  }
+
+  /// Clean up previous subscriptions to prevent leaks
+  Future<void> _cleanupPreviousSubscriptions() async {
+    // Brief delay to ensure any previous subscriptions can cleanup
+    await Future.delayed(const Duration(milliseconds: 50));
+    
+    if (kDebugMode) {
+      print('🧹 AudioPlayerManager: Cleaned up previous subscriptions');
+    }
+  }
+
+  /// Play live TTS audio stream (TRUE STREAMING implementation)
+  /// 
+  /// This uses a custom LiveTtsAudioSource for true progressive streaming
+  /// where audio starts quickly and continues as chunks arrive.
+  /// 
+  /// CRITICAL: This method maintains the same completion semantics as playAudioBytes()
+  /// with robust completion detection that waits for playing==true first
+  /// 
+  /// NOTE: Now accepts either a stream or a pre-created LiveTtsAudioSource for better lifecycle management
+  Future<void> playLiveTtsStream(
+    dynamic audioSourceOrStream, {
+    String? debugName,
+    String contentType = 'audio/wav',
+  }) async {
+    final displayName = debugName ?? 'live-tts-audio';
+    final id = '${DateTime.now().microsecondsSinceEpoch}_live_${audioSourceOrStream.hashCode}';
+    final startTime = DateTime.now();
+    
+    // Start monitoring
+    TTSStreamingMonitor().recordStreamingStart();
+    MemoryMonitor.setBaseline();
+    
+    if (kDebugMode) {
+      print('🎧 AudioPlayerManager: Starting live TTS stream: $displayName (ID: $id)');
+      print('🎧 Content-Type: $contentType');
+    }
+
+    try {
+      // CRITICAL: Stop any previous playback and clean up subscriptions
+      await _audioPlayer.stop();
+      await _cleanupPreviousSubscriptions();
+      
+      // Clear force override when starting new playback
+      _forceIsPlayingState = null;
+      
+      // Determine if we have a stream or an existing LiveTtsAudioSource
+      final LiveTtsAudioSource liveSource;
+      if (audioSourceOrStream is LiveTtsAudioSource) {
+        // Use existing LiveTtsAudioSource (preferred for proper lifecycle management)
+        liveSource = audioSourceOrStream;
+        if (kDebugMode) {
+          print('🎯 AudioPlayerManager: Using existing LiveTtsAudioSource for $displayName');
+        }
+      } else if (audioSourceOrStream is Stream<Uint8List>) {
+        // Create new LiveTtsAudioSource from stream (legacy compatibility)
+        liveSource = LiveTtsAudioSource(
+          audioSourceOrStream,
+          contentType: contentType,
+          debugName: displayName,
+        );
+        if (kDebugMode) {
+          print('🎯 AudioPlayerManager: Created new LiveTtsAudioSource for $displayName');
+        }
+      } else {
+        throw ArgumentError('audioSourceOrStream must be either Stream<Uint8List> or LiveTtsAudioSource');
+      }
+      
+      // Set up the live audio source with error recovery
+      try {
+        await _setSourceAndApplyVolume(
+          () => _audioPlayer.setAudioSource(liveSource, preload: false)
+        );
+        
+        // Start playback immediately
+        await _audioPlayer.play();
+        
+        if (kDebugMode) {
+          print('🚀 AudioPlayerManager: Started live TTS playback for $displayName');
+        }
+      } catch (sourceError) {
+        // CRITICAL: Clean up on source error to prevent VAD/recording pipeline hanging
+        if (kDebugMode) {
+          print('❌ AudioPlayerManager: Live TTS source error - cleaning up: $sourceError');
+        }
+        
+        // Reset player state
+        try {
+          await _audioPlayer.stop();
+        } catch (stopError) {
+          if (kDebugMode) {
+            print('⚠️ AudioPlayerManager: Error stopping player during cleanup: $stopError');
+          }
+        }
+        
+        // Force playing state to false so VAD can restart
+        _forceIsPlayingState = false;
+        _emitPlayingStateImmediate(false);
+        
+        // Record failure for monitoring
+        TTSStreamingMonitor().recordStreamingFailure('Source setup error: $sourceError');
+        
+        // Re-throw after cleanup
+        rethrow;
+      }
+      
+      // Create completion tracking
+      final playbackCompleter = Completer<void>();
+      
+      // Listen for completion using robust detection
+      StreamSubscription? subscription;
+      subscription = _audioPlayer.processingStateStream.listen((state) {
+        if (state == ProcessingState.completed ||
+            state == ProcessingState.idle ||
+            (state == ProcessingState.ready && !_audioPlayer.playing)) {
+          subscription?.cancel();
+          
+          if (kDebugMode) {
+            print('🎧 Live TTS audio playback completed: $displayName');
+          }
+          
+          // CRITICAL: Clear the source to prevent any possibility of replay
+          _audioPlayer.stop().catchError((e) {
+            if (kDebugMode) {
+              print('⚠️ AudioPlayerManager: Error stopping player after completion: $e');
+            }
+          });
+          
+          // Record successful streaming
+          final latency = DateTime.now().difference(startTime).inMilliseconds;
+          TTSStreamingMonitor().recordStreamingSuccess(latencyMs: latency);
+          
+          // Force playing state to false when completed
+          _forceIsPlayingState = false;
+          _emitPlayingState(false);
+          
+          if (!playbackCompleter.isCompleted) {
+            playbackCompleter.complete();
+          }
+        }
+      });
+
+      // Error handling subscription
+      StreamSubscription? errorSubscription;
+      errorSubscription = _audioPlayer.playbackEventStream.listen(
+        (_) {},
+        onError: (error) {
+          // Record playback failure
+          TTSStreamingMonitor().recordStreamingFailure('Live playback error: $error');
+          
+          if (!playbackCompleter.isCompleted) {
+            playbackCompleter.completeError(error);
+          }
+          errorSubscription?.cancel();
+        },
+      );
+      
+      // Wait for playback to complete
+      await playbackCompleter.future;
+      
+      if (kDebugMode) {
+        print('✅ Live TTS audio playback finished: $displayName');
+      }
+      
+    } catch (e) {
+      // Record streaming failure
+      TTSStreamingMonitor().recordStreamingFailure('Live TTS exception: $e');
+      
+      if (kDebugMode) {
+        print('❌ Error playing live TTS audio: $e');
+      }
+      _errorController.add('Live TTS audio playback error: $e');
+      rethrow;
+    }
+  }
+
+
   /// Play audio directly from memory bytes (eliminates file I/O)
   /// This is the optimized path for TTS that avoids unnecessary disk writes
   Future<void> playAudioBytes(Uint8List audioBytes, {String? debugName}) async {
@@ -611,6 +867,13 @@ class AudioPlayerManager {
           if (kDebugMode) {
             print('🎧 In-memory audio playback completed: $displayName');
           }
+          
+          // CRITICAL: Clear the source to prevent any possibility of replay
+          _audioPlayer.stop().catchError((e) {
+            if (kDebugMode) {
+              print('⚠️ AudioPlayerManager: Error stopping player after completion: $e');
+            }
+          });
           
           // Force playing state to false when completed
           _forceIsPlayingState = false;

@@ -1455,22 +1455,22 @@ class EnhancedAsyncPipeline:
         self.logger.debug(f"Selected voice '{voice}' for text: '{text_chunk.text[:50]}...'")
         
         try:
-            # Use validated format from configuration
-            response_format = self._get_validated_format(text_chunk.metadata.get("format", "wav"))
+            # Use the client's explicitly negotiated format - don't override it
+            client_metadata = text_chunk.metadata
+            client_requested_format = text_chunk.metadata.get("format", "wav")
+            
+            # Respect the client's negotiated format instead of overriding with network-based selection
+            # The WebSocket already handled format negotiation properly
+            optimal_format = client_requested_format
+            format_params = self.get_format_parameters(optimal_format)
             
             # Stream TTS audio chunks
             audio_chunks_generated = 0
             sentence_id = f"{conversation_id}_{text_chunk.sequence_id}"
             
-            # Get client capabilities and network metrics for format selection
-            client_metadata = text_chunk.metadata
-            client_capabilities = client_metadata.get("client_capabilities", {"supported_formats": ["wav"]})
+            # Get network quality for monitoring but don't use for format override
             network_metrics = client_metadata.get("network_metrics", {})
-            
-            # Assess network quality and select optimal format
             network_quality = self.assess_network_quality(network_metrics) if network_metrics else "good"
-            optimal_format = self.select_optimal_format(network_quality, client_capabilities)
-            format_params = self.get_format_parameters(optimal_format)
             
             self.logger.info(f"TTS processing: format={optimal_format}, network={network_quality}, text='{text_chunk.text[:50]}...'")
             
@@ -1484,10 +1484,13 @@ class EnhancedAsyncPipeline:
                 "real_time": True
             }
             
-            # Add format-specific parameters
+            # Add format-specific parameters from client negotiation or defaults
             if optimal_format == "opus":
-                tts_params["bitrate"] = format_params.get("bitrate", "24k")
-                tts_params["sample_rate"] = format_params.get("sample_rate", 24000)
+                # Use negotiated OPUS parameters from client, or defaults
+                client_opus_params = client_metadata.get("opus_params", {})
+                tts_params["bitrate"] = str(client_opus_params.get("bitrate", format_params.get("bitrate", 64000)))
+                tts_params["sample_rate"] = client_opus_params.get("sample_rate", format_params.get("sample_rate", 48000))
+                tts_params["channels"] = client_opus_params.get("channels", 1)
             elif optimal_format == "aac":
                 tts_params["bitrate"] = format_params.get("bitrate", "64k")
                 tts_params["sample_rate"] = format_params.get("sample_rate", 48000)
@@ -1609,9 +1612,25 @@ class EnhancedAsyncPipeline:
             valid_tts_params.pop('chunk_size', None)
             valid_tts_params.pop('real_time', None)
             
-            # Use LLMManager TTS streaming
+            # Extract OPUS parameters if format is opus
+            opus_params = None
+            response_format = tts_params.get('response_format', 'wav')
+            if response_format in ['opus', 'ogg_opus']:
+                # Only process OPUS parameters for OPUS format
+                opus_params = {
+                    'sample_rate': tts_params.get('sample_rate', 48000),
+                    'channels': 1,  # Always mono for efficiency
+                    'bitrate': int(str(tts_params.get('bitrate', '64000')).replace('k', '000'))
+                }
+                self.logger.info(f"🎵 Using OPUS format with params: {opus_params}")
+            else:
+                # Explicitly log WAV format usage
+                self.logger.info(f"🎵 Using {response_format.upper()} format (no OPUS processing)")
+            
+            # Use LLMManager TTS streaming with OPUS support
             async for chunk_b64 in self.llm_manager.stream_text_to_speech(
                 text=text,
+                opus_params=opus_params,
                 **valid_tts_params
             ):
                 yield chunk_b64

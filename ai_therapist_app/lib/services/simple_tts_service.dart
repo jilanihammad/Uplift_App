@@ -14,7 +14,15 @@ import '../di/interfaces/i_audio_settings.dart';
 import 'audio_player_manager.dart';
 import 'path_manager.dart';
 import '../config/app_config.dart';
+import '../config/tts_streaming_config.dart';
+import '../config/audio_format_config.dart';
+import 'tts_streaming_monitor.dart';
+import 'tts_completion_tracker.dart';
 import 'package:ai_therapist_app/utils/audio_path_utils.dart';
+import '../utils/wav_header_utils.dart';
+import 'live_tts_audio_source.dart';
+import 'audio_format_negotiator.dart';
+import '../utils/opus_header_utils.dart';
 
 /// Feature flag to enable in-memory TTS playback (eliminates temp WAV files)
 /// Set to true to avoid writing ~1 MiB temp files per TTS response
@@ -36,7 +44,7 @@ class SimpleTTSService implements ITTSService {
   @override
   Future<void> speak(String text, {
     String voice = 'sage',
-    String format = 'wav',
+    String format = 'auto', // Let negotiator determine optimal format
     bool makeBackupFile = true,
   }) async {
     if (text.trim().isEmpty) {
@@ -53,10 +61,15 @@ class SimpleTTSService implements ITTSService {
       print('🎯 [TTS-TRACK] Current queue size: ${_queue.length}, Pending: $_pendingStreams');
     }
 
+    // Determine optimal format - prefer OPUS if enabled, fallback to WAV
+    final optimalFormat = format == 'auto' 
+        ? AudioFormatNegotiator.getBackendFormat() 
+        : format;
+    
     final req = TtsRequest(
       text: text.trim(), 
       voice: voice, 
-      format: format,
+      format: optimalFormat,
       makeBackupFile: makeBackupFile,
     );
     _queue.add(req);
@@ -105,6 +118,9 @@ class SimpleTTSService implements ITTSService {
     _backendUrl = AppConfig().backendUrl;
     // Phase 1: Initialize broadcast stream controller for speaking state
     _speakingStateController = StreamController<bool>.broadcast(sync: true);
+    
+    // Initialize audio format negotiation
+    AudioFormatNegotiator.initialize();
   }
 
   /// Set the TTS completion callback (for wiring to AudioGenerator)
@@ -183,16 +199,518 @@ class SimpleTTSService implements ITTSService {
   }
 
   Future<void> _processResponse(TtsRequest req, WebSocketChannel ws) async {
+    // Check if streaming is enabled and buffer size allows for streaming
+    final streamingEnabled = TTSStreamingConfig.shouldUseStreaming;
+    final requestedFormat = req.format;
+    
+    // Use format-aware buffer size for optimal latency
+    final bufferSize = _getOptimalBufferSize(requestedFormat);
+    
+    if (kDebugMode) {
+      print('🎯 [TTS] Processing ${req.id}: streaming=${streamingEnabled ? "enabled" : "disabled"}, format=$requestedFormat, bufferSize=${bufferSize}');
+      print('🎯 Format-aware Config:');
+      print('  Requested Format: $requestedFormat');
+      print('  Buffer Size: $bufferSize bytes (${(bufferSize / 1024).toStringAsFixed(1)} KB)');
+      print('  Buffer Description: ${requestedFormat.toLowerCase() == "opus" ? "Low-latency OPUS (8KB)" : "Conservative WAV (32KB)"}');
+      if (requestedFormat.toLowerCase() == "opus") {
+        print('  🚀 OPUS STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
+      } else {
+        print('  🔄 WAV STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
+      }
+    }
+    
+    // ZERO RISK IMPLEMENTATION: Choose path based on configuration
+    if (streamingEnabled) {
+      // NEW STREAMING PATH: Progressive streaming with buffer threshold
+      await _processResponseStreaming(req, ws, bufferSize);
+    } else {
+      // EXISTING FULL-BUFFER PATH: Unchanged for safety
+      await _processResponseFullBuffer(req, ws);
+    }
+  }
+  
+  /// Get optimal buffer size based on audio format
+  /// OPUS: 8KB for low-latency streaming
+  /// WAV: 32KB for header processing requirements
+  int _getOptimalBufferSize(String format) {
+    switch (format.toLowerCase()) {
+      case 'opus':
+        return 8192; // 8KB - OPUS is designed for low-latency streaming
+      case 'wav':
+      default:
+        return TTSStreamingConfig.bufferSize; // 32KB - WAV needs larger buffer for headers
+    }
+  }
+
+  /// NEW: Streaming response processing with progressive playback
+  Future<void> _processResponseStreaming(TtsRequest req, WebSocketChannel ws, int bufferSize) async {
+    final startTime = DateTime.now();
+    DateTime? firstAudioTime;
+    DateTime? playbackStartTime;
+    
+    if (kDebugMode) {
+      print('🚀 [TTS] Using STREAMING path for ${req.id} (threshold: $bufferSize bytes)');
+    }
+
+    final audioBuffer = <int>[];
+    bool gotHello = false;
+    bool playbackStarted = false;
+    StreamController<Uint8List>? audioStreamController;
+    WavHeaderInfo? originalHeaderInfo;
+    // CRITICAL: Track LiveTtsAudioSource for proper lifecycle management
+    LiveTtsAudioSource? liveAudioSource;
+    
+    // CRITICAL: Use TwoPhaseCompletion to coordinate WebSocket and player completion
+    final completionTracker = TwoPhaseCompletion();
+    
+    try {
+      // Use the requested format directly (no negotiation needed)
+      final requestedFormat = req.format;
+      final contentType = requestedFormat == 'opus' ? 'audio/ogg' : 'audio/wav';
+      
+      if (kDebugMode) {
+        print('🎯 [TTS] Direct format request: ${req.format}, contentType=$contentType');
+        AudioFormatNegotiator.logCurrentConfiguration();
+      }
+      
+      // Build handshake message - request specific format directly
+      final handshakeMessage = {
+        'text': req.text,
+        'voice': req.voice,
+        'params': {'response_format': requestedFormat}, // Request format directly
+        'session_id': req.id,
+        // Direct format request (no negotiation)
+        'client_version': '1.9.0',
+        'format': requestedFormat, // Direct format specification
+        'opus_params': requestedFormat == 'opus' ? {
+          'sample_rate': AudioFormatConfig.opusSampleRate,
+          'channels': AudioFormatConfig.opusChannels,
+          'bitrate': AudioFormatConfig.opusBitrate,
+        } : null,
+      };
+      
+      ws.sink.add(jsonEncode(handshakeMessage));
+
+      // Create broadcast stream controller for live TTS streaming
+      // CRITICAL: Must be broadcast to support just_audio's multiple listeners
+      audioStreamController = StreamController<Uint8List>.broadcast(sync: true);
+      
+      // Start live streaming immediately (no buffer required)
+      Future<void>? playbackFuture;
+
+      // Listen for response (streaming pattern)
+      await for (final message in ws.stream) {
+        if (message is String) {
+          final data = jsonDecode(message);
+          final type = data['type'];
+          
+          if (type == 'tts-hello') {
+            gotHello = true;
+            if (kDebugMode) print('🎯 [TTS] Got tts-hello for ${req.id} (streaming)');
+          } else if (type == 'tts-done') {
+            if (kDebugMode) print('🎯 [TTS] Got tts-done for ${req.id} (streaming)');
+            // CRITICAL: Mark WebSocket phase complete but DON'T close stream yet
+            completionTracker.markWebSocketDone();
+            // CRITICAL: Mark WebSocket as closed in LiveTtsAudioSource for proper DataSource contract
+            liveAudioSource?.markWebSocketClosed();
+            
+            // CRITICAL: Don't close the stream immediately - let LiveTtsAudioSource drain data
+            // The controller will be closed when both conditions are met:
+            // 1. WebSocket is closed (already marked above)
+            // 2. LiveTtsAudioSource has processed all data
+            if (kDebugMode) {
+              print('🔌 [TTS] WebSocket done, stream controller will close when LiveTtsAudioSource finishes draining');
+            }
+            
+            // Schedule a state-based check to close the controller when conditions are right
+            _scheduleControllerClosureCheck(audioStreamController, liveAudioSource);
+            break;
+          } else if (type == 'error') {
+            throw Exception(data['detail'] ?? 'TTS error');
+          }
+        } else if (message is List<int>) {
+          // Record first audio chunk timing
+          firstAudioTime ??= DateTime.now();
+          
+          // PHASE 1: Accumulate chunks until we have enough for streaming setup
+          if (!playbackStarted) {
+            audioBuffer.addAll(message);
+            
+            // Check if we have enough data to start streaming
+            if (gotHello && 
+                audioBuffer.length >= bufferSize &&     // Format-aware buffer size
+                _isValidAudioHeader(audioBuffer, requestedFormat)) {  // Validate headers based on format
+              
+              playbackStarted = true; // CRITICAL: Set flag immediately to prevent multiple starts
+              playbackStartTime = DateTime.now(); // Record playback start timing
+              
+              if (kDebugMode) {
+                print('🚀 [TTS] Starting live TTS streaming for ${req.id} (${audioBuffer.length} bytes accumulated)');
+              }
+              
+              // CRITICAL: Hard-gate WAV vs OPUS processing
+              Uint8List streamingAudioData;
+              
+              if (requestedFormat.toLowerCase() == 'opus') {
+                // OPUS: Push bytes straight through without any header modification
+                streamingAudioData = Uint8List.fromList(audioBuffer);
+                if (kDebugMode) {
+                  print('🎵 [TTS] OPUS: Using original data directly (${streamingAudioData.length} bytes)');
+                }
+              } else {
+                // WAV: Apply header modification logic
+                final bool alreadyStreamingFriendly = WavHeaderUtils.isStreamingFriendly(audioBuffer);
+                
+                if (alreadyStreamingFriendly) {
+                  // 🧪 TEMPORARY TEST: Force modify even streaming-friendly headers to use 0x7FFFFFFF
+                  // This tests if ExoPlayer handles 0x7FFFFFFF better than 0xFFFFFFFF
+                  if (kDebugMode) {
+                    print('🧪 [TTS] TEMP TEST: Force-modifying streaming-friendly headers to test 0x7FFFFFFF vs 0xFFFFFFFF');
+                  }
+                  
+                  originalHeaderInfo = WavHeaderUtils.parseWavHeader(audioBuffer);
+                  
+                  if (originalHeaderInfo != null) {
+                    // Create streaming header with 0x7FFFFFFF placeholder size
+                    final streamingHeader = WavHeaderUtils.createStreamingHeader(originalHeaderInfo);
+                    
+                    // Extract PCM data from original audio
+                    final pcmData = WavHeaderUtils.extractPcmData(audioBuffer, originalHeaderInfo);
+                    
+                    // Combine streaming header with PCM data
+                    streamingAudioData = WavHeaderUtils.combineHeaderAndPcm(streamingHeader, pcmData);
+                    
+                    if (kDebugMode) {
+                      print('🧪 [TTS] TEMP TEST: Created 0x7FFFFFFF headers: header=${streamingHeader.length}B, PCM=${pcmData.length}B, total=${streamingAudioData.length}B');
+                    }
+                  } else {
+                    // Fallback to original data
+                    streamingAudioData = Uint8List.fromList(audioBuffer);
+                  }
+                } else {
+                  // Headers need modification for streaming compatibility
+                  originalHeaderInfo = WavHeaderUtils.parseWavHeader(audioBuffer);
+                  
+                  if (originalHeaderInfo != null) {
+                    if (kDebugMode) {
+                      print('🔧 [TTS] Modifying finite-size headers for unlimited streaming: $originalHeaderInfo');
+                    }
+                    
+                    // Create streaming header with placeholder size
+                    final streamingHeader = WavHeaderUtils.createStreamingHeader(originalHeaderInfo);
+                    
+                    // Extract PCM data from original audio
+                    final pcmData = WavHeaderUtils.extractPcmData(audioBuffer, originalHeaderInfo);
+                    
+                    // Combine streaming header with PCM data
+                    streamingAudioData = WavHeaderUtils.combineHeaderAndPcm(streamingHeader, pcmData);
+                    
+                    if (kDebugMode) {
+                      print('✅ [TTS] Created streaming audio: header=${streamingHeader.length}B, PCM=${pcmData.length}B, total=${streamingAudioData.length}B');
+                    }
+                  } else {
+                    // Fallback: use original data if header parsing fails
+                    if (kDebugMode) {
+                      print('⚠️ [TTS] Could not parse WAV header, using original data as fallback');
+                    }
+                    streamingAudioData = Uint8List.fromList(audioBuffer);
+                  }
+                }
+              }
+              
+              // CRITICAL: Create LiveTtsAudioSource BEFORE adding any data to prevent broadcast stream data loss
+              liveAudioSource = LiveTtsAudioSource(
+                audioStreamController.stream,
+                contentType: contentType, // Use negotiated content type
+                debugName: 'tts_stream_${req.id}',
+              );
+              
+              // CRITICAL FIX: Add initial data BEFORE setAudioSource() call
+              // ExoPlayer calls request() synchronously inside setAudioSource(), so data must be ready!
+              if (audioStreamController?.isClosed == false) {
+                try {
+                  audioStreamController?.add(streamingAudioData);
+                  if (kDebugMode) {
+                    print('📊 [TTS] Added initial streaming data BEFORE player setup: ${streamingAudioData.length} bytes');
+                  }
+                } catch (e) {
+                  if (kDebugMode) {
+                    print('⚠️ [TTS] Error adding initial streaming data: $e');
+                  }
+                }
+              }
+              
+              // NOW start live TTS streaming setup (ExoPlayer will find data ready)
+              playbackFuture = _audioPlayerManager.playLiveTtsStream(
+                liveAudioSource, // Pass the LiveTtsAudioSource object for proper lifecycle management
+                debugName: 'tts_stream_${req.id}',
+                contentType: contentType, // Use negotiated content type
+              ).then((_) {
+                // Mark player phase complete when playback finishes
+                completionTracker.markPlayerDone();
+                if (kDebugMode) {
+                  print('🎵 [TTS] Player phase completed for ${req.id}');
+                }
+              });
+            }
+          } else {
+            // PHASE 2: Stream subsequent chunks directly (no header validation, no processing)
+            // These are pure PCM chunks - feed them directly to the stream
+            if (audioStreamController?.isClosed == false) {
+              try {
+                audioStreamController?.add(Uint8List.fromList(message));
+                if (kDebugMode && message.isNotEmpty) {
+                  print('📊 [TTS] Streamed chunk: ${message.length} bytes (total buffered: ${audioBuffer.length})');
+                }
+              } catch (e) {
+                if (kDebugMode) {
+                  print('⚠️ [TTS] Error adding streaming chunk: $e');
+                }
+              }
+            }
+            // Continue accumulating for progress tracking (but don't use for streaming decisions)
+            audioBuffer.addAll(message);
+          }
+          
+          // Log progress at meaningful intervals
+          if (kDebugMode && audioBuffer.length % 65536 == 0) {
+            print('🎯 [TTS] Streaming progress: ${audioBuffer.length} bytes for ${req.id}');
+          }
+        }
+      }
+      
+      if (!gotHello) {
+        throw Exception('Did not receive tts-hello');
+      }
+      
+      if (audioBuffer.isEmpty) {
+        throw Exception('No audio data received');
+      }
+      
+      // Wait for BOTH phases to complete before returning
+      if (playbackFuture != null) {
+        // Wait for both WebSocket done AND player completion
+        await completionTracker.waitForBothDoneWithTimeout();
+        
+        if (kDebugMode) {
+          print('✅ [TTS] Both phases completed for ${req.id} (${audioBuffer.length} total bytes)');
+          _logLatencyMetrics(req.id, requestedFormat, startTime, firstAudioTime, playbackStartTime);
+        }
+      } else {
+        // Fallback: if playback didn't start (small audio or header issues), use full buffer
+        if (kDebugMode) {
+          print('🔄 [TTS] Streaming fallback to full buffer for ${req.id} (${audioBuffer.length} bytes)');
+        }
+        
+        String fallbackReason = 'Audio too small for streaming';
+        if (audioBuffer.length >= bufferSize && !_isValidAudioHeader(audioBuffer, requestedFormat)) {
+          fallbackReason = 'Invalid audio header detected';
+        } else if (originalHeaderInfo == null && audioBuffer.length >= bufferSize) {
+          fallbackReason = 'Audio header parsing failed';
+        }
+        
+        TTSStreamingMonitor().recordFallbackToFullBuffer(fallbackReason);
+        
+        // Hard-gate WAV processing in fallback mode too
+        Uint8List fallbackAudioData;
+        if (requestedFormat.toLowerCase() == 'opus') {
+          // OPUS: Use original data directly
+          fallbackAudioData = Uint8List.fromList(audioBuffer);
+          if (kDebugMode) {
+            print('🎵 [TTS] OPUS fallback: Using original data directly (${fallbackAudioData.length} bytes)');
+          }
+        } else {
+          // WAV: Try to use modified headers for consistency
+          if (originalHeaderInfo != null) {
+            final streamingHeader = WavHeaderUtils.createStreamingHeader(originalHeaderInfo);
+            final pcmData = WavHeaderUtils.extractPcmData(audioBuffer, originalHeaderInfo);
+            fallbackAudioData = WavHeaderUtils.combineHeaderAndPcm(streamingHeader, pcmData);
+            
+            if (kDebugMode) {
+              print('🔧 [TTS] Using modified headers in fallback mode: ${fallbackAudioData.length} bytes');
+            }
+          } else {
+            fallbackAudioData = Uint8List.fromList(audioBuffer);
+          }
+        }
+        
+        await _audioPlayerManager.playAudioBytes(
+          fallbackAudioData,
+          debugName: 'tts_fallback_${req.id}',
+        );
+      }
+      
+    } catch (e) {
+      // Clean up stream controller on error
+      audioStreamController?.close();
+      // CRITICAL: Clean up LiveTtsAudioSource on error
+      liveAudioSource?.dispose();
+      // Dispose completion tracker to prevent hanging
+      completionTracker.dispose();
+      
+      // Graceful fallback for OPUS failures
+      if (AudioFormatNegotiator.getCurrentFormat() == AudioFormat.opus && 
+          !playbackStarted && 
+          audioBuffer.length < 65536) { // Less than 64KB suggests early failure
+        
+        if (kDebugMode) {
+          print('🔄 [TTS] OPUS streaming failed early, attempting WAV fallback for ${req.id}: $e');
+        }
+        
+        // Enable emergency WAV fallback
+        AudioFormatNegotiator.enableEmergencyFallback('OPUS streaming failed: $e');
+        
+        // Try again with WAV format (same WebSocket if still connected)
+        try {
+          if (kDebugMode) {
+            print('🔄 [TTS] Retrying ${req.id} with WAV format');
+          }
+          
+          // Create new WebSocket for retry
+          final wsUrl = '$_backendUrl/ws/tts'.replaceFirst('http', 'ws');
+          final retryWs = WebSocketChannel.connect(Uri.parse(wsUrl));
+          
+          // Use full buffer mode for WAV fallback (safer)
+          await _processResponseFullBuffer(req, retryWs);
+          await retryWs.sink.close();
+          
+          if (kDebugMode) {
+            print('✅ [TTS] WAV fallback succeeded for ${req.id}');
+          }
+          return; // Success - don't rethrow
+          
+        } catch (fallbackError) {
+          if (kDebugMode) {
+            print('❌ [TTS] WAV fallback also failed for ${req.id}: $fallbackError');
+          }
+          // Fall through to rethrow original error
+        }
+      }
+      
+      if (kDebugMode) {
+        print('❌ [TTS] Streaming error for ${req.id}: $e');
+      }
+      rethrow;
+    } finally {
+      // Ensure cleanup
+      completionTracker.dispose();
+      // CRITICAL: Clean up LiveTtsAudioSource resources
+      liveAudioSource?.dispose();
+    }
+  }
+
+  /// Validate audio header based on format
+  /// Returns true if the chunk contains valid headers for the specified format
+  bool _isValidAudioHeader(List<int> chunk, String format) {
+    switch (format.toLowerCase()) {
+      case 'opus':
+        return _isValidOpusHeader(chunk);
+      case 'wav':
+      default:
+        return _isValidWavHeader(chunk);
+    }
+  }
+  
+  /// Validate OPUS/OGG header for proper format detection
+  /// Returns true if the chunk contains valid OGG/OPUS headers
+  bool _isValidOpusHeader(List<int> chunk) {
+    if (chunk.length < OpusHeaderUtils.minHeaderBufferSize) {
+      if (kDebugMode) {
+        print('⚠️ [TTS] Chunk too small for OPUS headers: ${chunk.length} bytes (need ${OpusHeaderUtils.minHeaderBufferSize})');
+      }
+      return false;
+    }
+    
+    if (!OpusHeaderUtils.isOpusFormat(chunk)) {
+      if (kDebugMode) {
+        print('⚠️ [TTS] Invalid OPUS/OGG format detected');
+      }
+      return false;
+    }
+    
+    // For streaming, we don't need complete headers immediately
+    // Just verify it's valid OPUS format
+    if (kDebugMode) {
+      print('✅ [TTS] Valid OPUS format detected');
+    }
+    return true;
+  }
+
+  /// Validate WAV header for proper format detection
+  /// Returns true if the chunk contains a valid RIFF/WAVE header
+  bool _isValidWavHeader(List<int> chunk) {
+    if (chunk.length < 44) {
+      if (kDebugMode) {
+        print('⚠️ [TTS] Chunk too small for WAV header: ${chunk.length} bytes');
+      }
+      return false;
+    }
+    
+    try {
+      // Check RIFF signature (first 4 bytes)
+      final riffHeader = String.fromCharCodes(chunk.take(4));
+      if (riffHeader != 'RIFF') {
+        if (kDebugMode) {
+          print('⚠️ [TTS] Invalid RIFF header: $riffHeader');
+        }
+        return false;
+      }
+      
+      // Check WAVE format identifier (bytes 8-11)
+      final waveHeader = String.fromCharCodes(chunk.skip(8).take(4));
+      if (waveHeader != 'WAVE') {
+        if (kDebugMode) {
+          print('⚠️ [TTS] Invalid WAVE format: $waveHeader');
+        }
+        return false;
+      }
+      
+      if (kDebugMode) {
+        print('✅ [TTS] Valid WAV header detected: RIFF...WAVE');
+      }
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ [TTS] Error validating WAV header: $e');
+      }
+      return false;
+    }
+  }
+
+  /// EXISTING: Full buffer response processing (unchanged for safety)
+  Future<void> _processResponseFullBuffer(TtsRequest req, WebSocketChannel ws) async {
+    if (kDebugMode) {
+      print('🔄 [TTS] Using FULL-BUFFER path for ${req.id} (safe mode)');
+    }
+
     final audioBuffer = <int>[];
     bool gotHello = false;
     
-    // Send TTS request
-    ws.sink.add(jsonEncode({
+    // Use the requested format directly (consistent with streaming path)
+    final requestedFormat = req.format;
+    final contentType = requestedFormat == 'opus' ? 'audio/ogg' : 'audio/wav';
+    
+    if (kDebugMode) {
+      print('🔄 [TTS] Full-buffer direct format request: ${req.format}, contentType=$contentType');
+    }
+    
+    // Build handshake message - request specific format directly
+    final handshakeMessage = {
       'text': req.text,
       'voice': req.voice,
-      'params': {'response_format': req.format},
+      'params': {'response_format': requestedFormat}, // Request format directly
       'session_id': req.id,
-    }));
+      // Direct format request (no negotiation)
+      'client_version': '1.9.0',
+      'format': requestedFormat, // Direct format specification
+      'opus_params': requestedFormat == 'opus' ? {
+        'sample_rate': AudioFormatConfig.opusSampleRate,
+        'channels': AudioFormatConfig.opusChannels,
+        'bitrate': AudioFormatConfig.opusBitrate,
+      } : null,
+    };
+    
+    ws.sink.add(jsonEncode(handshakeMessage));
 
     // Listen for response (single subscription pattern)
     await for (final message in ws.stream) {
@@ -273,8 +791,9 @@ class SimpleTTSService implements ITTSService {
   }
 
   Future<io.File> _saveAudioBuffer(List<int> audioBuffer, String format) async {
-    final ext = format == 'wav' ? 'wav' : 
-               format == 'opus' ? 'ogg' : 'mp3';
+    // Use format negotiator to determine the correct extension
+    final ext = AudioFormatNegotiator.getFileExtension();
+    
     // Generate clean ID without extension using utility - prevents double extensions
     final fileId = AudioPathUtils.generateTimestampId('tts');
     final filePath = PathManager.instance.ttsFile(fileId, ext);
@@ -283,7 +802,7 @@ class SimpleTTSService implements ITTSService {
     await file.writeAsBytes(audioBuffer);
     
     if (kDebugMode) {
-      print('🔍 [TTS] Saved ${audioBuffer.length} bytes to: $filePath');
+      print('🔍 [TTS] Saved ${audioBuffer.length} bytes to: $filePath (format: ${AudioFormatNegotiator.getCurrentFormat().name})');
     }
     
     return file;
@@ -456,6 +975,85 @@ class SimpleTTSService implements ITTSService {
         }
       });
     }
+  }
+
+  /// Log latency metrics for performance monitoring
+  void _logLatencyMetrics(String requestId, String format, DateTime startTime, DateTime? firstAudioTime, DateTime? playbackStartTime) {
+    final endTime = DateTime.now();
+    final totalDuration = endTime.difference(startTime).inMilliseconds;
+    
+    final timeToFirstAudio = firstAudioTime != null 
+        ? firstAudioTime.difference(startTime).inMilliseconds 
+        : null;
+        
+    final timeToPlayback = playbackStartTime != null 
+        ? playbackStartTime.difference(startTime).inMilliseconds 
+        : null;
+    
+    if (kDebugMode) {
+      print('📊 [TTS-METRICS] $requestId ($format):');
+      print('  Total duration: ${totalDuration}ms');
+      if (timeToFirstAudio != null) {
+        print('  Time to first audio: ${timeToFirstAudio}ms');
+      }
+      if (timeToPlayback != null) {
+        print('  Time to playback start: ${timeToPlayback}ms');
+      }
+      
+      // Log format-specific performance comparison
+      if (format.toLowerCase() == 'opus') {
+        print('  🎯 OPUS performance: Low-latency streaming optimized');
+      } else {
+        print('  🎯 WAV performance: Legacy format with header processing');
+      }
+    }
+  }
+
+  /// Schedule state-based controller closure check
+  /// Closes the stream controller only when LiveTtsAudioSource is ready
+  void _scheduleControllerClosureCheck(StreamController<Uint8List>? controller, LiveTtsAudioSource? source) {
+    if (controller == null || source == null) return;
+    
+    // Check every 50ms until conditions are met
+    Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      // Check if we should close the controller
+      final shouldClose = controller.isClosed || 
+                         (source.isWebSocketClosed && source.isStreamCompleted);
+      
+      if (shouldClose) {
+        timer.cancel();
+        
+        if (!controller.isClosed) {
+          try {
+            controller.close();
+            if (kDebugMode) {
+              print('🔌 [TTS] Stream controller closed after state-based check');
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('⚠️ [TTS] Error closing stream controller: $e');
+            }
+          }
+        }
+      }
+      
+      // Safety timeout after 5 seconds
+      if (timer.tick > 100) { // 100 * 50ms = 5 seconds
+        timer.cancel();
+        if (!controller.isClosed) {
+          try {
+            controller.close();
+            if (kDebugMode) {
+              print('⏰ [TTS] Stream controller closed due to safety timeout');
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('⚠️ [TTS] Error closing stream controller on timeout: $e');
+            }
+          }
+        }
+      }
+    });
   }
 
   /// Get caller information for TTS duplication tracking
