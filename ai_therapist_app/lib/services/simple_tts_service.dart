@@ -308,11 +308,12 @@ class SimpleTTSService implements ITTSService {
             gotHello = true;
             if (kDebugMode) print('🎯 [TTS] Got tts-hello for ${req.id} (streaming)');
           } else if (type == 'tts-done') {
-            if (kDebugMode) print('🎯 [TTS] Got tts-done for ${req.id} (streaming)');
+            final totalSize = data['total_size'] as int?;
+            if (kDebugMode) print('🎯 [TTS] Got tts-done for ${req.id} (streaming) with total_size: $totalSize');
             // CRITICAL: Mark WebSocket phase complete but DON'T close stream yet
             completionTracker.markWebSocketDone();
-            // CRITICAL: Mark WebSocket as closed in LiveTtsAudioSource for proper DataSource contract
-            liveAudioSource?.markWebSocketClosed();
+            // CRITICAL: Mark WebSocket as closed in LiveTtsAudioSource with content size for ExoPlayer completion
+            liveAudioSource?.markWebSocketClosed(totalSize);
             
             // CRITICAL: Don't close the stream immediately - let LiveTtsAudioSource drain data
             // The controller will be closed when both conditions are met:
@@ -445,6 +446,15 @@ class SimpleTTSService implements ITTSService {
                 liveAudioSource, // Pass the LiveTtsAudioSource object for proper lifecycle management
                 debugName: 'tts_stream_${req.id}',
                 contentType: contentType, // Use negotiated content type
+                onNaturalCompletion: () {
+                  // Natural ExoPlayer completion - trigger VAD state transition immediately
+                  if (kDebugMode) {
+                    print('🎯 [TTS] Natural completion callback fired for ${req.id} - notifying VoiceService');
+                  }
+                  // ONLY notify VoiceService (VoiceSessionCoordinator or legacy VoiceService)
+                  // This triggers VAD state transition - _onTTSComplete is for AudioGenerator, not VAD
+                  _voiceServiceUpdateCallback?.call(false); // Update VoiceService state for VAD coordination
+                },
               ).then((_) {
                 // Mark player phase complete when playback finishes
                 completionTracker.markPlayerDone();
@@ -1037,14 +1047,15 @@ class SimpleTTSService implements ITTSService {
         }
       }
       
-      // Safety timeout after 5 seconds
-      if (timer.tick > 100) { // 100 * 50ms = 5 seconds
+      // Extended safety timeout for long messages (was 200ms, now 30 seconds)
+      // With content-length support, ExoPlayer should complete naturally
+      if (timer.tick > 600) { // 600 * 50ms = 30 seconds
         timer.cancel();
         if (!controller.isClosed) {
           try {
             controller.close();
             if (kDebugMode) {
-              print('⏰ [TTS] Stream controller closed due to safety timeout');
+              print('⏰ [TTS] Stream controller closed due to extended safety timeout (30s) - this should rarely happen with content-length');
             }
           } catch (e) {
             if (kDebugMode) {
