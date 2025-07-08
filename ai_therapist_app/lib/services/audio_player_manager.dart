@@ -201,26 +201,52 @@ class AudioPlayerManager {
       });
 
       _audioPlayer.processingStateStream.listen((state) {
-        if (state == ProcessingState.completed) {
-          // Ensure we broadcast playback stopped when audio completes
-          _emitPlayingState(false);
-          if (kDebugMode) {
-            print('🎧 Audio playback completed');
-          }
-
-          // Add a short delay to ensure all state changes are processed
-          Future.delayed(const Duration(milliseconds: 100), () {
-            // Double-check that we're actually stopped
-            if (!_audioPlayer.playing) {
-              _emitPlayingState(false);
-              if (kDebugMode) {
-                print('🎧 Audio playback completion confirmed');
-              }
+        if (kDebugMode) {
+          print('🔄 AudioPlayerManager: ProcessingState changed to $state (playing: ${_audioPlayer.playing})');
+        }
+        
+        switch (state) {
+          case ProcessingState.idle:
+            if (kDebugMode) {
+              print('🟡 ProcessingState.idle - Player is idle/stopped');
             }
-            
-            // Process next item in queue after current completes
-            _processNextInQueue();
-          });
+            break;
+          case ProcessingState.loading:
+            if (kDebugMode) {
+              print('🟠 ProcessingState.loading - Loading audio data');
+            }
+            break;
+          case ProcessingState.buffering:
+            if (kDebugMode) {
+              print('🔵 ProcessingState.buffering - Buffering audio data');
+            }
+            break;
+          case ProcessingState.ready:
+            if (kDebugMode) {
+              print('🟢 ProcessingState.ready - Ready to play (playing: ${_audioPlayer.playing})');
+            }
+            break;
+          case ProcessingState.completed:
+            if (kDebugMode) {
+              print('✅ ProcessingState.completed - Audio playback naturally completed');
+            }
+            // Ensure we broadcast playback stopped when audio completes
+            _emitPlayingState(false);
+
+            // Add a short delay to ensure all state changes are processed
+            Future.delayed(const Duration(milliseconds: 100), () {
+              // Double-check that we're actually stopped
+              if (!_audioPlayer.playing) {
+                _emitPlayingState(false);
+                if (kDebugMode) {
+                  print('🎧 Audio playback completion confirmed');
+                }
+              }
+              
+              // Process next item in queue after current completes
+              _processNextInQueue();
+            });
+            break;
         }
       });
 
@@ -491,6 +517,10 @@ class AudioPlayerManager {
     return actualState;
   }
 
+  /// Get the raw AudioPlayer instance for force completion operations
+  /// Used by LiveTtsAudioSource to trigger immediate completion events
+  AudioPlayer get audioPlayer => _audioPlayer;
+
   /// Get current queue length
   int get queueLength => _audioQueue.length;
 
@@ -669,6 +699,7 @@ class AudioPlayerManager {
     dynamic audioSourceOrStream, {
     String? debugName,
     String contentType = 'audio/wav',
+    VoidCallback? onNaturalCompletion, // Callback for natural ExoPlayer completion
   }) async {
     final displayName = debugName ?? 'live-tts-audio';
     final id = '${DateTime.now().microsecondsSinceEpoch}_live_${audioSourceOrStream.hashCode}';
@@ -754,16 +785,21 @@ class AudioPlayerManager {
       // Create completion tracking
       final playbackCompleter = Completer<void>();
       
-      // Listen for completion using robust detection
+      // Listen for completion using natural ExoPlayer events
       StreamSubscription? subscription;
+      
       subscription = _audioPlayer.processingStateStream.listen((state) {
-        if (state == ProcessingState.completed ||
-            state == ProcessingState.idle ||
-            (state == ProcessingState.ready && !_audioPlayer.playing)) {
+        if (kDebugMode) {
+          print('🔄 Live TTS ProcessingState: $state for $displayName (playing: ${_audioPlayer.playing})');
+        }
+        
+        if (state == ProcessingState.completed) {
           subscription?.cancel();
           
           if (kDebugMode) {
-            print('🎧 Live TTS audio playback completed: $displayName');
+            print('✅ Live TTS audio playback completed naturally: $displayName');
+            print('🎯 Natural ExoPlayer completion - triggering VAD state transition');
+            print('🕰️ Natural completion time: ${DateTime.now().difference(startTime).inMilliseconds}ms after start');
           }
           
           // CRITICAL: Clear the source to prevent any possibility of replay
@@ -781,8 +817,18 @@ class AudioPlayerManager {
           _forceIsPlayingState = false;
           _emitPlayingState(false);
           
+          // Notify callback that natural completion occurred
+          if (kDebugMode) {
+            print('🎯 Calling onNaturalCompletion callback for immediate VAD transition');
+          }
+          onNaturalCompletion?.call();
+          
           if (!playbackCompleter.isCompleted) {
             playbackCompleter.complete();
+          }
+        } else if (state == ProcessingState.ready && _audioPlayer.playing) {
+          if (kDebugMode) {
+            print('🎧 Live TTS playback started: $displayName');
           }
         }
       });

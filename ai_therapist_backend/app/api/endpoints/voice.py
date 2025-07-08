@@ -1557,6 +1557,9 @@ async def websocket_tts(websocket: WebSocket):
                     continue
 
                 try:
+                    # Track total audio size for content-length solution
+                    total_audio_size = 0
+                    
                     # Stream audio using unified manager
                     async for b64_chunk in llm_manager.stream_text_to_speech(
                         text,
@@ -1565,11 +1568,16 @@ async def websocket_tts(websocket: WebSocket):
                     ):
                         # Decode base64 to get raw binary data
                         audio_bytes = base64.b64decode(b64_chunk)
+                        # Track total size
+                        total_audio_size += len(audio_bytes)
                         # Send as binary WebSocket frame
                         await websocket.send_bytes(audio_bytes)
                     
-                    # When done, send a 'tts-done' message with session_id if provided
-                    done_message = {"type": "tts-done"}
+                    # When done, send a 'tts-done' message with total size for ExoPlayer completion
+                    done_message = {
+                        "type": "tts-done",
+                        "total_size": total_audio_size
+                    }
                     if session_id:
                         done_message["session_id"] = session_id
                     await websocket.send_text(json.dumps(done_message))
@@ -1630,6 +1638,9 @@ async def websocket_voice_tts(websocket: WebSocket):
                     continue
 
                 try:
+                    # Track total audio size for content-length solution
+                    total_audio_size = 0
+                    
                     # Stream audio using unified manager
                     async for b64_chunk in llm_manager.stream_text_to_speech(
                         text,
@@ -1638,11 +1649,16 @@ async def websocket_voice_tts(websocket: WebSocket):
                     ):
                         # Decode base64 to get raw binary data
                         audio_bytes = base64.b64decode(b64_chunk)
+                        # Track total size
+                        total_audio_size += len(audio_bytes)
                         # Send as binary WebSocket frame
                         await websocket.send_bytes(audio_bytes)
                     
-                    # When done, send a 'tts-done' message with session_id if provided
-                    done_message = {"type": "tts-done"}
+                    # When done, send a 'tts-done' message with total size for ExoPlayer completion
+                    done_message = {
+                        "type": "tts-done",
+                        "total_size": total_audio_size
+                    }
                     if session_id:
                         done_message["session_id"] = session_id
                     await websocket.send_text(json.dumps(done_message))
