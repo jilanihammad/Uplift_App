@@ -272,6 +272,32 @@ class LiveTtsAudioSource extends StreamAudioSource {
     
     _streamSubscription = _dataStream.listen(
       (chunk) {
+        // CLIENT-SIDE GUARD: Check first chunk for proper Ogg headers (Engineer's recommendation)
+        if (_dataBuffer.isEmpty && _isOpusFormat) {
+          final firstChunk = chunk;
+          if (firstChunk.length >= 4) {
+            final headerCheck = String.fromCharCodes(firstChunk.sublist(0, 4));
+            if (headerCheck != 'OggS') {
+              if (kDebugMode) {
+                print('⚠️ LiveTtsAudioSource: Invalid Ogg header detected. Expected "OggS", got "$headerCheck"');
+                print('🔧 LiveTtsAudioSource: Injecting cached BOS+tags headers for compatibility');
+              }
+              
+              // Inject proper Ogg/Opus headers before the malformed data
+              final staticOpusHeaders = _getStaticOpusHeaders();
+              _dataBuffer.addAll(staticOpusHeaders);
+              
+              if (kDebugMode) {
+                print('✅ LiveTtsAudioSource: Injected ${staticOpusHeaders.length} bytes of static Opus headers');
+              }
+            } else {
+              if (kDebugMode) {
+                print('✅ LiveTtsAudioSource: Valid Ogg header detected, proceeding normally');
+              }
+            }
+          }
+        }
+        
         _dataBuffer.addAll(chunk);
         
         // Check for audio format and headers on first significant chunk
@@ -333,6 +359,58 @@ class LiveTtsAudioSource extends StreamAudioSource {
         print('🎯 Header info: $wavInfo');
       }
     }
+  }
+
+  /// Get static Opus headers for fallback injection (Engineer's recommendation)
+  /// This prevents rogue backend deploys from breaking audio playback
+  Uint8List _getStaticOpusHeaders() {
+    // OpusHead (BOS) header - matches backend implementation
+    final opusHead = <int>[
+      // OggS header for BOS page
+      0x4F, 0x67, 0x67, 0x53,               // "OggS" - Ogg capture pattern
+      0x00,                                 // stream structure version
+      0x02,                                 // header type: 2 = BOS (fresh beginning)
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // granule pos = 0
+      0x01, 0x00, 0x00, 0x00,               // bitstream serial no. = 1
+      0x00, 0x00, 0x00, 0x00,               // page seq no. = 0
+      0x00, 0x00, 0x00, 0x00,               // CRC (placeholder)
+      0x01,                                 // segment count = 1
+      0x13,                                 // segment length = 19 bytes
+      // OpusHead packet (19 bytes)
+      0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, // "OpusHead"
+      0x01,                                 // version = 1
+      0x01,                                 // channels = 1 (mono)
+      0x38, 0x01,                           // pre-skip = 312 (little-endian)
+      0x80, 0xbb, 0x00, 0x00,               // input sample rate = 48000
+      0x00, 0x00,                           // output gain = 0 dB
+      0x00,                                 // channel mapping family = 0
+    ];
+
+    // OpusTags header
+    final opusTags = <int>[
+      // OggS header for tags page
+      0x4F, 0x67, 0x67, 0x53,               // "OggS" - Ogg capture pattern
+      0x00,                                 // stream structure version
+      0x00,                                 // header type: 0 = continuation
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // granule pos = 0
+      0x01, 0x00, 0x00, 0x00,               // bitstream serial no. = 1
+      0x01, 0x00, 0x00, 0x00,               // page seq no. = 1
+      0x00, 0x00, 0x00, 0x00,               // CRC (placeholder)
+      0x01,                                 // segment count = 1
+      0x10,                                 // segment length = 16 bytes
+      // OpusTags packet (16 bytes)
+      0x4F, 0x70, 0x75, 0x73, 0x54, 0x61, 0x67, 0x73, // "OpusTags"
+      0x08, 0x00, 0x00, 0x00,               // vendor string length = 8
+      0x6D, 0x61, 0x79, 0x61, 0x2E, 0x61, 0x69, 0x00, // "maya.ai" + padding
+      0x00, 0x00, 0x00, 0x00,               // user comment list length = 0
+    ];
+
+    // Combine headers
+    final combined = <int>[];
+    combined.addAll(opusHead);
+    combined.addAll(opusTags);
+    
+    return Uint8List.fromList(combined);
   }
 
   /// Create a DataSource-compliant stream that follows the contract:

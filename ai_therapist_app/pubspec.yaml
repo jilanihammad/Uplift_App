@@ -55,8 +55,8 @@ dependencies:
   # Audio and voice processing
   permission_handler: ^11.4.0
   path_provider: ^2.1.1
-  record: ^5.0.1
-  just_audio: ^0.10.0
+  record: ^6.0.0
+  just_audio: ^0.10.4  # Latest version with improved Ogg/Opus support
   flutter_tts: ^4.2.2
   audio_streamer: ^4.2.0  # Real-time PCM audio streaming
 

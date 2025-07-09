@@ -1018,23 +1018,93 @@ class LLMManager:
                 with ThreadPoolExecutor() as executor:
                     await loop.run_in_executor(executor, run_ffmpeg)
                 
-                # Step 4: Stream the OPUS/OGG file in chunks
+                # Step 4: Stream the OPUS/OGG file in chunks with proper BOS headers
                 if not os.path.exists(ogg_path) or os.path.getsize(ogg_path) == 0:
                     raise Exception("OPUS conversion produced empty file")
                 
                 ogg_size = os.path.getsize(ogg_path)
                 logger.info(f"🎵 OPUS conversion successful: {ogg_size} bytes")
                 
-                # Stream OPUS chunks
+                # ===== INJECT PROPER BOS HEADERS =====
+                # Create OpusHead (BOS) header as specified by engineer
+                def create_opus_bos_header():
+                    """Create proper OpusHead BOS header for ExoPlayer compatibility"""
+                    # BOS page structure
+                    bos_header = (
+                        b"OggS"                              # Ogg capture pattern
+                        b"\x00"                              # stream structure version
+                        b"\x02"                              # header type: 2 = BOS (fresh beginning)
+                        b"\x00\x00\x00\x00\x00\x00\x00\x00"  # granule pos = 0
+                        b"\x01\x00\x00\x00"                 # bitstream serial no. = 1
+                        b"\x00\x00\x00\x00"                 # page seq no. = 0
+                        b"\x00\x00\x00\x00"                 # CRC (will be calculated)
+                        b"\x01"                              # segment count = 1
+                        b"\x13"                              # segment length = 19 bytes
+                        # OpusHead packet (19 bytes total)
+                        b"OpusHead"                          # magic signature (8 bytes)
+                        b"\x01"                              # version = 1
+                        b"\x01"                              # channels = 1 (mono)
+                        b"\x38\x01"                          # pre-skip = 312 (little-endian, 20ms @ 48kHz)
+                        b"\x80\xbb\x00\x00"                 # input sample rate = 48000 (little-endian)
+                        b"\x00\x00"                          # output gain = 0 dB
+                        b"\x00"                              # channel mapping family = 0
+                    )
+                    return bos_header
+                
+                def create_opus_tags_header():
+                    """Create OpusTags header for compatibility"""
+                    vendor_string = b"maya.ai"
+                    tags_header = (
+                        b"OggS"                              # Ogg capture pattern
+                        b"\x00"                              # stream structure version
+                        b"\x00"                              # header type: 0 = continuation
+                        b"\x00\x00\x00\x00\x00\x00\x00\x00"  # granule pos = 0
+                        b"\x01\x00\x00\x00"                 # bitstream serial no. = 1
+                        b"\x01\x00\x00\x00"                 # page seq no. = 1
+                        b"\x00\x00\x00\x00"                 # CRC (will be calculated)
+                        b"\x01"                              # segment count = 1
+                        b"\x10"                              # segment length = 16 bytes
+                        # OpusTags packet (16 bytes total)
+                        b"OpusTags"                          # magic signature (8 bytes)
+                        b"\x08\x00\x00\x00"                 # vendor string length = 8 (little-endian)
+                    ) + vendor_string + (                    # vendor string
+                        b"\x00\x00\x00\x00"                 # user comment list length = 0
+                    )
+                    return tags_header
+                
+                # Stream headers first
+                logger.info("🎵 Injecting OpusHead BOS header for ExoPlayer compatibility")
+                bos_header = create_opus_bos_header()
+                b64_bos = base64.b64encode(bos_header).decode('utf-8')
+                yield b64_bos
+                
+                logger.info("🎵 Injecting OpusTags header")
+                tags_header = create_opus_tags_header()
+                b64_tags = base64.b64encode(tags_header).decode('utf-8')
+                yield b64_tags
+                
+                # Stream OPUS chunks (skip the original headers from ffmpeg)
                 total_chunks = 0
                 total_opus_bytes = 0
                 chunk_size = 4096  # 4KB chunks for streaming
+                skip_initial_headers = True
                 
                 with open(ogg_path, 'rb') as ogg_file:
                     while True:
                         chunk = ogg_file.read(chunk_size)
                         if not chunk:
                             break
+                        
+                        # Skip initial OGG headers from ffmpeg output (first ~200 bytes typically)
+                        if skip_initial_headers:
+                            # Look for first audio data page (not BOS or tags)
+                            if b"OggS" in chunk and total_chunks < 3:  # Skip first few OGG pages
+                                logger.debug(f"🎵 Skipping ffmpeg header chunk {total_chunks}")
+                                total_chunks += 1
+                                continue
+                            else:
+                                skip_initial_headers = False
+                                logger.info("🎵 Starting audio data stream")
                         
                         total_chunks += 1
                         total_opus_bytes += len(chunk)

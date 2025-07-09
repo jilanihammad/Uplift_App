@@ -22,6 +22,16 @@ class AppConfig {
   // Other config settings can be added here
   bool get isDebugMode => false;
 
+  // TTS Streaming Configuration
+  bool get ttsStreamingEnabled => 
+      dotenv.env['TTS_STREAMING_ENABLED']?.toLowerCase() == 'true' || true; // Default to enabled
+  
+  int get ttsStreamingBufferSize => 
+      int.tryParse(dotenv.env['TTS_STREAMING_BUFFER_SIZE'] ?? '') ?? 8192; // Default 8KB
+  
+  int get ttsMaxMemoryDurationSeconds => 
+      int.tryParse(dotenv.env['TTS_MAX_MEMORY_DURATION_SECONDS'] ?? '') ?? 300; // Default 5 minutes
+
   /// Initialize the configuration
   static Future<void> initialize() async {
     try {
