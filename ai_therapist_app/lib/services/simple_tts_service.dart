@@ -1026,9 +1026,16 @@ class SimpleTTSService implements ITTSService {
     
     // Check every 50ms until conditions are met
     Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      // Add diagnostic logging every 5 seconds
+      if (kDebugMode && timer.tick % 100 == 0) {
+        print('📊 [TTS] Controller check: tick=${timer.tick}, closed=${controller.isClosed}, '
+              'wsClose=${source.isWebSocketClosed}, streamComplete=${source.isStreamCompleted}, '
+              'bufferSize=${source.bufferSize}');
+      }
+      
       // Check if we should close the controller
-      final shouldClose = controller.isClosed || 
-                         (source.isWebSocketClosed && source.isStreamCompleted);
+      // FIX: Remove circular dependency - close when WebSocket is done
+      final shouldClose = controller.isClosed || source.isWebSocketClosed;
       
       if (shouldClose) {
         timer.cancel();
@@ -1037,7 +1044,7 @@ class SimpleTTSService implements ITTSService {
           try {
             controller.close();
             if (kDebugMode) {
-              print('🔌 [TTS] Stream controller closed after state-based check');
+              print('🔌 [TTS] Stream controller closed after WebSocket completion');
             }
           } catch (e) {
             if (kDebugMode) {
