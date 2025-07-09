@@ -77,6 +77,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
   
   /// Get stream completed state (for state-based controller closure)
   bool get isStreamCompleted => _streamCompleted;
+  
+  /// Get current buffer size for diagnostic logging
+  int get bufferSize => _dataBuffer.length;
 
   /// Create a live TTS audio source from a byte stream
   /// 
@@ -382,6 +385,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
       // No data available - check if we should return RESULT_NOTHING_READ or END_OF_INPUT
       // CRITICAL FIX: End stream immediately when WebSocket closed and all data consumed
       if (_webSocketClosed) {
+        // FIX: Mark stream as completed when all data is consumed
+        _streamCompleted = true;
+        
         // WebSocket is closed - no more data will arrive, end the stream
         if (kDebugMode) {
           final format = _isOpusFormat ? 'OPUS' : 'WAV';
