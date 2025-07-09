@@ -813,6 +813,7 @@ class EnhancedAsyncPipeline:
             },
             "opus": {
                 "response_format": "opus",
+                "mime_type": "audio/ogg; codecs=opus",
                 "sample_rate": 24000,
                 "channels": 1,
                 "bitrate": "24k",
@@ -1890,6 +1891,49 @@ class EnhancedAsyncPipeline:
         await self._handle_clean_disconnection(sequence_counter, chunks_sent)
         self.logger.info("Client sender stopped")
     
+    def _get_dynamic_audio_format(self, chunk_metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get dynamic audio format information based on chunk metadata and current format.
+        
+        Args:
+            chunk_metadata: Metadata from the audio chunk
+            
+        Returns:
+            Dict containing audio format information with proper MIME types
+        """
+        # Extract format from chunk metadata or use negotiated format
+        audio_format = chunk_metadata.get("audio_format", self.optimal_format)
+        
+        # Get format parameters from our configuration
+        format_params = self.get_format_parameters(audio_format)
+        
+        # Build dynamic audio format info
+        if audio_format == "opus":
+            return {
+                "encoding": "opus",
+                "mime_type": format_params.get("mime_type", "audio/ogg; codecs=opus"),
+                "sample_rate": format_params.get("sample_rate", 24000),
+                "channels": format_params.get("channels", 1),
+                "bitrate": format_params.get("bitrate", "24k"),
+                "container": "ogg"
+            }
+        elif audio_format == "wav":
+            return {
+                "encoding": "wav",
+                "mime_type": "audio/wav",
+                "sample_rate": format_params.get("sample_rate", 16000),
+                "channels": format_params.get("channels", 1),
+                "bit_depth": format_params.get("bit_depth", 16)
+            }
+        else:
+            # Fallback for other formats
+            return {
+                "encoding": audio_format,
+                "mime_type": format_params.get("mime_type", f"audio/{audio_format}"),
+                "sample_rate": format_params.get("sample_rate", 16000),
+                "channels": format_params.get("channels", 1)
+            }
+    
     def _prepare_audio_frame(self, audio_chunk: AudioChunk, sequence_counter: int, use_binary: bool = False) -> Tuple[Dict[str, Any], bytes]:
         """
         Prepare audio frame with complete jitter buffer metadata
@@ -1934,13 +1978,8 @@ class EnhancedAsyncPipeline:
                 "sequence_number": sequence_counter
             },
             
-            # Audio format info
-            "audio_format": {
-                "encoding": "wav",
-                "sample_rate": 16000,
-                "channels": 1,
-                "bit_depth": 16
-            },
+            # Audio format info - dynamically determined from chunk metadata
+            "audio_format": self._get_dynamic_audio_format(chunk_metadata),
             
             # Complete metadata forwarding - FIXED: Safe unpacking of metadata
             "metadata": {
