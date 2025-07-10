@@ -2,9 +2,19 @@ import 'package:flutter/material.dart';
 
 class ActionItemsCard extends StatelessWidget {
   final List<String> actionItems;
+  final String? sessionId;
+  final Function(String actionItem)? onAddToTasks;
+  final Function(String actionItem)? onRemoveFromTasks;
+  final bool Function(String actionItem)? isItemAlreadyAdded;
 
-  const ActionItemsCard({Key? key, required this.actionItems})
-      : super(key: key);
+  const ActionItemsCard({
+    Key? key, 
+    required this.actionItems,
+    this.sessionId,
+    this.onAddToTasks,
+    this.onRemoveFromTasks,
+    this.isItemAlreadyAdded,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -162,11 +172,14 @@ class ActionItemsCard extends StatelessWidget {
               ],
             ),
           ),
-          Icon(
-            Icons.arrow_forward_ios,
-            size: 16,
-            color: Colors.grey[400],
-          ),
+          if (onAddToTasks != null)
+            _buildAddToTasksButton(item)
+          else
+            Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: Colors.grey[400],
+            ),
         ],
       ),
     );
@@ -207,6 +220,37 @@ class ActionItemsCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAddToTasksButton(String item) {
+    final isAlreadyAdded = isItemAlreadyAdded?.call(item) ?? false;
+    
+    return Column(
+      children: [
+        IconButton(
+          onPressed: () {
+            if (isAlreadyAdded) {
+              onRemoveFromTasks?.call(item);
+            } else {
+              onAddToTasks?.call(item);
+            }
+          },
+          icon: Icon(isAlreadyAdded ? Icons.check_circle : Icons.add_task),
+          iconSize: 20,
+          color: isAlreadyAdded ? Colors.green[600] : Colors.blue[600],
+          tooltip: isAlreadyAdded ? 'Remove from Tasks' : 'Add to Tasks',
+        ),
+        Text(
+          isAlreadyAdded ? 'Added to\nTasks' : 'Add to\nTasks',
+          style: TextStyle(
+            fontSize: 10,
+            color: isAlreadyAdded ? Colors.green[600] : Colors.blue[600],
+            fontWeight: isAlreadyAdded ? FontWeight.bold : FontWeight.normal,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }

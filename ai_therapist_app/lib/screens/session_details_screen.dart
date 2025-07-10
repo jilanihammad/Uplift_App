@@ -7,6 +7,8 @@ import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import '../models/therapy_message.dart';
 import '../utils/date_formatter.dart';
+import '../services/tasks_service.dart';
+import 'widgets/action_items_card.dart';
 import 'dart:convert';
 
 class SessionDetailsScreen extends StatefulWidget {
@@ -33,13 +35,64 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   String? _errorMessage;
   late ISessionRepository _sessionRepository;
   late IDatabase _database;
+  late TasksService _tasksService;
 
   @override
   void initState() {
     super.initState();
     _sessionRepository = widget.sessionRepository ?? DependencyContainer().sessionRepository;
     _database = widget.database ?? DependencyContainer().database;
+    _tasksService = TasksService();
+    _tasksService.init();
     _loadSession();
+  }
+
+  void _addToTasks(String actionItem) async {
+    try {
+      await _tasksService.addTask(actionItem, widget.sessionId);
+      if (mounted) {
+        setState(() {}); // Refresh UI to update button state
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added to tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to add task'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeFromTasks(String actionItem) async {
+    try {
+      await _tasksService.removeTaskByActionItem(widget.sessionId, actionItem);
+      if (mounted) {
+        setState(() {}); // Refresh UI to update button state
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Removed from tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to remove task'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadSession() async {
@@ -246,42 +299,12 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     // The action items might be embedded in the summary text as JSON
     List<String> actionItems = _extractActionItems();
 
-    if (actionItems.isEmpty) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('No action items found for this session.'),
-        ),
-      );
-    }
-
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: actionItems
-              .map((item) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.check_circle_outline,
-                            color: Colors.green),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            item,
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ))
-              .toList(),
-        ),
-      ),
+    return ActionItemsCard(
+      actionItems: actionItems,
+      sessionId: widget.sessionId,
+      onAddToTasks: _addToTasks,
+      onRemoveFromTasks: _removeFromTasks,
+      isItemAlreadyAdded: (actionItem) => _tasksService.isActionItemAlreadyAdded(widget.sessionId, actionItem),
     );
   }
 

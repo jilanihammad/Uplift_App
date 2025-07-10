@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
+import 'package:ai_therapist_app/models/user_task.dart';
+import 'package:ai_therapist_app/services/tasks_service.dart';
 import 'package:intl/intl.dart';
+import 'dart:math' as math;
 
 class ProgressScreen extends StatefulWidget {
   final IProgressService? progressService;
@@ -20,6 +23,11 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
   late TabController _tabController;
   late IProgressService _progressService;
   late UserProgress _progress;
+  late TasksService _tasksService;
+  List<UserTask> _tasks = [];
+  int _realSessionCount = 0;
+  int _currentStreak = 0;
+  int _longestStreak = 0;
   
   @override
   void initState() {
@@ -27,15 +35,111 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
     _tabController = TabController(length: 3, vsync: this);
     _progressService = widget.progressService ?? DependencyContainer().progress;
     _progress = _progressService.progress;
+    _tasksService = TasksService();
+    
+    // Initialize services and load data
+    _initServices();
     
     // Listen for progress changes
     _progressService.progressChanged.addListener(_onProgressChanged);
+  }
+
+  Future<void> _initServices() async {
+    await _tasksService.init();
+    await _loadRealSessionCount();
+    if (mounted) {
+      setState(() {
+        _tasks = _tasksService.tasks;
+      });
+    }
+  }
+
+  Future<void> _loadRealSessionCount() async {
+    try {
+      final sessionRepository = DependencyContainer().sessionRepository;
+      final sessions = await sessionRepository.getSessions();
+      
+      // Calculate streaks based on session dates
+      _calculateStreaks(sessions);
+      
+      if (mounted) {
+        setState(() {
+          _realSessionCount = sessions.length;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading session count: $e');
+    }
+  }
+
+  void _calculateStreaks(List<dynamic> sessions) {
+    if (sessions.isEmpty) {
+      _currentStreak = 0;
+      _longestStreak = 0;
+      return;
+    }
+
+    // Get unique days with sessions, sorted by date
+    final sessionDays = sessions
+        .map((session) {
+          try {
+            // Assuming session has a createdAt or similar field
+            final date = session.createdAt ?? DateTime.now();
+            return DateTime(date.year, date.month, date.day);
+          } catch (e) {
+            return DateTime.now();
+          }
+        })
+        .toSet()
+        .toList()
+      ..sort();
+
+    // Calculate current streak (consecutive days up to today)
+    _currentStreak = 0;
+    final today = DateTime.now();
+    final todayDay = DateTime(today.year, today.month, today.day);
+    
+    for (int i = sessionDays.length - 1; i >= 0; i--) {
+      final daysDiff = todayDay.difference(sessionDays[i]).inDays;
+      if (daysDiff == _currentStreak || (daysDiff == _currentStreak + 1 && _currentStreak == 0)) {
+        _currentStreak++;
+      } else {
+        break;
+      }
+    }
+
+    // Calculate longest streak
+    _longestStreak = 0;
+    int tempStreak = 1;
+    
+    for (int i = 1; i < sessionDays.length; i++) {
+      if (sessionDays[i].difference(sessionDays[i - 1]).inDays == 1) {
+        tempStreak++;
+      } else {
+        _longestStreak = math.max(_longestStreak, tempStreak);
+        tempStreak = 1;
+      }
+    }
+    _longestStreak = math.max(_longestStreak, tempStreak);
   }
   
   void _onProgressChanged() {
     if (mounted) {
       setState(() {
         _progress = _progressService.progress;
+      });
+    }
+  }
+
+  Future<void> _toggleTaskCompletion(String taskId, bool isCompleted) async {
+    if (isCompleted) {
+      await _tasksService.completeTask(taskId);
+    } else {
+      await _tasksService.uncompleteTask(taskId);
+    }
+    if (mounted) {
+      setState(() {
+        _tasks = _tasksService.tasks;
       });
     }
   }
@@ -111,13 +215,13 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildStreakItem(
-                  _progress.currentStreak, 
+                  _currentStreak, 
                   'Current',
                   Icons.local_fire_department,
                   Colors.orange,
                 ),
                 _buildStreakItem(
-                  _progress.longestStreak, 
+                  _longestStreak, 
                   'Longest',
                   Icons.emoji_events,
                   Colors.amber,
@@ -187,7 +291,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
             ),
             const SizedBox(height: 16),
             _buildStatRow('Total Sessions', 
-              _progress.sessionHistory.length.toString(),
+              _realSessionCount.toString(),
               Icons.psychology),
             const Divider(),
             _buildStatRow('Mood Entries', 
@@ -426,29 +530,43 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
   }
   
   Widget _buildTasksTab() {
-    // Using the achievements model for now, but presenting them as tasks
-    final tasks = _progress.achievements;
+    // Show pending tasks first, then completed ones
+    final pendingTasks = _tasks.where((task) => !task.isCompleted).toList();
+    final completedTasks = _tasks.where((task) => task.isCompleted).toList();
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Tasks to Complete',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            children: [
+              const Text(
+                'My Tasks',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              if (_tasks.isNotEmpty)
+                Text(
+                  '${completedTasks.length}/${_tasks.length} completed',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           
-          tasks.isEmpty
+          _tasks.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.task_alt, size: 64, color: Colors.grey),
+                  Icon(Icons.task_alt, size: 64, color: Colors.grey[400]),
                   const SizedBox(height: 16),
                   const Text(
                     'No Tasks Yet',
@@ -458,67 +576,110 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Tasks will be added after therapy sessions',
+                  Text(
+                    'Add tasks from your therapy session action items',
                     textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey[600]),
                   ),
                 ],
               ),
             )
-          : ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: tasks.length,
-              itemBuilder: (context, index) {
-                final task = tasks[index];
+          : Column(
+              children: [
+                // Pending tasks
+                if (pendingTasks.isNotEmpty) ...[
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'To Do',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...pendingTasks.map((task) => _buildTaskCard(task)),
+                  const SizedBox(height: 16),
+                ],
                 
-                return Card(
-                  elevation: 2,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(16),
-                    leading: CircleAvatar(
-                      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-                      child: Icon(
-                        task.icon,
-                        color: Theme.of(context).primaryColor,
+                // Completed tasks
+                if (completedTasks.isNotEmpty) ...[
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Completed',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green,
                       ),
                     ),
-                    title: Text(
-                      task.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 4),
-                        Text(task.description),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Added on ${DateFormat.yMMMd().format(task.earnedDate)}',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    trailing: Checkbox(
-                      value: false, // Not completed yet
-                      onChanged: (value) {
-                        // Mark as complete would go here
-                      },
-                    ),
                   ),
-                );
-              },
+                  const SizedBox(height: 8),
+                  ...completedTasks.map((task) => _buildTaskCard(task)),
+                ],
+              ],
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTaskCard(UserTask task) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: CircleAvatar(
+          backgroundColor: task.isCompleted ? Colors.green.withOpacity(0.2) : Theme.of(context).primaryColor.withOpacity(0.2),
+          child: Icon(
+            task.isCompleted ? Icons.check_circle : Icons.task_alt,
+            color: task.isCompleted ? Colors.green : Theme.of(context).primaryColor,
+          ),
+        ),
+        title: Text(
+          task.text,
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+            color: task.isCompleted ? Colors.grey[600] : null,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              'Added on ${DateFormat.yMMMd().format(task.dateAdded)}',
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+            if (task.isCompleted && task.completedDate != null)
+              Text(
+                'Completed on ${DateFormat.yMMMd().format(task.completedDate!)}',
+                style: const TextStyle(
+                  color: Colors.green,
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+        trailing: Checkbox(
+          value: task.isCompleted,
+          onChanged: (value) {
+            if (value != null) {
+              _toggleTaskCompletion(task.id, value);
+            }
+          },
+        ),
       ),
     );
   }

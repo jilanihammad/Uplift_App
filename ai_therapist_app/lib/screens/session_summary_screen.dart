@@ -5,10 +5,12 @@ import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../models/therapy_message.dart';
 import '../widgets/mood_selector.dart';
+import '../services/tasks_service.dart';
+import '../di/dependency_container.dart';
 import 'widgets/session_summary_card.dart';
 import 'widgets/action_items_card.dart';
 
-class SessionSummaryScreen extends StatelessWidget {
+class SessionSummaryScreen extends StatefulWidget {
   final String sessionId;
   final String summary;
   final List<String> actionItems;
@@ -25,10 +27,72 @@ class SessionSummaryScreen extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<SessionSummaryScreen> createState() => _SessionSummaryScreenState();
+}
+
+class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
+  late TasksService _tasksService;
+  
+  @override
+  void initState() {
+    super.initState();
+    _tasksService = TasksService();
+    _tasksService.init();
+  }
+
+  void _addToTasks(String actionItem) async {
+    try {
+      await _tasksService.addTask(actionItem, widget.sessionId);
+      if (mounted) {
+        setState(() {}); // Refresh UI to update button state
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added to tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to add task'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeFromTasks(String actionItem) async {
+    try {
+      await _tasksService.removeTaskByActionItem(widget.sessionId, actionItem);
+      if (mounted) {
+        setState(() {}); // Refresh UI to update button state
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Removed from tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to remove task'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final sessionDuration = messages.isNotEmpty
-        ? now.difference(messages.first.timestamp)
+    final sessionDuration = widget.messages.isNotEmpty
+        ? now.difference(widget.messages.first.timestamp)
         : Duration.zero;
 
     return Scaffold(
@@ -91,12 +155,18 @@ class SessionSummaryScreen extends StatelessWidget {
             const SizedBox(height: 32),
 
             // Session summary
-            SessionSummaryCard(summary: summary),
+            SessionSummaryCard(summary: widget.summary),
 
             const SizedBox(height: 32),
 
             // Action items
-            ActionItemsCard(actionItems: actionItems),
+            ActionItemsCard(
+              actionItems: widget.actionItems,
+              sessionId: widget.sessionId,
+              onAddToTasks: _addToTasks,
+              onRemoveFromTasks: _removeFromTasks,
+              isItemAlreadyAdded: (actionItem) => _tasksService.isActionItemAlreadyAdded(widget.sessionId, actionItem),
+            ),
 
             const SizedBox(height: 40),
 
@@ -150,7 +220,7 @@ class SessionSummaryScreen extends StatelessWidget {
             const SizedBox(height: 24),
 
             // Additional insights or feedback section (if needed)
-            if (actionItems.isNotEmpty)
+            if (widget.actionItems.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
