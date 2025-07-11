@@ -27,12 +27,17 @@ GROQ_STT_URL: Final = "https://api.groq.com/openai/v1/audio/transcriptions"
 MAX_CONCURRENT_STT: Final = 8
 STT_TIMEOUT_SECONDS: Final = 5.0  # Hard timeout for entire operation
 
-# Singleton client with complete timeout control
-_groq_stt_client: Final = httpx.AsyncClient(
-    timeout=httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0),
-    follow_redirects=True,
-    headers={"User-Agent": "maya-stt/1.0"}
-)
+# Use pooled client for STT instead of singleton
+_groq_stt_client: Optional[Any] = None
+
+def _get_groq_stt_client():
+    """Get pooled HTTP client for Groq STT."""
+    global _groq_stt_client
+    if _groq_stt_client is None:
+        from app.core.http_client_manager import get_http_client_manager
+        http_manager = get_http_client_manager()
+        _groq_stt_client = http_manager.get_client("groq")
+    return _groq_stt_client
 
 # Semaphore for concurrency control
 _stt_semaphore = asyncio.Semaphore(MAX_CONCURRENT_STT)
@@ -48,7 +53,9 @@ async def _do_post(audio_path: Path, model: str, api_key: str) -> str:
     """One network round-trip to Groq with hard 5s timeout."""
     async def _groq_post():
         with audio_path.open("rb") as f:
-            resp = await _groq_stt_client.post(
+            stt_client = _get_groq_stt_client()
+            await stt_client.start()
+            resp = await stt_client.post(
                 GROQ_STT_URL,
                 files={"file": ("audio.m4a", f, "audio/mp4")},
                 data={
@@ -329,17 +336,22 @@ class LLMManager:
                 **params
             }
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.llm_config.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload
-                )
-                
-                response.raise_for_status()
-                result = response.json()
-                
-                return result["choices"][0]["message"]["content"]
+            # Use pooled HTTP client instead of one-shot client
+            from app.core.http_client_manager import get_http_client_manager
+            http_manager = get_http_client_manager()
+            client = http_manager.get_client("openai")
+            await client.start()
+            
+            response = await client.post(
+                f"{self.llm_config.base_url}/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            return result["choices"][0]["message"]["content"]
             
         except Exception as e:
             logger.error(f"Error generating DeepSeek response: {str(e)}")

@@ -180,6 +180,18 @@ class OptimizedHTTPXClient:
             verify=self.config.verify_ssl
         )
         
+        # Register with connection monitor
+        try:
+            from app.core.connection_monitor import get_connection_monitor, ResourceType
+            monitor = get_connection_monitor()
+            await monitor.register_connection(
+                connection_id=f"httpx_client_{id(self.client)}",
+                resource_type=ResourceType.HTTP_CONNECTION,
+                provider=getattr(self, 'provider', 'unknown')
+            )
+        except ImportError:
+            pass  # Connection monitor not available
+        
         logger.info("HTTPX client started with optimized configuration")
     
     async def stop(self):

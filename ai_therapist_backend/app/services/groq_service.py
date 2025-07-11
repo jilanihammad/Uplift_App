@@ -110,13 +110,17 @@ class GroqService:
             
             logger.info(f"Sending request to Groq API with model: {model_to_use}")
             
-            # Make the API call
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    self.chat_completions_url,
-                    headers=headers,
-                    json=payload
-                )
+            # Make the API call using pooled HTTP client
+            from app.core.http_client_manager import get_http_client_manager
+            http_manager = get_http_client_manager()
+            client = http_manager.get_client("groq")
+            await client.start()
+            
+            response = await client.post(
+                self.chat_completions_url,
+                headers=headers,
+                json=payload
+            )
                 
                 if response.status_code != 200:
                     logger.error(f"Error from Groq API: {response.status_code} - {response.text}")
@@ -178,13 +182,17 @@ class GroqService:
                     "max_tokens": 10
                 }
                 
-                # Make the API call
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        self.chat_completions_url,
-                        headers=headers,
-                        json=payload
-                    )
+                # Make the API call using pooled HTTP client
+                from app.core.http_client_manager import get_http_client_manager
+                http_manager = get_http_client_manager()
+                client = http_manager.get_client("groq")
+                await client.start()
+                
+                response = await client.post(
+                    self.chat_completions_url,
+                    headers=headers,
+                    json=payload
+                )
                     
                     if response.status_code == 200:
                         # API key is working
@@ -267,8 +275,13 @@ class GroqService:
                 "stream": True
             }
             logger.info(f"Streaming request to Groq API with model: {model_to_use}")
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream("POST", self.chat_completions_url, headers=headers, json=payload) as response:
+            # Use pooled HTTP client for streaming
+            from app.core.http_client_manager import get_http_client_manager
+            http_manager = get_http_client_manager()
+            client = http_manager.get_client("groq")
+            await client.start()
+            
+            async with client.client.stream("POST", self.chat_completions_url, headers=headers, json=payload) as response:
                     if response.status_code != 200:
                         logger.error(f"Error from Groq API (stream): {response.status_code} - {await response.aread()}")
                         raise Exception(f"Error from Groq API (stream): {response.status_code}")

@@ -37,17 +37,19 @@ def init_db():
 
 # Verify database connection on startup
 try:
-    # Setup basic logging first
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    # Setup enhanced logging first
+    from app.core.enhanced_logging import setup_logging, get_logger
+    setup_logging()
+    logger = get_logger(__name__)
     
     # Initialize database - must happen after logger is created but before app starts
     init_db()
     logger.info("Database initialization successful")
 except Exception as e:
-    # Setup basic logging first
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    # Setup enhanced logging first
+    from app.core.enhanced_logging import setup_logging, get_logger
+    setup_logging()
+    logger = get_logger(__name__)
     
     logger.error(f"CRITICAL: Database initialization failed: {str(e)}")
     logger.error("The application will start but database operations will be simulated")
@@ -140,9 +142,14 @@ app = FastAPI(
 
 # Add middleware - order matters!
 try:
+    # Add request tracing middleware first (for all requests)
+    from app.core.request_middleware import RequestTracingMiddleware
+    app.add_middleware(RequestTracingMiddleware)
+    logger.info("Added request tracing middleware")
+    
     app.add_middleware(SecurityMiddleware)
     app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
-    logger.info("Successfully added middleware")
+    logger.info("Successfully added all middleware")
 except Exception as e:
     logger.error(f"Error adding middleware: {str(e)}")
     logger.error(traceback.format_exc())
