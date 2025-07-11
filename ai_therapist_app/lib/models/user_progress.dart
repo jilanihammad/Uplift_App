@@ -94,25 +94,26 @@ class UserProgress {
   // Calculate the number of active days in the last week (days with mood logs or sessions)
   int get activeDaysLastWeek {
     final now = DateTime.now();
-    final oneWeekAgo = now.subtract(const Duration(days: 7));
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final oneWeekAgo = todayStart.subtract(const Duration(days: 6)); // Include today
     
     // Collect all dates from mood and session history
     final Set<DateTime> activeDays = {};
     
     // Add days with mood logs
     for (final entry in moodHistory.entries) {
-      if (entry.key.isAfter(oneWeekAgo) && entry.key.isBefore(now)) {
-        // Normalize to start of day to avoid counting the same day multiple times
-        final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+      final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+      if (dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
+          dayStart.isBefore(todayStart.add(const Duration(days: 1)))) {
         activeDays.add(dayStart);
       }
     }
     
     // Add days with sessions
     for (final entry in sessionHistory.entries) {
-      if (entry.key.isAfter(oneWeekAgo) && entry.key.isBefore(now)) {
-        // Normalize to start of day
-        final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+      final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+      if (dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
+          dayStart.isBefore(todayStart.add(const Duration(days: 1)))) {
         activeDays.add(dayStart);
       }
     }
@@ -123,20 +124,30 @@ class UserProgress {
   // Get the number of therapy sessions in the last week
   int get sessionsThisWeek {
     final now = DateTime.now();
-    final oneWeekAgo = now.subtract(const Duration(days: 7));
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final oneWeekAgo = todayStart.subtract(const Duration(days: 6)); // Include today
     
     return sessionHistory.entries
-      .where((entry) => entry.key.isAfter(oneWeekAgo) && entry.key.isBefore(now))
+      .where((entry) {
+        final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+        return dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
+               dayStart.isBefore(todayStart.add(const Duration(days: 1)));
+      })
       .length;
   }
   
   // Get the number of mood logs in the last week
   int get moodLogsThisWeek {
     final now = DateTime.now();
-    final oneWeekAgo = now.subtract(const Duration(days: 7));
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final oneWeekAgo = todayStart.subtract(const Duration(days: 6)); // Include today
     
     return moodHistory.entries
-      .where((entry) => entry.key.isAfter(oneWeekAgo) && entry.key.isBefore(now))
+      .where((entry) {
+        final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+        return dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
+               dayStart.isBefore(todayStart.add(const Duration(days: 1)));
+      })
       .length;
   }
   

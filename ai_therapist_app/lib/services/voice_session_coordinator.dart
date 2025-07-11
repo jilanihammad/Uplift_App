@@ -8,6 +8,7 @@ import '../di/interfaces/i_audio_recording_service.dart';
 import '../di/interfaces/i_tts_service.dart';
 import '../di/interfaces/i_websocket_audio_manager.dart';
 import '../di/interfaces/i_audio_file_manager.dart';
+import '../utils/disposable.dart';
 import 'base_voice_service.dart';
 import 'voice_service.dart';
 // Future enhancement: Direct AutoListeningCoordinator integration
@@ -22,7 +23,7 @@ import 'voice_service.dart';
 /// - Added processRecordedAudioFile(), setSpeakerMuted()  
 /// - Added enableAutoMode(), disableAutoMode()
 /// - Smart delegation to legacy VoiceService for unimplemented features
-class VoiceSessionCoordinator implements IVoiceService {
+class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   final IAudioRecordingService _recordingService;
   final ITTSService _ttsService;
   final IWebSocketAudioManager _wsManager;
@@ -332,19 +333,20 @@ class VoiceSessionCoordinator implements IVoiceService {
     }
   }
 
+  // IVoiceService dispose implementation (sync)
   @override
   void dispose() {
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Disposing all services...');
     }
 
-    // Dispose all services
+    // Dispose all services synchronously
     _recordingService.dispose();
     _ttsService.dispose();
     _wsManager.dispose();
     _fileManager.dispose();
 
-    // Close stream controllers
+    // Close stream controllers (fire and forget)
     _audioLevelController.close();
 
     _isInitialized = false;
@@ -352,6 +354,15 @@ class VoiceSessionCoordinator implements IVoiceService {
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] All services disposed');
     }
+    
+    // Call parent dispose
+    super.dispose();
+  }
+
+  @override
+  void performDisposal() {
+    // Additional async cleanup if needed - don't duplicate sync work
+    // This is called by the parent dispose method after sync disposal
   }
 
   @override

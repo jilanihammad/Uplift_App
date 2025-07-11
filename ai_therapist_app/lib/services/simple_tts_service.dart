@@ -23,6 +23,7 @@ import '../utils/wav_header_utils.dart';
 import 'live_tts_audio_source.dart';
 import 'audio_format_negotiator.dart';
 import '../utils/opus_header_utils.dart';
+import '../utils/throttled_debug_print.dart';
 
 /// Feature flag to enable in-memory TTS playback (eliminates temp WAV files)
 /// Set to true to avoid writing ~1 MiB temp files per TTS response
@@ -161,8 +162,26 @@ class SimpleTTSService implements ITTSService {
       final ws = WebSocketChannel.connect(Uri.parse(wsUrl));
       _state = _State.streaming;
 
+      // Create event-driven completion tracker for this request
+      final completionTracker = TwoPhaseCompletion();
+      
+      // Initialize with audio player for event-driven completion
+      completionTracker.initializeWithPlayer(_audioPlayerManager.audioPlayer);
+      
+      // Set up callbacks
+      completionTracker.setStopPlayerCallback(() async {
+        await _audioPlayerManager.stopAudio();
+      });
+      
+      completionTracker.setPlaybackFinishedCallback(() {
+        _notifyTTSEnd(); // Signal TTS completion
+        _fireCompletionSafely(false); // Reset speaking state
+      });
+      
+      // Note: VAD restart will be handled by VoiceSessionBloc when it receives TTS completion
+
       // Process TTS request with fresh connection
-      await _processResponse(req, ws);
+      await _processResponse(req, ws, completionTracker);
       
       // Always close the WebSocket after each request (simple pattern)
       await ws.sink.close();
@@ -198,7 +217,7 @@ class SimpleTTSService implements ITTSService {
     }
   }
 
-  Future<void> _processResponse(TtsRequest req, WebSocketChannel ws) async {
+  Future<void> _processResponse(TtsRequest req, WebSocketChannel ws, TwoPhaseCompletion completionTracker) async {
     // Check if streaming is enabled and buffer size allows for streaming
     final streamingEnabled = TTSStreamingConfig.shouldUseStreaming;
     final requestedFormat = req.format;
@@ -222,10 +241,10 @@ class SimpleTTSService implements ITTSService {
     // ZERO RISK IMPLEMENTATION: Choose path based on configuration
     if (streamingEnabled) {
       // NEW STREAMING PATH: Progressive streaming with buffer threshold
-      await _processResponseStreaming(req, ws, bufferSize);
+      await _processResponseStreaming(req, ws, bufferSize, completionTracker);
     } else {
       // EXISTING FULL-BUFFER PATH: Unchanged for safety
-      await _processResponseFullBuffer(req, ws);
+      await _processResponseFullBuffer(req, ws, completionTracker);
     }
   }
   
@@ -243,7 +262,7 @@ class SimpleTTSService implements ITTSService {
   }
 
   /// NEW: Streaming response processing with progressive playback
-  Future<void> _processResponseStreaming(TtsRequest req, WebSocketChannel ws, int bufferSize) async {
+  Future<void> _processResponseStreaming(TtsRequest req, WebSocketChannel ws, int bufferSize, TwoPhaseCompletion completionTracker) async {
     final startTime = DateTime.now();
     DateTime? firstAudioTime;
     DateTime? playbackStartTime;
@@ -259,9 +278,6 @@ class SimpleTTSService implements ITTSService {
     WavHeaderInfo? originalHeaderInfo;
     // CRITICAL: Track LiveTtsAudioSource for proper lifecycle management
     LiveTtsAudioSource? liveAudioSource;
-    
-    // CRITICAL: Use TwoPhaseCompletion to coordinate WebSocket and player completion
-    final completionTracker = TwoPhaseCompletion();
     
     try {
       // Use the requested format directly (no negotiation needed)
@@ -470,7 +486,8 @@ class SimpleTTSService implements ITTSService {
               try {
                 audioStreamController?.add(Uint8List.fromList(message));
                 if (kDebugMode && message.isNotEmpty) {
-                  print('📊 [TTS] Streamed chunk: ${message.length} bytes (total buffered: ${audioBuffer.length})');
+                  debugPrintThrottledCustom('📊 [TTS] Streamed chunk: ${message.length} bytes (total buffered: ${audioBuffer.length})', 
+                                           key: 'tts_chunk_streaming');
                 }
               } catch (e) {
                 if (kDebugMode) {
@@ -500,7 +517,7 @@ class SimpleTTSService implements ITTSService {
       // Wait for BOTH phases to complete before returning
       if (playbackFuture != null) {
         // Wait for both WebSocket done AND player completion
-        await completionTracker.waitForBothDoneWithTimeout();
+        await completionTracker.waitForBothDone(); // Event-driven, no artificial timeout
         
         if (kDebugMode) {
           print('✅ [TTS] Both phases completed for ${req.id} (${audioBuffer.length} total bytes)');
@@ -581,7 +598,12 @@ class SimpleTTSService implements ITTSService {
           final retryWs = WebSocketChannel.connect(Uri.parse(wsUrl));
           
           // Use full buffer mode for WAV fallback (safer)
-          await _processResponseFullBuffer(req, retryWs);
+          // Create new completion tracker for retry
+          final retryCompletionTracker = TwoPhaseCompletion();
+          retryCompletionTracker.setStopPlayerCallback(() async {
+            await _audioPlayerManager.stopAudio();
+          });
+          await _processResponseFullBuffer(req, retryWs, retryCompletionTracker);
           await retryWs.sink.close();
           
           if (kDebugMode) {
@@ -688,7 +710,7 @@ class SimpleTTSService implements ITTSService {
   }
 
   /// EXISTING: Full buffer response processing (unchanged for safety)
-  Future<void> _processResponseFullBuffer(TtsRequest req, WebSocketChannel ws) async {
+  Future<void> _processResponseFullBuffer(TtsRequest req, WebSocketChannel ws, TwoPhaseCompletion completionTracker) async {
     if (kDebugMode) {
       print('🔄 [TTS] Using FULL-BUFFER path for ${req.id} (safe mode)');
     }
@@ -757,6 +779,9 @@ class SimpleTTSService implements ITTSService {
     if (kDebugMode) {
       print('🔍 [TTS] Buffering complete: ${audioBuffer.length} total bytes for ${req.id}');
     }
+    
+    // Set minimal safety watchdog based on actual audio length (2x estimated duration)
+    completionTracker.setSafetyWatchdog(audioBuffer.length);
     
     // Choose playback method based on backup file preference and feature flag
     if (req.makeBackupFile) {

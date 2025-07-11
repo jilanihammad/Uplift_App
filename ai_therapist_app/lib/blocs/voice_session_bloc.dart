@@ -28,6 +28,9 @@ import 'voice_session_event.dart';
 import 'voice_session_state.dart';
 import '../services/voice_service.dart';
 import '../services/vad_manager.dart';
+import '../services/session_scope_manager.dart';
+import '../services/voice_session_coordinator.dart';
+import '../services/auto_listening_coordinator.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import 'package:flutter/foundation.dart';
@@ -59,6 +62,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   late final SessionStateManager _sessionManager;
   late final TimerManager _timerManager;
   late final MessageCoordinator _messageCoordinator;
+  
+  // Session scope management for clean resource disposal
+  final SessionScopeManager _scopeManager = SessionScopeManager();
+  
+  /// Whether a session is currently active (has session scope)
+  bool get inSession => _scopeManager.inSession;
 
   VoiceSessionBloc({
     required this.voiceService,
@@ -205,41 +214,83 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     voiceService.autoListeningCoordinator.onProcessingComplete();
   }
 
-  void _onStartSession(StartSession event, Emitter<VoiceSessionState> emit) {
-    // Phase 1.1.4: Use SessionStateManager for session start
-    final newState = _sessionManager.startNewSession();
+  Future<void> _onStartSession(StartSession event, Emitter<VoiceSessionState> emit) async {
+    debugPrint('[VoiceSessionBloc] Starting new session...');
     
-    // Reset managers
-    _messageCoordinator.resetMessages();
-    _timerManager.stopTimer();
+    // Re-entrancy guard
+    if (inSession) {
+      debugPrint('[VoiceSessionBloc] Session already in progress, ignoring StartSession');
+      return;
+    }
     
-    emit(newState);
+    try {
+      // Performance monitoring
+      final stopwatch = Stopwatch()..start();
+      
+      // Create fresh session scope with new service instances
+      await _scopeManager.createSessionScope();
+      
+      // Get fresh session-scoped services
+      final voiceCoordinator = _scopeManager.get<VoiceSessionCoordinator>();
+      final autoListening = _scopeManager.get<AutoListeningCoordinator>();
+      
+      // Initialize session services
+      await voiceCoordinator.initialize();
+      await autoListening.initialize();
+      
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] Session initialized in ${stopwatch.elapsedMilliseconds}ms');
+      }
+      
+      // Phase 1.1.4: Use SessionStateManager for session start
+      final newState = _sessionManager.startNewSession();
+      
+      // Reset managers
+      _messageCoordinator.resetMessages();
+      _timerManager.stopTimer();
+      
+      emit(newState);
+      
+    } catch (e) {
+      debugPrint('[VoiceSessionBloc] Error starting session: $e');
+      await _cleanupFailedSession();
+      emit(state.copyWith(errorMessage: e.toString()));
+    }
   }
 
   Future<void> _onEndSession(
       EndSession event, Emitter<VoiceSessionState> emit) async {
-    debugPrint(
-        '[VoiceSessionBloc] Ending session - cleaning up audio and resources...');
+    if (!inSession) {
+      debugPrint('[VoiceSessionBloc] No active session to end');
+      return;
+    }
+    
+    debugPrint('[VoiceSessionBloc] Ending session - cleaning up audio and resources...');
 
     try {
-      await _safeVoiceService.stopAudio();
+      // Async teardown order - stop services gracefully first
+      await _safeVoiceService.stopAudio();     // Await playback completion
       debugPrint('[VoiceSessionBloc] Audio stopped successfully');
 
-      _safeVoiceService.resetTTSState();
-
-      // Phase 2.2.2: Use interface when available
-      await _safeVoiceService.disableAutoMode();
+      _safeVoiceService.resetTTSState(); // Flush TTS monitor (sync operation)
+      await _safeVoiceService.disableAutoMode(); // Disable auto listening
 
       try {
-        await _safeVoiceService.stopRecording();
+        await _safeVoiceService.stopRecording(); // Stop VAD/recording
       } on NotRecordingException {
         // Not recording, that's fine
       }
 
+      debugPrint('[VoiceSessionBloc] Session services stopped gracefully');
+      
+      // Destroy entire session scope (automatic disposal)
+      await _scopeManager.destroySessionScope();
 
       debugPrint('[VoiceSessionBloc] Session cleanup completed successfully');
+      
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error during session cleanup: $e');
+      await _forceSessionCleanup();
     }
 
     emit(state.copyWith(
@@ -956,8 +1007,23 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
+  /// Cleanup after failed session initialization
+  Future<void> _cleanupFailedSession() async {
+    await _scopeManager.destroySessionScope();
+  }
+  
+  /// Force cleanup for emergency situations
+  Future<void> _forceSessionCleanup() async {
+    await _scopeManager.destroySessionScope();
+  }
+
   @override
-  Future<void> close() {
+  Future<void> close() async {
+    // Cleanup any active session before closing bloc
+    if (inSession) {
+      await _forceSessionCleanup();
+    }
+    
     _recordingStateSub?.cancel();
     _audioPlaybackSub?.cancel();
     _ttsStateSub?.cancel();

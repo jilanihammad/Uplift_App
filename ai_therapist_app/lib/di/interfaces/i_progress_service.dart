@@ -36,6 +36,7 @@ abstract class IProgressService {
   // Session tracking
   Future<void> logSession(int sessionDuration);
   List<MapEntry<DateTime, int>> getSessionDataForLastDays(int days);
+  Future<void> syncSessionData();
   
   // Progress management
   Future<void> resetProgress();

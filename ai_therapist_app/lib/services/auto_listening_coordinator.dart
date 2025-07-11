@@ -9,6 +9,7 @@ import 'vad_manager.dart';
 import 'enhanced_vad_manager.dart';
 import 'voice_service.dart';
 import '../utils/logging_config.dart';
+import '../utils/disposable.dart';
 
 /// Coordinates automatic voice detection and recording
 ///
@@ -18,7 +19,7 @@ import '../utils/logging_config.dart';
 /// Simplified voice detection and recording coordination
 /// Manages the transition between AI speaking and automatically
 /// listening for user input using VAD
-class AutoListeningCoordinator {
+class AutoListeningCoordinator with SessionDisposable {
   // Core components
   final AudioPlayerManager _audioPlayerManager;
   final RecordingManager _recordingManager;
@@ -1159,7 +1160,8 @@ class AutoListeningCoordinator {
   }
 
   // Clean up resources
-  Future<void> dispose() async {
+  @override
+  void performDisposal() {
     _cancelSpeechEndTimer();
     _cancelPendingSpeechEnd();
     _stuckStateTimer?.cancel();
@@ -1171,9 +1173,10 @@ class AutoListeningCoordinator {
     // Clean up robust solution subscriptions
     _startListeningSub?.cancel();
 
-    await _autoModeEnabledController.close();
-    await _stateController.close();
-    await _errorController.close();
+    // Close controllers (fire and forget)
+    _autoModeEnabledController.close();
+    _stateController.close();
+    _errorController.close();
   }
 
   // Initialize the coordinator
