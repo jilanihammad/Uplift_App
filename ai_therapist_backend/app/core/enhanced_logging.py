@@ -191,6 +191,11 @@ class EnhancedLoggingConfig:
             logger = logging.getLogger("ai_therapist.logging")
             logger.warning(f"Failed to initialize Google Cloud Logging: {str(e)}")
             logger.info("Using fallback structured console logging")
+        else:
+            # Even with Google Cloud Logging, ensure our formatter is used for local handlers
+            root_logger = logging.getLogger()
+            formatter = ProductionOptimizedFormatter(include_trace_info=True)
+            cls._update_all_loggers_formatter(formatter)
     
     @classmethod
     def _setup_development_logging(cls):
@@ -209,7 +214,25 @@ class EnhancedLoggingConfig:
         formatter = ProductionOptimizedFormatter(include_trace_info=True)
         handler.setFormatter(formatter)
         
+        # Remove existing handlers to avoid duplication
+        for existing_handler in root_logger.handlers[:]:
+            root_logger.removeHandler(existing_handler)
+        
         root_logger.addHandler(handler)
+        
+        # Ensure all existing loggers use this formatter
+        cls._update_all_loggers_formatter(formatter)
+    
+    @classmethod
+    def _update_all_loggers_formatter(cls, formatter):
+        """Update all existing loggers to use the enhanced formatter."""
+        # Get all existing loggers
+        existing_loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+        existing_loggers.append(logging.root)
+        
+        for logger in existing_loggers:
+            for handler in logger.handlers:
+                handler.setFormatter(formatter)
     
     @classmethod
     def suppress_noisy_libraries(cls):

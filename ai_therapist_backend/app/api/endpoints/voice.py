@@ -1597,6 +1597,11 @@ async def websocket_tts(websocket: WebSocket):
                         "total_bytes": total_audio_size
                     }))
                     
+                    # Wait briefly for client to process done message, then close connection
+                    await asyncio.sleep(0.1)  # 100ms grace period
+                    await websocket.close(code=1000, reason="streaming_complete")
+                    return  # Exit the loop and function
+                    
                 except Exception as tts_error:
                     logger.error(f"TTS WebSocket error: {str(tts_error)}")
                     await websocket.send_text(json.dumps({
@@ -1800,6 +1805,11 @@ async def websocket_voice_tts(websocket: WebSocket):
                         "reason": "streaming_complete",
                         "total_bytes": total_audio_size
                     }))
+                    
+                    # Wait briefly for client to process done message, then close connection
+                    await asyncio.sleep(0.1)  # 100ms grace period
+                    await websocket.close(code=1000, reason="streaming_complete")
+                    return  # Exit the loop and function
                     
                 except Exception as tts_error:
                     logger.error(f"TTS WebSocket error: {str(tts_error)}")
