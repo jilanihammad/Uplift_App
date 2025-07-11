@@ -403,3 +403,235 @@ METRICS_CONFIG = {
     'common_labels': ['provider', 'method', 'status']
 }
 ```
+
+## Performance-First Approach Integration
+
+### Latency-Focused KPIs
+**Primary Speed Metrics**:
+- **Steady-state P95**: Normal operation latency
+- **Cold-start P95**: Container/model initialization latency
+- **TTFB tracking**: Time-to-first-byte for chat/TTS/STT every minute
+
+**Critical Path Instrumentation**:
+`client → FastAPI router → LLMManager → provider-HTTP → LLMManager → WebSocket stream`
+- Sample critical path at 100%
+- Sample everything else at 1-10%
+
+### Circuit Breaker Micro-Optimizations
+**Sub-microsecond overhead techniques**:
+```python
+# Hot cache pattern - <1µs per call
+class FastCircuitBreaker:
+    def __init__(self):
+        self.memory_state = {}  # Hot cache
+        self.redis_sync_interval = 5  # seconds
+        
+    async def check_circuit(self, provider: str) -> bool:
+        # Memory lookup - sub-microsecond
+        state = self.memory_state.get(provider, "closed")
+        
+        # Parallel probe for half-open state
+        if state == "half-open":
+            probe_task = asyncio.create_task(self._probe_provider(provider))
+            # Return immediately, update state async
+            return True
+            
+    async def _sync_to_redis(self):
+        # Background task - no request path impact
+        while True:
+            await asyncio.sleep(self.redis_sync_interval)
+            await self._flush_state_to_redis()
+```
+
+### HTTP Client Hot-Rodding
+**Connection Pool Optimization**:
+```python
+# Per-provider optimized sessions
+PROVIDER_HTTP_CONFIG = {
+    'openai': {
+        'connector': aiohttp.TCPConnector(
+            limit=100,
+            keepalive_timeout=75,
+            ttl_dns_cache=300,
+            use_dns_cache=True
+        ),
+        'timeout': aiohttp.ClientTimeout(total=30, connect=5),
+        'headers': {'Connection': 'keep-alive'}
+    },
+    'anthropic': {
+        'connector': aiohttp.TCPConnector(
+            limit=50,
+            keepalive_timeout=60,
+            ttl_dns_cache=300
+        ),
+        'timeout': aiohttp.ClientTimeout(total=45, connect=5)
+    }
+}
+
+# HTTP/2 upgrade where supported
+async def create_http2_session(provider_url: str):
+    connector = aiohttp.TCPConnector(
+        limit=100,
+        force_close=False,
+        enable_cleanup_closed=True
+    )
+    return aiohttp.ClientSession(
+        connector=connector,
+        timeout=aiohttp.ClientTimeout(total=30)
+    )
+```
+
+### Streaming Performance Optimizations
+**Token-1 Streaming**:
+```python
+async def stream_llm_response(prompt: str, websocket: WebSocket):
+    async for chunk in llm_manager.generate_response_stream(prompt):
+        # Send immediately on first token
+        await websocket.send_text(chunk)
+        # No buffering - minimize latency
+```
+
+**OPUS Streaming with Smart Buffering**:
+```python
+# Start playback after 4-8KB for optimal perceived performance
+OPUS_BUFFER_THRESHOLDS = {
+    'start_playback': 4096,  # 4KB
+    'optimal_buffer': 8192,  # 8KB
+    'max_buffer': 16384      # 16KB
+}
+```
+
+### Container Warm-up Strategy
+**Boot-time Optimization**:
+```python
+# Container startup sequence
+async def warm_up_services():
+    tasks = [
+        warm_up_llm_models(),
+        preload_tts_voices(),
+        compile_pydantic_models(),
+        establish_provider_connections()
+    ]
+    await asyncio.gather(*tasks)
+
+async def warm_up_llm_models():
+    # 5-token warm-up per model
+    warm_up_prompts = {
+        'gpt-4': 'Hello world test',
+        'claude-3': 'System check',
+        'gemini-pro': 'Initialization'
+    }
+    
+    for model, prompt in warm_up_prompts.items():
+        await llm_manager.generate_response(prompt, model=model)
+```
+
+### Observability with Micro-Overhead
+**Smart Sampling Strategy**:
+```python
+# Production sampling configuration
+OBSERVABILITY_CONFIG = {
+    'tracing_sample_rate': 0.05,  # 5% in production
+    'canary_sample_rate': 1.0,    # 100% in canary
+    'metrics_export_interval': 5,  # 5 seconds
+    'log_batch_size': 1000,
+    'log_flush_interval': 2
+}
+
+# Non-blocking log queue
+class PerformantLogger:
+    def __init__(self):
+        self.queue = asyncio.Queue(maxsize=10000)
+        self.background_task = asyncio.create_task(self._flush_logs())
+    
+    async def log_async(self, message: dict):
+        # Non-blocking - drops if queue full
+        try:
+            self.queue.put_nowait(message)
+        except asyncio.QueueFull:
+            # Emit metric about dropped logs
+            pass
+```
+
+### Performance Gates and Validation
+**Automated Performance Testing**:
+```python
+# Phase gate criteria
+PERFORMANCE_GATES = {
+    'phase_1': {
+        'max_latency_increase': 0.10,  # 10% increase max
+        'baseline_metric': 'p95_chat_ttfb',
+        'test_load': '50_req_per_second'
+    },
+    'phase_2': {
+        'max_latency_increase': 0.15,  # 15% with observability
+        'baseline_metric': 'p95_chat_ttfb',
+        'test_load': '100_req_per_second'
+    },
+    'phase_3': {
+        'max_latency_delta': 0.05,  # 5% old vs new
+        'comparison_type': 'a_b_test',
+        'test_duration': '10_minutes'
+    }
+}
+```
+
+**CI Performance Validation**:
+```bash
+# Automated performance gate in CI
+#!/bin/bash
+# performance_gate.sh
+
+# Run baseline test
+k6 run --vus 50 --duration 60s baseline_test.js > baseline_results.json
+
+# Run new implementation test  
+k6 run --vus 50 --duration 60s current_test.js > current_results.json
+
+# Compare results
+python validate_performance.py baseline_results.json current_results.json --threshold 0.10
+
+# Fail build if performance regression detected
+if [ $? -ne 0 ]; then
+    echo "Performance regression detected - failing build"
+    exit 1
+fi
+```
+
+### MessagePack Optimization
+**Binary Protocol for Internal APIs**:
+```python
+# Use MessagePack for large payloads
+import msgpack
+import orjson
+
+def serialize_payload(data: dict, use_msgpack: bool = True) -> bytes:
+    if use_msgpack and len(str(data)) > 1024:  # >1KB
+        return msgpack.packb(data)
+    return orjson.dumps(data)
+
+# 30-50% size reduction for large responses
+def deserialize_payload(data: bytes, is_msgpack: bool = True) -> dict:
+    if is_msgpack:
+        return msgpack.unpackb(data, raw=False)
+    return orjson.loads(data)
+```
+
+### Performance Monitoring Dashboard
+**Real-time Performance Metrics**:
+- **Latency Waterfall**: Breakdown of request components
+- **Provider Performance**: Per-provider latency and success rates
+- **Circuit Breaker Status**: State and trip frequency
+- **Connection Pool Health**: Active connections and queue depth
+- **Streaming Metrics**: TTFB, chunk delivery rate, buffer sizes
+
+### Implementation Timeline with Performance Focus
+
+| Phase | Performance Additions | Expected Latency Impact |
+|-------|----------------------|-------------------------|
+| 1 | HTTP optimization, warm-up, instrumentation | -30ms to -50ms |
+| 2 | Circuit breaker optimization, smart sampling | -5ms to -10ms |
+| 3 | MessagePack, streaming optimization | -10ms to -20ms |
+| 4 | Profile-driven micro-optimizations | -5ms to -15ms |
+
+**Total Expected Improvement**: 50-95ms latency reduction while improving reliability and observability.
