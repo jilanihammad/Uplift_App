@@ -38,6 +38,28 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
     super.initState();
     _tasksService = TasksService();
     _tasksService.init();
+    
+    // Sync session data when summary screen is shown
+    _syncProgressData();
+  }
+  
+  Future<void> _syncProgressData() async {
+    try {
+      final progressService = DependencyContainer().progress;
+      await progressService.syncSessionData();
+      
+      // Also log this session with duration
+      final now = DateTime.now();
+      final sessionDuration = widget.messages.isNotEmpty
+          ? now.difference(widget.messages.first.timestamp).inMinutes
+          : 0;
+      
+      if (sessionDuration > 0) {
+        await progressService.logSession(sessionDuration);
+      }
+    } catch (e) {
+      debugPrint('Error syncing progress data: $e');
+    }
   }
 
   void _addToTasks(String actionItem) async {

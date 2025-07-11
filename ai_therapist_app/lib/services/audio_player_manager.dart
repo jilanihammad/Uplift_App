@@ -9,6 +9,8 @@ import '../di/interfaces/i_audio_settings.dart';
 import 'tts_streaming_monitor.dart';
 import '../utils/memory_monitor.dart';
 import 'live_tts_audio_source.dart';
+import '../utils/disposable.dart';
+import '../utils/throttled_debug_print.dart';
 
 /// Audio queue item containing all necessary information for queued playback
 class AudioQueueItem {
@@ -28,7 +30,7 @@ class AudioQueueItem {
 ///
 /// Responsible for playing audio files, managing playback state, and handling
 /// audio queue for concurrent playback requests
-class AudioPlayerManager {
+class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   // Audio player instance
   final AudioPlayer _audioPlayer = AudioPlayer();
   
@@ -140,7 +142,8 @@ class AudioPlayerManager {
         _lastEmittedPlayingState = _pendingStateChange;
         _playingStateController.add(_pendingStateChange!);
         if (kDebugMode) {
-          print('🎧 AudioPlayerManager: Playing state changed to $_pendingStateChange (debounced)');
+          debugPrintThrottledCustom('🎧 AudioPlayerManager: Playing state changed to $_pendingStateChange (debounced)',
+                          key: 'audio_state_debounced');
         }
       } else if (kDebugMode) {
         print('🎧 AudioPlayerManager: Duplicate state change to $_pendingStateChange ignored (debounced)');
@@ -160,7 +163,8 @@ class AudioPlayerManager {
       _lastEmittedPlayingState = isPlaying;
       _playingStateController.add(isPlaying);
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Playing state changed to $isPlaying (immediate)');
+        debugPrintThrottledCustom('🎧 AudioPlayerManager: Playing state changed to $isPlaying (immediate)',
+                          key: 'audio_state_immediate');
       }
     }
   }
@@ -202,7 +206,8 @@ class AudioPlayerManager {
 
       _audioPlayer.processingStateStream.listen((state) {
         if (kDebugMode) {
-          print('🔄 AudioPlayerManager: ProcessingState changed to $state (playing: ${_audioPlayer.playing})');
+          debugPrintThrottledCustom('🔄 AudioPlayerManager: ProcessingState changed to $state (playing: ${_audioPlayer.playing})',
+                            key: 'audio_processing_state');
         }
         
         switch (state) {
@@ -379,7 +384,8 @@ class AudioPlayerManager {
       if (kDebugMode) {
         final fileSize = await file.length();
         final waitTime = DateTime.now().difference(item.addedAt).inMilliseconds;
-        print('🎧 Playing audio from: ${item.audioPath} (size: $fileSize bytes, waited: ${waitTime}ms)');
+        debugPrintThrottledCustom('🎧 Playing audio from: ${item.audioPath} (size: $fileSize bytes, waited: ${waitTime}ms)',
+                          key: 'audio_file_playback');
       }
 
       // Stop any current playback
@@ -575,28 +581,176 @@ class AudioPlayerManager {
     _audioQueue.clear();
     _queueLengthController.add(0);
   }
+  
+  /// Session end cleanup following exact specification
+  /// Call this when therapy session ends or user navigates away
+  Future<void> sessionEndCleanup() async {
+    if (kDebugMode) {
+      print('🧹 AudioPlayerManager: Session end cleanup starting');
+    }
+    
+    final stopwatch = Stopwatch()..start();
+    
+    try {
+      // Step 1: Stop player immediately
+      await _audioPlayer.stop();
+      if (kDebugMode) {
+        print('🧹 Step 1: Player stopped');
+      }
+      
+      // Step 2: Dispose player (frees decoder, closes sockets)
+      await _audioPlayer.dispose();
+      if (kDebugMode) {
+        print('🧹 Step 2: Player disposed');
+      }
+      
+      // Step 3: Signal TTS completion and cancel all watchdogs
+      _forceIsPlayingState = false;
+      _emitPlayingStateImmediate(false);
+      
+      // Cancel all timers and subscriptions
+      _stateDebounceTimer?.cancel();
+      _stateDebounceTimer = null;
+      
+      stopwatch.stop();
+      
+      if (kDebugMode) {
+        print('✅ AudioPlayerManager: Session cleanup completed in ${stopwatch.elapsedMilliseconds}ms');
+      }
+      
+    } catch (e) {
+      stopwatch.stop();
+      if (kDebugMode) {
+        print('❌ AudioPlayerManager: Session cleanup error (${stopwatch.elapsedMilliseconds}ms): $e');
+      }
+      
+      // Force state reset even on error
+      _forceIsPlayingState = false;
+      _emitPlayingStateImmediate(false);
+    }
+  }
 
-  // Clean up resources
-  Future<void> dispose() async {
-    _disposed = true; // Set flag first
+  // Clean up resources - ASYNC VERSION
+  @override
+  Future<void> performAsyncDisposal() async {
+    if (kDebugMode) {
+      debugPrint('🧹 AudioPlayerManager: Starting comprehensive async disposal');
+    }
     
-    // Remove listener before disposing player
+    final stopwatch = Stopwatch()..start();
+    
+    try {
+      // Step 1: Stop all playback immediately to prevent MediaCodec race
+      if (kDebugMode) {
+        debugPrint('🧹 Step 1: Stopping playback and clearing queue');
+      }
+      await _audioPlayer.stop();
+      
+      // Step 2: Clear queue and complete all pending items
+      clearQueue();
+      _isProcessingQueue = false;
+      _currentlyPlaying = null;
+      
+      // Step 3: Cancel all timers to prevent post-disposal callbacks
+      if (kDebugMode) {
+        debugPrint('🧹 Step 2: Canceling timers and removing listeners');
+      }
+      _stateDebounceTimer?.cancel();
+      _stateDebounceTimer = null;
+      
+      // Step 4: Remove audio settings listener before disposing
+      _audioSettings?.removeListener(_onMuteChanged);
+      
+      // Step 5: Release player resources - frees decoder, closes sockets
+      if (kDebugMode) {
+        debugPrint('🧹 Step 3: Releasing AudioPlayer (frees decoder, closes sockets)');
+      }
+      
+      await Future.any([
+        Future(() async {
+          await _audioPlayer.dispose(); // This calls release() internally
+          if (kDebugMode) {
+            debugPrint('🧹 AudioPlayer release completed successfully');
+          }
+        }),
+        Future.delayed(const Duration(seconds: 3), () {
+          if (kDebugMode) {
+            debugPrint('⚠️ AudioPlayer release timed out after 3 seconds');
+          }
+          // Don't throw - just log the timeout
+        }),
+      ]);
+      
+      // Step 6: Abandon audio focus to fully release audio session
+      if (kDebugMode) {
+        debugPrint('🧹 Step 4: Abandoning audio focus');
+      }
+      
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+        if (kDebugMode) {
+          debugPrint('🧹 Audio session deactivated successfully');
+        }
+      } catch (sessionError) {
+        if (kDebugMode) {
+          debugPrint('⚠️ Error deactivating audio session: $sessionError');
+        }
+        // Don't rethrow - session cleanup is best effort
+      }
+      
+      // Step 7: Close all stream controllers
+      if (kDebugMode) {
+        debugPrint('🧹 Step 5: Closing stream controllers');
+      }
+      await Future.wait([
+        _playingStateController.close(),
+        _errorController.close(),
+        _queueLengthController.close(),
+        _nowPlayingController.close(),
+      ]);
+      
+      stopwatch.stop();
+      
+      if (kDebugMode) {
+        debugPrint('✅ AudioPlayerManager: Async disposal completed in ${stopwatch.elapsedMilliseconds}ms');
+      }
+      
+    } catch (e) {
+      stopwatch.stop();
+      if (kDebugMode) {
+        debugPrint('❌ AudioPlayerManager: Error during async disposal (${stopwatch.elapsedMilliseconds}ms): $e');
+      }
+      
+      // Force cleanup even on error to prevent stuck states
+      try {
+        _stateDebounceTimer?.cancel();
+        _audioSettings?.removeListener(_onMuteChanged);
+        clearQueue();
+      } catch (cleanupError) {
+        if (kDebugMode) {
+          debugPrint('⚠️ AudioPlayerManager: Error during force cleanup: $cleanupError');
+        }
+      }
+      
+      rethrow;
+    }
+  }
+  
+  // Legacy sync disposal - still needed for backward compatibility
+  @override
+  void performDisposal() {
+    if (kDebugMode) {
+      debugPrint('⚠️ AudioPlayerManager: Sync disposal called - use disposeAsync() for proper cleanup');
+    }
+    
+    // Basic cleanup for sync disposal
     _audioSettings?.removeListener(_onMuteChanged);
-    
-    // Clear queue and complete all pending items
     clearQueue();
-    
-    // DEBOUNCE FIX: Cancel any pending state change timer
     _stateDebounceTimer?.cancel();
     
-    // Now safe to dispose player
-    await _audioPlayer.dispose();
-    
-    // Close streams
-    await _playingStateController.close();
-    await _errorController.close();
-    await _queueLengthController.close();
-    await _nowPlayingController.close();
+    // Note: We don't dispose the player here to avoid MediaCodec issues
+    // The async version should be used for proper cleanup
   }
 
   /// Set the playback volume (0.0 = mute, 1.0 = full volume)
@@ -715,8 +869,16 @@ class AudioPlayerManager {
     }
 
     try {
-      // CRITICAL: Stop any previous playback and clean up subscriptions
-      await _audioPlayer.stop();
+      // OVERLAP PREVENTION: Never let two TTS clips overlap
+      if (_audioPlayer.playing) {
+        if (kDebugMode) {
+          debugPrintThrottledCustom('🔄 AudioPlayerManager: Stopping previous TTS clip to prevent overlap',
+                            key: 'tts_overlap_prevention');
+        }
+        await _audioPlayer.stop(); // Kill the old clip first
+      }
+      
+      // Clean up any previous subscriptions
       await _cleanupPreviousSubscriptions();
       
       // Clear force override when starting new playback
@@ -790,7 +952,8 @@ class AudioPlayerManager {
       
       subscription = _audioPlayer.processingStateStream.listen((state) {
         if (kDebugMode) {
-          print('🔄 Live TTS ProcessingState: $state for $displayName (playing: ${_audioPlayer.playing})');
+          debugPrintThrottledCustom('🔄 Live TTS ProcessingState: $state for $displayName (playing: ${_audioPlayer.playing})',
+                            key: 'live_tts_processing_state');
         }
         
         if (state == ProcessingState.completed) {
@@ -885,8 +1048,14 @@ class AudioPlayerManager {
     }
 
     try {
-      // Stop any current playback
-      await _audioPlayer.stop();
+      // OVERLAP PREVENTION: Never let two TTS clips overlap  
+      if (_audioPlayer.playing) {
+        if (kDebugMode) {
+          debugPrintThrottledCustom('🔄 AudioPlayerManager: Stopping previous TTS clip to prevent overlap',
+                            key: 'tts_overlap_prevention');
+        }
+        await _audioPlayer.stop(); // Kill the old clip first
+      }
       
       // Clear force override when starting new playback
       _forceIsPlayingState = null;

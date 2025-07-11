@@ -42,6 +42,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
   StreamSubscription<Uint8List>? _streamSubscription;
   bool _isListening = false;
   
+  // Chunk counter for log throttling (prevents UI thread blocking)
+  int _chunkCount = 0;
+  
   // OPUS header buffering for proper format support
   bool _headersReady = false;
   bool _isOpusFormat = false;
@@ -305,8 +308,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
           _detectAndProcessHeaders();
         }
         
-        if (kDebugMode) {
-          print('📊 LiveTtsAudioSource: Buffered ${chunk.length} bytes (total: ${_dataBuffer.length}, headersReady: $_headersReady)');
+        // Throttled logging to prevent UI thread blocking (every 16 chunks ≈ 64KB)
+        if (kDebugMode && ((_chunkCount++ & 0x0F) == 0)) {
+          print('📊 LiveTtsAudioSource: Buffered ${_dataBuffer.length} bytes (${_chunkCount} chunks, headersReady: $_headersReady)');
         }
       },
       onDone: () {

@@ -8,6 +8,7 @@ import '../services/notification_service.dart';
 import 'package:flutter/foundation.dart';
 import '../widgets/mood_selector.dart';
 import '../di/interfaces/i_progress_service.dart';
+import '../di/dependency_container.dart';
 
 class ProgressService implements IProgressService {
   static const String _progressKey = 'user_progress';
@@ -62,22 +63,95 @@ class ProgressService implements IProgressService {
       }
     }
     
+    // Load real session data
+    await _loadRealSessionData();
+    
     // Update notifier with initial value
     _progressChangedController.value = _currentProgress;
     
-    // In a real implementation, this would load data from storage
-    // For now, let's populate with some fake data
-    
-    final today = DateTime.now();
-    
-    // Generate some past mood logs
-    _addMockMoodHistory(today);
-    
-    // Create a mock session history for testing consistency badges
-    _addMockSessionHistory(today);
-    
     if (kDebugMode) {
-      print('Progress service initialized');
+      print('Progress service initialized with real data');
+    }
+  }
+  
+  // Load real session data from SessionRepository
+  Future<void> _loadRealSessionData() async {
+    try {
+      final sessionRepository = DependencyContainer().sessionRepository;
+      final sessions = await sessionRepository.getSessions();
+      
+      // Convert sessions to session history map
+      final Map<DateTime, int> realSessionHistory = {};
+      int currentStreak = 0;
+      int longestStreak = 0;
+      
+      for (final session in sessions) {
+        try {
+          final sessionDate = session.createdAt ?? DateTime.now();
+          final dayStart = DateTime(sessionDate.year, sessionDate.month, sessionDate.day);
+          
+          // Calculate duration in minutes (default to 30 if not available)
+          int duration = 30; // Default duration if not available
+          // TODO: Add duration calculation when session model has endTime field
+          
+          // Add or update session for this day
+          realSessionHistory[dayStart] = (realSessionHistory[dayStart] ?? 0) + duration;
+        } catch (e) {
+          debugPrint('Error processing session: $e');
+        }
+      }
+      
+      // Calculate streaks
+      if (realSessionHistory.isNotEmpty) {
+        final sortedDays = realSessionHistory.keys.toList()..sort();
+        
+        // Calculate current streak
+        final today = DateTime.now();
+        final todayStart = DateTime(today.year, today.month, today.day);
+        currentStreak = 0;
+        
+        for (int i = sortedDays.length - 1; i >= 0; i--) {
+          final daysDiff = todayStart.difference(sortedDays[i]).inDays;
+          if (daysDiff == currentStreak || (daysDiff == currentStreak + 1 && currentStreak == 0)) {
+            currentStreak++;
+          } else {
+            break;
+          }
+        }
+        
+        // Calculate longest streak
+        int tempStreak = 1;
+        longestStreak = 1;
+        
+        for (int i = 1; i < sortedDays.length; i++) {
+          if (sortedDays[i].difference(sortedDays[i - 1]).inDays == 1) {
+            tempStreak++;
+            longestStreak = tempStreak > longestStreak ? tempStreak : longestStreak;
+          } else {
+            tempStreak = 1;
+          }
+        }
+      }
+      
+      // Update progress with real data
+      _currentProgress = _currentProgress.copyWith(
+        sessionHistory: realSessionHistory,
+        currentStreak: currentStreak,
+        longestStreak: longestStreak,
+      );
+      
+      // Save updated progress
+      await _saveProgress();
+      
+      debugPrint('Loaded ${sessions.length} real sessions');
+      debugPrint('Current streak: $currentStreak, Longest streak: $longestStreak');
+      
+    } catch (e) {
+      debugPrint('Error loading real session data: $e');
+      // If we can't load real data, add some mock data for demo purposes
+      final today = DateTime.now();
+      _addMockMoodHistory(today);
+      _addMockSessionHistory(today);
     }
   }
   
@@ -318,6 +392,39 @@ class ProgressService implements IProgressService {
     final updatedSessionHistory = Map<DateTime, int>.from(_currentProgress.sessionHistory);
     updatedSessionHistory[today] = (updatedSessionHistory[today] ?? 0) + sessionDuration;
     
+    // Recalculate streaks after adding new session
+    final sortedDays = updatedSessionHistory.keys.toList()..sort();
+    int currentStreak = 0;
+    int longestStreak = 0;
+    
+    if (sortedDays.isNotEmpty) {
+      // Calculate current streak
+      final todayStart = DateTime(now.year, now.month, now.day);
+      currentStreak = 0;
+      
+      for (int i = sortedDays.length - 1; i >= 0; i--) {
+        final daysDiff = todayStart.difference(sortedDays[i]).inDays;
+        if (daysDiff == currentStreak || (daysDiff == currentStreak + 1 && currentStreak == 0)) {
+          currentStreak++;
+        } else {
+          break;
+        }
+      }
+      
+      // Calculate longest streak
+      int tempStreak = 1;
+      longestStreak = 1;
+      
+      for (int i = 1; i < sortedDays.length; i++) {
+        if (sortedDays[i].difference(sortedDays[i - 1]).inDays == 1) {
+          tempStreak++;
+          longestStreak = tempStreak > longestStreak ? tempStreak : longestStreak;
+        } else {
+          tempStreak = 1;
+        }
+      }
+    }
+    
     // Award points based on session duration (1 point per minute, capped at 60)
     final pointsEarned = sessionDuration < 60 ? sessionDuration : 60;
     final updatedPoints = _currentProgress.totalPoints + pointsEarned;
@@ -348,15 +455,23 @@ class ProgressService implements IProgressService {
       );
     }
     
-    // Update progress
+    // Update progress with recalculated streaks
     _currentProgress = _currentProgress.copyWith(
       sessionHistory: updatedSessionHistory,
+      currentStreak: currentStreak,
+      longestStreak: longestStreak,
       totalPoints: updatedPoints,
       currentLevel: currentLevel,
       achievements: updatedAchievements,
     );
     
     await _saveProgress();
+  }
+  
+  // Sync session data from repository (call this after session completion)
+  @override
+  Future<void> syncSessionData() async {
+    await _loadRealSessionData();
   }
   
   // Check if user has an achievement

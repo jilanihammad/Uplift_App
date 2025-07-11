@@ -72,6 +72,13 @@ class _HomeScreenState extends State<HomeScreen> {
     // In a real app, fetch data from API or local storage
     // Simulate data loading
     await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Sync session data to ensure consistency card shows real data
+    try {
+      await _progressService.syncSessionData();
+    } catch (e) {
+      debugPrint('Error syncing session data: $e');
+    }
 
     setState(() {
       // Example data
