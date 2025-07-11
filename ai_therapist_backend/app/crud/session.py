@@ -21,7 +21,8 @@ def create_session(
     db: DBSession, 
     user_id: int, 
     title: str = None,
-    action_items: List[str] = None
+    action_items: List[str] = None,
+    summary: str = None
 ) -> Session:
     """Create a new session."""
     # Generate a meaningful title if not provided
@@ -32,7 +33,7 @@ def create_session(
     session = Session(
         user_id=user_id,
         title=title,
-        summary=None,
+        summary=summary,
         action_items=action_items or []
     )
     db.add(session)

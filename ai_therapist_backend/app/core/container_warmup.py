@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from app.core.llm_config import LLMConfig, ModelType
 from app.core.observability import log_info, log_error, log_warning, record_latency
 from app.core.http_client_manager import get_http_client_manager
+from app.core.performance_monitor import get_performance_monitor, record_connection_reuse
 
 logger = logging.getLogger(__name__)
 
@@ -350,21 +351,142 @@ class ContainerWarmup:
         try:
             http_manager = get_http_client_manager()
             
-            # Pre-warm clients for all providers
+            # Pre-warm clients for all providers with lightweight ping requests
             providers = ["openai", "anthropic", "groq", "google", "azure"]
             
+            warmup_tasks = []
             for provider in providers:
-                try:
-                    client = http_manager.get_client(provider)
-                    await client.start()
-                    
-                    logger.info(f"HTTP client warmed up for {provider}")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to warm up HTTP client for {provider}: {e}")
+                warmup_tasks.append(self._warmup_provider_client(http_manager, provider))
+            
+            # Run warmups in parallel
+            await asyncio.gather(*warmup_tasks, return_exceptions=True)
             
         except Exception as e:
             logger.warning(f"HTTP client warm-up failed: {e}")
+    
+    async def _warmup_provider_client(self, http_manager, provider: str):
+        """Warm up a specific provider's HTTP client."""
+        try:
+            client = http_manager.get_client(provider)
+            await client.start()
+            
+            # Provider-specific ping endpoints for connection validation
+            if provider == "openai":
+                await self._ping_openai(client)
+            elif provider == "groq":
+                await self._ping_groq(client)
+            elif provider == "anthropic":
+                await self._ping_anthropic(client)
+            elif provider == "google":
+                await self._ping_google(client)
+            
+            logger.info(f"HTTP client warmed up for {provider}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to warm up HTTP client for {provider}: {e}")
+    
+    async def _ping_openai(self, client):
+        """Ping OpenAI with lightweight request."""
+        try:
+            from app.core.llm_config import LLMConfig, ModelProvider
+            
+            # Get OpenAI API key
+            api_key = None
+            for config in LLMConfig.get_all_configs():
+                if config.provider == ModelProvider.OPENAI:
+                    api_key = LLMConfig.get_api_key(config)
+                    break
+            
+            if api_key:
+                headers = {"Authorization": f"Bearer {api_key}"}
+                # Lightweight models endpoint (cached by OpenAI)
+                start_time = time.time()
+                response = await client.get("https://api.openai.com/v1/models", headers=headers)
+                duration_ms = (time.time() - start_time) * 1000
+                
+                if response.status_code == 200:
+                    logger.info("OpenAI connection validated")
+                    # Record successful connection and performance
+                    performance_monitor = get_performance_monitor()
+                    performance_monitor.record_latency("openai_ping", duration_ms, True, provider="openai")
+                    record_connection_reuse("openai", True)  # Warmup establishes connection for reuse
+                    
+        except Exception as e:
+            logger.debug(f"OpenAI ping failed: {e}")
+    
+    async def _ping_groq(self, client):
+        """Ping Groq with lightweight request."""
+        try:
+            from app.core.config import settings
+            
+            if settings.GROQ_API_KEY:
+                headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
+                # Use models endpoint for connection test
+                start_time = time.time()
+                response = await client.get("https://api.groq.com/openai/v1/models", headers=headers)
+                duration_ms = (time.time() - start_time) * 1000
+                
+                if response.status_code == 200:
+                    logger.info("Groq connection validated")
+                    # Record successful connection and performance
+                    performance_monitor = get_performance_monitor()
+                    performance_monitor.record_latency("groq_ping", duration_ms, True, provider="groq")
+                    record_connection_reuse("groq", True)
+                    
+        except Exception as e:
+            logger.debug(f"Groq ping failed: {e}")
+    
+    async def _ping_anthropic(self, client):
+        """Ping Anthropic with lightweight request."""
+        try:
+            from app.core.llm_config import LLMConfig, ModelProvider
+            
+            # Get Anthropic API key
+            api_key = None
+            for config in LLMConfig.get_all_configs():
+                if config.provider == ModelProvider.ANTHROPIC:
+                    api_key = LLMConfig.get_api_key(config)
+                    break
+            
+            if api_key:
+                headers = {
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01"
+                }
+                # Simple message for connection validation
+                data = {
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 10,
+                    "messages": [{"role": "user", "content": "ping"}]
+                }
+                response = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
+                if response.status_code == 200:
+                    logger.info("Anthropic connection validated")
+                    
+        except Exception as e:
+            logger.debug(f"Anthropic ping failed: {e}")
+    
+    async def _ping_google(self, client):
+        """Ping Google/Gemini with lightweight request."""
+        try:
+            # Google AI Studio uses API key in URL params
+            from app.core.llm_config import LLMConfig, ModelProvider
+            
+            api_key = None
+            for config in LLMConfig.get_all_configs():
+                if config.provider == ModelProvider.GOOGLE:
+                    api_key = LLMConfig.get_api_key(config)
+                    break
+            
+            if api_key:
+                # List models endpoint for connection test
+                url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+                response = await client.get(url)
+                if response.status_code == 200:
+                    logger.info("Google connection validated")
+                    
+        except Exception as e:
+            logger.debug(f"Google ping failed: {e}")
     
     async def _warmup_database_connections(self):
         """Warm up database connections."""
