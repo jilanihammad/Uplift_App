@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI, Request, status, HTTPException, APIRouter, UploadFile, File, WebSocket, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from contextlib import asynccontextmanager
 import logging
 import os
 from fastapi.staticfiles import StaticFiles
@@ -130,6 +131,31 @@ except Exception as e:
     logger.warning("Using fallback settings and middleware due to import errors")
     # We'll create a minimal app that can respond to health checks
 
+# Container warm-up lifespan handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan handler for container warm-up and cleanup."""
+    # Startup
+    logger.info("Starting container warm-up on application startup")
+    try:
+        from app.core.container_warmup import quick_warmup
+        warmup_result = await quick_warmup()
+        logger.info(f"Container warm-up completed: {warmup_result.get('successful_stages', 0)}/{warmup_result.get('total_stages', 0)} stages successful")
+    except Exception as e:
+        logger.warning(f"Container warm-up failed, continuing startup: {str(e)}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down HTTP clients and connections")
+    try:
+        from app.core.http_client_manager import get_http_client_manager
+        http_manager = get_http_client_manager()
+        await http_manager.stop_all_clients()
+        logger.info("HTTP clients shut down successfully")
+    except Exception as e:
+        logger.warning(f"Error during HTTP client shutdown: {str(e)}")
+
 # Create the FastAPI app (ONLY ONCE)
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -138,6 +164,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=None,  # Disable default docs
     redoc_url=None,  # Disable default ReDoc
+    lifespan=lifespan
 )
 
 # Add middleware - order matters!
@@ -248,6 +275,40 @@ def health_check():
         logger.error(f"Error in health check endpoint: {str(e)}")
         return {
             "status": "degraded",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }
+
+@app.get("/performance")
+def performance_report():
+    """Performance monitoring endpoint for optimization tracking."""
+    try:
+        from app.core.performance_monitor import get_performance_report
+        from app.core.http_client_manager import get_http_client_manager
+        
+        # Get performance metrics
+        performance_data = get_performance_report()
+        
+        # Get HTTP client health
+        http_manager = get_http_client_manager()
+        http_health = http_manager.get_health_status()
+        
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "performance_metrics": performance_data,
+            "http_client_health": http_health,
+            "optimization_notes": {
+                "http2_enabled": "HTTP/2 enabled for OpenAI, Anthropic, Groq, Google",
+                "connection_pooling": "Per-provider connection pooling active",
+                "dns_caching": "DNS cache TTL: 300s",
+                "container_warmup": "Quick warmup on cold start (30s timeout)"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error in performance endpoint: {str(e)}")
+        return {
+            "status": "error",
             "timestamp": datetime.now().isoformat(),
             "error": str(e)
         }
@@ -1190,19 +1251,16 @@ async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, An
         
         logger.info(f"Creating session record for user {user_id} with title: {session_title}")
         
-        # Create the session with rich data including action items
+        # Create the session with rich data including action items and summary
         action_items = summary_data.get("action_items", [])
+        summary_text = summary_data.get("summary", "")
         session = crud_session.create_session(
             db=db,
             user_id=user_id,
             title=session_title,
-            action_items=action_items
+            action_items=action_items,
+            summary=summary_text
         )
-        
-        # Update the session with summary data
-        summary_text = summary_data.get("summary", "")
-        if summary_text:
-            crud_session.update_session(db, session.id, {"summary": summary_text})
         
         logger.info(f"Session created successfully with ID: {session.id}")
         return session.id
@@ -1216,7 +1274,8 @@ async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, An
                 db=db,
                 user_id=1,  # Default user
                 title="Therapy Session",
-                action_items=summary_data.get("action_items", [])
+                action_items=summary_data.get("action_items", []),
+                summary=summary_data.get("summary", "")
             )
             return fallback_session.id
         except Exception as fallback_error:

@@ -92,6 +92,7 @@ class EnhancedLoggingConfig:
         'httpx': logging.INFO,
         'urllib3': logging.WARNING,
         'requests': logging.WARNING,
+        'hpack.hpack': logging.WARNING,  # Suppress HPACK header compression DEBUG logs
         
         # Database libraries
         'sqlalchemy.engine': logging.WARNING,
