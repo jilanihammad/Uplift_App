@@ -432,11 +432,17 @@ class LLMManager:
 
             logger.debug(f"Sending to Google Gemini: model={self.llm_config.model_id}, system_instruction_present={bool(system_instruction_text)}, contents_length={len(contents)}")
             
-            # Generate response using new SDK
-            response = client.models.generate_content(
-                model=self.llm_config.model_id,
-                contents=contents,
-                config=request_config
+            # Generate response using new SDK with timeout
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: client.models.generate_content(
+                        model=self.llm_config.model_id,
+                        contents=contents,
+                        config=request_config
+                    )
+                ),
+                timeout=10.0  # 10 second timeout consistent with other services
             )
             
             # Extract text from response
@@ -725,11 +731,17 @@ class LLMManager:
 
             logger.debug(f"Streaming from Google Gemini: model={self.llm_config.model_id}, system_instruction_present={bool(system_instruction_text)}, contents_length={len(contents)}")
 
-            # Stream response using new SDK
-            stream = client.models.generate_content_stream(
-                model=self.llm_config.model_id,
-                contents=contents,
-                config=request_config
+            # Stream response using new SDK with timeout for initial connection
+            stream = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: client.models.generate_content_stream(
+                        model=self.llm_config.model_id,
+                        contents=contents,
+                        config=request_config
+                    )
+                ),
+                timeout=10.0  # 10 second timeout for initial stream setup
             )
 
             # Google's SDK returns a synchronous generator, not async
@@ -907,7 +919,10 @@ class LLMManager:
                                     first_chunk_logged = True
                                 
                                 b64_chunk = base64.b64encode(chunk).decode('utf-8')
-                                logger.debug(f"🎤 OpenAI TTS: WAV chunk {total_chunks}, size={len(chunk)} bytes")
+                                # Only log chunks in verbose mode to avoid 100KB per request in logs
+                                from app.core.config import settings
+                                if settings.VERBOSE_AUDIO_CHUNKS:
+                                    logger.debug(f"🎤 OpenAI TTS: WAV chunk {total_chunks}, size={len(chunk)} bytes")
                                 yield b64_chunk
                     
                     logger.info(f"🎤 OpenAI TTS: WAV completed - generated {total_chunks} chunks, {total_bytes} total bytes for text: '{text[:50]}...'")
@@ -1011,7 +1026,10 @@ class LLMManager:
                                 self._validate_opus_chunk(chunk)
                             
                             b64_chunk = base64.b64encode(chunk).decode('utf-8')
-                            logger.debug(f"🎵 Direct OPUS chunk {total_chunks}, size={len(chunk)} bytes")
+                            # Only log chunks in verbose mode to avoid 100KB per request in logs
+                            from app.core.config import settings
+                            if settings.VERBOSE_AUDIO_CHUNKS:
+                                logger.debug(f"🎵 Direct OPUS chunk {total_chunks}, size={len(chunk)} bytes")
                             yield b64_chunk
                 
                 logger.info(f"🎵 Direct OPUS streaming completed: {total_chunks} chunks, {total_bytes} total bytes")

@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # WebSocket rate limiting (requests per minute per user)
     WEBSOCKET_RATE_LIMIT_PER_MINUTE: int = 30
     WEBSOCKET_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    
+    # Audio processing debug settings
+    VERBOSE_AUDIO_CHUNKS: bool = os.getenv("VERBOSE_AUDIO_CHUNKS", "false").lower() == "true"
 
     # Groq API settings
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")

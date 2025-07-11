@@ -1453,7 +1453,10 @@ class EnhancedAsyncPipeline:
             conversation_id=conversation_id
         )
         
-        self.logger.debug(f"Selected voice '{voice}' for text: '{text_chunk.text[:50]}...'")
+        # Only log voice selection in verbose mode
+        from app.core.config import settings
+        if settings.VERBOSE_AUDIO_CHUNKS:
+            self.logger.debug(f"Selected voice '{voice}' for text: '{text_chunk.text[:50]}...'")
         
         try:
             # Use the client's explicitly negotiated format - don't override it
@@ -1854,7 +1857,10 @@ class EnhancedAsyncPipeline:
                 
                 # Flow control reset check - Skip sending if paused
                 if self.flow_state == FlowControlState.PAUSED:
-                    self.logger.debug(f"Skipping chunk {audio_chunk.chunk_id} - flow control paused")
+                    # Only log flow control in verbose mode
+                    from app.core.config import settings
+                    if settings.VERBOSE_AUDIO_CHUNKS:
+                        self.logger.debug(f"Skipping chunk {audio_chunk.chunk_id} - flow control paused")
                     continue
                 
                 # Prepare audio frame with jitter buffer metadata

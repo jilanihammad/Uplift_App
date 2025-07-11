@@ -21,6 +21,48 @@ from enum import Enum
 from typing import Dict, Optional, Callable, Any, Union
 import weakref
 
+# OpenTelemetry metrics (with graceful fallback)
+try:
+    from opentelemetry import metrics
+    
+    # Get or create meter
+    meter = metrics.get_meter("ai_therapist.circuit_breaker", "1.0.0")
+    
+    # Define metrics
+    circuit_breaker_state_counter = meter.create_counter(
+        name="circuit_breaker_state_changes_total",
+        description="Total number of circuit breaker state changes",
+        unit="1"
+    )
+    
+    circuit_breaker_calls_counter = meter.create_counter(
+        name="circuit_breaker_calls_total", 
+        description="Total number of circuit breaker calls",
+        unit="1"
+    )
+    
+    circuit_breaker_open_gauge = meter.create_up_down_counter(
+        name="circuit_breaker_open_total",
+        description="Number of circuit breakers currently open",
+        unit="1"
+    )
+    
+    circuit_breaker_failures_counter = meter.create_counter(
+        name="circuit_breaker_failures_total",
+        description="Total number of circuit breaker failures",
+        unit="1"
+    )
+    
+    OTEL_AVAILABLE = True
+    
+except ImportError:
+    # OpenTelemetry not available - create no-op metrics
+    circuit_breaker_state_counter = None
+    circuit_breaker_calls_counter = None
+    circuit_breaker_open_gauge = None
+    circuit_breaker_failures_counter = None
+    OTEL_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -310,6 +352,10 @@ class FastCircuitBreaker:
         metrics.last_failure_time = time.time()
         metrics.consecutive_successes = 0
         
+        # Record failure metrics
+        if OTEL_AVAILABLE and circuit_breaker_failures_counter:
+            circuit_breaker_failures_counter.add(1, {"breaker_name": self.name})
+        
         # Check if we should trip to open
         if (self.memory_cache["state"] == CircuitBreakerState.CLOSED and 
             self._should_trip()):
@@ -319,22 +365,59 @@ class FastCircuitBreaker:
     
     async def _transition_to_open(self):
         """Transition to open state."""
+        old_state = self.memory_cache["state"]
         self.memory_cache["state"] = CircuitBreakerState.OPEN
         self.memory_cache["metrics"].state_changes += 1
+        
+        # Record OTEL metrics
+        if OTEL_AVAILABLE and circuit_breaker_state_counter:
+            circuit_breaker_state_counter.add(1, {
+                "breaker_name": self.name,
+                "old_state": old_state.value,
+                "new_state": "open"
+            })
+            
+        if OTEL_AVAILABLE and circuit_breaker_open_gauge:
+            circuit_breaker_open_gauge.add(1, {"breaker_name": self.name})
+        
         logger.warning(f"Circuit breaker '{self.name}' opened")
     
     async def _transition_to_half_open(self):
         """Transition to half-open state."""
+        old_state = self.memory_cache["state"]
         self.memory_cache["state"] = CircuitBreakerState.HALF_OPEN
         self.memory_cache["metrics"].state_changes += 1
         self.memory_cache["metrics"].consecutive_successes = 0
+        
+        # Record OTEL metrics
+        if OTEL_AVAILABLE and circuit_breaker_state_counter:
+            circuit_breaker_state_counter.add(1, {
+                "breaker_name": self.name,
+                "old_state": old_state.value,
+                "new_state": "half_open"
+            })
+        
         logger.info(f"Circuit breaker '{self.name}' half-opened")
     
     async def _transition_to_closed(self):
         """Transition to closed state."""
+        old_state = self.memory_cache["state"]
         self.memory_cache["state"] = CircuitBreakerState.CLOSED
         self.memory_cache["metrics"].state_changes += 1
         self.memory_cache["metrics"].reset_window()
+        
+        # Record OTEL metrics
+        if OTEL_AVAILABLE and circuit_breaker_state_counter:
+            circuit_breaker_state_counter.add(1, {
+                "breaker_name": self.name,
+                "old_state": old_state.value,
+                "new_state": "closed"
+            })
+            
+        # Decrement open gauge if transitioning from open
+        if OTEL_AVAILABLE and circuit_breaker_open_gauge and old_state == CircuitBreakerState.OPEN:
+            circuit_breaker_open_gauge.add(-1, {"breaker_name": self.name})
+        
         logger.info(f"Circuit breaker '{self.name}' closed")
     
     async def call(self, func: Callable, *args, **kwargs) -> Any:
@@ -343,6 +426,10 @@ class FastCircuitBreaker:
         
         This is the main entry point with sub-microsecond state checking.
         """
+        # Record call metrics
+        if OTEL_AVAILABLE and circuit_breaker_calls_counter:
+            circuit_breaker_calls_counter.add(1, {"breaker_name": self.name})
+        
         current_state = self.memory_cache["state"]
         
         # Fast path: CLOSED state (most common)
