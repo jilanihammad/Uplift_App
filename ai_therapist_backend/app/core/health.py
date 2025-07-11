@@ -59,4 +59,41 @@ def get_health_status():
         health_info["services"]["llm_manager"] = f"unavailable - {str(e)}"
         health_info["status"] = "degraded"
     
+    # Get connection monitor health
+    try:
+        from app.core.connection_monitor import get_connection_monitor
+        monitor = get_connection_monitor()
+        connection_health = monitor.get_connection_stats()
+        health_info["resource_monitoring"] = {
+            "connection_monitor": {
+                "status": "available",
+                "total_connections": connection_health.get("monitor_stats", {}).get("total_connections_created", 0),
+                "active_connections": len(connection_health.get("connections", [])),
+                "cleanup_operations": connection_health.get("monitor_stats", {}).get("total_cleanup_operations", 0)
+            }
+        }
+    except ImportError:
+        health_info["resource_monitoring"] = {
+            "connection_monitor": {"status": "not_available", "reason": "Connection monitor not installed"}
+        }
+    except Exception as e:
+        health_info["resource_monitoring"] = {
+            "connection_monitor": {"status": "error", "error": str(e)}
+        }
+    
+    # Get HTTP client manager health
+    try:
+        from app.core.http_client_manager import get_http_client_manager
+        http_manager = get_http_client_manager()
+        http_health = http_manager.get_health_status()
+        health_info["resource_monitoring"]["http_client_manager"] = http_health
+    except ImportError:
+        health_info["resource_monitoring"]["http_client_manager"] = {
+            "status": "not_available", "reason": "HTTP client manager not installed"
+        }
+    except Exception as e:
+        health_info["resource_monitoring"]["http_client_manager"] = {
+            "status": "error", "error": str(e)
+        }
+    
     return health_info 

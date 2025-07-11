@@ -27,6 +27,14 @@ from app.services.streaming_pipeline import (
     create_pipeline
 )
 
+# Import enhanced WebSocket management
+from app.core.websocket_enhancements import (
+    EnhancedWebSocketManager,
+    get_websocket_manager,
+    websocket_connection,
+    websocket_managed
+)
+
 # JWT authentication with enhanced security
 from jose import jwt, JWTError
 from app.core.config import settings
@@ -1560,7 +1568,7 @@ async def websocket_tts(websocket: WebSocket):
                     # Track total audio size for content-length solution
                     total_audio_size = 0
                     
-                    # Stream audio using unified manager
+                    # Stream audio using unified manager with enhanced WebSocket control
                     async for b64_chunk in llm_manager.stream_text_to_speech(
                         text,
                         voice=voice,
@@ -1581,6 +1589,13 @@ async def websocket_tts(websocket: WebSocket):
                     if session_id:
                         done_message["session_id"] = session_id
                     await websocket.send_text(json.dumps(done_message))
+                    
+                    # Send completion signal for immediate client cleanup (addresses 17s connection issue)
+                    await websocket.send_text(json.dumps({
+                        "type": "done",
+                        "reason": "streaming_complete",
+                        "total_bytes": total_audio_size
+                    }))
                     
                 except Exception as tts_error:
                     logger.error(f"TTS WebSocket error: {str(tts_error)}")
@@ -1605,6 +1620,122 @@ async def websocket_tts(websocket: WebSocket):
             await websocket.close()
         except:
             pass  # WebSocket might already be closed
+
+@router.websocket("/ws/tts/enhanced")
+async def websocket_tts_enhanced(websocket: WebSocket):
+    """
+    Enhanced WebSocket TTS endpoint with advanced connection lifecycle management
+    
+    Features:
+    - Automatic connection cleanup with control frames
+    - Connection duration monitoring
+    - Streaming session tracking
+    - Immediate disconnect signaling
+    - Production-optimized for sub-second cleanup
+    """
+    client_id = f"tts_enhanced_{int(time.time() * 1000)}_{id(websocket)}"
+    
+    # Use enhanced WebSocket manager with context manager
+    async with websocket_connection(websocket, client_id) as managed_client_id:
+        try:
+            # Send initial tts-hello message
+            await websocket.send_text(json.dumps({
+                "type": "tts-hello",
+                "client_id": managed_client_id,
+                "enhanced": True
+            }))
+            
+            ws_manager = get_websocket_manager()
+            
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    payload = json.loads(data)
+                    text = payload.get("text")
+                    voice = payload.get("voice", "sage")
+                    params = payload.get("params", {})
+                    session_id = payload.get("session_id")
+                    response_format = params.get("response_format", "wav")
+                    
+                    if not text:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "detail": "No text provided"
+                        }))
+                        continue
+                    
+                    try:
+                        # Start streaming session with enhanced tracking
+                        await ws_manager.start_streaming(managed_client_id, "tts")
+                        
+                        # Track streaming metrics
+                        total_audio_size = 0
+                        chunk_sequence = 0
+                        start_time = time.time()
+                        
+                        # Stream audio with enhanced chunk tracking
+                        async for b64_chunk in llm_manager.stream_text_to_speech(
+                            text,
+                            voice=voice,
+                            response_format=response_format
+                        ):
+                            # Decode base64 to get raw binary data
+                            audio_bytes = base64.b64decode(b64_chunk)
+                            total_audio_size += len(audio_bytes)
+                            chunk_sequence += 1
+                            
+                            # Send streaming chunk with enhanced tracking
+                            await ws_manager.send_streaming_chunk(
+                                managed_client_id, 
+                                audio_bytes,
+                                chunk_sequence
+                            )
+                        
+                        streaming_duration = time.time() - start_time
+                        
+                        # Send legacy tts-done message for compatibility
+                        done_message = {
+                            "type": "tts-done",
+                            "total_size": total_audio_size,
+                            "streaming_duration_ms": streaming_duration * 1000,
+                            "chunks_sent": chunk_sequence
+                        }
+                        if session_id:
+                            done_message["session_id"] = session_id
+                        await websocket.send_text(json.dumps(done_message))
+                        
+                        # Complete streaming session with enhanced cleanup
+                        await ws_manager.complete_streaming(
+                            managed_client_id,
+                            total_bytes=total_audio_size,
+                            total_duration=streaming_duration,
+                            auto_disconnect=False  # Let context manager handle cleanup
+                        )
+                        
+                    except Exception as tts_error:
+                        logger.error(f"Enhanced TTS WebSocket error: {str(tts_error)}")
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "detail": f"TTS error: {str(tts_error)}"
+                        }))
+                        
+                except json.JSONDecodeError:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "detail": "Invalid JSON"
+                    }))
+                    
+        except WebSocketDisconnect:
+            logger.info(f"Enhanced WebSocket TTS disconnected: {managed_client_id}")
+        except Exception as e:
+            logger.error(f"Enhanced WebSocket TTS error: {str(e)}")
+            try:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "detail": str(e)
+                }))
+            except:
+                pass  # WebSocket might already be closed
 
 @router.websocket("/voice/ws/tts")
 async def websocket_voice_tts(websocket: WebSocket):
@@ -1641,7 +1772,7 @@ async def websocket_voice_tts(websocket: WebSocket):
                     # Track total audio size for content-length solution
                     total_audio_size = 0
                     
-                    # Stream audio using unified manager
+                    # Stream audio using unified manager with enhanced WebSocket control
                     async for b64_chunk in llm_manager.stream_text_to_speech(
                         text,
                         voice=voice,
@@ -1662,6 +1793,13 @@ async def websocket_voice_tts(websocket: WebSocket):
                     if session_id:
                         done_message["session_id"] = session_id
                     await websocket.send_text(json.dumps(done_message))
+                    
+                    # Send completion signal for immediate client cleanup (addresses 17s connection issue)
+                    await websocket.send_text(json.dumps({
+                        "type": "done",
+                        "reason": "streaming_complete",
+                        "total_bytes": total_audio_size
+                    }))
                     
                 except Exception as tts_error:
                     logger.error(f"TTS WebSocket error: {str(tts_error)}")

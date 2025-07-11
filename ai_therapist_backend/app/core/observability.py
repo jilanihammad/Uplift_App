@@ -22,9 +22,8 @@ import weakref
 from collections import defaultdict, deque
 import threading
 
-# Context variables for request tracing
-request_id_context: ContextVar[str] = ContextVar('request_id', default='')
-trace_id_context: ContextVar[str] = ContextVar('trace_id', default='')
+# Import enhanced logging context variables
+from app.core.enhanced_logging import request_id_context, trace_id_context
 
 
 @dataclass
