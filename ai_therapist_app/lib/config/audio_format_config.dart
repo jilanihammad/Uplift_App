@@ -9,7 +9,7 @@ class AudioFormatConfig {
   
   /// Master feature flag for OPUS support
   /// Set to false to force WAV format for all TTS requests
-  static bool get enableOpusFormat => _getEnvBool('TTS_OPUS_ENABLED', true); // ✅ ENABLED - Using Media3 with OPUS support
+  static bool get enableOpusFormat => false; // Force WAV format - OPUS disabled for streaming compatibility
   
   /// Feature flag for OPUS header buffering
   /// Controls whether we wait for complete OPUS headers before playback
