@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:ai_therapist_app/services/auto_listening_coordinator.dart';
 
 /// Interface for voice service operations
 /// Provides contract for all voice-related functionality
@@ -59,6 +60,7 @@ abstract class IVoiceService {
   // Auto-listening mode
   Future<void> enableAutoMode();
   Future<void> disableAutoMode();
+  AutoListeningCoordinator get autoListeningCoordinator;
   
   // Lifecycle
   Future<void> initialize();

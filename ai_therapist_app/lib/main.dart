@@ -28,6 +28,7 @@ import 'package:ai_therapist_app/services/onboarding_service.dart';
 import 'package:ai_therapist_app/services/auth_coordinator.dart';
 import 'package:ai_therapist_app/services/memory_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
+import 'package:ai_therapist_app/utils/app_logger.dart';
 import 'package:ai_therapist_app/services/memory_manager.dart';
 import 'package:ai_therapist_app/services/message_processor.dart';
 import 'package:ai_therapist_app/services/audio_generator.dart';
@@ -136,10 +137,13 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize logging first
+  AppLogger.initialize();
+
   // Initialize PathManager early - ADD THIS BLOCK
   await PathManager.instance.init();
 
-  if (kDebugMode) print('[Main] App initialization starting...');
+  AppLogger.i('App initialization starting...');
   // Set zone error fatal to false to avoid Flutter zone binding errors
   BindingBase.debugZoneErrorsAreFatal = false;
 
