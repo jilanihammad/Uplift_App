@@ -52,7 +52,7 @@ class LLMConfig:
     DEFAULT_TTS_ARGS = {
         "model": os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
         "voice": DEFAULT_TTS_VOICE,
-        "response_format": "opus"  # Default format, can be overridden per call
+        "response_format": "wav"  # Default format for better TTFB performance
     }
     # =============================================================================
     # MODEL CONFIGURATIONS - Add new models/providers here
