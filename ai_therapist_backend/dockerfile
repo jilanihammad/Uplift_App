@@ -4,7 +4,12 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+
+# Force clean installation of OpenAI SDK to ensure we get the correct version
+# This prevents any cached wheels from older versions persisting
+RUN pip uninstall -y openai && \
+    pip install --no-cache-dir openai==1.95.0 && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy all application code
 COPY . .

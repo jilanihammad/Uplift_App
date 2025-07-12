@@ -47,6 +47,13 @@ class LLMConfig:
 
     # Default TTS voice (change here to update default voice)
     DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "nova")  # Nova is OpenAI-supported, good substitute for sage
+    
+    # Centralized TTS arguments to prevent parameter mismatches
+    DEFAULT_TTS_ARGS = {
+        "model": os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
+        "voice": DEFAULT_TTS_VOICE,
+        "response_format": "opus"  # Default format, can be overridden per call
+    }
     # =============================================================================
     # MODEL CONFIGURATIONS - Add new models/providers here
     # =============================================================================
@@ -76,10 +83,10 @@ class LLMConfig:
             api_key_env="OPENAI_API_KEY",
             default_params={
                 "voice": os.getenv("OPENAI_TTS_VOICE", DEFAULT_TTS_VOICE),
-                "response_format": "wav",
+                "response_format": "opus",
                 "speed": 1.0
             },
-            supports_streaming=False
+            supports_streaming=True
         ),
         
         (ModelProvider.OPENAI, ModelType.TRANSCRIPTION): ModelConfig(
@@ -88,7 +95,7 @@ class LLMConfig:
             base_url="https://api.openai.com/v1",
             api_key_env="OPENAI_API_KEY",
             default_params={
-                "response_format": "json",
+                "format": "json",
                 "temperature": 0.0
             },
             supports_streaming=False
@@ -117,7 +124,7 @@ class LLMConfig:
             api_key_env="GROQ_API_KEY",
             default_params={
                 "voice": "nova",
-                "response_format": "wav"
+                "format": "wav"
             },
             supports_streaming=False
         ),
@@ -128,7 +135,7 @@ class LLMConfig:
             base_url=os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1"),
             api_key_env="GROQ_API_KEY",
             default_params={
-                "response_format": "verbose_json",
+                "format": "verbose_json",
                 "temperature": 0.0
             },
             supports_streaming=False

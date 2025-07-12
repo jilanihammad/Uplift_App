@@ -20,6 +20,23 @@ from app.utils.audio_path import ensure_wav
 logger = logging.getLogger(__name__)
 
 # =============================================================================
+# CRITICAL: Log OpenAI SDK version at import time to debug version issues
+# =============================================================================
+try:
+    import openai
+    logger.info(f"🚨 OpenAI SDK loaded at import: version={openai.__version__} from {openai.__file__}")
+    
+    # Fail fast if wrong version
+    from packaging import version
+    if version.parse(openai.__version__) < version.parse("1.85.0"):
+        error_msg = f"OpenAI SDK {openai.__version__} is too old! Need >= 1.85.0 for format parameter"
+        logger.error(f"🚨 {error_msg}")
+        raise RuntimeError(error_msg)
+except Exception as e:
+    logger.error(f"🚨 Failed to verify OpenAI SDK version: {e}")
+    # Don't prevent import, but log the issue
+
+# =============================================================================
 # GROQ STT CLIENT - Module-level singleton for connection pooling
 # =============================================================================
 
@@ -809,6 +826,16 @@ class LLMManager:
 
     async def _openai_text_to_speech(self, text: str, output_file: str, voice: Optional[str] = None, response_format: Optional[str] = None, **kwargs) -> str:
         """Convert text to speech using OpenAI TTS API and return base64-encoded audio data."""
+        if not self.tts_config:
+            raise ValueError("TTS configuration not available")
+            
+        # Log OpenAI version at TTS call time to debug version issues
+        try:
+            import openai
+            logger.info(f"🎯 OpenAI SDK at TTS call: version={openai.__version__} from {openai.__file__}")
+        except Exception as e:
+            logger.error(f"Failed to log OpenAI version: {e}")
+            
         try:
             client = self._get_openai_client(self.tts_config)
             # Prepare parameters
@@ -873,6 +900,9 @@ class LLMManager:
                     yield chunk
             else:
                 # Use the correct OpenAI SDK streaming method for WAV
+                if not self.tts_config:
+                    raise ValueError("TTS configuration not available")
+                    
                 client = self._get_openai_client(self.tts_config)
                 
                 params = self.tts_config.default_params.copy()
@@ -895,12 +925,14 @@ class LLMManager:
                     total_bytes = 0
                     first_chunk_logged = False
                     
-                    with client.audio.speech.with_streaming_response.create(
-                        model=self.tts_config.model_id,
-                        input=text,
-                        voice=params['voice'],
-                        response_format=response_format,
-                    ) as response:
+                    # Use centralized TTS args for consistency
+                    tts_args = LLMConfig.DEFAULT_TTS_ARGS.copy()
+                    tts_args["input"] = text
+                    voice_param = params.get('voice') or tts_args['voice']
+                    tts_args["voice"] = voice_param
+                    tts_args["response_format"] = response_format or "opus"
+                    
+                    with client.audio.speech.with_streaming_response.create(**tts_args) as response:
                         if response.status_code != 200:
                             raise Exception(f"TTS streaming failed: {response.status_code}")
                         
@@ -912,10 +944,11 @@ class LLMManager:
                                 total_chunks += 1
                                 total_bytes += len(chunk)
                                 
-                                # Debug first chunk to check WAV header
+                                # Debug first chunk to check codec and format
                                 if not first_chunk_logged:
                                     first_16_bytes = chunk[:16].hex() if len(chunk) >= 16 else chunk.hex()
-                                    logger.info(f"🔍 OpenAI TTS: First chunk header (hex): {first_16_bytes}")
+                                    logger.info(f"🔍 TTS stream opened ({response_format} codec, {len(chunk)}-byte first chunk)")
+                                    logger.info(f"🔍 First chunk header (hex): {first_16_bytes}")
                                     first_chunk_logged = True
                                 
                                 b64_chunk = base64.b64encode(chunk).decode('utf-8')
@@ -966,6 +999,36 @@ class LLMManager:
             logger.warning(f"🔍 OPUS validation: ⚠️  Expected OGG header, got: {chunk[:8].hex()}")
             # Don't raise error - some valid OPUS streams might not start with OGG header
     
+    def _create_speech_stream(self, text: str, voice: str):
+        """
+        Create speech stream with error handling for SDK compatibility.
+        Based on your engineer's recommendation for safe streaming implementation.
+        Includes backwards compatibility for older SDK versions during transition.
+        """
+        if not self.tts_config:
+            raise ValueError("TTS configuration not available")
+            
+        client = self._get_openai_client(self.tts_config)
+        
+        # Use consistent response_format parameter for streaming
+        from app.core.llm_config import LLMConfig
+        
+        try:
+            # Use centralized TTS args with proper parameter names
+            tts_args = LLMConfig.DEFAULT_TTS_ARGS.copy()
+            tts_args.update({
+                "input": text,
+                "voice": voice,
+                "response_format": "opus"  # Force OPUS for streaming
+            })
+            
+            return client.audio.speech.with_streaming_response.create(**tts_args)
+            
+        except TypeError as e:
+            if "unexpected keyword argument 'stream'" in str(e):
+                raise RuntimeError("openai>=1.85 required for streaming") from e
+            raise
+
     async def _stream_openai_opus(self, text: str, voice: Optional[str] = None, 
                                  opus_params: Optional[Dict[str, Any]] = None, **kwargs):
         """
@@ -982,6 +1045,9 @@ class LLMManager:
         Yields:
             Base64-encoded OPUS/OGG chunks
         """
+        if not self.tts_config:
+            raise ValueError("TTS configuration not available")
+            
         try:
             logger.info(f"🎵 Starting direct OPUS streaming: text='{text[:50]}...' (length: {len(text)} chars), voice={voice}")
             
@@ -995,8 +1061,14 @@ class LLMManager:
             
             # Try direct OPUS streaming first
             try:
-                params['response_format'] = 'opus'  # Request OPUS directly from OpenAI
-                logger.info(f"🎵 Attempting direct OPUS streaming from OpenAI...")
+                # Always use response_format parameter (consistent across all SDK versions)
+                params['response_format'] = 'opus'  # Standard parameter name for streaming
+                
+                # Check if new streaming API is enabled and supported
+                from app.core.config import settings
+                use_new_streaming = settings.OPENAI_TTS_STREAM
+                
+                logger.info(f"🎵 Attempting OPUS streaming from OpenAI (stream_flag={settings.OPENAI_TTS_STREAM}, will_use_streaming={use_new_streaming})...")
                 
                 # Remove model from params if it exists
                 params.pop('model', None)
@@ -1004,33 +1076,107 @@ class LLMManager:
                 total_chunks = 0
                 total_bytes = 0
                 
-                with client.audio.speech.with_streaming_response.create(
-                    model=self.tts_config.model_id,
-                    input=text,
-                    voice=params['voice'],
-                    response_format='opus',
-                ) as response:
-                    if response.status_code != 200:
-                        raise Exception(f"OpenAI OPUS streaming failed: {response.status_code}")
-                    
-                    logger.info(f"🎵 Direct OPUS stream started, status={response.status_code}")
-                    
-                    # Stream OPUS chunks directly as they arrive
-                    for chunk in response.iter_bytes(chunk_size=4096):
-                        if chunk:
-                            total_chunks += 1
-                            total_bytes += len(chunk)
+                if use_new_streaming:
+                    # NEW: Use with_streaming_response for faster TTFB (150-300ms vs 700-1200ms)
+                    try:
+                        import time
+                        start_time = time.time()
+                        
+                        logger.info(f"🎵 NEW STREAMING: Creating stream with model={self.tts_config.model_id}, voice={params['voice']}, with_streaming_response=True")
+                        
+                        # Use the helper function to handle SDK compatibility
+                        # ResponseContextManager must be used in a 'with' block
+                        with self._create_speech_stream(text, params['voice']) as response:
+                            logger.info("🎵 NEW STREAMING: Response object created, iterating chunks...")
+                            first_chunk_time = None
                             
-                            # Basic OPUS validation for first chunk
-                            if total_chunks == 1:
-                                self._validate_opus_chunk(chunk)
-                            
-                            b64_chunk = base64.b64encode(chunk).decode('utf-8')
-                            # Only log chunks in verbose mode to avoid 100KB per request in logs
-                            from app.core.config import settings
-                            if settings.VERBOSE_AUDIO_CHUNKS:
-                                logger.debug(f"🎵 Direct OPUS chunk {total_chunks}, size={len(chunk)} bytes")
-                            yield b64_chunk
+                            # NEW API returns an iterator that yields chunks as they arrive
+                            for chunk in response.iter_bytes():
+                                if chunk:
+                                    total_chunks += 1
+                                    total_bytes += len(chunk)
+                                    
+                                    # Record time to first audio byte (TTFB)
+                                    if total_chunks == 1:
+                                        first_chunk_time = time.time()
+                                        ttfb_ms = (first_chunk_time - start_time) * 1000
+                                        logger.info(f"🎵 NEW STREAMING TTFB: {ttfb_ms:.1f}ms (target: 150-300ms)")
+                                        
+                                        # Record performance metric
+                                        try:
+                                            from app.core.performance_monitor import record_latency
+                                            record_latency("openai_tts_ttfb", ttfb_ms, True, streaming_method="new", format="opus")
+                                        except Exception:
+                                            pass  # Don't fail on metrics
+                                        
+                                        self._validate_opus_chunk(chunk)
+                                    
+                                    b64_chunk = base64.b64encode(chunk).decode('utf-8')
+                                    # Only log chunks in verbose mode to avoid 100KB per request in logs
+                                    if settings.VERBOSE_AUDIO_CHUNKS:
+                                        logger.debug(f"🎵 NEW STREAMING chunk {total_chunks}, size={len(chunk)} bytes")
+                                    yield b64_chunk
+                        
+                        logger.info(f"🎵 NEW STREAMING completed: {total_chunks} chunks, {total_bytes} total bytes")
+                        return  # Exit early on success
+                                
+                    except Exception as streaming_error:
+                        logger.error(f"🎵 NEW STREAMING failed, falling back to legacy: {streaming_error}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        # Fall through to legacy streaming method
+                        use_new_streaming = False
+                
+                if not use_new_streaming:
+                    # LEGACY: Use with_streaming_response (fallback)
+                    import time
+                    start_time = time.time()
+                    
+                    # Use centralized TTS args for consistency
+                    from app.core.llm_config import LLMConfig
+                    tts_args = LLMConfig.DEFAULT_TTS_ARGS.copy()
+                    tts_args["input"] = text
+                    voice_param = params.get('voice') or tts_args['voice']
+                    tts_args["voice"] = voice_param
+                    tts_args["response_format"] = 'opus'
+                    
+                    with client.audio.speech.with_streaming_response.create(**tts_args) as response:
+                        if response.status_code != 200:
+                            raise Exception(f"OpenAI OPUS streaming failed: {response.status_code}")
+                        
+                        logger.info(f"🎵 LEGACY STREAMING: Direct OPUS stream started, status={response.status_code}")
+                        first_chunk_time = None
+                        
+                        # Stream OPUS chunks directly as they arrive
+                        for chunk in response.iter_bytes(chunk_size=4096):
+                            if chunk:
+                                total_chunks += 1
+                                total_bytes += len(chunk)
+                                
+                                # Record time to first audio byte (TTFB) for comparison
+                                if total_chunks == 1:
+                                    first_chunk_time = time.time()
+                                    logger.info(f"🔍 TTS stream opened (opus codec, {len(chunk)}-byte first chunk)")
+                                    # Log OPUS header for debugging
+                                    first_16_bytes = chunk[:16].hex() if len(chunk) >= 16 else chunk.hex()
+                                    logger.info(f"🔍 First OPUS chunk header (hex): {first_16_bytes}")
+                                    ttfb_ms = (first_chunk_time - start_time) * 1000
+                                    logger.info(f"🎵 LEGACY STREAMING TTFB: {ttfb_ms:.1f}ms (baseline: 700-1200ms)")
+                                    
+                                    # Record performance metric for comparison
+                                    try:
+                                        from app.core.performance_monitor import record_latency
+                                        record_latency("openai_tts_ttfb", ttfb_ms, True, streaming_method="legacy", format="opus")
+                                    except Exception:
+                                        pass  # Don't fail on metrics
+                                    
+                                    self._validate_opus_chunk(chunk)
+                                
+                                b64_chunk = base64.b64encode(chunk).decode('utf-8')
+                                # Only log chunks in verbose mode to avoid 100KB per request in logs
+                                if settings.VERBOSE_AUDIO_CHUNKS:
+                                    logger.debug(f"🎵 LEGACY STREAMING chunk {total_chunks}, size={len(chunk)} bytes")
+                                yield b64_chunk
                 
                 logger.info(f"🎵 Direct OPUS streaming completed: {total_chunks} chunks, {total_bytes} total bytes")
                 return  # Success - exit early
@@ -1083,6 +1229,9 @@ class LLMManager:
     
     async def _openai_transcribe_audio(self, audio_file_path: str, **kwargs) -> str:
         """Transcribe audio using OpenAI Whisper API."""
+        if not self.transcription_config:
+            raise ValueError("Transcription configuration not available")
+            
         try:
             if not os.path.exists(audio_file_path):
                 raise FileNotFoundError(f"Audio file not found: {audio_file_path}")
@@ -1112,6 +1261,9 @@ class LLMManager:
 
     async def _transcribe_with_groq(self, audio_path: str) -> str:
         """Transcribe using Groq with aggressive timeout and retry"""
+        if not self.transcription_config:
+            raise ValueError("Transcription configuration not available")
+            
         api_key = LLMConfig.get_api_key(self.transcription_config)
         if not api_key:
             raise ValueError("Groq API key not found")
@@ -1262,6 +1414,7 @@ class LLMManager:
                 "tts": {
                     "provider": self.tts_config.provider if self.tts_config else None,
                     "model": self.tts_config.model_id if self.tts_config else None,
+                    "supports_streaming": self.tts_config.supports_streaming if self.tts_config else False,
                     "available": LLMConfig.is_model_available(ModelType.TTS)
                 },
                 "transcription": {

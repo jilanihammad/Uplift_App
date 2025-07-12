@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     
     # Audio processing debug settings
     VERBOSE_AUDIO_CHUNKS: bool = os.getenv("VERBOSE_AUDIO_CHUNKS", "false").lower() == "true"
+    
+    # OpenAI TTS streaming settings (defaults to True for testing)  
+    OPENAI_TTS_STREAM: bool = os.getenv("OPENAI_TTS_STREAM", "true").lower() == "true"
+    
+    # TTS streaming feature flag for safe rollback
+    TTS_STREAMING_ENABLED: bool = os.getenv("TTS_STREAMING_ENABLED", "true").lower() == "true"
 
     # Groq API settings
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
