@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:mutex/mutex.dart';
+import 'package:ai_therapist_app/utils/app_logger.dart';
 
 import '../di/interfaces/i_audio_recording_service.dart';
 import 'recording_manager.dart';
@@ -130,13 +131,13 @@ class AudioRecordingService implements IAudioRecordingService {
     
     try {
       if (kDebugMode) {
-        print('🎙️ AudioRecordingService: Starting recording');
+        AppLogger.d(' AudioRecordingService: Starting recording');
       }
       
       // Check if already recording
       if (isRecording) {
         if (kDebugMode) {
-          print('🎙️ AudioRecordingService: Already recording, ignoring');
+          AppLogger.d(' AudioRecordingService: Already recording, ignoring');
         }
         return;
       }
@@ -154,7 +155,7 @@ class AudioRecordingService implements IAudioRecordingService {
       _startAudioLevelMonitoring();
       
       if (kDebugMode) {
-        print('🎙️ AudioRecordingService: Recording started successfully');
+        AppLogger.d(' AudioRecordingService: Recording started successfully');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -177,7 +178,7 @@ class AudioRecordingService implements IAudioRecordingService {
     
     try {
       if (kDebugMode) {
-        print('🎙️ AudioRecordingService: Stopping recording');
+        AppLogger.d(' AudioRecordingService: Stopping recording');
       }
       
       // Stop audio level monitoring
@@ -190,7 +191,7 @@ class AudioRecordingService implements IAudioRecordingService {
         _lastRecordingPath = recordingPath;
         
         if (kDebugMode) {
-          print('🎙️ AudioRecordingService: Recording stopped, file: $recordingPath');
+          AppLogger.d(' AudioRecordingService: Recording stopped, file: $recordingPath');
         }
         
         return recordingPath;
@@ -232,13 +233,13 @@ class AudioRecordingService implements IAudioRecordingService {
     try {
       if (!isRecording) {
         if (kDebugMode) {
-          print('🎙️ AudioRecordingService: No active recording to cancel');
+          AppLogger.d(' AudioRecordingService: No active recording to cancel');
         }
         return;
       }
       
       if (kDebugMode) {
-        print('🎙️ AudioRecordingService: Canceling recording');
+        AppLogger.d(' AudioRecordingService: Canceling recording');
       }
       
       // Stop audio level monitoring
@@ -254,7 +255,7 @@ class AudioRecordingService implements IAudioRecordingService {
           if (await file.exists()) {
             await file.delete();
             if (kDebugMode) {
-              print('🎙️ AudioRecordingService: Deleted canceled recording file');
+              AppLogger.d(' AudioRecordingService: Deleted canceled recording file');
             }
           }
         } catch (e) {
@@ -282,7 +283,7 @@ class AudioRecordingService implements IAudioRecordingService {
       final hasPermission = status == PermissionStatus.granted;
       
       if (kDebugMode) {
-        print('🎙️ AudioRecordingService: Microphone permission: $status');
+        AppLogger.d(' AudioRecordingService: Microphone permission: $status');
       }
       
       return hasPermission;
@@ -336,7 +337,7 @@ class AudioRecordingService implements IAudioRecordingService {
     }
     
     if (kDebugMode) {
-      print('🎙️ AudioRecordingService: Audio quality set to $_audioQuality');
+      AppLogger.d(' AudioRecordingService: Audio quality set to $_audioQuality');
     }
   }
   
@@ -345,7 +346,7 @@ class AudioRecordingService implements IAudioRecordingService {
     _recordingSettings.addAll(settings);
     
     if (kDebugMode) {
-      print('🎙️ AudioRecordingService: Recording settings updated: $_recordingSettings');
+      AppLogger.d(' AudioRecordingService: Recording settings updated: $_recordingSettings');
     }
   }
   
@@ -376,7 +377,7 @@ class AudioRecordingService implements IAudioRecordingService {
         }
         
         if (kDebugMode) {
-          print('🎙️ AudioRecordingService: Cleaned up $deletedCount recording files');
+          AppLogger.d(' AudioRecordingService: Cleaned up $deletedCount recording files');
         }
       }
     } catch (e) {
@@ -473,7 +474,7 @@ class AudioRecordingService implements IAudioRecordingService {
     if (_disposed) return;
     
     if (kDebugMode) {
-      print('🎙️ AudioRecordingService: Disposing');
+      AppLogger.d(' AudioRecordingService: Disposing');
     }
     
     _disposed = true;
@@ -502,7 +503,7 @@ class AudioRecordingService implements IAudioRecordingService {
     });
     
     if (kDebugMode) {
-      print('🎙️ AudioRecordingService: Disposed successfully');
+      AppLogger.d(' AudioRecordingService: Disposed successfully');
     }
   }
 }

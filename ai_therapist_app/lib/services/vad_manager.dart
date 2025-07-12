@@ -9,6 +9,7 @@ import 'package:rxdart/rxdart.dart';
 import 'path_manager.dart';
 import 'recording_manager.dart'; // For SharedRecorderManager
 import '../utils/logging_config.dart';
+import '../utils/app_logger.dart';
 
 /// Manages voice activity detection (VAD) functionality
 ///
@@ -113,7 +114,7 @@ class VADManager {
 
       _isInitialized = true;
       if (kDebugMode) {
-        print('🎙️ VAD manager initialized with single recorder instance');
+        AppLogger.d('VAD: VAD manager initialized with single recorder instance');
       }
     } catch (e) {
       _errorController.add('Error initializing VAD: $e');
@@ -128,7 +129,7 @@ class VADManager {
     if (_isCalibrated) return;
     
     if (kDebugMode) {
-      print('🎙️ VAD: Starting noise floor calibration...');
+      AppLogger.d('VAD: VAD: Starting noise floor calibration...');
     }
     
     _noiseCalibrationSamples.clear();
@@ -158,7 +159,7 @@ class VADManager {
   void _finalizeCalibraton() {
     if (_noiseCalibrationSamples.isEmpty) {
       if (kDebugMode) {
-        print('🎙️ VAD: No calibration samples, using default thresholds');
+        AppLogger.d('VAD: VAD: No calibration samples, using default thresholds');
       }
       _isCalibrated = true;
       return;
@@ -181,7 +182,7 @@ class VADManager {
     _isCalibrated = true;
     
     if (kDebugMode) {
-      print('🎙️ VAD: Calibration complete!');
+      AppLogger.d('VAD: VAD: Calibration complete!');
       print('  Noise floor: ${_noiseFloor.toStringAsFixed(1)} dB');
       print('  Speech start threshold: ${_speechStartThreshold.toStringAsFixed(1)} dB');
       print('  Speech end threshold: ${_speechEndThreshold.toStringAsFixed(1)} dB');
@@ -225,7 +226,7 @@ class VADManager {
       if (_isListening) {
         if (kDebugMode) print('[VADManager] Already listening, returning true');
         if (kDebugMode) {
-          print('🎙️ VAD is already listening');
+          AppLogger.d('VAD: VAD is already listening');
         }
         return true;
       }
@@ -286,7 +287,7 @@ class VADManager {
       _consecutiveQuietFrames = 0;
 
       if (kDebugMode) {
-        print('🎙️ VAD: Started listening for voice activity');
+        AppLogger.d('VAD: VAD: Started listening for voice activity');
         print('[VADManager] VAD is now listening for voice activity');
       }
       return true;
@@ -398,7 +399,7 @@ class VADManager {
         // Reset quiet frame counter if volume is still loud enough
         if (_consecutiveQuietFrames > 0) {
           if (kDebugMode) {
-            print('🎙️ VAD: Speech resumed, resetting quiet frames');
+            AppLogger.d('VAD: VAD: Speech resumed, resetting quiet frames');
           }
         }
         _consecutiveQuietFrames = 0;
@@ -531,7 +532,7 @@ class VADManager {
     await _stopSpeechDetection();
 
     if (kDebugMode) {
-      print('🎙️ VAD: Stopped listening for voice activity');
+      AppLogger.d('VAD: VAD: Stopped listening for voice activity');
     }
   }
 
@@ -545,7 +546,7 @@ class VADManager {
     _speechEndThreshold = -30.0;
     
     if (kDebugMode) {
-      print('🎙️ VAD: Calibration reset - will recalibrate on next session');
+      AppLogger.d('VAD: VAD: Calibration reset - will recalibrate on next session');
     }
   }
   
@@ -580,7 +581,7 @@ class VADManager {
           await _recorder.dispose();
           _recorderDisposed = true;
           if (kDebugMode) {
-            print('🎙️ VAD: Recorder finally disposed during full cleanup');
+            AppLogger.d('VAD: VAD: Recorder finally disposed during full cleanup');
           }
         } catch (e) {
           if (kDebugMode) print('⚠️ Error disposing recorder: $e');
@@ -593,7 +594,7 @@ class VADManager {
       await _amplitudeController.close();
 
       if (kDebugMode) {
-        print('🎙️ VAD manager disposed completely');
+        AppLogger.d('VAD: VAD manager disposed completely');
       }
     } catch (e) {
       if (kDebugMode) {

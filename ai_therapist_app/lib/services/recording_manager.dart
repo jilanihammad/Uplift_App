@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
+import 'package:ai_therapist_app/utils/app_logger.dart';
 import 'base_voice_service.dart';
 import 'path_manager.dart';
 
@@ -60,7 +61,7 @@ class SharedRecorderManager {
     // Grant access
     _currentUser = userId;
     if (kDebugMode) {
-      print('🎙️ SharedRecorderManager: Granted access to $userId');
+      AppLogger.d(' SharedRecorderManager: Granted access to $userId');
     }
     return true;
   }
@@ -70,7 +71,7 @@ class SharedRecorderManager {
     if (_currentUser == userId) {
       _currentUser = null;
       if (kDebugMode) {
-        print('🎙️ SharedRecorderManager: Released access from $userId');
+        AppLogger.d(' SharedRecorderManager: Released access from $userId');
       }
     }
   }

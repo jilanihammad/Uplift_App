@@ -33,6 +33,9 @@ abstract class ITTSService {
   Future<void> pauseAudio();
   Future<void> resumeAudio();
   
+  // Stream management
+  Future<void> cancelAllStreams();
+  
   // State management
   bool get isPlaying;
   bool get isSpeaking;

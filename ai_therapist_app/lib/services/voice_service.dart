@@ -28,6 +28,7 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'auto_listening_coordinator.dart';
 import 'vad_manager.dart';
+import '../utils/app_logger.dart';
 import 'audio_player_manager.dart';
 import 'recording_manager.dart';
 import 'audio_recording_service.dart';
@@ -756,7 +757,7 @@ class VoiceService {
   // Fallback to text-to-speech when audio file is not available
   Future<void> _useTtsBackup() async {
     if (kDebugMode) {
-      print('🎙️ TTS: Using text-to-speech fallback');
+      AppLogger.d('TTS: Using text-to-speech fallback');
     }
 
     try {
@@ -771,27 +772,27 @@ class VoiceService {
         }
       } catch (e) {
         if (kDebugMode) {
-          print('🎙️ TTS: Error retrieving saved text for TTS: $e');
+          AppLogger.w('TTS: Error retrieving saved text for TTS', e);
         }
       }
 
       if (kDebugMode) {
-        print('🎙️ TTS: Preparing to speak: "$textToSpeak"');
+        AppLogger.d('TTS: Preparing to speak: "$textToSpeak"');
       }
 
       // Use system TTS instead of audio player for text
       // This is a simple fallback - the actual TTS implementation should be replaced
       // with proper system TTS calls
       if (kDebugMode) {
-        print('🎙️ TTS fallback would speak: $textToSpeak');
+        AppLogger.d('TTS fallback would speak: $textToSpeak');
       }
 
       if (kDebugMode) {
-        print('🎙️ TTS: speak() called');
+        AppLogger.d('TTS: speak() called');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('🎙️ TTS: Error in _useTtsBackup: $e');
+        AppLogger.e('TTS: Error in _useTtsBackup', e);
       }
     }
   }

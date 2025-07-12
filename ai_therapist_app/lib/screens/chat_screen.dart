@@ -24,6 +24,7 @@ import 'package:ai_therapist_app/screens/widgets/mood_selector_screen.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_app_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_interface_view.dart';
 import '../widgets/debug_drawer.dart';
+import '../utils/app_logger.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
@@ -84,6 +85,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Session timer
   Timer? _sessionTimer;
+  
+  // Debounce timer for metrics changes
+  Timer? _metricsChangeTimer;
 
   // Wakelock management - simplified and safe
   Future<void> _enableWakelock() async {
@@ -92,10 +96,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
       // Sanity check - verify wakelock is actually enabled
       final enabled = await NativeWakelockService.isEnabled;
-      debugPrint(
-          '[ChatScreen] Wakelock enabled successfully - KEEP_SCREEN_ON = $enabled');
+      AppLogger.d('ChatScreen: Wakelock enabled successfully - KEEP_SCREEN_ON = $enabled');
     } catch (e) {
-      debugPrint('[ChatScreen] Failed to enable wakelock: $e');
+      AppLogger.w('ChatScreen: Failed to enable wakelock', e);
     }
   }
 
@@ -112,16 +115,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         sessionState.messages.isNotEmpty;
 
     if (!isActiveSession) {
-      debugPrint(
-          '[ChatScreen] Not in active session, skipping wakelock management');
+      AppLogger.d('ChatScreen: Not in active session, skipping wakelock management');
       return;
     }
 
     switch (state) {
       case AppLifecycleState.resumed:
         // Re-enable wakelock when app comes back to foreground (engine is attached)
-        debugPrint(
-            '[ChatScreen] App resumed, re-enabling wakelock for active session');
+        AppLogger.d('ChatScreen: App resumed, re-enabling wakelock for active session');
         _enableWakelock();
         break;
       case AppLifecycleState.paused:
@@ -131,8 +132,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Keep wakelock active during therapy session - do NOT disable
         // Screen should stay on even when notification shade is pulled down,
         // proximity sensor triggers, or other brief interruptions occur
-        debugPrint(
-            '[ChatScreen] App lifecycle changed to $state, keeping wakelock active for session');
+        AppLogger.d('ChatScreen: App lifecycle changed to $state, keeping wakelock active for session');
         break;
     }
   }
@@ -141,6 +141,14 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   void didChangeMetrics() {
     super.didChangeMetrics();
 
+    // Debounce metrics changes to reduce spam
+    _metricsChangeTimer?.cancel();
+    _metricsChangeTimer = Timer(const Duration(milliseconds: 250), () {
+      _handleMetricsChange();
+    });
+  }
+
+  void _handleMetricsChange() {
     // Only re-apply wakelock if we're in an active therapy session
     final bloc = context.read<VoiceSessionBloc>();
     final sessionState = bloc.state;
@@ -151,19 +159,17 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     if (isActiveSession) {
       // Called on rotation, PiP, split-screen, etc. - re-apply wakelock
-      debugPrint(
-          '[ChatScreen] Metrics changed, re-enabling wakelock for active session');
+      AppLogger.d('ChatScreen: Metrics changed, re-enabling wakelock for active session');
       _enableWakelock();
     } else {
-      debugPrint(
-          '[ChatScreen] Metrics changed, but not in active session - skipping wakelock');
+      AppLogger.d('ChatScreen: Metrics changed, but not in active session - skipping wakelock');
     }
   }
 
   @override
   void initState() {
     super.initState();
-    debugPrint('[ChatScreen] initState called');
+    AppLogger.d('ChatScreen: initState called');
     WidgetsBinding.instance.addObserver(this);
     
     // Phase 1B.2: Standardized DI - use DependencyContainer for UI layer
@@ -180,33 +186,34 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     // Initialize session after the build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('[ChatScreen] PostFrameCallback: calling _initSession');
+      AppLogger.d('ChatScreen: PostFrameCallback: calling _initSession');
       _initSession();
     });
   }
 
   @override
   void dispose() {
-    debugPrint('[ChatScreen] dispose called');
+    AppLogger.d('ChatScreen: dispose called');
 
     // Disable wakelock immediately in dispose (fire and forget)
     NativeWakelockService.disable().then((_) {
-      debugPrint('[ChatScreen] Wakelock disabled successfully in dispose');
+      AppLogger.d('ChatScreen: Wakelock disabled successfully in dispose');
     }).catchError((e) {
-      debugPrint('[ChatScreen] Failed to disable wakelock in dispose: $e');
+      AppLogger.w('ChatScreen: Failed to disable wakelock in dispose', e);
     });
 
     WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
     _sessionTimer?.cancel();
+    _metricsChangeTimer?.cancel();
     _navigationService.showBottomNav();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[ChatScreen] build called');
+    AppLogger.v('ChatScreen: build called');
     return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
       builder: (context, state) {
         // Handle initialization state
@@ -270,7 +277,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
 
   Future<bool> _handleBackPress(VoiceSessionState state) async {
-    debugPrint('[ChatScreen] onWillPop called');
+    AppLogger.d('ChatScreen: onWillPop called');
     final hasMessages = state.messages.isNotEmpty;
 
     if (hasMessages &&
@@ -289,7 +296,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
 
   Future<void> _initializeServices() async {
-    debugPrint('[ChatScreen] _initializeServices called');
+    AppLogger.d('ChatScreen: _initializeServices called');
 
     try {
       // Initialize services through Bloc

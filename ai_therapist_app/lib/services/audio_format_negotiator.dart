@@ -114,7 +114,7 @@ class AudioFormatNegotiator {
       case AudioFormat.opus:
         return true; // OPUS is designed for streaming
       case AudioFormat.wav:
-        return false; // WAV has streaming limitations
+        return true; // WAV now supports streaming with optimized buffers
     }
   }
   

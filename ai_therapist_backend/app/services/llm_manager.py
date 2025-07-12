@@ -930,17 +930,30 @@ class LLMManager:
                     tts_args["input"] = text
                     voice_param = params.get('voice') or tts_args['voice']
                     tts_args["voice"] = voice_param
-                    tts_args["response_format"] = response_format or "opus"
+                    tts_args["response_format"] = response_format or "wav"
                     
                     with client.audio.speech.with_streaming_response.create(**tts_args) as response:
                         if response.status_code != 200:
                             raise Exception(f"TTS streaming failed: {response.status_code}")
                         
-                        logger.info(f"🎤 OpenAI TTS: WAV stream started, status={response.status_code}")
+                        logger.info("🎤 Starting streaming: format=%s, status=%d, text='%s…'", 
+                                   tts_args["response_format"], 
+                                   response.status_code, 
+                                   text[:60])
+                        
+                        # High-precision telemetry for first chunk latency
+                        import time
+                        first_chunk_t0 = time.perf_counter()
                         
                         # Stream chunks as they arrive
-                        for chunk in response.iter_bytes(chunk_size=4096):
+                        # Tune chunk size for WAV: 16KB ≈ 93ms of 24-kHz mono PCM
+                        # Bigger chunks reduce WebSocket overhead and improve TTFB
+                        for idx, chunk in enumerate(response.iter_bytes(chunk_size=16384)):
                             if chunk:
+                                # High-precision first chunk telemetry
+                                if idx == 0:
+                                    logger.info("🎵 FIRST-CHUNK LATENCY: %.1f ms", (time.perf_counter() - first_chunk_t0) * 1000)
+                                
                                 total_chunks += 1
                                 total_bytes += len(chunk)
                                 
@@ -948,7 +961,8 @@ class LLMManager:
                                 if not first_chunk_logged:
                                     first_16_bytes = chunk[:16].hex() if len(chunk) >= 16 else chunk.hex()
                                     logger.info(f"🔍 TTS stream opened ({response_format} codec, {len(chunk)}-byte first chunk)")
-                                    logger.info(f"🔍 First chunk header (hex): {first_16_bytes}")
+                                    logger.debug(f"🔍 First chunk header (hex): {first_16_bytes}")
+                                    self._validate_audio_chunk(chunk, response_format or "wav")
                                     first_chunk_logged = True
                                 
                                 b64_chunk = base64.b64encode(chunk).decode('utf-8')
@@ -967,7 +981,21 @@ class LLMManager:
         else:
             raise ValueError(f"Streaming TTS not implemented for provider: {self.tts_config.provider}")
     
-    def _validate_opus_chunk(self, chunk: bytes) -> None:
+    def _validate_audio_chunk(self, chunk: bytes, response_format: str) -> None:
+        """
+        Format-aware validation for audio chunks.
+        
+        Args:
+            chunk: First audio chunk to validate
+            response_format: Audio format ('opus', 'wav', etc.)
+        """
+        if response_format == "opus":
+            self._validate_ogg_header(chunk)
+        elif response_format == "wav":
+            self._validate_wav_header(chunk)
+        # Other formats can be added here
+    
+    def _validate_ogg_header(self, chunk: bytes) -> None:
         """
         Basic validation for OPUS audio chunks.
         
@@ -978,12 +1006,12 @@ class LLMManager:
             ValueError: If chunk doesn't appear to be valid OPUS data
         """
         if len(chunk) < 16:
-            logger.warning(f"🔍 OPUS chunk validation: chunk too small ({len(chunk)} bytes)")
+            logger.debug(f"🔍 OPUS chunk validation: chunk too small ({len(chunk)} bytes)")
             return
         
         # Check for OGG container header
         if chunk.startswith(b"OggS"):
-            logger.info("🔍 OPUS validation: ✅ Valid OGG container header found")
+            logger.debug("🔍 OPUS validation: ✅ Valid OGG container header found")
             
             # Basic OGG page structure validation
             if len(chunk) >= 27:  # Minimum OGG page header size
@@ -992,12 +1020,29 @@ class LLMManager:
                 logger.debug(f"🔍 OPUS validation: OGG version={version}, page_type={page_type}")
                 
                 if page_type & 0x02:  # BOS page
-                    logger.info("🔍 OPUS validation: ✅ Beginning-of-stream page detected")
+                    logger.debug("🔍 OPUS validation: ✅ Beginning-of-stream page detected")
                 else:
                     logger.debug("🔍 OPUS validation: Continuation page")
         else:
-            logger.warning(f"🔍 OPUS validation: ⚠️  Expected OGG header, got: {chunk[:8].hex()}")
+            logger.debug(f"🔍 OPUS validation: Expected OGG header, got: {chunk[:8].hex()}")
             # Don't raise error - some valid OPUS streams might not start with OGG header
+    
+    def _validate_wav_header(self, chunk: bytes) -> None:
+        """
+        Basic validation for WAV audio chunks.
+        
+        Args:
+            chunk: First audio chunk to validate
+        """
+        if len(chunk) < 12:
+            logger.debug(f"🔍 WAV chunk validation: chunk too small ({len(chunk)} bytes)")
+            return
+        
+        # Check for RIFF header
+        if chunk.startswith(b"RIFF") and b"WAVE" in chunk[:12]:
+            logger.debug("🔍 WAV validation: ✅ Valid RIFF/WAVE header found")
+        else:
+            logger.debug(f"🔍 WAV validation: Expected RIFF/WAVE header, got: {chunk[:12].hex()}")
     
     def _create_speech_stream(self, text: str, voice: str):
         """
@@ -1018,8 +1063,8 @@ class LLMManager:
             tts_args = LLMConfig.DEFAULT_TTS_ARGS.copy()
             tts_args.update({
                 "input": text,
-                "voice": voice,
-                "response_format": "opus"  # Force OPUS for streaming
+                "voice": voice
+                # response_format will use DEFAULT_TTS_ARGS value (wav)
             })
             
             return client.audio.speech.with_streaming_response.create(**tts_args)
@@ -1082,7 +1127,11 @@ class LLMManager:
                         import time
                         start_time = time.time()
                         
-                        logger.info(f"🎵 NEW STREAMING: Creating stream with model={self.tts_config.model_id}, voice={params['voice']}, with_streaming_response=True")
+                        logger.info("🎵 Starting streaming: format=%s, model=%s, voice=%s, text='%s…'", 
+                                   params.get('response_format', 'default'), 
+                                   self.tts_config.model_id, 
+                                   params['voice'], 
+                                   text[:60])
                         
                         # Use the helper function to handle SDK compatibility
                         # ResponseContextManager must be used in a 'with' block
@@ -1090,9 +1139,16 @@ class LLMManager:
                             logger.info("🎵 NEW STREAMING: Response object created, iterating chunks...")
                             first_chunk_time = None
                             
+                            # High-precision telemetry for first chunk latency
+                            first_chunk_t0 = time.perf_counter()
+                            
                             # NEW API returns an iterator that yields chunks as they arrive
-                            for chunk in response.iter_bytes():
+                            for idx, chunk in enumerate(response.iter_bytes()):
                                 if chunk:
+                                    # High-precision first chunk telemetry
+                                    if idx == 0:
+                                        logger.info("🎵 FIRST-CHUNK LATENCY: %.1f ms", (time.perf_counter() - first_chunk_t0) * 1000)
+                                    
                                     total_chunks += 1
                                     total_bytes += len(chunk)
                                     
@@ -1109,7 +1165,7 @@ class LLMManager:
                                         except Exception:
                                             pass  # Don't fail on metrics
                                         
-                                        self._validate_opus_chunk(chunk)
+                                        self._validate_audio_chunk(chunk, "opus")
                                     
                                     b64_chunk = base64.b64encode(chunk).decode('utf-8')
                                     # Only log chunks in verbose mode to avoid 100KB per request in logs
@@ -1170,7 +1226,7 @@ class LLMManager:
                                     except Exception:
                                         pass  # Don't fail on metrics
                                     
-                                    self._validate_opus_chunk(chunk)
+                                    self._validate_audio_chunk(chunk, "opus")
                                 
                                 b64_chunk = base64.b64encode(chunk).decode('utf-8')
                                 # Only log chunks in verbose mode to avoid 100KB per request in logs
