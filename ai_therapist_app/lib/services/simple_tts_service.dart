@@ -902,6 +902,24 @@ class SimpleTTSService implements ITTSService {
   Future<void> pauseAudio() async {
     await _audioPlayerManager.stopAudio();
   }
+  
+  /// Cancel all active TTS streams immediately (for mode switches)
+  @override
+  Future<void> cancelAllStreams() async {
+    if (kDebugMode) print('🚨 [TTS] Cancelling all active streams for mode switch');
+    
+    // Stop audio playback immediately
+    await _audioPlayerManager.stopAudio();
+    
+    // Clear the request queue to prevent new TTS requests
+    _queue.clear();
+    _pendingStreams = 0;
+    
+    // Notify that TTS is no longer speaking
+    _updateSpeakingState(false);
+    
+    if (kDebugMode) print('✅ [TTS] All streams cancelled successfully');
+  }
 
   @override
   Future<void> resumeAudio() async {

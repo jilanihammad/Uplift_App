@@ -11,6 +11,7 @@ import '../utils/memory_monitor.dart';
 import 'live_tts_audio_source.dart';
 import '../utils/disposable.dart';
 import '../utils/throttled_debug_print.dart';
+import '../utils/app_logger.dart';
 
 /// Audio queue item containing all necessary information for queued playback
 class AudioQueueItem {
@@ -142,11 +143,11 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         _lastEmittedPlayingState = _pendingStateChange;
         _playingStateController.add(_pendingStateChange!);
         if (kDebugMode) {
-          debugPrintThrottledCustom('🎧 AudioPlayerManager: Playing state changed to $_pendingStateChange (debounced)',
+          debugPrintThrottledCustom('AudioPlayerManager: Playing state changed to $_pendingStateChange (debounced)',
                           key: 'audio_state_debounced');
         }
       } else if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Duplicate state change to $_pendingStateChange ignored (debounced)');
+        AppLogger.v('AudioPlayerManager: Duplicate state change to $_pendingStateChange ignored (debounced)');
       }
       _pendingStateChange = null;
     });
@@ -163,7 +164,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       _lastEmittedPlayingState = isPlaying;
       _playingStateController.add(isPlaying);
       if (kDebugMode) {
-        debugPrintThrottledCustom('🎧 AudioPlayerManager: Playing state changed to $isPlaying (immediate)',
+        debugPrintThrottledCustom('AudioPlayerManager: Playing state changed to $isPlaying (immediate)',
                           key: 'audio_state_immediate');
       }
     }
@@ -175,7 +176,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       // CRITICAL: Explicitly disable loop mode to prevent infinite TTS replay
       await _audioPlayer.setLoopMode(LoopMode.off);
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Loop mode explicitly set to OFF');
+        AppLogger.d('AudioPlayerManager: Loop mode explicitly set to OFF');
       }
       
       // Set up audio session
@@ -198,9 +199,9 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         _emitPlayingState(isPlaying);
 
         if (kDebugMode && isPlaying) {
-          print('🎧 Audio playback started');
+          AppLogger.d('Audio playback started');
         } else if (kDebugMode && !isPlaying) {
-          print('🎧 Audio playback paused/stopped');
+          AppLogger.d('Audio playback paused/stopped');
         }
       });
 
@@ -244,7 +245,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
               if (!_audioPlayer.playing) {
                 _emitPlayingState(false);
                 if (kDebugMode) {
-                  print('🎧 Audio playback completion confirmed');
+                  AppLogger.d('Audio playback completion confirmed');
                 }
               }
               
@@ -292,7 +293,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     if (_audioQueue.length >= _maxQueueSize) {
       final error = 'Audio queue full (max: $_maxQueueSize items)';
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: $error');
+        AppLogger.e('AudioPlayerManager', error);
       }
       _errorController.add(error);
       completer.completeError(Exception(error));
@@ -304,7 +305,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     _queueLengthController.add(_audioQueue.length);
     
     if (kDebugMode) {
-      print('🎧 AudioPlayerManager: Added to queue: $audioPath (ID: $id, Queue length: ${_audioQueue.length})');
+      AppLogger.d('AudioPlayerManager: Added to queue: $audioPath (ID: $id, Queue length: ${_audioQueue.length})');
     }
 
     // Emit warning if queue is getting long
@@ -337,7 +338,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       _nowPlayingController.add(item.audioPath);
 
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Processing queue item: ${item.audioPath} (ID: ${item.id}, Remaining in queue: ${_audioQueue.length})');
+        AppLogger.d('AudioPlayerManager: Processing queue item: ${item.audioPath} (ID: ${item.id}, Remaining in queue: ${_audioQueue.length})');
       }
 
       try {
@@ -359,7 +360,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     _isProcessingQueue = false;
     
     if (kDebugMode) {
-      print('🎧 AudioPlayerManager: Queue processing completed');
+      AppLogger.d('AudioPlayerManager: Queue processing completed');
     }
   }
 
@@ -367,7 +368,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   void _processNextInQueue() {
     if (!_isProcessingQueue && _audioQueue.isNotEmpty) {
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Auto-processing next in queue');
+        AppLogger.v('AudioPlayerManager: Auto-processing next in queue');
       }
       _processQueue();
     }
@@ -384,7 +385,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       if (kDebugMode) {
         final fileSize = await file.length();
         final waitTime = DateTime.now().difference(item.addedAt).inMilliseconds;
-        debugPrintThrottledCustom('🎧 Playing audio from: ${item.audioPath} (size: $fileSize bytes, waited: ${waitTime}ms)',
+        debugPrintThrottledCustom('Playing audio from: ${item.audioPath} (size: $fileSize bytes, waited: ${waitTime}ms)',
                           key: 'audio_file_playback');
       }
 
@@ -431,7 +432,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       if (!_audioPlayer.playing) {
         await _audioPlayer.play();
         if (kDebugMode) {
-          print('🎧 AudioPlayerManager: Started playback for ${item.audioPath} (ID: ${item.id})');
+          AppLogger.d('AudioPlayerManager: Started playback for ${item.audioPath} (ID: ${item.id})');
         }
       }
 
@@ -447,7 +448,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       }
       
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Completed playback for ${item.audioPath} (ID: ${item.id})');
+        AppLogger.d('AudioPlayerManager: Completed playback for ${item.audioPath} (ID: ${item.id})');
       }
     } catch (e) {
       _errorController.add('Error playing audio: $e');
@@ -487,7 +488,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       _nowPlayingController.add(null);
 
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Audio playback stopped - isPlaying forced to false, queue cleared: $clearQueue');
+        AppLogger.d('AudioPlayerManager: Audio playback stopped - isPlaying forced to false, queue cleared: $clearQueue');
       }
     } catch (e) {
       _errorController.add('Error stopping audio: $e');
@@ -502,7 +503,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     _forceIsPlayingState = false;
     _emitPlayingStateImmediate(false);
     if (kDebugMode) {
-      print('🎧 AudioPlayerManager: Playing state forced to false');
+      AppLogger.d('AudioPlayerManager: Playing state forced to false');
     }
   }
 
@@ -511,14 +512,14 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     // If we have a force override, use that
     if (_forceIsPlayingState != null) {
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager.isPlaying: Using force override = $_forceIsPlayingState');
+        AppLogger.v('AudioPlayerManager.isPlaying: Using force override = $_forceIsPlayingState');
       }
       return _forceIsPlayingState!;
     }
     // Otherwise use the actual player state
     final actualState = _audioPlayer.playing;
     if (kDebugMode) {
-      print('🎧 AudioPlayerManager.isPlaying: Using actual player state = $actualState');
+      AppLogger.v('AudioPlayerManager.isPlaying: Using actual player state = $actualState');
     }
     return actualState;
   }
@@ -550,7 +551,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   Future<void> skipCurrent() async {
     if (_currentlyPlaying != null) {
       if (kDebugMode) {
-        print('🎧 AudioPlayerManager: Skipping current audio: ${_currentlyPlaying!.audioPath}');
+        AppLogger.d('AudioPlayerManager: Skipping current audio: ${_currentlyPlaying!.audioPath}');
       }
       
       // Complete current item with skip error
@@ -568,7 +569,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   /// Clear the audio queue without stopping current playback
   void clearQueue() {
     if (kDebugMode) {
-      print('🎧 AudioPlayerManager: Clearing queue (${_audioQueue.length} items)');
+      AppLogger.d('AudioPlayerManager: Clearing queue (${_audioQueue.length} items)');
     }
     
     // Complete all pending items with cancellation
@@ -864,8 +865,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     MemoryMonitor.setBaseline();
     
     if (kDebugMode) {
-      print('🎧 AudioPlayerManager: Starting live TTS stream: $displayName (ID: $id)');
-      print('🎧 Content-Type: $contentType');
+      AppLogger.d('AudioPlayerManager: Starting live TTS stream: $displayName (ID: $id)');
+      AppLogger.d('Content-Type: $contentType');
     }
 
     try {
@@ -991,7 +992,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
           }
         } else if (state == ProcessingState.ready && _audioPlayer.playing) {
           if (kDebugMode) {
-            print('🎧 Live TTS playback started: $displayName');
+            AppLogger.d('Live TTS playback started: $displayName');
           }
         }
       });
@@ -1044,7 +1045,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     final displayName = debugName ?? 'in-memory-audio';
     
     if (kDebugMode) {
-      print('🎧 AudioPlayerManager: Playing ${audioBytes.length} bytes in-memory: $displayName (ID: $id)');
+      AppLogger.d('AudioPlayerManager: Playing ${audioBytes.length} bytes in-memory: $displayName (ID: $id)');
     }
 
     try {
@@ -1080,7 +1081,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
           subscription?.cancel();
           
           if (kDebugMode) {
-            print('🎧 In-memory audio playback completed: $displayName');
+            AppLogger.d('In-memory audio playback completed: $displayName');
           }
           
           // CRITICAL: Clear the source to prevent any possibility of replay

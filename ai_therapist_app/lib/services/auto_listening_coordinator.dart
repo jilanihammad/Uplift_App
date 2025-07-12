@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:ai_therapist_app/utils/app_logger.dart';
 
 import 'audio_player_manager.dart';
 import 'base_voice_service.dart' as base_voice;
@@ -37,7 +38,7 @@ class AutoListeningCoordinator with SessionDisposable {
   static void setEnhancedVAD(bool enabled) {
     _useEnhancedVAD = enabled;
     if (kDebugMode) {
-      print('🎙️ AutoListeningCoordinator: Enhanced VAD ${enabled ? 'ENABLED' : 'DISABLED'}');
+      AppLogger.d(' AutoListeningCoordinator: Enhanced VAD ${enabled ? 'ENABLED' : 'DISABLED'}');
     }
   }
   
@@ -128,12 +129,12 @@ class AutoListeningCoordinator with SessionDisposable {
     if (_useEnhancedVAD) {
       _vadManager = EnhancedVADManager();
       if (kDebugMode) {
-        print('🎙️ AutoListeningCoordinator: Using Enhanced VAD Manager');
+        AppLogger.d(' AutoListeningCoordinator: Using Enhanced VAD Manager');
       }
     } else {
       _vadManager = VADManager();
       if (kDebugMode) {
-        print('🎙️ AutoListeningCoordinator: Using Standard VAD Manager');
+        AppLogger.d(' AutoListeningCoordinator: Using Standard VAD Manager');
       }
     }
     
@@ -147,7 +148,7 @@ class AutoListeningCoordinator with SessionDisposable {
     ).distinct();
     
     if (kDebugMode) {
-      print('🎙️ AutoListeningCoordinator: Set up combined AI audio stream');
+      AppLogger.d(' AutoListeningCoordinator: Set up combined AI audio stream');
     }
     
     _setupListeners();
@@ -1028,15 +1029,20 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Enable automatic listening mode (original method using AudioPlayerManager)
   Future<void> enableAutoMode() async {
-    // Cancel any post-audio delay when manually enabling auto mode
-    
-    // If we're stuck in listeningForVoice, reset to idle first
-    if (_currentState == AutoListeningState.listeningForVoice) {
+    // STATE VALIDATION: Guard against unexpected state
+    if (_currentState != AutoListeningState.idle) {
       if (kDebugMode) {
-        print(
-            '[AutoListeningCoordinator] [MODE] enableAutoMode: Resetting from stuck listeningForVoice state to idle');
+        AppLogger.w('🚨 [ALS] enableAutoMode called in unexpected state=$_currentState - resetting to idle');
       }
       _updateState(AutoListeningState.idle);
+    }
+
+    // CONTAMINATION CHECK: Warn about stale state that should have been reset
+    if (_vadRestartScheduled || _speechSeq > 0 || _inSpeechSession) {
+      if (kDebugMode) {
+        AppLogger.w('⚠️ [ALS] enableAutoMode: Detected stale state - '
+            'vadRestart=$_vadRestartScheduled seq=$_speechSeq inSession=$_inSpeechSession');
+      }
     }
 
     if (!_autoModeEnabled) {
@@ -1159,19 +1165,59 @@ class AutoListeningCoordinator with SessionDisposable {
     }
   }
 
-  // Clean up resources
-  @override
-  void performDisposal() {
+  /// Comprehensive state reset for clean mode transitions
+  /// Call this during chat→voice switches to eliminate state contamination
+  void reset({bool full = false}) {
+    if (kDebugMode) {
+      AppLogger.d('🔄 [ALS] reset() full=$full '
+          'seq=$_speechSeq vadRestart=$_vadRestartScheduled '
+          'burst=$_speechBurstCount inSession=$_inSpeechSession');
+    }
+
+    // Reset speech sequence and timing state
+    _speechSeq = 0;
+    _speechBurstCount = 0;
+    _inSpeechSession = false;
+    _lastSpeechStartTime = null;
+    _lastSpeechEndTime = null;
+
+    // Clear all guard flags that prevent clean initialization
+    _vadRestartScheduled = false;
+    _awaitingPlaybackEnd = false;
+    _isTransitionInProgress = false;
+    _isStoppingRecording = false;
+    _hasPendingSpeechEnd = false;
+
+    // Cancel all timers to prevent stale callbacks
     _cancelSpeechEndTimer();
     _cancelPendingSpeechEnd();
     _stuckStateTimer?.cancel();
+    _stuckStateTimer = null;
 
-    // Reset resource tracking flags
-    _isVadActive = false;
-    _isRecordingActive = false;
+    // Reset state to idle for clean start
+    _updateState(AutoListeningState.idle);
 
-    // Clean up robust solution subscriptions
-    _startListeningSub?.cancel();
+    // Full reset includes resource cleanup (for session disposal)
+    if (full) {
+      _isVadActive = false;
+      _isRecordingActive = false;
+      _autoModeEnabled = false;
+      
+      // Clean up subscriptions
+      _startListeningSub?.cancel();
+      _startListeningSub = null;
+    }
+
+    if (kDebugMode) {
+      AppLogger.d('✅ [ALS] reset() completed - state reset to idle');
+    }
+  }
+
+  // Clean up resources
+  @override
+  void performDisposal() {
+    // Use comprehensive reset with full cleanup
+    reset(full: true);
 
     // Close controllers (fire and forget)
     _autoModeEnabledController.close();

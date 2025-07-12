@@ -330,6 +330,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     debugPrint(
         '[VoiceSessionBloc] Switching to ${event.isVoiceMode ? "voice" : "chat"} mode');
 
+    // CRITICAL: Cancel all active TTS streams immediately to prevent stale audio
+    final ttsService = DependencyContainer().ttsService;
+    await ttsService.cancelAllStreams();
+    debugPrint('[VoiceSessionBloc] All TTS streams cancelled for mode switch');
+
     if (event.isVoiceMode) {
       debugPrint(
           '[VoiceSessionBloc] Preparing for voice mode (will enable VAD after TTS)');
@@ -345,8 +350,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         debugPrint('[VoiceSessionBloc] Audio stopped successfully');
 
         _safeVoiceService.resetTTSState();
-
-        await Future.delayed(const Duration(milliseconds: 200));
+        
+        // CRITICAL: Reset AutoListeningCoordinator state to eliminate contamination
+        _safeVoiceService.autoListeningCoordinator.reset();
+        debugPrint('[VoiceSessionBloc] AutoListeningCoordinator state reset for clean voice mode');
+        
+        // SEQUENCING: Insert microtask delay for Flutter widget-tree rebuild
+        await Future.delayed(Duration.zero);
+        debugPrint('[VoiceSessionBloc] Microtask delay completed - UI context ready');
 
         // ALWAYS enable auto mode when switching to voice mode
         // Keep autoModeEnabled=true throughout voice sessions

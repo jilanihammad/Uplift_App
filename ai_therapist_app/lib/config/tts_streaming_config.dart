@@ -51,7 +51,7 @@ class TTSStreamingConfig {
 
   /// WAV format specific buffer constants (optimized for streaming)
   static const int wavChunkBytes = 8192;     // 8KB read unit for WAV
-  static const int wavPreplayBytes = 32768;  // 32KB before starting playback
+  static const int wavPreplayBytes = 24576;  // 24KB before starting playback
 
   /// Safe buffer sizes for gradual rollout
   static const int bufferSizeDisabled = 999999; // Effectively disabled
