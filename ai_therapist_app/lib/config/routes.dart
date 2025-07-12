@@ -47,6 +47,7 @@ class AppRouter {
   static const String progress = '/progress';
   static const String onboarding = '/onboarding';
   static const String diagnostic = '/diagnostic';
+  static const String tasks = '/tasks'; // Added tasks route
 
   // Create and configure the router
   static final GoRouter router = GoRouter(
@@ -262,6 +263,12 @@ class AppRouter {
             path: progress,
             builder: (context, state) => const ProgressScreen(),
           ),
+
+          // New Tasks route (aliased to progress)
+          GoRoute(
+            path: tasks,
+            builder: (context, state) => const ProgressScreen(initialTabIndex: 2), // Pass index 2 for Tasks tab
+          ),
         ],
       ),
     ],
@@ -354,6 +361,8 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
                   BottomNavigationBarItem(
                       icon: Icon(Icons.home), label: 'Home'),
                   BottomNavigationBarItem(
+                      icon: Icon(Icons.task), label: 'Tasks'), // New Tasks button
+                  BottomNavigationBarItem(
                       icon: Icon(Icons.history), label: 'History'),
                 ],
               )
@@ -365,7 +374,8 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
   int _calculateSelectedIndex(BuildContext context) {
     final String location = GoRouterState.of(context).matchedLocation;
     if (location.startsWith(AppRouter.home)) return 0;
-    if (location.startsWith(AppRouter.history)) return 1;
+    if (location.startsWith(AppRouter.tasks)) return 1; // Handle Tasks route
+    if (location.startsWith(AppRouter.history)) return 2;
     return 0;
   }
 
@@ -375,6 +385,9 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
         GoRouter.of(context).go(AppRouter.home);
         break;
       case 1:
+        GoRouter.of(context).go(AppRouter.tasks); // Navigate to Tasks
+        break;
+      case 2:
         GoRouter.of(context).go(AppRouter.history);
         break;
     }
