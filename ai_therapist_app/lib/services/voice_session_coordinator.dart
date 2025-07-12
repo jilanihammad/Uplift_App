@@ -11,8 +11,8 @@ import '../di/interfaces/i_audio_file_manager.dart';
 import '../utils/disposable.dart';
 import 'base_voice_service.dart';
 import 'voice_service.dart';
+import 'auto_listening_coordinator.dart';
 // Future enhancement: Direct AutoListeningCoordinator integration
-// import 'auto_listening_coordinator.dart';
 // import 'vad_manager.dart';
 
 /// Coordinates voice session workflow by orchestrating focused audio services
@@ -475,5 +475,23 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   @override
   void resetTTSState() {
     _ttsService.resetTTSState();
+  }
+
+  /// Get AutoListeningCoordinator from legacy VoiceService
+  @override
+  AutoListeningCoordinator get autoListeningCoordinator {
+    try {
+      final serviceLocator = GetIt.instance;
+      if (serviceLocator.isRegistered<VoiceService>()) {
+        final legacyVoiceService = serviceLocator<VoiceService>();
+        return legacyVoiceService.autoListeningCoordinator;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceSessionCoordinator] Error accessing autoListeningCoordinator: $e');
+      }
+    }
+    
+    throw UnsupportedError('AutoListeningCoordinator not available - legacy VoiceService not registered');
   }
 }

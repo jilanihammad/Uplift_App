@@ -38,6 +38,11 @@ const bool kTTSUseInMemoryPlayback = true;
 /// 
 /// All callers simply await ttsService.speak(text) without thinking about sockets.
 class SimpleTTSService implements ITTSService {
+  // -------- Log Suppression Flags ------------------------------------
+  
+  /// Static flag to suppress repeated format mismatch logging
+  static bool _formatMismatchLogged = false;
+  
   // -------- Public API -----------------------------------------------
   
   /// Speak text and return when playback is complete
@@ -654,8 +659,9 @@ class SimpleTTSService implements ITTSService {
     }
     
     if (!OpusHeaderUtils.isOpusFormat(chunk)) {
-      if (kDebugMode) {
-        print('⚠️ [TTS] Invalid OPUS/OGG format detected');
+      if (kDebugMode && !_formatMismatchLogged) {
+        print('⚠️ [TTS] Invalid OPUS/OGG format detected, fallback to full buffer');
+        _formatMismatchLogged = true; // Suppress further format mismatch logs
       }
       return false;
     }
@@ -670,8 +676,9 @@ class SimpleTTSService implements ITTSService {
 
   /// Validate WAV header for proper format detection
   /// Returns true if the chunk contains a valid RIFF/WAVE header
+  /// Handles OpenAI streaming format where file size is unknown (0xFF bytes)
   bool _isValidWavHeader(List<int> chunk) {
-    if (chunk.length < 44) {
+    if (chunk.length < 12) {
       if (kDebugMode) {
         print('⚠️ [TTS] Chunk too small for WAV header: ${chunk.length} bytes');
       }
@@ -679,28 +686,16 @@ class SimpleTTSService implements ITTSService {
     }
     
     try {
-      // Check RIFF signature (first 4 bytes)
-      final riffHeader = String.fromCharCodes(chunk.take(4));
-      if (riffHeader != 'RIFF') {
-        if (kDebugMode) {
-          print('⚠️ [TTS] Invalid RIFF header: $riffHeader');
-        }
-        return false;
-      }
-      
-      // Check WAVE format identifier (bytes 8-11)
-      final waveHeader = String.fromCharCodes(chunk.skip(8).take(4));
-      if (waveHeader != 'WAVE') {
-        if (kDebugMode) {
-          print('⚠️ [TTS] Invalid WAVE format: $waveHeader');
-        }
-        return false;
-      }
-      
-      if (kDebugMode) {
-        print('✅ [TTS] Valid WAV header detected: RIFF...WAVE');
-      }
-      return true;
+      // Check RIFF signature (bytes 0-3) and WAVE format (bytes 8-11)
+      // Skip file size validation (bytes 4-7) as OpenAI streams use 0xFF for unknown size
+      return chunk[0] == 0x52 &&  // R
+             chunk[1] == 0x49 &&  // I
+             chunk[2] == 0x46 &&  // F
+             chunk[3] == 0x46 &&  // F
+             chunk[8] == 0x57 &&  // W
+             chunk[9] == 0x41 &&  // A
+             chunk[10] == 0x56 && // V
+             chunk[11] == 0x45;   // E
     } catch (e) {
       if (kDebugMode) {
         print('❌ [TTS] Error validating WAV header: $e');
@@ -906,6 +901,24 @@ class SimpleTTSService implements ITTSService {
   @override
   Future<void> pauseAudio() async {
     await _audioPlayerManager.stopAudio();
+  }
+  
+  /// Cancel all active TTS streams immediately (for mode switches)
+  @override
+  Future<void> cancelAllStreams() async {
+    if (kDebugMode) print('🚨 [TTS] Cancelling all active streams for mode switch');
+    
+    // Stop audio playback immediately
+    await _audioPlayerManager.stopAudio();
+    
+    // Clear the request queue to prevent new TTS requests
+    _queue.clear();
+    _pendingStreams = 0;
+    
+    // Notify that TTS is no longer speaking
+    _updateSpeakingState(false);
+    
+    if (kDebugMode) print('✅ [TTS] All streams cancelled successfully');
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:audio_streamer/audio_streamer.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:ai_therapist_app/utils/app_logger.dart';
 
 // Import the RNNoise service
 import 'rnnoise_service.dart';
@@ -86,7 +87,7 @@ class EnhancedVADManager {
   EnhancedVADManager._internal() {
     _vadInstanceId = 'VAD_${++_instanceCounter}_${DateTime.now().millisecondsSinceEpoch}';
     if (kDebugMode) {
-      print('🎙️ Enhanced VAD: Created instance $_vadInstanceId');
+      AppLogger.d(' Enhanced VAD: Created instance $_vadInstanceId');
     }
   }
   
@@ -95,7 +96,7 @@ class EnhancedVADManager {
     if (_isInitialized || _isDisposing) return;
     
     if (kDebugMode) {
-      print('🎙️ Enhanced VAD ($_vadInstanceId): Starting initialization');
+      AppLogger.d(' Enhanced VAD ($_vadInstanceId): Starting initialization');
     }
     
     try {
@@ -117,7 +118,7 @@ class EnhancedVADManager {
         _rnnoiseInitialized = await _rnnoiseService.initialize();
         if (_rnnoiseInitialized) {
           if (kDebugMode) {
-            print('🎙️ Enhanced VAD ($_vadInstanceId): RNNoise initialized successfully');
+            AppLogger.d(' Enhanced VAD ($_vadInstanceId): RNNoise initialized successfully');
           }
         } else {
           if (kDebugMode) {
@@ -137,7 +138,7 @@ class EnhancedVADManager {
       _clearOperationTimeout();
       
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD ($_vadInstanceId) initialized (RNNoise: ${_useRNNoise ? 'ENABLED' : 'DISABLED'})');
+        AppLogger.d(' Enhanced VAD ($_vadInstanceId) initialized (RNNoise: ${_useRNNoise ? 'ENABLED' : 'DISABLED'})');
       }
     } catch (e) {
       _clearOperationTimeout();
@@ -167,13 +168,13 @@ class EnhancedVADManager {
     
     if (_isListening) {
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD ($_vadInstanceId): Already listening, ignoring duplicate start');
+        AppLogger.d(' Enhanced VAD ($_vadInstanceId): Already listening, ignoring duplicate start');
       }
       return true;
     }
     
     if (kDebugMode) {
-      print('🎙️ Enhanced VAD ($_vadInstanceId): Starting voice activity detection');
+      AppLogger.d(' Enhanced VAD ($_vadInstanceId): Starting voice activity detection');
     }
     
     try {
@@ -244,7 +245,7 @@ class EnhancedVADManager {
         AudioStreamer().sampleRate = _sampleRate; // 48000 Hz as defined in _sampleRate
         
         if (kDebugMode) {
-          print('🎙️ Enhanced VAD ($_vadInstanceId): Audio streamer configured for ${_sampleRate}Hz (RNNoise requirement)');
+          AppLogger.d(' Enhanced VAD ($_vadInstanceId): Audio streamer configured for ${_sampleRate}Hz (RNNoise requirement)');
         }
       } catch (e) {
         if (kDebugMode) {
@@ -283,7 +284,7 @@ class EnhancedVADManager {
       _resetVADState();
       
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD ($_vadInstanceId): Started RNNoise-based voice detection');
+        AppLogger.d(' Enhanced VAD ($_vadInstanceId): Started RNNoise-based voice detection');
       }
       
       return true;
@@ -347,7 +348,7 @@ class EnhancedVADManager {
       _resetVADState();
       
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD ($_vadInstanceId): Started amplitude-based voice detection');
+        AppLogger.d(' Enhanced VAD ($_vadInstanceId): Started amplitude-based voice detection');
       }
       
       return true;
@@ -490,7 +491,7 @@ class EnhancedVADManager {
         
         // Throttled logging to reduce spam (max 1 log per second)
         if (kDebugMode && (vadProbability > 0.1) && _shouldLog()) {
-          print('🎙️ Enhanced VAD (RNNoise): confidence=${vadProbability.toStringAsFixed(3)} | '
+          AppLogger.d(' Enhanced VAD (RNNoise): confidence=${vadProbability.toStringAsFixed(3)} | '
                 'threshold=${dynamicThreshold.toStringAsFixed(2)} | frames=S$_speechFrames/Sil$_silenceFrames | amp=${amplitude.toStringAsFixed(1)}dB');
         }
       } else {
@@ -686,7 +687,7 @@ class EnhancedVADManager {
       }
       
       if (kDebugMode) {
-        print('🎙️ Enhanced VAD ($_vadInstanceId): Stopped listening (buffers safely released, shutdown complete)');
+        AppLogger.d(' Enhanced VAD ($_vadInstanceId): Stopped listening (buffers safely released, shutdown complete)');
       }
       
     } catch (e) {
@@ -773,7 +774,7 @@ class EnhancedVADManager {
   void setSpeechThreshold(double threshold) {
     _speechThreshold = threshold.clamp(0.0, 1.0);
     if (kDebugMode) {
-      print('🎙️ Enhanced VAD: Threshold updated to $_speechThreshold');
+      AppLogger.d(' Enhanced VAD: Threshold updated to $_speechThreshold');
     }
   }
   
