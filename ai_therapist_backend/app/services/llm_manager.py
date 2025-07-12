@@ -938,9 +938,17 @@ class LLMManager:
                         
                         logger.info(f"🎤 OpenAI TTS: WAV stream started, status={response.status_code}")
                         
+                        # High-precision telemetry for first chunk latency
+                        import time
+                        first_chunk_t0 = time.perf_counter()
+                        
                         # Stream chunks as they arrive
-                        for chunk in response.iter_bytes(chunk_size=4096):
+                        for idx, chunk in enumerate(response.iter_bytes(chunk_size=4096)):
                             if chunk:
+                                # High-precision first chunk telemetry
+                                if idx == 0:
+                                    logger.info("🎵 FIRST-CHUNK LATENCY: %.1f ms", (time.perf_counter() - first_chunk_t0) * 1000)
+                                
                                 total_chunks += 1
                                 total_bytes += len(chunk)
                                 
@@ -1090,9 +1098,16 @@ class LLMManager:
                             logger.info("🎵 NEW STREAMING: Response object created, iterating chunks...")
                             first_chunk_time = None
                             
+                            # High-precision telemetry for first chunk latency
+                            first_chunk_t0 = time.perf_counter()
+                            
                             # NEW API returns an iterator that yields chunks as they arrive
-                            for chunk in response.iter_bytes():
+                            for idx, chunk in enumerate(response.iter_bytes()):
                                 if chunk:
+                                    # High-precision first chunk telemetry
+                                    if idx == 0:
+                                        logger.info("🎵 FIRST-CHUNK LATENCY: %.1f ms", (time.perf_counter() - first_chunk_t0) * 1000)
+                                    
                                     total_chunks += 1
                                     total_bytes += len(chunk)
                                     
