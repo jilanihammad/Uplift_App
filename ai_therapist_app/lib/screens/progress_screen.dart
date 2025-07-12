@@ -9,10 +9,12 @@ import 'dart:math' as math;
 
 class ProgressScreen extends StatefulWidget {
   final IProgressService? progressService;
-  
+  final int initialTabIndex;
+
   const ProgressScreen({
     Key? key,
     this.progressService,
+    this.initialTabIndex = 0, // Default to 0 (Overview)
   }) : super(key: key);
 
   @override
@@ -36,10 +38,13 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
     _progressService = widget.progressService ?? DependencyContainer().progress;
     _progress = _progressService.progress;
     _tasksService = TasksService();
-    
+
+    // Set the initial tab based on the provided argument
+    _tabController.index = widget.initialTabIndex;
+
     // Initialize services and load data
     _initServices();
-    
+
     // Listen for progress changes
     _progressService.progressChanged.addListener(_onProgressChanged);
   }
