@@ -83,7 +83,7 @@ class LLMConfig:
             api_key_env="OPENAI_API_KEY",
             default_params={
                 "voice": os.getenv("OPENAI_TTS_VOICE", DEFAULT_TTS_VOICE),
-                "response_format": "opus",
+                "response_format": "wav",
                 "speed": 1.0
             },
             supports_streaming=True
