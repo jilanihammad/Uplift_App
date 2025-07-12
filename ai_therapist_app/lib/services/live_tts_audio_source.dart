@@ -452,14 +452,14 @@ class LiveTtsAudioSource extends StreamAudioSource {
         
         if (kDebugMode && chunk.isNotEmpty) {
           final dataType = _isOpusFormat ? 'OPUS' : 'WAV';
-          print('📤 LiveTtsAudioSource: Yielding ${chunk.length} bytes of $dataType to ExoPlayer (position: $readPosition)');
+          // print('📤 LiveTtsAudioSource: Yielding ${chunk.length} bytes of $dataType to ExoPlayer (position: $readPosition)');
         }
         
         yield chunk;
         _hasDeliveredData = true; // Mark that we've started delivering data
         
         if (kDebugMode && chunk.length < chunkSize) {
-          print('📤 LiveTtsAudioSource: Delivered final partial chunk (${chunk.length} < $chunkSize) - stream ending soon');
+          // print('📤 LiveTtsAudioSource: Delivered final partial chunk (${chunk.length} < $chunkSize) - stream ending soon');
         }
         continue;
       }
@@ -491,17 +491,29 @@ class LiveTtsAudioSource extends StreamAudioSource {
         
         break;
       } else {
-        // WebSocket still open - wait for more data (RESULT_NOTHING_READ)
-        if (kDebugMode) {
-          print('⏳ LiveTtsAudioSource: No data available but WebSocket still open - waiting (RESULT_NOTHING_READ)');
+        // WebSocket still open - check format for retry behavior
+        if (!_isOpusFormat) { // If it's WAV format
+          if (kDebugMode) {
+            print('🏁 LiveTtsAudioSource: WAV stream stalled/no data, ending stream (ExoPlayer will handle)');
+          }
+          _streamCompleted = true; // Mark as completed
+          _sessionCompleted = true; // Mark session as completed to prevent replays
+          break; // Exit the loop
+        } else { // If it's OPUS, continue waiting as before
+          if (kDebugMode) {
+            print('⏳ LiveTtsAudioSource: No data available but WebSocket still open - waiting (RESULT_NOTHING_READ)');
+          }
+          await Future.delayed(const Duration(milliseconds: 10));
+          continue;
         }
-        
-        // Brief delay to prevent busy waiting
-        await Future.delayed(const Duration(milliseconds: 10));
-        continue;
       }
     }
-    
+
+    // After the loop, ensure session is marked complete
+    // This is a redundant assignment here, as it's already handled in the loop's break conditions.
+    // Keeping it for clarity, but the critical logic is within the while loop's conditional breaks.
+    _sessionCompleted = true; // Mark session as completed to prevent future replays (from just_audio)
+
     if (kDebugMode) {
       final format = _isOpusFormat ? 'OPUS' : 'WAV';
       print('🏁 LiveTtsAudioSource: $format DataSource stream ended (total read: $readPosition bytes)');
