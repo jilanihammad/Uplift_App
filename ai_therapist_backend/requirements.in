@@ -1,3 +1,4 @@
+# Core requirements without openai - let constraints handle it
 alembic>=1.15.0
 annotated-types>=0.5.0
 anyio>=4.0.0
@@ -23,7 +24,7 @@ langchain_openai>=0.1.0
 langgraph>=0.2.72
 Mako>=1.3.0
 MarkupSafe>=3.0.0
-openai==1.95.0
+# openai is handled separately to ensure 1.95.0
 passlib>=1.7.0
 psycopg2-binary>=2.9.0
 pyasn1>=0.4.8
@@ -31,7 +32,7 @@ pycparser>=2.21
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 pydantic_core>=2.0.0
-# python-dotenv moved to requirements-dev.txt for slimmer production builds
+python-dotenv>=1.0.0
 python-jose>=3.3.0
 python-multipart>=0.0.5
 PyYAML>=6.0.0
@@ -57,4 +58,3 @@ tenacity>=8.0.0
 google-genai>=0.8.0
 requests>=2.25.0
 packaging>=21.0
-

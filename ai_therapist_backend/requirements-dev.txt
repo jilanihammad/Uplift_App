@@ -1,0 +1,16 @@
+# Development-only dependencies
+# These are NOT included in production Docker images to keep them slim
+
+# Environment file loading for local development
+python-dotenv>=1.0.0
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0  # for testing API endpoints
+
+# Development tools
+pytest-cov>=4.0.0  # test coverage
+black>=23.0.0      # code formatting
+isort>=5.12.0      # import sorting
+flake8>=6.0.0      # linting

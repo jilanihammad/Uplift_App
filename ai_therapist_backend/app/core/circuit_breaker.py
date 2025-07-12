@@ -541,6 +541,12 @@ PROVIDER_CONFIGS = {
         reset_timeout=60,
         success_threshold=5
     ),
+    "openai_streaming": CircuitBreakerConfig(
+        fail_ratio=0.6,  # Slightly higher tolerance for streaming
+        minimum_calls=15,  # Fewer calls needed before evaluation
+        reset_timeout=30,   # Faster recovery for streaming
+        success_threshold=3  # Faster recovery
+    ),
     "anthropic": CircuitBreakerConfig(
         fail_ratio=0.4,
         minimum_calls=15,

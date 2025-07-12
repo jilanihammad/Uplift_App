@@ -59,9 +59,8 @@ if [[ "$gcp_project" != "$PROJECT_ID" ]]; then
     gcloud config set project $PROJECT_ID
 fi
 
-# Install aiofiles locally first to verify it works
-echo "Installing aiofiles locally to verify it works..."
-pip install aiofiles
+# Skip local aiofiles install - it will be handled in Docker container
+echo "Skipping local aiofiles install (will be installed in container)..."
 
 # Create a temporary deployment directory
 TEMP_DIR="deploy_temp"
@@ -114,12 +113,28 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies with --no-cache-dir to avoid cache issues
+# Install Python dependencies with deterministic approach
 COPY requirements.txt .
+
+# Install pipdeptree for dependency inspection
+RUN pip install --no-cache-dir pipdeptree
+
+# Install all dependencies EXCEPT OpenAI first (langchain might try to downgrade it)
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Force reinstall OpenAI 1.95.0 AFTER other packages to override any downgrades
+RUN pip install --no-cache-dir --force-reinstall openai==1.95.0
+
+# Verify OpenAI version is correct and show dependency tree
+RUN python -c "import openai; print(f'OpenAI SDK version: {openai.__version__}'); assert openai.__version__ == '1.95.0', f'Wrong OpenAI version: {openai.__version__}'" && \
+    echo "=== OpenAI dependency tree ===" && \
+    pipdeptree -p openai
 
 # Explicitly install aiofiles - critical for voice endpoints
 RUN pip install --no-cache-dir aiofiles
+
+# Final verification with detailed logging
+RUN python -c "import openai, sys; print(f'FINAL CHECK - OpenAI {openai.__version__} from {openai.__file__}'); sys.exit(0 if openai.__version__ >= '1.85.0' else 1)"
 
 # Copy application code
 COPY . .
@@ -164,8 +179,8 @@ ls -la "$TEMP_DIR" | head -20
 # Deploy to Cloud Run with a unique tag to avoid cache issues
 echo "Deploying to Google Cloud Run with a fresh build..."
 
-# Execute the build command
-echo "Building container image..."
+# Execute the build command - use timestamp to force fresh build
+echo "Building container image with timestamp $TIMESTAMP to force fresh build..."
 if ! gcloud builds submit "$TEMP_DIR" --tag="gcr.io/$PROJECT_ID/$BUILD_TAG"; then
     echo "Error: Building the container image failed."
     exit 1

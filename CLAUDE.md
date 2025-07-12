@@ -47,8 +47,15 @@ flutter test
 
 ### Backend Server
 ```bash
-# Run development server
+# Local development (fastest - no Cloud Run deployments needed!)
+cd ai_therapist_backend
+python dev_server.py                       # Auto-reload, uses .env.dev
+
+# Alternative local development
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Install dev dependencies (first time only)
+pip install -r requirements-dev.txt
 
 # Run using dev script
 python scripts/dev.py local
@@ -65,18 +72,28 @@ docker build -t ai-therapist-backend .
 docker run -p 8080:8080 ai-therapist-backend
 ```
 
-### Testing Endpoints
+### Testing Endpoints (Local Development)
 ```bash
-# Health check
+# Health check (local dev server)
 curl http://localhost:8000/health
 
-# Test AI config
-curl -X GET "http://localhost:8080/api/v1/ai/config"
+# Test TTS streaming (check for 150-300ms TTFB)
+curl -X POST "http://localhost:8000/voice/synthesize" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Testing TTS streaming optimization"}'
 
-# Test chat
-curl -X POST "http://localhost:8080/api/v1/ai/generate" \
+# Test AI chat
+curl -X POST "http://localhost:8000/ai/response" \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello world"}'
+
+# Test transcription
+curl -X POST "http://localhost:8000/voice/transcribe" \
+  -H "Content-Type: application/json" \
+  -d '{"audio_data": "base64_audio_here", "audio_format": "mp3"}'
+
+# Production endpoints (for comparison)
+curl -X GET "https://ai-therapist-backend-385290373302.us-central1.run.app/health"
 ```
 
 ## Key Technical Decisions
