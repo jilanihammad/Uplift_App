@@ -14,7 +14,7 @@ This module provides optimized HTTP clients with:
 import asyncio
 import logging
 import time
-from typing import Dict, Optional, Any, Union
+from typing import Dict, Optional, Any, Union, List
 from dataclasses import dataclass
 from enum import Enum
 import httpx
@@ -501,6 +501,96 @@ class HTTPClientManager:
         for client in self.clients.values():
             await client.start()
     
+    async def prewarm_all_clients(self, providers: List[str] = None) -> Dict[str, Any]:
+        """Pre-warm HTTP clients with connection establishment."""
+        providers = providers or ["openai", "anthropic", "groq", "google", "azure"]
+        prewarm_results = {}
+        
+        # Create warmup tasks for all providers
+        warmup_tasks = []
+        for provider in providers:
+            warmup_tasks.append(self._prewarm_provider_client(provider))
+        
+        # Execute warmups in parallel
+        results = await asyncio.gather(*warmup_tasks, return_exceptions=True)
+        
+        # Process results
+        for provider, result in zip(providers, results):
+            if isinstance(result, Exception):
+                prewarm_results[provider] = {
+                    "success": False,
+                    "error": str(result),
+                    "duration_ms": 0
+                }
+            else:
+                prewarm_results[provider] = result
+        
+        return prewarm_results
+    
+    async def _prewarm_provider_client(self, provider: str) -> Dict[str, Any]:
+        """Pre-warm a specific provider client with connection establishment."""
+        import time
+        start_time = time.time()
+        
+        try:
+            # Get optimized client for provider
+            client = self.get_client(provider)
+            await client.start()
+            
+            # Establish actual HTTP/2 connection with lightweight request
+            await self._establish_connection(provider, client)
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            logger.info(f"Successfully pre-warmed {provider} client in {duration_ms:.1f}ms")
+            
+            return {
+                "success": True,
+                "duration_ms": duration_ms,
+                "connection_established": True,
+                "http2_enabled": True
+            }
+            
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.warning(f"Failed to pre-warm {provider} client: {e}")
+            
+            return {
+                "success": False,
+                "duration_ms": duration_ms,
+                "error": str(e),
+                "connection_established": False
+            }
+    
+    async def _establish_connection(self, provider: str, client):
+        """Establish actual HTTP connection with provider-specific endpoint."""
+        # Provider-specific lightweight endpoints for connection establishment
+        endpoints = {
+            "openai": "https://api.openai.com/v1/models",
+            "anthropic": "https://api.anthropic.com/v1/messages",
+            "groq": "https://api.groq.com/openai/v1/models",
+            "google": "https://generativelanguage.googleapis.com/v1beta/models",
+            "azure": "https://api.openai.com/v1/models"  # Azure uses OpenAI compatible endpoint
+        }
+        
+        endpoint = endpoints.get(provider)
+        if not endpoint:
+            return
+        
+        try:
+            # Make a lightweight HEAD request to establish connection
+            # HEAD requests are cacheable and don't transfer response body
+            import httpx
+            response = await client.request("HEAD", endpoint, timeout=httpx.Timeout(connect=3.0, read=5.0))
+            
+            # Even if we get 401/403 (no API key), the connection is established
+            if response.status_code in [200, 401, 403]:
+                logger.debug(f"Connection established to {provider} ({response.status_code})")
+            
+        except Exception as e:
+            # Log but don't fail - connection establishment is best-effort
+            logger.debug(f"Connection establishment for {provider} failed: {e}")
+    
     async def stop_all_clients(self):
         """Stop all HTTP clients."""
         for client in self.clients.values():
@@ -545,6 +635,12 @@ def get_optimized_client(provider: str,
     """Get optimized HTTP client for provider."""
     manager = get_http_client_manager()
     return manager.get_client(provider, client_type)
+
+
+async def prewarm_http_clients(providers: List[str] = None) -> Dict[str, Any]:
+    """Pre-warm HTTP clients for faster first requests."""
+    manager = get_http_client_manager()
+    return await manager.prewarm_all_clients(providers)
 
 
 @asynccontextmanager

@@ -17,7 +17,41 @@ import anthropic
 from app.core.llm_config import LLMConfig, ModelType, ModelProvider, ModelConfig
 from app.utils.audio_path import ensure_wav
 
+# Phase 2: Circuit Breaker Integration
+try:
+    from app.core.phase2_integration import (
+        openai_chat, openai_streaming, openai_tts,
+        groq_chat, groq_streaming, groq_transcription,
+        anthropic_chat, anthropic_streaming,
+        google_chat, google_streaming,
+        llm_fallback, tts_fallback,
+        with_provider_monitoring
+    )
+    PHASE2_AVAILABLE = True
+    # logger.info will be called after logger is defined below
+except ImportError as e:
+    # logger.warning will be called after logger is defined below
+    PHASE2_AVAILABLE = False
+    PHASE2_IMPORT_ERROR = str(e)
+    
+    # Create no-op decorators
+    def noop_decorator(func):
+        return func
+    
+    openai_chat = openai_streaming = openai_tts = noop_decorator
+    groq_chat = groq_streaming = groq_transcription = noop_decorator  
+    anthropic_chat = anthropic_streaming = noop_decorator
+    google_chat = google_streaming = noop_decorator
+    llm_fallback = tts_fallback = noop_decorator
+    with_provider_monitoring = lambda *args: noop_decorator
+
 logger = logging.getLogger(__name__)
+
+# Log Phase 2 status after logger is available
+if PHASE2_AVAILABLE:
+    logger.info("Phase 2 circuit breaker integration available")
+else:
+    logger.warning(f"Phase 2 circuit breakers not available: {globals().get('PHASE2_IMPORT_ERROR', 'Unknown error')}")
 
 # =============================================================================
 # CRITICAL: Log OpenAI SDK version at import time to debug version issues
@@ -521,6 +555,7 @@ class LLMManager:
     # STREAMING METHODS
     # =============================================================================
     
+    @llm_fallback
     async def stream_chat_completion(
         self, 
         message: str,
@@ -571,6 +606,7 @@ class LLMManager:
             response = await self.generate_response(message, context, system_prompt, user_info, **kwargs)
             yield response
     
+    @openai_streaming
     async def _stream_openai_compatible_response(
         self, 
         message: str,
@@ -625,6 +661,7 @@ class LLMManager:
             logger.error(traceback.format_exc())
             raise
     
+    @anthropic_streaming  
     async def _stream_anthropic_response(
         self, 
         message: str,
@@ -674,6 +711,7 @@ class LLMManager:
             logger.error(traceback.format_exc())
             raise
     
+    @google_streaming
     async def _stream_google_response(
         self,
         message: str,
@@ -871,6 +909,7 @@ class LLMManager:
             logger.error(traceback.format_exc())
             return ""
     
+    @tts_fallback
     async def stream_text_to_speech(self, text: str, voice: Optional[str] = None, response_format: Optional[str] = None, 
                                    opus_params: Optional[Dict[str, Any]] = None, **kwargs):
         """
