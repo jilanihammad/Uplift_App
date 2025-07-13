@@ -45,6 +45,11 @@ class EnhancedVADManager {
   // Shutdown completion tracking for race condition prevention
   Completer<void>? _shutdownCompleter;
   
+  // RACE CONDITION FIX: Worker thread completion tracking
+  // Single-shot completer to ensure AudioRecord.read() has exited before release()
+  Completer<void>? _workerDone;
+  bool _workerCompletionTracked = false; // Prevent multiple completions (hot-reload safe)
+  
   // Operation timeout protection
   Timer? _operationTimeoutTimer;
   static const Duration _operationTimeout = Duration(seconds: 5);
@@ -181,6 +186,10 @@ class EnhancedVADManager {
       // Set timeout protection for start operation
       _startOperationTimeout('startListening');
       
+      // RACE CONDITION FIX: Initialize worker completion tracker
+      _workerDone = Completer<void>();
+      _workerCompletionTracked = false;
+      
       bool result;
       if (_useRNNoise && _rnnoiseInitialized) {
         result = await _startRNNoiseVAD();
@@ -263,6 +272,7 @@ class EnhancedVADManager {
               print('❌ Enhanced VAD ($_vadInstanceId): RNNoise VAD stream error: $error');
             }
             _isStreamActive = false; // Mark stream as inactive on error
+            _completeWorkerIfNeeded('RNNoise stream onError');
             _handleStreamError(error);
           },
           onDone: () {
@@ -270,6 +280,7 @@ class EnhancedVADManager {
               print('🔚 Enhanced VAD ($_vadInstanceId): RNNoise stream completed');
             }
             _isStreamActive = false;
+            _completeWorkerIfNeeded('RNNoise stream onDone');
           },
         );
       } catch (e) {
@@ -326,6 +337,7 @@ class EnhancedVADManager {
             if (kDebugMode) {
               print('❌ Enhanced VAD ($_vadInstanceId): Amplitude VAD stream error: $error');
             }
+            _completeWorkerIfNeeded('Amplitude stream onError');
             _handleStreamError(error);
           },
           onDone: () {
@@ -333,6 +345,7 @@ class EnhancedVADManager {
               print('🔚 Enhanced VAD ($_vadInstanceId): Amplitude stream completed');
             }
             _isStreamActive = false;
+            _completeWorkerIfNeeded('Amplitude stream onDone');
           },
         );
       } catch (e) {
@@ -363,6 +376,14 @@ class EnhancedVADManager {
   
   /// Process audio chunk for amplitude-based VAD
   void _processAmplitudeChunk(List<double> chunk) {
+    // RACE CONDITION FIX: Defensive state checks to prevent AudioRecord crashes  
+    if (!_isInitialized || !_isStreamActive || _isShuttingDown || !_isListening || _isDisposing) {
+      if (kDebugMode && (_isShuttingDown || _isDisposing)) {
+        print('🛑 Enhanced VAD ($_vadInstanceId): Ignoring amplitude chunk during shutdown to prevent buffer race');
+      }
+      return; // Exit early to prevent buffer race conditions
+    }
+    
     try {
       // Calculate RMS amplitude from normalized samples (-1.0 to 1.0)
       double sum = 0;
@@ -404,8 +425,8 @@ class EnhancedVADManager {
   
   /// Process incoming audio chunk with RNNoise
   void _processRNNoiseAudioChunk(List<double> chunk) {
-    // Enhanced state checks to prevent native crashes
-    if (!_isStreamActive || _isShuttingDown || !_isListening || _isDisposing) {
+    // RACE CONDITION FIX: Enhanced state checks to prevent AudioRecord native crashes
+    if (!_isInitialized || !_isStreamActive || _isShuttingDown || !_isListening || _isDisposing) {
       if (kDebugMode && (_isShuttingDown || _isDisposing)) {
         print('🛑 Enhanced VAD ($_vadInstanceId): Ignoring audio chunk during shutdown to prevent buffer race');
       }
@@ -668,6 +689,25 @@ class EnhancedVADManager {
           _audioSubscription = null;
         }
         
+        // RACE CONDITION FIX: Wait for worker thread to complete before proceeding
+        if (_workerDone != null && !_workerDone!.isCompleted) {
+          if (kDebugMode) {
+            print('⏳ Enhanced VAD ($_vadInstanceId): Waiting for worker thread to exit AudioRecord.read()...');
+          }
+          try {
+            await _workerDone!.future.timeout(const Duration(milliseconds: 500));
+            if (kDebugMode) {
+              print('✅ Enhanced VAD ($_vadInstanceId): Worker thread confirmed exited');
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('⚠️ Enhanced VAD ($_vadInstanceId): Worker completion timeout, proceeding anyway: $e');
+            }
+            // Complete manually to prevent future deadlocks
+            _completeWorkerIfNeeded('stopListening timeout');
+          }
+        }
+        
         // CRITICAL: Give native AudioRecord time to release buffers
         // This prevents the ClientProxy::releaseBuffer assert failure
         await Future.delayed(const Duration(milliseconds: 200)); // Increased from 150ms for better stability
@@ -685,6 +725,10 @@ class EnhancedVADManager {
       if (_shutdownCompleter != null && !_shutdownCompleter!.isCompleted) {
         _shutdownCompleter!.complete();
       }
+      
+      // RACE CONDITION FIX: Reset worker future after clean stop to prevent stale references
+      _workerDone = null;
+      _workerCompletionTracked = false;
       
       if (kDebugMode) {
         AppLogger.d(' Enhanced VAD ($_vadInstanceId): Stopped listening (buffers safely released, shutdown complete)');
@@ -880,6 +924,66 @@ class EnhancedVADManager {
         print('❌ Enhanced VAD ($_vadInstanceId): Error during disposal: $e');
       }
       // Ensure disposal flag remains set even on error
+    }
+  }
+  
+  /// ENGINEER FEEDBACK: Public API to wait for worker thread to completely exit
+  /// Call this before any AudioRecord release operations to prevent race conditions
+  Future<void> waitForWorkerExit() async {
+    if (_workerDone != null && !_workerDone!.isCompleted) {
+      try {
+        await _workerDone!.future.timeout(const Duration(milliseconds: 500));
+        if (kDebugMode) {
+          print('✅ Enhanced VAD ($_vadInstanceId): Worker thread confirmed exited');
+        }
+      } catch (e) {
+        // ENGINEER FEEDBACK: Enhanced timeout logging with call-site and state info
+        if (kDebugMode) {
+          final callSite = StackTrace.current.toString().split('\n').length > 1 
+              ? StackTrace.current.toString().split('\n')[1] 
+              : 'unknown';
+          print('⚠️ Enhanced VAD ($_vadInstanceId): Worker exit timeout from: $callSite');
+          print('⚠️ Enhanced VAD ($_vadInstanceId): Current state - listening: $_isListening, streamActive: $_isStreamActive, shuttingDown: $_isShuttingDown');
+          print('⚠️ Enhanced VAD ($_vadInstanceId): Timeout error: $e');
+        }
+        // Complete manually to prevent future deadlocks
+        _completeWorkerIfNeeded('waitForWorkerExit timeout');
+      }
+    } else if (kDebugMode) {
+      print('✅ Enhanced VAD ($_vadInstanceId): Worker already exited or not started');
+    }
+  }
+
+  /// RACE CONDITION FIX: Single-shot worker completion tracking (hot-reload safe)
+  void _completeWorkerIfNeeded(String context) {
+    if (!_workerCompletionTracked && _workerDone != null && !_workerDone!.isCompleted) {
+      _workerCompletionTracked = true;
+      _workerDone!.complete();
+      if (kDebugMode) {
+        print('✅ Enhanced VAD ($_vadInstanceId): Worker completion tracked from $context');
+      }
+    } else if (kDebugMode && _workerCompletionTracked) {
+      print('🔄 Enhanced VAD ($_vadInstanceId): Worker already completed, ignoring completion from $context (hot-reload safe)');
+    }
+  }
+  
+  /// ENGINEER FEEDBACK: Debug-only safety assert for worker state validation
+  /// This helps catch programming errors where operations are attempted with invalid worker state
+  void _assertWorkerState(String operation) {
+    if (kDebugMode) {
+      // Assert: Worker future should exist when we're actively listening
+      if (_isListening && _isStreamActive && _workerDone == null) {
+        print('🚨 ASSERT FAILED: $_vadInstanceId $operation called with active stream but no worker tracker!');
+        print('🚨 State: listening=$_isListening, streamActive=$_isStreamActive, workerDone=$_workerDone');
+        assert(false, 'Worker tracker missing during active operation');
+      }
+      
+      // Assert: Completion tracking should be consistent
+      if (_workerDone != null && _workerDone!.isCompleted && !_workerCompletionTracked) {
+        print('🚨 ASSERT FAILED: $_vadInstanceId $operation found completed worker but tracking flag not set!');
+        print('🚨 State: workerCompleted=${_workerDone!.isCompleted}, tracked=$_workerCompletionTracked');
+        assert(false, 'Worker completion tracking inconsistent');
+      }
     }
   }
   

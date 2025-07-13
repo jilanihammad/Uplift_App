@@ -30,6 +30,9 @@ class AutoListeningCoordinator with SessionDisposable {
   late Stream<bool> _aiAudioActiveStream;
   StreamSubscription<bool>? _startListeningSub;
   
+  // Unified TTS activity stream (set after initialization if available)
+  Stream<bool>? _ttsActivityStream;
+  
   // VAD configuration - can switch between regular and enhanced VAD
   static bool _useEnhancedVAD = true; // Configuration flag - ENABLED for RNNoise integration
   late final dynamic _vadManager; // Can be VADManager or EnhancedVADManager
@@ -43,6 +46,9 @@ class AutoListeningCoordinator with SessionDisposable {
   }
   
   static bool get isEnhancedVADEnabled => _useEnhancedVAD;
+  
+  /// RACE CONDITION FIX: Public getter to access VAD manager for worker synchronization
+  dynamic get vadManager => _vadManager;
 
   // Stream controllers
   final StreamController<bool> _autoModeEnabledController =
@@ -63,6 +69,9 @@ class AutoListeningCoordinator with SessionDisposable {
 
   AutoListeningState _currentState = AutoListeningState.idle;
   AutoListeningState get currentState => _currentState;
+
+  // Public getter for recording state
+  bool get isRecording => _isRecordingActive;
 
   // Debounce timer for voice activity
   Timer? _speechEndDebounceTimer;
@@ -89,12 +98,20 @@ class AutoListeningCoordinator with SessionDisposable {
   static const Duration _baseSpeechTimeout = Duration(milliseconds: 1500);
   static const Duration _secondBurstTimeout = Duration(milliseconds: 1000);
   static const Duration _subsequentBurstTimeout = Duration(milliseconds: 800);
+  
+  // RACE CONDITION FIX: Configurable ring-down delay for speaker silence and worker thread synchronization
+  // Engineer note: Use 150-180ms for Bluetooth SCO/AAudio, 100ms for standard audio
+  static const Duration kRingDownDelay = Duration(milliseconds: 100);
+  static const Duration kWorkerSyncDelay = Duration(milliseconds: 50); // Extra safety buffer for worker thread cleanup
 
   // Callback for when speech is detected and recording starts
   Function()? onSpeechDetectedCallback;
 
   // Callback for when recording is stopped due to silence detection
   Function(String audioPath)? onRecordingCompleteCallback;
+
+  // PHASE 3: Safety gate callback to check if we're in voice mode
+  bool Function()? isVoiceModeCallback;
 
   // Guard flag to prevent duplicate stopRecording calls
   bool _isStoppingRecording = false;
@@ -122,6 +139,7 @@ class AutoListeningCoordinator with SessionDisposable {
     required AudioPlayerManager audioPlayerManager,
     required RecordingManager recordingManager,
     required VoiceService voiceService,
+    Stream<bool>? ttsActivityStream, // Optional unified TTS state stream
   })  : _audioPlayerManager = audioPlayerManager,
         _recordingManager = recordingManager,
         _voiceService = voiceService {
@@ -138,20 +156,38 @@ class AutoListeningCoordinator with SessionDisposable {
       }
     }
     
+    // Store the initial TTS activity stream if provided
+    _ttsActivityStream = ttsActivityStream;
+    
     // NEW: Create combined stream that tracks if AI is making ANY sound
     // This fixes race conditions between TTS generation and audio playback
-    _aiAudioActiveStream = Rx.combineLatest2<bool, bool, bool>(
-      _audioPlayerManager.isPlayingStream,  // true while audio player outputs sound
-      // For now, use VoiceService.isAiSpeaking - TODO: migrate to TTSService stream
-      Stream.periodic(const Duration(milliseconds: 100), (_) => _voiceService.isAiSpeaking).distinct(),
-      (playing, speaking) => playing || speaking,
-    ).distinct();
+    _rebuildAiAudioActiveStream();
     
     if (kDebugMode) {
       AppLogger.d(' AutoListeningCoordinator: Set up combined AI audio stream');
     }
     
     _setupListeners();
+  }
+
+  /// Set unified TTS activity stream for improved coordination
+  /// Call this after VoiceSessionBloc is initialized to use unified TTS state
+  void setTtsActivityStream(Stream<bool> ttsActivityStream) {
+    _ttsActivityStream = ttsActivityStream;
+    _rebuildAiAudioActiveStream();
+    if (kDebugMode) {
+      AppLogger.d(' AutoListeningCoordinator: Updated to use unified TTS activity stream');
+    }
+  }
+
+  /// Rebuild the combined AI audio stream with current TTS stream
+  void _rebuildAiAudioActiveStream() {
+    _aiAudioActiveStream = Rx.combineLatest2<bool, bool, bool>(
+      _audioPlayerManager.isPlayingStream,  // true while audio player outputs sound
+      // Use unified TTS activity stream if available, otherwise fallback to polling VoiceService
+      _ttsActivityStream ?? Stream.periodic(const Duration(milliseconds: 100), (_) => _voiceService.isAiSpeaking).distinct(),
+      (playing, speaking) => playing || speaking,
+    ).distinct();
   }
 
   // Safe VAD management with resource tracking and native crash protection
@@ -274,7 +310,7 @@ class AutoListeningCoordinator with SessionDisposable {
       return;
     }
     try {
-      await _recordingManager.stopRecording();
+      await _recordingManager.tryStopRecording();
       _isRecordingActive = false;
       if (kDebugMode)
         print('[AutoListeningCoordinator] Recording stopped successfully');
@@ -314,43 +350,44 @@ class AutoListeningCoordinator with SessionDisposable {
       }
     });
 
-    // Listen for TTS state changes (ONLY path for VAD restart)
-    _voiceService.isTtsActuallySpeaking.listen((isSpeaking) {
+    // ENGINEER FEEDBACK: Event-driven VAD using unified TTS activity stream from PR-A
+    // Subscribe to the combined AI audio stream (includes both TTS and audio playback)
+    _startListeningSub = _aiAudioActiveStream.listen((aiAudioActive) {
       if (kDebugMode) {
         print(
-            '[AutoListeningCoordinator] [TTS] isTtsActuallySpeaking emitted: $isSpeaking | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+            '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active: $aiAudioActive | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (!_autoModeEnabled) {
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator] [TTS] Ignored TTS state change because autoMode is disabled');
+              '[AutoListeningCoordinator] [UNIFIED-TTS] Ignored unified TTS state change because autoMode is disabled');
         }
         return;
       }
 
-      if (isSpeaking) {
-        // TTS started speaking - clear any scheduled VAD restart
+      if (aiAudioActive) {
+        // AI is making sound (TTS streaming or audio playing) - clear any scheduled VAD restart
         _vadRestartScheduled = false;
         if (kDebugMode) {
           print(
-              '[AutoListeningCoordinator] [TTS] TTS is speaking, stopping listening/recording');
+              '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active, stopping listening/recording');
         }
-        // Force state to aiSpeaking every time TTS starts
+        // Force state to aiSpeaking every time AI audio starts
         _updateState(AutoListeningState.aiSpeaking);
         _stopListeningAndRecording();
       } else {
-        // TTS stopped speaking - ONLY trigger VAD restart from here
+        // AI audio stopped - trigger VAD restart with debouncing for speaker ring-down
         if ((_currentState == AutoListeningState.aiSpeaking ||
             _currentState == AutoListeningState.idle) && !_vadRestartScheduled) {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [TTS] TTS definitively complete - scheduling VAD restart (single path)');
+            print('[AutoListeningCoordinator] [UNIFIED-TTS] AI audio complete - scheduling VAD restart with 100ms debounce');
           }
           _vadRestartScheduled = true;
-          _enterAiSpeakingComplete();
+          _enterAiSpeakingCompleteWithDebounce();
         } else {
           if (kDebugMode) {
             print(
-                '[AutoListeningCoordinator] [TTS] TTS stopped but restart already scheduled or inappropriate state ($_currentState)');
+                '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio stopped but restart already scheduled or inappropriate state ($_currentState)');
           }
         }
       }
@@ -508,6 +545,64 @@ class AutoListeningCoordinator with SessionDisposable {
     });
   }
 
+  // ENGINEER FEEDBACK: Event-driven VAD restart with 100ms debounce for speaker ring-down
+  Future<void> _enterAiSpeakingCompleteWithDebounce() async {
+    // Safety guard to prevent multiple invocations
+    if (_awaitingPlaybackEnd) {
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [DEBOUNCED] Already awaiting playback end, skipping duplicate call');
+      }
+      return;
+    }
+    _awaitingPlaybackEnd = true;
+    
+    try {
+      // ENGINEER FEEDBACK: Debounce ~100ms post-playback silence for speaker ring-down
+      // ENHANCED: Ensure any previous VAD worker threads have exited
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [DEBOUNCED] Debouncing VAD restart for 100ms + worker sync (speaker ring-down)');
+      }
+      
+      // Wait for ring-down delay (configurable for different audio backends)
+      await Future.delayed(kRingDownDelay);
+      
+      // RACE CONDITION FIX: Ensure previous VAD stop has completed worker thread cleanup
+      // Since _safeStopVAD() was called in _stopListeningAndRecording(), the worker should be done,
+      // but add a small additional safety buffer for any remaining cleanup
+      await Future.delayed(kWorkerSyncDelay);
+      
+      // Verify we're still in the right state after debounce
+      if (_currentState == AutoListeningState.aiSpeaking && _autoModeEnabled && _vadRestartScheduled) {
+        if (kDebugMode) {
+          print('[AutoListeningCoordinator] [DEBOUNCED] Debounce complete, starting VAD');
+        }
+        
+        // Start VAD immediately after debounce
+        final vadStarted = await _startVADWithRetry();
+        if (vadStarted) {
+          await _startListeningAfterDelay();
+        } else {
+          if (kDebugMode) {
+            print('[AutoListeningCoordinator] [DEBOUNCED] VAD restart failed after retries, transitioning to idle');
+          }
+          _updateState(AutoListeningState.idle);
+        }
+      } else {
+        if (kDebugMode) {
+          print('[AutoListeningCoordinator] [DEBOUNCED] State changed during debounce, skipping VAD restart');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[AutoListeningCoordinator] [DEBOUNCED] Error during debounced VAD restart: $e');
+      }
+      _updateState(AutoListeningState.idle);
+    } finally {
+      _awaitingPlaybackEnd = false;
+      _vadRestartScheduled = false;
+    }
+  }
+
   // NEW: Engineer's robust solution - wait for stable "not busy" state with crash protection
   Future<void> _enterAiSpeakingComplete() async {
     // Safety guard to prevent multiple invocations
@@ -563,6 +658,9 @@ class AutoListeningCoordinator with SessionDisposable {
       print(
           '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay called | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
     }
+
+    // BYPASS FIX: Check voice mode before starting
+    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) return;
 
     // Guard against duplicate calls
     if (_isTransitionInProgress) {
@@ -730,6 +828,14 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Start the audio recording
   Future<void> _startRecording() async {
+    // PHASE 3: Safety gate - check if we're still in voice mode
+    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
+      if (kDebugMode) {
+        print('⚠️ [ALC] Rejecting VAD start - not in voice mode');
+      }
+      return;
+    }
+
     if (_currentState == AutoListeningState.listening) {
       try {
         await _safeStartRecording();
@@ -919,7 +1025,7 @@ class AutoListeningCoordinator with SessionDisposable {
           print(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
         }
-        final audioPath = await _recordingManager.stopRecording();
+        final audioPath = await _recordingManager.tryStopRecording();
 
         if (kDebugMode) {
           print(
@@ -1168,14 +1274,20 @@ class AutoListeningCoordinator with SessionDisposable {
   /// Comprehensive state reset for clean mode transitions
   /// Call this during chat→voice switches to eliminate state contamination
   void reset({bool full = false}) {
+    // ENGINEER FEEDBACK: Keep debug log of generation number for stray callback detection
+    final int oldSeq = _speechSeq;
     if (kDebugMode) {
       AppLogger.d('🔄 [ALS] reset() full=$full '
-          'seq=$_speechSeq vadRestart=$_vadRestartScheduled '
+          'seq=$_speechSeq->0 vadRestart=$_vadRestartScheduled '
           'burst=$_speechBurstCount inSession=$_inSpeechSession');
     }
 
     // Reset speech sequence and timing state
     _speechSeq = 0;
+    
+    if (kDebugMode) {
+      AppLogger.d('🔄 [ALS] Generation counter reset: $oldSeq -> $_speechSeq (future stray callbacks with seq $oldSeq should be ignored)');
+    }
     _speechBurstCount = 0;
     _inSpeechSession = false;
     _lastSpeechStartTime = null;
@@ -1279,6 +1391,14 @@ class AutoListeningCoordinator with SessionDisposable {
   void startListening() {
     if (kDebugMode) {
       print('[ALC] >>> startListening() called');
+    }
+    
+    // BYPASS FIX: Check voice mode before starting
+    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
+      if (kDebugMode) {
+        print('[ALC] startListening() rejected – not in voice mode');
+      }
+      return;
     }
     
     if (_autoModeEnabled) {

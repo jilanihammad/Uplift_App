@@ -95,9 +95,15 @@ class SimpleTTSService implements ITTSService {
   final AudioPlayerManager _audioPlayerManager;
   void Function(bool isSpeaking)? _onTTSComplete;
   void Function(bool isSpeaking)? _voiceServiceUpdateCallback;
+
+  // TIMING FIX: Callback to get current generation for completion checks
+  int Function()? _getCurrentGenerationCallback;
   
   // Production-grade completion tracking
   int _pendingStreams = 0; // Monotonic counter for overlapping instances
+  
+  // Active LiveTtsAudioSource for emergency cleanup
+  LiveTtsAudioSource? _activeLiveAudioSource;
   
   // Phase 1: Event-driven speaking state stream
   late final StreamController<bool> _speakingStateController;
@@ -142,6 +148,14 @@ class SimpleTTSService implements ITTSService {
     _voiceServiceUpdateCallback = callback;
     if (kDebugMode) {
       print('🔍 [TTS] VoiceService update callback ${callback != null ? 'set' : 'cleared'}');
+    }
+  }
+
+  /// Set the generation callback (for TTS completion timing checks)
+  void setGetCurrentGenerationCallback(int Function()? callback) {
+    _getCurrentGenerationCallback = callback;
+    if (kDebugMode) {
+      print('🔍 [TTS] Generation callback ${callback != null ? 'set' : 'cleared'}');
     }
   }
 
@@ -447,6 +461,9 @@ class SimpleTTSService implements ITTSService {
                 debugName: 'tts_stream_${req.id}',
               );
               
+              // Track active source for emergency cleanup
+              _activeLiveAudioSource = liveAudioSource;
+              
               // CRITICAL FIX: Add initial data BEFORE setAudioSource() call
               // ExoPlayer calls request() synchronously inside setAudioSource(), so data must be ready!
               if (audioStreamController?.isClosed == false) {
@@ -462,12 +479,23 @@ class SimpleTTSService implements ITTSService {
                 }
               }
               
+              // TIMING FIX: Capture generation when TTS starts (not when it completes)
+              final genAtStart = _getCurrentGenerationCallback?.call() ?? -1;
+              
               // NOW start live TTS streaming setup (ExoPlayer will find data ready)
               playbackFuture = _audioPlayerManager.playLiveTtsStream(
                 liveAudioSource, // Pass the LiveTtsAudioSource object for proper lifecycle management
                 debugName: 'tts_stream_${req.id}',
                 contentType: contentType, // Use negotiated content type
                 onNaturalCompletion: () {
+                  // TIMING FIX: Check if mode changed since TTS started
+                  if (_getCurrentGenerationCallback?.call() != genAtStart) {
+                    if (kDebugMode) {
+                      print('[TTS] Generation mismatch – ignoring completion (was $genAtStart, now ${_getCurrentGenerationCallback?.call()})');
+                    }
+                    return;  // ⛔ don't re-arm VAD
+                  }
+                  
                   // Natural ExoPlayer completion - trigger VAD state transition immediately
                   if (kDebugMode) {
                     print('🎯 [TTS] Natural completion callback fired for ${req.id} - notifying VoiceService');
@@ -577,6 +605,10 @@ class SimpleTTSService implements ITTSService {
       audioStreamController?.close();
       // CRITICAL: Clean up LiveTtsAudioSource on error
       liveAudioSource?.dispose();
+      // Clear active reference
+      if (_activeLiveAudioSource == liveAudioSource) {
+        _activeLiveAudioSource = null;
+      }
       // Dispose completion tracker to prevent hanging
       completionTracker.dispose();
       
@@ -633,6 +665,10 @@ class SimpleTTSService implements ITTSService {
       completionTracker.dispose();
       // CRITICAL: Clean up LiveTtsAudioSource resources
       liveAudioSource?.dispose();
+      // Clear active reference
+      if (_activeLiveAudioSource == liveAudioSource) {
+        _activeLiveAudioSource = null;
+      }
     }
   }
 
@@ -904,10 +940,39 @@ class SimpleTTSService implements ITTSService {
   }
   
   /// Cancel all active TTS streams immediately (for mode switches)
+  /// Enhanced with 3-second watchdog and performance metrics
   @override
   Future<void> cancelAllStreams() async {
-    if (kDebugMode) print('🚨 [TTS] Cancelling all active streams for mode switch');
+    final stopwatch = Stopwatch()..start();
+    if (kDebugMode) print('🚨 [TTS] Starting stream cancellation...');
     
+    try {
+      await Future.any([
+        _actualCancellation(),
+        Future.delayed(const Duration(seconds: 3)).then((_) => 
+          throw TimeoutException('Cancellation timeout', const Duration(seconds: 3))
+        )
+      ]);
+      
+      final elapsed = stopwatch.elapsedMilliseconds;
+      if (kDebugMode) print('✅ [TTS] Streams cancelled in ${elapsed}ms');
+      
+      // Log performance metrics for slow cancellations
+      if (elapsed > 500) {
+        if (kDebugMode) print('⚠️ [TTS] Slow cancellation detected: ${elapsed}ms (>500ms threshold)');
+      }
+      
+    } catch (e) {
+      final elapsed = stopwatch.elapsedMilliseconds;
+      if (kDebugMode) print('🛑 [TTS] Cancellation failed after ${elapsed}ms: $e');
+      
+      // Emergency cleanup: detach player from LiveTtsAudioSource
+      await _emergencyCleanup();
+    }
+  }
+  
+  /// Perform the actual cancellation logic
+  Future<void> _actualCancellation() async {
     // Stop audio playback immediately
     await _audioPlayerManager.stopAudio();
     
@@ -917,8 +982,30 @@ class SimpleTTSService implements ITTSService {
     
     // Notify that TTS is no longer speaking
     _updateSpeakingState(false);
+  }
+  
+  /// Emergency cleanup when cancellation times out
+  /// Detaches player from LiveTtsAudioSource to release orphaned extractor threads
+  Future<void> _emergencyCleanup() async {
+    if (kDebugMode) print('🚨 [TTS] Emergency cleanup - detaching player from LiveTtsAudioSource');
     
-    if (kDebugMode) print('✅ [TTS] All streams cancelled successfully');
+    try {
+      // Force stop the audio player to release any held resources
+      await _audioPlayerManager.stopAudio();
+      
+      // Dispose the active LiveTtsAudioSource to release orphaned threads
+      _activeLiveAudioSource?.dispose();
+      _activeLiveAudioSource = null;
+      
+      // Force reset state
+      _updateSpeakingState(false);
+      _queue.clear();
+      _pendingStreams = 0;
+      
+      if (kDebugMode) print('✅ [TTS] Emergency cleanup completed');
+    } catch (e) {
+      if (kDebugMode) print('❌ [TTS] Error during emergency cleanup: $e');
+    }
   }
 
   @override
@@ -950,7 +1037,43 @@ class SimpleTTSService implements ITTSService {
 
   @override
   void resetTTSState() {
-    // State is automatically managed
+    if (kDebugMode) {
+      print('🔄 [TTS] Starting TTS state reset - cleaning WebSocket, timers, and resources');
+    }
+
+    // Cancel any active LiveTtsAudioSource and clear reference
+    if (_activeLiveAudioSource != null) {
+      _activeLiveAudioSource?.dispose();
+      _activeLiveAudioSource = null;
+      if (kDebugMode) {
+        print('🔄 [TTS] Active LiveTtsAudioSource disposed');
+      }
+    }
+
+    // Complete all pending requests with cancellation error
+    while (_queue.isNotEmpty) {
+      final req = _queue.removeFirst();
+      if (!req.done.isCompleted) {
+        req.completeError(Exception('TTS reset - request cancelled'));
+      }
+    }
+
+    // Reset pending streams counter
+    _pendingStreams = 0;
+    _state = _State.idle;
+
+    // Reset TTS speaking state
+    _notifyTTSEnd();
+    _fireCompletionSafely(false);
+
+    // Clear any stale speaking state but keep controller alive (unlike dispose)
+    if (!_speakingStateController.isClosed) {
+      _speakingStateController.add(false);
+    }
+
+    if (kDebugMode) {
+      print('🔄 [TTS] Reset complete - queue cleared, WebSocket resources cleaned, state reset to idle');
+    }
   }
 
   @override

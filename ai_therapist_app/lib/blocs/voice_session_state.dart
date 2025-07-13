@@ -22,6 +22,14 @@ enum VoiceSessionStatus {
   textModeActive,
 }
 
+/// Unified TTS status enum - single source of truth for TTS state across all components
+enum TtsStatus {
+  idle,      // No TTS activity
+  streaming, // TTS WebSocket is streaming content
+  playing,   // Audio is actively playing through speakers
+  cancelled, // TTS operation was cancelled
+}
+
 class VoiceSessionState extends Equatable {
   final VoiceSessionStatus status;
   final List<TherapyMessage> messages;
@@ -31,7 +39,9 @@ class VoiceSessionState extends Equatable {
   final bool isRecording; // Specifically if audio is being captured to a file
   final bool
       isProcessingAudio; // True if STT or other audio processing is happening
-  final bool isAiSpeaking; // True if TTS is active
+  final bool isAiSpeaking; // True if TTS is active (legacy - use ttsStatus instead)
+  final TtsStatus ttsStatus; // Unified TTS state - single source of truth
+  final bool ttsAudible; // True if TTS can be heard (not muted)
   final bool hasError;
   final String? transcribedText;
   final bool showMicButton;
@@ -60,6 +70,8 @@ class VoiceSessionState extends Equatable {
     this.isRecording = false,
     this.isProcessingAudio = false,
     this.isAiSpeaking = false,
+    this.ttsStatus = TtsStatus.idle,
+    this.ttsAudible = true,
     this.hasError = false,
     this.transcribedText,
     this.showMicButton = true, // Default to true, adjust based on mode
@@ -123,6 +135,8 @@ class VoiceSessionState extends Equatable {
     bool? isRecording,
     bool? isProcessingAudio,
     bool? isAiSpeaking,
+    TtsStatus? ttsStatus,
+    bool? ttsAudible,
     bool? hasError,
     String? transcribedText,
     bool? clearTranscribedText,
@@ -152,6 +166,8 @@ class VoiceSessionState extends Equatable {
       isRecording: isRecording ?? this.isRecording,
       isProcessingAudio: isProcessingAudio ?? this.isProcessingAudio,
       isAiSpeaking: isAiSpeaking ?? this.isAiSpeaking,
+      ttsStatus: ttsStatus ?? this.ttsStatus,
+      ttsAudible: ttsAudible ?? this.ttsAudible,
       hasError: hasError ?? this.hasError,
       transcribedText: clearTranscribedText == true
           ? null
@@ -188,6 +204,8 @@ class VoiceSessionState extends Equatable {
         isRecording,
         isProcessingAudio,
         isAiSpeaking,
+        ttsStatus,
+        ttsAudible,
         hasError,
         transcribedText,
         showMicButton,
@@ -207,7 +225,15 @@ class VoiceSessionState extends Equatable {
         speakerMuted,
       ];
 
-  bool get canSend => !isProcessingAudio && !isVoiceMode;
+  bool get canSend {
+    // In chat mode: allow sending when not processing audio
+    if (!isVoiceMode) {
+      return !isProcessingAudio;
+    }
+    // In voice mode: only disable Send button when TTS is active 
+    // (per engineer feedback: smart disable logic)
+    return !isProcessingAudio && (ttsStatus == TtsStatus.idle || ttsStatus == TtsStatus.cancelled);
+  }
 
   // Add missing getters for UI compatibility
   bool get isInitializing => status == VoiceSessionStatus.loading;

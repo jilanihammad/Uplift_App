@@ -189,6 +189,12 @@ class VoiceService {
   // RACE CONDITION FIX: Track current TTS state to prevent duplicate calls
   bool _currentTtsState = false;
 
+  // BYPASS FIX: Callback to check if we're in voice mode
+  bool Function()? isVoiceModeCallback;
+
+  // TIMING FIX: Callback to get current generation for TTS completion checks
+  int Function()? getCurrentGeneration;
+
   // Add coordinator and VAD manager
   late final VADManager _vadManager;
   late final AutoListeningCoordinator _autoListeningCoordinator;
@@ -437,6 +443,22 @@ class VoiceService {
         }
         rethrow;
       }
+    }
+    return recordedFilePath;
+  }
+
+  /// Thread-safe idempotent version of stopRecording that never throws
+  /// Returns null if already stopped or not recording
+  Future<String?> tryStopRecording() async {
+    if (kDebugMode) {
+      print('⏹️ VOICE DEBUG: VoiceService.tryStopRecording called - delegating to AudioRecordingService');
+    }
+
+    String? recordedFilePath;
+    if (_audioRecordingService.isRecording || _autoListeningCoordinator.isRecording) {
+      // Phase 2.1.1: Delegate to AudioRecordingService (idempotent version)
+      recordedFilePath = await _audioRecordingService.tryStopRecording();
+      _recordingPath = recordedFilePath;
     }
     return recordedFilePath;
   }
@@ -1057,6 +1079,13 @@ class VoiceService {
     
     // NEW: only toggle listening, never touch autoModeEnabled
     if (!isSpeaking) {
+      // BYPASS FIX: Check voice mode before re-arming VAD
+      if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
+        if (kDebugMode) {
+          print('[VoiceService] TTS done in chat mode – skipping VAD restart');
+        }
+        return;
+      }
       autoListeningCoordinator.startListening();   // guarantees VAD on
       if (kDebugMode) {
         print('[VoiceService] updateTTSSpeakingState: TTS done, starting listening');

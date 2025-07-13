@@ -15,6 +15,7 @@ abstract class IVoiceService {
   // Recording operations
   Future<void> startRecording();
   Future<String> stopRecording();
+  Future<String?> tryStopRecording(); // Thread-safe idempotent version
   Future<void> pauseRecording();
   Future<void> resumeRecording();
   Future<void> cancelRecording();

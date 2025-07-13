@@ -90,6 +90,14 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   }
 
   @override
+  Future<String?> tryStopRecording() async {
+    if (kDebugMode) {
+      print('[VoiceSessionCoordinator] Trying to stop recording (idempotent)...');
+    }
+    return await _recordingService.tryStopRecording();
+  }
+
+  @override
   Future<void> pauseRecording() async {
     await _recordingService.pauseRecording();
   }

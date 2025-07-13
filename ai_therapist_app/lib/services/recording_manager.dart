@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
@@ -138,6 +139,9 @@ class RecordingManager {
   // Add start time tracking
   DateTime? _recordingStartTime;
 
+  // RACE CONDITION FIX: Atomic protection for stopRecording
+  bool _isStopping = false;
+
   // Constructor
   RecordingManager();
 
@@ -246,23 +250,43 @@ class RecordingManager {
   /// Returns the path to the recorded file, or null if not recording.
   /// Throws [NotRecordingException] if called when not recording.
   Future<String?> stopRecording() async {
-    final recorder = _recorder;
-    if (recorder == null) {
-      _errorController.add('Recorder not available');
-      throw NotRecordingException('Recorder not available');
-    }
-
-    final isRecording = await recorder.isRecording();
-    if (!isRecording) {
-      _errorController.add('Recorder is not recording');
+    // RACE CONDITION FIX: Atomic stop protection (prevents overlapping releases)
+    // Double-stop guard: Early return if already stopping
+    if (_isStopping) {
       if (kDebugMode) {
-        print('⚠️ Stop recording called but recorder was not recording');
+        print('🛡️ RecordingManager: Already stopping, ignoring duplicate stopRecording call');
       }
-      // Release access and throw error
-      SharedRecorderManager.instance.releaseAccess(_userId);
-      throw NotRecordingException();
+      return null;
     }
+    
+    _isStopping = true;
+    
+    try {
+      final recorder = _recorder;
+      if (recorder == null) {
+        _errorController.add('Recorder not available');
+        throw NotRecordingException('Recorder not available');
+      }
 
+      final isRecording = await recorder.isRecording();
+      if (!isRecording) {
+        _errorController.add('Recorder is not recording');
+        if (kDebugMode) {
+          print('⚠️ Stop recording called but recorder was not recording');
+        }
+        // Release access and throw error
+        SharedRecorderManager.instance.releaseAccess(_userId);
+        throw NotRecordingException();
+      }
+
+      return await _performStopRecording(recorder);
+    } finally {
+      _isStopping = false;
+    }
+  }
+
+  /// Internal stop recording implementation
+  Future<String?> _performStopRecording(AudioRecorder recorder) async {
     try {
       _updateState(RecordingState.processing);
 
@@ -300,6 +324,101 @@ class RecordingManager {
         print('❌ Error stopping recording: $e');
       }
       return null;
+    }
+  }
+
+  /// Thread-safe idempotent recording stop that never throws
+  /// Returns null if already stopped or operation in progress
+  Future<String?> tryStopRecording() async {
+    // Quick fast path - already stopping or nothing to stop
+    if (_isStopping) {
+      if (kDebugMode) {
+        print('🔄 RecordingManager.tryStopRecording(): Operation already in flight');
+      }
+      return null;
+    }
+    
+    if (_lastRecordedPath == null) {
+      if (kDebugMode) {
+        print('✅ RecordingManager.tryStopRecording(): Already stopped');
+      }
+      return null;
+    }
+
+    // Set flag to prevent concurrent operations
+    _isStopping = true;
+    
+    try {
+      final recorder = _recorder;
+      if (recorder == null) {
+        if (kDebugMode) {
+          print('⚠️ RecordingManager.tryStopRecording(): Recorder not available');
+        }
+        return null;
+      }
+
+      final isRecording = await recorder.isRecording();
+      if (!isRecording) {
+        if (kDebugMode) {
+          print('⚠️ RecordingManager.tryStopRecording(): Recorder not recording');
+        }
+        // Still clean up and return null
+        SharedRecorderManager.instance.releaseAccess(_userId);
+        return null;
+      }
+
+      // Cache path before clearing for return value
+      final completedFile = _lastRecordedPath;
+      
+      _updateState(RecordingState.processing);
+
+      if (kDebugMode) {
+        print('🛡️ RecordingManager.tryStopRecording() completedFile BEFORE stop: $completedFile');
+      }
+
+      // Stop recording
+      await recorder.stop();
+
+      // Release access to shared recorder
+      SharedRecorderManager.instance.releaseAccess(_userId);
+
+      if (kDebugMode) {
+        print('🛡️ RecordingManager.tryStopRecording() completedFile AFTER stop: $completedFile');
+      }
+
+      // Handle MPEG4Writer short-circuit case
+      if (completedFile != null && !io.File(completedFile).existsSync()) {
+        if (kDebugMode) {
+          print('⚠️ MPEG4Writer short-circuited - no file created');
+        }
+        _lastRecordedPath = null;
+        _updateState(RecordingState.stopped);
+        _recordingStartTime = null;
+        return null;
+      }
+
+      // Clear path after successful completion
+      _lastRecordedPath = null;
+      _updateState(RecordingState.stopped);
+      _recordingStartTime = null;
+
+      if (kDebugMode) {
+        print('⏹️ Recording stopped successfully, file saved at: $completedFile');
+      }
+
+      return completedFile;
+      
+    } catch (e) {
+      _errorController.add('Error stopping recording: $e');
+      _updateState(RecordingState.error);
+      if (kDebugMode) {
+        print('❌ Error in tryStopRecording: $e');
+      }
+      // Don't clear path on error - may need for retry
+      return null;
+    } finally {
+      // Always clear the flag to prevent deadlock
+      _isStopping = false;
     }
   }
 
