@@ -570,6 +570,12 @@ PROVIDER_CONFIGS = {
         minimum_calls=20,
         reset_timeout=60,
         success_threshold=5
+    ),
+    "default": CircuitBreakerConfig(
+        fail_ratio=0.5,
+        minimum_calls=20,
+        reset_timeout=60,
+        success_threshold=5
     )
 }
 

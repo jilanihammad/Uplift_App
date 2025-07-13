@@ -127,9 +127,15 @@ class ContainerWarmup:
             if self.config.enable_compilation_warmup:
                 await self._stage_compilation()
             
-            # Stage 3: Connection establishment
+            # Stage 3: Connection establishment with Phase 1 optimizations
             if self.config.enable_connection_warmup:
                 await self._stage_connections()
+                
+            # Phase 1: HTTP Client Hot-rodding (if available)
+            try:
+                await self._stage_phase1_optimizations()
+            except Exception as e:
+                logger.warning(f"Phase 1 optimizations failed: {e}")
             
             # Stage 4: Model warm-up
             if self.config.enable_model_warmup:
@@ -347,22 +353,60 @@ class ContainerWarmup:
             raise
     
     async def _warmup_http_clients(self):
-        """Warm up HTTP client connections."""
+        """Warm up HTTP client connections with enhanced parallel pre-warming."""
         try:
-            http_manager = get_http_client_manager()
+            # Use enhanced HTTP client manager pre-warming
+            from app.core.http_client_manager import prewarm_http_clients
             
-            # Pre-warm clients for all providers with lightweight ping requests
             providers = ["openai", "anthropic", "groq", "google", "azure"]
             
-            warmup_tasks = []
-            for provider in providers:
-                warmup_tasks.append(self._warmup_provider_client(http_manager, provider))
+            await log_info(
+                "container_warmup",
+                "Starting enhanced HTTP client pre-warming",
+                providers=providers
+            )
             
-            # Run warmups in parallel
-            await asyncio.gather(*warmup_tasks, return_exceptions=True)
+            start_time = time.time()
+            prewarm_results = await prewarm_http_clients(providers)
+            total_duration = (time.time() - start_time) * 1000
+            
+            # Log results
+            successful_providers = [p for p, r in prewarm_results.items() if r.get("success", False)]
+            
+            await log_info(
+                "container_warmup",
+                "HTTP client pre-warming completed",
+                total_duration_ms=total_duration,
+                successful_providers=successful_providers,
+                total_providers=len(providers),
+                success_rate=len(successful_providers) / len(providers)
+            )
+            
+            # Record metrics
+            record_latency("container", "http_prewarm_total", total_duration)
+            
+            for provider, result in prewarm_results.items():
+                if result.get("success", False):
+                    record_latency(
+                        "container", 
+                        "http_prewarm_provider", 
+                        result.get("duration_ms", 0),
+                        labels={"provider": provider, "status": "success"}
+                    )
+                else:
+                    record_latency(
+                        "container", 
+                        "http_prewarm_provider", 
+                        result.get("duration_ms", 0),
+                        labels={"provider": provider, "status": "failed"}
+                    )
             
         except Exception as e:
-            logger.warning(f"HTTP client warm-up failed: {e}")
+            await log_error(
+                "container_warmup",
+                f"Enhanced HTTP client warm-up failed: {str(e)}",
+                error=str(e)
+            )
     
     async def _warmup_provider_client(self, http_manager, provider: str):
         """Warm up a specific provider's HTTP client."""
@@ -682,6 +726,48 @@ class ContainerWarmup:
                 
         except Exception as e:
             logger.warning(f"TTS warm-up failed: {e}")
+    
+    async def _stage_phase1_optimizations(self):
+        """Phase 1: HTTP Client Hot-rodding optimizations."""
+        start_time = time.time()
+        
+        try:
+            await log_info(
+                "container_warmup",
+                "Starting Phase 1 HTTP client optimizations"
+            )
+            
+            # Import and run Phase 1 optimizations
+            from app.core.phase1_optimizations import quick_phase1_optimization
+            
+            optimization_results = await quick_phase1_optimization()
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            await log_info(
+                "container_warmup",
+                "Phase 1 optimizations completed",
+                duration_ms=duration_ms,
+                successful_prewarming=optimization_results.get("successful_prewarming", 0),
+                optimizations_completed=optimization_results.get("optimizations_completed", 0)
+            )
+            
+            record_latency("container", "phase1_optimizations", duration_ms)
+            
+            return optimization_results
+            
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            
+            await log_error(
+                "container_warmup",
+                f"Phase 1 optimizations failed: {str(e)}",
+                duration_ms=duration_ms,
+                error=str(e)
+            )
+            
+            # Don't fail the entire warm-up for Phase 1 issues
+            logger.warning(f"Phase 1 optimizations failed but continuing warm-up: {e}")
     
     async def _stage_validation(self):
         """Stage 5: Validation."""

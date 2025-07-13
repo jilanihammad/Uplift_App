@@ -1,0 +1,11 @@
+HTTP/1.1 200 OK
+date: Sun, 13 Jul 2025 20:53:24 GMT
+server: uvicorn
+x-tts-provider: unknown
+x-processing-time: 1.0
+x-fast-path-strategy: optimized
+x-phase: 3
+x-optimization-level: minimal_latency
+content-type: audio/mpeg
+transfer-encoding: chunked
+
