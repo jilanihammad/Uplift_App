@@ -60,6 +60,7 @@ class VoiceSessionState extends Equatable {
   final bool isAutoListeningEnabled; // From AutoListeningCoordinator
   final int currentMessageSequence; // Added for message sequencing
   final bool speakerMuted; // Track speaker mute state
+  final double amplitude; // Real-time audio amplitude [0-1] for visualization
 
   const VoiceSessionState({
     required this.status,
@@ -89,6 +90,7 @@ class VoiceSessionState extends Equatable {
     this.isAutoListeningEnabled = false,
     required this.currentMessageSequence, // Added
     this.speakerMuted = false,
+    this.amplitude = 0.0,
   });
 
   factory VoiceSessionState.initial({
@@ -122,6 +124,7 @@ class VoiceSessionState extends Equatable {
       isAutoListeningEnabled: false,
       currentMessageSequence: 0, // Initialize sequence
       speakerMuted: false,
+      amplitude: 0.0,
     );
   }
 
@@ -155,6 +158,7 @@ class VoiceSessionState extends Equatable {
     bool? isAutoListeningEnabled,
     int? currentMessageSequence, // Added
     bool? speakerMuted,
+    double? amplitude,
   }) {
     return VoiceSessionState(
       status: status ?? this.status,
@@ -191,6 +195,7 @@ class VoiceSessionState extends Equatable {
       currentMessageSequence:
           currentMessageSequence ?? this.currentMessageSequence, // Added
       speakerMuted: speakerMuted ?? this.speakerMuted,
+      amplitude: amplitude ?? this.amplitude,
     );
   }
 
@@ -223,6 +228,7 @@ class VoiceSessionState extends Equatable {
         isAutoListeningEnabled,
         currentMessageSequence, // Added
         speakerMuted,
+        amplitude,
       ];
 
   bool get canSend {
@@ -241,8 +247,6 @@ class VoiceSessionState extends Equatable {
   int get sessionTimerSeconds =>
       0; // TODO: Implement actual timer logic if needed
   bool get isEndingSession => status == VoiceSessionStatus.ended;
-  double get amplitude =>
-      0.0; // TODO: Implement if amplitude is tracked elsewhere
   bool get isProcessing => isProcessingAudio;
   bool get isSpeakerMuted => speakerMuted;
   bool get isVADActive => isAutoListeningEnabled;
