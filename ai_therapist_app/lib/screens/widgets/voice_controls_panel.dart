@@ -6,6 +6,8 @@ import 'package:lottie/lottie.dart';
 import '../../blocs/voice_session_bloc.dart';
 import '../../blocs/voice_session_state.dart';
 import '../../blocs/voice_session_event.dart';
+import '../../widgets/audio_visualizer.dart';
+import '../../services/accessibility_service.dart';
 
 /// Callback types for voice control actions
 typedef VoiceControlCallback = void Function();
@@ -24,28 +26,30 @@ class VoiceControlsPanel extends StatefulWidget {
   State<VoiceControlsPanel> createState() => _VoiceControlsPanelState();
 }
 
-class _VoiceControlsPanelState extends State<VoiceControlsPanel>
-    with TickerProviderStateMixin {
-  late AnimationController _micAnimationController;
-  late Animation<double> _micAnimation;
+class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
+  AccessibilitySettings _accessibilitySettings = const AccessibilitySettings(
+    motionSensitive: false,
+    reducedAnimations: false,
+    highContrast: false,
+  );
 
   @override
   void initState() {
     super.initState();
-    
-    // Set up microphone animation
-    _micAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _micAnimation = Tween(begin: 1.0, end: 1.3).animate(
-      CurvedAnimation(parent: _micAnimationController, curve: Curves.easeInOut),
-    );
+    _loadAccessibilitySettings();
+  }
+  
+  Future<void> _loadAccessibilitySettings() async {
+    final settings = await AccessibilityService.getSettings();
+    if (mounted) {
+      setState(() {
+        _accessibilitySettings = settings;
+      });
+    }
   }
 
   @override
   void dispose() {
-    _micAnimationController.dispose();
     super.dispose();
   }
 
@@ -58,67 +62,109 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Voice visualization container with Lottie animations
+              // Voice visualization container with real-time amplitude visualization
               BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                  ({bool rec, double amp, bool listening, bool processing, bool speaking})>(
+                  ({bool rec, double amp, bool listening, bool processing, bool speaking, bool voiceMode})>(
                 selector: (blocState) => (
                   rec: blocState.isRecording,
                   amp: blocState.amplitude,
                   listening: blocState.isListeningForVoice,
                   processing: blocState.isProcessingAudio,
                   speaking: blocState.isAiSpeaking,
+                  voiceMode: blocState.isVoiceMode,
                 ),
                 builder: (context, data) {
-                  // Animation logic - animate during recording/listening, processing, or AI speaking
-                  if ((data.rec || data.listening || data.processing || data.speaking) &&
-                      !_micAnimationController.isAnimating) {
-                    _micAnimationController.repeat(reverse: true);
-                  } else if (!data.rec &&
-                      !data.listening &&
-                      !data.processing &&
-                      !data.speaking &&
-                      _micAnimationController.isAnimating) {
-                    _micAnimationController.stop();
-                    _micAnimationController.reset();
+                  // Determine visualization state based on current activity
+                  VisualizationState visualState;
+                  if (data.processing) {
+                    visualState = VisualizationState.processing;
+                  } else if (data.speaking) {
+                    visualState = VisualizationState.speaking;
+                  } else if (data.rec || data.listening) {
+                    visualState = VisualizationState.listening;
+                  } else {
+                    visualState = VisualizationState.idle;
                   }
                   
-                  return Container(
-                    width: 120,
-                    height: 120,
-                    child: (data.rec || data.listening)
-                        ? Lottie.asset(
-                            'assets/animations/Microphone Animation.json',
-                            width: 120,
-                            height: 120,
-                            fit: BoxFit.contain,
-                          )
-                        : (data.processing || data.speaking)
-                            ? Lottie.asset(
-                                'assets/animations/Session Animation.json',
-                                width: 120,
-                                height: 120,
-                                fit: BoxFit.contain,
-                              )
-                            : Lottie.asset(
-                                'assets/animations/Session Animation.json',
-                                width: 120,
-                                height: 120,
-                                fit: BoxFit.contain,
-                              ),
-                  );
+                  // Show appropriate visualization based on state and mode
+                  if (data.voiceMode) {
+                    // In voice mode: use Lottie for listening, AudioVisualizer for others
+                    if (data.rec || data.listening) {
+                      return Lottie.asset(
+                        'assets/animations/Microphone Animation.json',
+                        width: 120,
+                        height: 120,
+                        fit: BoxFit.contain,
+                      );
+                    } else {
+                      return AudioVisualizerWidget(
+                        amplitude: data.amp,
+                        state: visualState,
+                        mode: VisualizationMode.ripple,
+                        primaryColor: Theme.of(context).primaryColor,
+                        accentColor: Theme.of(context).colorScheme.secondary,
+                        size: 120.0,
+                        motionSensitive: _accessibilitySettings.motionSensitive,
+                      );
+                    }
+                  } else {
+                    // Fallback to Lottie animations in text mode
+                    return Container(
+                      width: 120,
+                      height: 120,
+                      child: (data.processing || data.speaking)
+                          ? Lottie.asset(
+                              'assets/animations/Session Animation.json',
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.contain,
+                            )
+                          : Lottie.asset(
+                              'assets/animations/Session Animation.json',
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.contain,
+                            ),
+                    );
+                  }
                 },
               ),
               const SizedBox(height: 32),
-              // Status text that changes based on recording state
-              BlocSelector<VoiceSessionBloc, VoiceSessionState, bool>(
-                selector: (blocState) => blocState.isRecording,
-                builder: (context, isRecording) => Text(
-                  isRecording ? "Listening to you..." : 'Press "Talk" to speak',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
+              // Status text that changes based on interaction state
+              BlocSelector<VoiceSessionBloc, VoiceSessionState, 
+                  ({bool rec, bool listening, bool processing, bool speaking, bool voiceMode})>(
+                selector: (blocState) => (
+                  rec: blocState.isRecording,
+                  listening: blocState.isListeningForVoice,
+                  processing: blocState.isProcessingAudio,
+                  speaking: blocState.isAiSpeaking,
+                  voiceMode: blocState.isVoiceMode,
                 ),
+                builder: (context, data) {
+                  String statusText;
+                  if (data.processing) {
+                    statusText = "Speaking";
+                  } else if (data.speaking) {
+                    statusText = "Maya is speaking...";
+                  } else if (data.rec) {
+                    statusText = "Recording your voice...";
+                  } else if (data.listening && data.voiceMode) {
+                    statusText = "Listening for your voice...";
+                  } else if (data.voiceMode) {
+                    statusText = "Listening";
+                  } else {
+                    statusText = "Chat mode active";
+                  }
+                  
+                  return Text(
+                    statusText,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  );
+                },
               ),
             ],
           ),

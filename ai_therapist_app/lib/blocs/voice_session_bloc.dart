@@ -43,6 +43,7 @@ import 'package:meta/meta.dart';
 import '../models/therapy_message.dart';
 import '../services/recording_manager.dart';
 import '../widgets/mood_selector.dart'; // For Mood enum
+import '../utils/amplitude_utils.dart';
 import 'package:uuid/uuid.dart';
 
 // Phase 1.1.4: Import new managers
@@ -63,6 +64,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   StreamSubscription? _recordingStateSub;
   StreamSubscription? _audioPlaybackSub;
   StreamSubscription? _ttsStateSub;
+  StreamSubscription? _amplitudeSub;
+  
+  // Amplitude smoothing state
+  double _lastSmoothedAmplitude = 0.0;
 
   // Phase 1.1.4: Manager instances (internal implementation details)
   late final SessionStateManager _sessionManager;
@@ -230,6 +235,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         add(TtsStateChanged(isSpeaking));
       });
     }
+    
+    // Set up amplitude stream with throttling and smoothing
+    _setupAmplitudeStream();
     
     // Initialize lifecycle observer for app backgrounding/resuming
     _lifecycleObserver = _VoiceSessionLifecycleObserver(this);
@@ -716,7 +724,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   void _onUpdateAmplitude(
-      UpdateAmplitude event, Emitter<VoiceSessionState> emit) {}
+      UpdateAmplitude event, Emitter<VoiceSessionState> emit) {
+    emit(state.copyWith(amplitude: event.amplitude));
+  }
 
   Future<void> _onAddMessage(
       AddMessage event, Emitter<VoiceSessionState> emit) async {
@@ -1299,6 +1309,57 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
+  /// Set up amplitude stream with throttling and smoothing for UI visualization
+  void _setupAmplitudeStream() {
+    try {
+      // Access the VAD manager's amplitude stream
+      Stream<double> amplitudeStream;
+      
+      if (AutoListeningCoordinator.isEnhancedVADEnabled) {
+        // Use enhanced VAD manager
+        final enhancedVAD = _safeVoiceService.autoListeningCoordinator.vadManager;
+        if (enhancedVAD != null && enhancedVAD is EnhancedVADManager) {
+          amplitudeStream = enhancedVAD.amplitudeStream;
+        } else {
+          // Fallback to regular VAD
+          amplitudeStream = vadManager.amplitudeStream;
+        }
+      } else {
+        // Use regular VAD manager
+        amplitudeStream = vadManager.amplitudeStream;
+      }
+      
+      // Create throttled and processed amplitude stream (engineer feedback: 30fps)
+      final processedAmplitudeStream = amplitudeStream
+          .map((dbValue) => AmplitudeUtils.dbToLinear(dbValue))  // Convert dB to linear
+          .map((linearValue) {
+            // Apply EMA smoothing (engineer feedback: α ≈ 0.4)
+            _lastSmoothedAmplitude = AmplitudeUtils.applySmoothing(
+              linearValue, 
+              _lastSmoothedAmplitude
+            );
+            return _lastSmoothedAmplitude;
+          })
+          .throttleTime(const Duration(milliseconds: 33))  // 30fps throttling
+          .distinct((prev, curr) => (prev - curr).abs() < 0.02); // Reduce micro-changes
+      
+      _amplitudeSub = processedAmplitudeStream.listen((amplitude) {
+        // Only update if in voice mode and listening state
+        if (state.isVoiceMode && (state.isListeningForVoice || state.isRecording)) {
+          add(UpdateAmplitude(amplitude));
+        }
+      });
+      
+      if (kDebugMode) {
+        debugPrint('🎵 [AMPLITUDE] Amplitude stream connected with throttling');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ [AMPLITUDE] Failed to set up amplitude stream: $e');
+      }
+    }
+  }
+
   @override
   Future<void> close() async {
     // Cleanup any active session before closing bloc
@@ -1309,6 +1370,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _recordingStateSub?.cancel();
     _audioPlaybackSub?.cancel();
     _ttsStateSub?.cancel();
+    _amplitudeSub?.cancel();
     
     // PHASE 2B: Cancel any pending auto-enable operations
     _pendingAutoEnable?.cancel();
