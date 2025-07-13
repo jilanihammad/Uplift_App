@@ -209,6 +209,60 @@ class AudioRecordingService implements IAudioRecordingService {
   }
   
   @override
+  Future<String?> tryStopRecording() async {
+    if (_disposed) {
+      if (kDebugMode) {
+        print('⚠️ AudioRecordingService: tryStopRecording called on disposed service');
+      }
+      return null;
+    }
+    
+    if (_recordingLock.isLocked) {
+      if (kDebugMode) {
+        print('🔄 AudioRecordingService: tryStopRecording - recording operation in progress');
+      }
+      return null;
+    }
+    await _recordingLock.acquire();
+    
+    try {
+      if (kDebugMode) {
+        AppLogger.d('🔄 AudioRecordingService: Attempting to stop recording (idempotent)');
+      }
+      
+      // Stop audio level monitoring
+      _stopAudioLevelMonitoring();
+      
+      // Try to stop recording through RecordingManager (thread-safe)
+      final recordingPath = await _recordingManager.tryStopRecording();
+      
+      if (recordingPath != null) {
+        _lastRecordingPath = recordingPath;
+        
+        if (kDebugMode) {
+          AppLogger.d('✅ AudioRecordingService: Recording stopped successfully, file: $recordingPath');
+        }
+        
+        return recordingPath;
+      } else {
+        if (kDebugMode) {
+          AppLogger.d('✅ AudioRecordingService: Recording already stopped or not recording');
+        }
+        return null;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ AudioRecordingService: Error in tryStopRecording: $e');
+      }
+      return null; // Never throw
+    } finally {
+      if (_recordingLock.isLocked) {
+        _recordingLock.release();
+      }
+    }
+  }
+  
+  @override
   Future<void> pauseRecording() async {
     // Note: The record package doesn't support pause/resume natively
     // This would need to be implemented by stopping and resuming recording

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
@@ -40,6 +41,11 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   double _lastRequestedVolume = 1.0;
   bool _disposed = false;
 
+  // Enhanced mute functionality with volume caching
+  double _systemVolume = 1.0;
+  bool _isSoftMuted = false;
+  Timer? _muteDebounceTimer;
+
   // Force override for isPlaying state
   bool? _forceIsPlayingState;
 
@@ -52,6 +58,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       StreamController<int>.broadcast();
   final StreamController<String?> _nowPlayingController =
       StreamController<String?>.broadcast();
+  final StreamController<bool> _muteStateController =
+      StreamController<bool>.broadcast();
 
   // Track last emitted playing state to prevent duplicate broadcasts
   bool? _lastEmittedPlayingState;
@@ -75,6 +83,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   Stream<String?> get errorStream => _errorController.stream;
   Stream<int> get queueLengthStream => _queueLengthController.stream;
   Stream<String?> get nowPlayingStream => _nowPlayingController.stream;
+  Stream<bool> get muteStateStream => _muteStateController.stream;
 
   // Expose the audio player's processing state stream
   Stream<ProcessingState> get processingStateStream =>
@@ -98,6 +107,9 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   }
   
   double _getEffectiveVolume(double requestedVolume) {
+    // If soft-muted, return 0.0 regardless of other settings
+    if (_isSoftMuted) return 0.0;
+    
     final multiplier = _audioSettings?.volumeMultiplier ?? 1.0;
     return requestedVolume * multiplier;
   }
@@ -238,6 +250,15 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
             }
             // Ensure we broadcast playback stopped when audio completes
             _emitPlayingState(false);
+
+            // Auto-clear soft mute flag on playback completion for next session
+            if (_isSoftMuted) {
+              _isSoftMuted = false;
+              _muteStateController.add(false);
+              if (kDebugMode) {
+                print('🔊 AudioPlayerManager: Auto-cleared soft mute on completion');
+              }
+            }
 
             // Add a short delay to ensure all state changes are processed
             Future.delayed(const Duration(milliseconds: 100), () {
@@ -498,6 +519,53 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     }
   }
 
+  /// Lightweight reset for mode switching - flushes callbacks and prevents next play from reading old DataSource
+  /// Follows engineer's specification: stop() → seek(Duration.zero) → setAudioSource(null)
+  Future<void> lightweightReset() async {
+    try {
+      if (kDebugMode) {
+        AppLogger.d('AudioPlayerManager: Starting lightweight reset');
+      }
+
+      // Step 1: Stop current playback and await completion
+      await _audioPlayer.stop();
+      
+      // Step 2: Seek to beginning to reset position
+      await _audioPlayer.seek(Duration.zero);
+      
+      // Step 3: Clear audio source to flush callbacks and prevent old DataSource reuse
+      // Note: JustAudio doesn't support setAudioSource(null), but stop() + seek() already flushes callbacks
+
+      // Force the state to false immediately
+      _forceIsPlayingState = false;
+      _emitPlayingStateImmediate(false);
+
+      // Complete all pending items with cancellation
+      for (final item in _audioQueue) {
+        if (!item.completer.isCompleted) {
+          item.completer.completeError(Exception('Audio reset - playback cancelled'));
+        }
+      }
+      
+      // Clear queue and reset all state
+      _audioQueue.clear();
+      _queueLengthController.add(0);
+      _isProcessingQueue = false;
+      _currentlyPlaying = null;
+      _nowPlayingController.add(null);
+
+      if (kDebugMode) {
+        AppLogger.d('AudioPlayerManager: Lightweight reset completed - audio source cleared, queue reset');
+      }
+    } catch (e) {
+      _errorController.add('Error during lightweight reset: $e');
+      if (kDebugMode) {
+        AppLogger.e('AudioPlayerManager: Lightweight reset failed: $e');
+      }
+      rethrow; // Let caller handle the error
+    }
+  }
+
   // Force reset the playing state
   void forceStopState() {
     _forceIsPlayingState = false;
@@ -749,6 +817,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     _audioSettings?.removeListener(_onMuteChanged);
     clearQueue();
     _stateDebounceTimer?.cancel();
+    _muteDebounceTimer?.cancel();
     
     // Note: We don't dispose the player here to avoid MediaCodec issues
     // The async version should be used for proper cleanup
@@ -759,6 +828,38 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     _lastRequestedVolume = volume;
     _applyEffectiveVolume();
   }
+
+  /// Enhanced mute/unmute that preserves stream and player state
+  /// Includes debouncing for Android OEM mixer compatibility
+  void mute(bool muted) {
+    // Debounce rapid toggle calls to prevent Android OEM mixer issues
+    _muteDebounceTimer?.cancel();
+    _muteDebounceTimer = Timer(const Duration(milliseconds: 50), () {
+      _isSoftMuted = muted;
+      
+      if (muted) {
+        // Store current system volume before muting
+        _systemVolume = _lastRequestedVolume;
+        _audioPlayer.setVolume(0.0);
+        if (kDebugMode) {
+          print('🔇 AudioPlayerManager: Soft-muted (cached volume: $_systemVolume)');
+        }
+      } else {
+        // Restore minimum of requested and cached system volume
+        final restoreVolume = math.min(_lastRequestedVolume, _systemVolume);
+        _applyEffectiveVolume(); // This will use the restored volume
+        if (kDebugMode) {
+          print('🔊 AudioPlayerManager: Unmuted (restored volume: $restoreVolume)');
+        }
+      }
+      
+      // Emit mute state for UI components (mute icon, etc.)
+      _muteStateController.add(muted);
+    });
+  }
+  
+  /// Get current soft mute state
+  bool get isSoftMuted => _isSoftMuted;
 
   /// Wait for true audio completion with robust detection
   /// Ensures we've seen playing==true before waiting for completion
@@ -1141,6 +1242,50 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     } catch (e) {
       if (kDebugMode) {
         print('⚠️ AudioPlayerManager: Failed to delete temp TTS file: $e');
+      }
+    }
+  }
+
+  @override
+  Future<void> disposeAsync() async {
+    if (_disposed) return;
+    _disposed = true;
+
+    if (kDebugMode) {
+      debugPrint('🧹 AudioPlayerManager: Starting async disposal...');
+    }
+
+    try {
+      // Cancel mute debounce timer
+      _muteDebounceTimer?.cancel();
+      _muteDebounceTimer = null;
+
+      // Cancel state debounce timer
+      _stateDebounceTimer?.cancel();
+
+      // Remove audio settings listener
+      _audioSettings?.removeListener(_onMuteChanged);
+
+      // Clear queue and stop audio
+      clearQueue();
+      await stopAudio();
+
+      // Close stream controllers
+      await _playingStateController.close();
+      await _errorController.close();
+      await _queueLengthController.close();
+      await _nowPlayingController.close();
+      await _muteStateController.close();
+
+      // Dispose audio player
+      await _audioPlayer.dispose();
+
+      if (kDebugMode) {
+        debugPrint('✅ AudioPlayerManager: Async disposal completed');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ AudioPlayerManager: Error during async disposal: $e');
       }
     }
   }

@@ -53,6 +53,7 @@ import 'interfaces/i_audio_file_manager.dart';
 import '../services/simple_tts_service.dart';
 import '../services/audio_player_manager.dart';
 import '../services/audio_file_manager.dart';
+import '../blocs/voice_session_bloc.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -130,6 +131,19 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
           else if (!useRefactoredVoicePipeline && locator.isRegistered<VoiceService>()) {
             final voiceService = locator<VoiceService>();
             simpleTTSService.setVoiceServiceUpdateCallback(voiceService.updateTTSSpeakingState);
+            // TIMING FIX: Wire generation callback to VoiceSessionBloc for TTS completion timing checks
+            // Note: VoiceSessionBloc will be registered later, so we defer this wiring
+            Future.microtask(() {
+              try {
+                if (locator.isRegistered<VoiceSessionBloc>()) {
+                  final voiceSessionBloc = locator<VoiceSessionBloc>();
+                  simpleTTSService.setGetCurrentGenerationCallback(() => voiceSessionBloc.currentGeneration);
+                  debugPrint('✅ SimpleTTSService generation callback wired to VoiceSessionBloc');
+                }
+              } catch (e) {
+                debugPrint('Warning: Could not wire generation callback: $e');
+              }
+            });
             debugPrint('✅ SimpleTTSService wired to legacy VoiceService for TTS-VAD coordination');
           }
         } catch (e) {
