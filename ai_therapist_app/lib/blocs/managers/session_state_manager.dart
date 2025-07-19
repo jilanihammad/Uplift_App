@@ -135,6 +135,7 @@ class SessionStateManager {
     _state = _state.copyWith(
       selectedDuration: duration,
       showDurationSelector: false,
+      showMoodSelector: true,
     );
     
     return _state;
