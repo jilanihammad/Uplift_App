@@ -36,6 +36,7 @@ import '../services/voice_session_coordinator.dart';
 import '../services/auto_listening_coordinator.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
+import '../data/datasources/remote/api_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -275,6 +276,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   /// Wait for TTS completion using ExoPlayer events instead of fixed delays
   /// Guards against rapid state transitions with distinct() and take(1)
   Future<void> _waitForTtsCompletion() async {
+    // RACE FIX: Check if TTS is already complete before waiting
+    if (!isTtsActive) {
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] TTS already complete - no need to wait');
+      }
+      return;
+    }
+    
     // Use legacy service for AudioPlayerManager access (not yet in interface)
     final audioPlayerManager = voiceService.getAudioPlayerManager();
     
@@ -734,7 +743,42 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   void _onHandleError(HandleError event, Emitter<VoiceSessionState> emit) {
-    emit(state.copyWith(errorMessage: event.error.toString()));
+    // Enhanced error handling with specific BackendSchemaException support
+    String userFriendlyMessage;
+    
+    // Parse the error string back to get the actual exception type
+    final errorString = event.error.toString();
+    
+    if (errorString.startsWith('BackendSchemaException:')) {
+      // Handle schema validation errors specifically
+      userFriendlyMessage = "Update required - please restart the app and try again. "
+          "If this continues, contact support.";
+      
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] Schema validation error detected: $errorString');
+      }
+    } else if (errorString.contains('Connection error:') || 
+               errorString.contains('SocketException') ||
+               errorString.contains('TimeoutException')) {
+      // Handle network connectivity issues
+      userFriendlyMessage = "Connection issue. Please check your internet connection and try again.";
+    } else if (errorString.contains('Authentication required') || 
+               errorString.contains('401')) {
+      // Handle authentication issues
+      userFriendlyMessage = "Session expired. Please restart the app to continue.";
+    } else {
+      // Generic error fallback
+      userFriendlyMessage = "Something went wrong. Please try again.";
+      
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] General error: $errorString');
+      }
+    }
+    
+    emit(state.copyWith(
+      errorMessage: userFriendlyMessage,
+      hasError: true,
+    ));
   }
 
   void _onUpdateAmplitude(
