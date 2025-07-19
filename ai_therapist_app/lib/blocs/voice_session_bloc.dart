@@ -89,6 +89,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   // NATURAL UX: Flag to defer VAD start until current TTS naturally finishes
   bool _deferAutoMode = false;
   
+  // Session start guard: Prevents duplicate session initialization
+  bool _sessionStarted = false;
+  
   /// Whether a session is currently active (has session scope)
   bool get inSession => _scopeManager.inSession;
 
@@ -161,6 +164,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<SetInitializing>(_onSetInitializing);
     on<SetEndingSession>(_onSetEndingSession);
     on<UpdateSessionTimer>(_onUpdateSessionTimer);
+    // Two-step session start flow to prevent premature audio activation
+    on<StartSessionRequested>(_onStartSessionRequested);
+    on<InitialMoodSelected>(_onInitialMoodSelected);
     
     // Phase 2.2.5: Optimized streams with distinct/shareReplay to eliminate spam
     if (interfaceVoiceService != null) {
@@ -414,6 +420,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       
       // Destroy entire session scope (automatic disposal)
       await _scopeManager.destroySessionScope();
+      
+      // Reset session start flag for next session
+      _sessionStarted = false;
 
       debugPrint('[VoiceSessionBloc] Session cleanup completed successfully');
       
@@ -451,7 +460,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onChangeDuration(
       ChangeDuration event, Emitter<VoiceSessionState> emit) {
-    emit(state.copyWith(selectedDuration: Duration(minutes: event.minutes)));
+    // Sync current state to manager first to preserve status
+    _sessionManager.updateState(state);
+    
+    // Use SessionStateManager for single source of truth
+    final updatedState = _sessionManager.selectDuration(Duration(minutes: event.minutes));
+    emit(updatedState);
   }
 
   Future<void> _onSwitchMode(
@@ -1098,6 +1112,161 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onUpdateSessionTimer(
       UpdateSessionTimer event, Emitter<VoiceSessionState> emit) {}
 
+  // ========== Two-Step Session Start Flow ==========
+  
+  /// Handles the first step: "Talk Now" button tap -> show duration selector first, NO audio initialization
+  void _onStartSessionRequested(
+      StartSessionRequested event, Emitter<VoiceSessionState> emit) {
+    if (kDebugMode) {
+      debugPrint('🎯 [VoiceSessionBloc] StartSessionRequested received!');
+      debugPrint('   Current status: ${state.status}');
+      debugPrint('   Current duration: ${state.selectedDuration?.inMinutes} minutes');
+      debugPrint('   Current mood: ${state.selectedMood}');
+      // Print stack trace to identify where this is being called from
+      debugPrint('   Stack trace:');
+      debugPrint(StackTrace.current.toString().split('\n').take(10).join('\n'));
+    }
+    
+    if (state.status == VoiceSessionStatus.idle || state.status == VoiceSessionStatus.initial) {
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] StartSessionRequested: ${state.status} → awaitingMood, showing duration selector');
+      }
+      emit(state.copyWith(
+        status: VoiceSessionStatus.awaitingMood,
+        showDurationSelector: true,
+        showMoodSelector: false,
+      ));
+    } else {
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] StartSessionRequested ignored, current status: ${state.status}');
+      }
+    }
+  }
+
+  /// Handles the second step: mood selected -> start actual session with audio pipeline
+  void _onInitialMoodSelected(
+      InitialMoodSelected event, Emitter<VoiceSessionState> emit) async {
+    // Validate we're in the correct state to accept mood selection
+    if (state.status != VoiceSessionStatus.awaitingMood) {
+      debugPrint('[VoiceSessionBloc] ERROR: InitialMoodSelected called from wrong state: ${state.status}');
+      debugPrint('[VoiceSessionBloc] Mood selection should only happen from awaitingMood state');
+      return;
+    }
+    
+    await _beginSessionIfNeeded(event.mood, emit);
+  }
+
+  /// Reusable helper for session start with re-entrancy guard
+  Future<void> _beginSessionIfNeeded(Mood mood, Emitter<VoiceSessionState> emit) async {
+    if (_sessionStarted) {
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] Session already started, ignoring duplicate request');
+      }
+      return;
+    }
+    
+    // Validate duration is selected before starting session
+    if (state.selectedDuration == null) {
+      debugPrint('[VoiceSessionBloc] ERROR: Cannot start session without duration!');
+      emit(state.copyWith(
+        errorMessage: 'Please select a session duration first',
+        status: VoiceSessionStatus.awaitingMood,
+        showDurationSelector: true,
+        showMoodSelector: false,
+      ));
+      return;
+    }
+    
+    _sessionStarted = true;
+    
+    // Now it is safe to enable voice mode
+    add(SwitchMode(true));
+    
+    if (kDebugMode) {
+      debugPrint('[VoiceSessionBloc] InitialMoodSelected: awaitingMood → active, starting audio pipeline');
+      debugPrint('[VoiceSessionBloc] Duration: ${state.selectedDuration?.inMinutes} minutes, Mood: $mood');
+    }
+    
+    try {
+      // Start the actual session with audio/VAD pipeline - reuse existing logic
+      await _startSessionWithMood(mood, emit);
+    } catch (e) {
+      debugPrint('[VoiceSessionBloc] Error in session start: $e');
+      _sessionStarted = false; // Reset flag on error
+      emit(state.copyWith(errorMessage: e.toString()));
+    }
+  }
+
+  /// Extract session start logic to be called only after mood selection
+  Future<void> _startSessionWithMood(Mood mood, Emitter<VoiceSessionState> emit) async {
+    debugPrint('[VoiceSessionBloc] Starting session with mood: $mood');
+    
+    try {
+      // Performance monitoring
+      final stopwatch = Stopwatch()..start();
+      
+      // Create fresh session scope with new service instances (HEAVY INITIALIZATION)
+      await _scopeManager.createSessionScope();
+      
+      // Get fresh session-scoped services
+      final voiceCoordinator = _scopeManager.get<VoiceSessionCoordinator>();
+      final autoListening = _scopeManager.get<AutoListeningCoordinator>();
+      
+      // Initialize session services (AUDIO/VAD INITIALIZATION)
+      await voiceCoordinator.initialize();
+      await autoListening.initialize();
+      
+      // Wire unified TTS activity stream for improved VAD coordination
+      autoListening.setTtsActivityStream(isTtsActiveStream);
+      
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] Session services initialized in ${stopwatch.elapsedMilliseconds}ms');
+      }
+      
+      // Use SessionStateManager for mood selection and session setup
+      final newState = _sessionManager.selectMood(mood);
+      
+      // Add welcome message using MessageCoordinator
+      final welcomeMessage = _messageCoordinator.addWelcomeMessage(mood);
+      
+      // Reset managers for fresh session
+      _messageCoordinator.resetMessages();
+      _messageCoordinator.addWelcomeMessage(mood); // Re-add after reset
+      _timerManager.stopTimer();
+      
+      // Update state with new message and sequence - SET TO ACTIVE (not idle)
+      final finalState = newState.copyWith(
+        messages: _messageCoordinator.messages,
+        currentMessageSequence: _messageCoordinator.currentSequence,
+        status: VoiceSessionStatus.voiceModeActive, // SESSION IS NOW ACTIVE
+      );
+      
+      // Sync managers with updated state
+      _sessionManager.updateState(finalState);
+      
+      // Emit the active state
+      emit(finalState);
+      
+      if (kDebugMode) {
+        debugPrint('🚀 SESSION ACTIVE'); // Verification log
+      }
+      
+      // If in voice mode, generate TTS for welcome message
+      if (finalState.isVoiceMode) {
+        if (kDebugMode) {
+          debugPrint('[VoiceSessionBloc] Starting welcome TTS for voice mode');
+        }
+        add(PlayWelcomeMessage(welcomeMessage.content));
+      }
+      
+    } catch (e) {
+      debugPrint('[VoiceSessionBloc] Error starting session with mood: $e');
+      _sessionStarted = false; // Reset flag on error
+      await _cleanupFailedSession();
+      emit(state.copyWith(errorMessage: e.toString()));
+    }
+  }
+
   // ========== Phase 1A.3: New Event Handlers for Refactoring ==========
 
   /// Handles session initialization with optional sessionId
@@ -1178,6 +1347,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     
     // Stop timer
     _timerManager.stopTimer();
+    
+    // Reset session start flag
+    _sessionStarted = false;
     
     emit(newState);
     

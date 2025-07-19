@@ -214,8 +214,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   Widget build(BuildContext context) {
     AppLogger.v('ChatScreen: build called');
-    return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
-      builder: (context, state) {
+    return BlocListener<VoiceSessionBloc, VoiceSessionState>(
+      listener: (context, state) {
+        // Wakelock management based on session status
+        _handleSessionStatusChange(state.status);
+      },
+      child: BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
+        builder: (context, state) {
         // Handle initialization state
         if (state.isInitializing) {
           return Scaffold(
@@ -271,10 +276,36 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             endDrawer: kDebugMode ? const DebugDrawer() : null,
           ),
         );
-      },
+        },
+      ),
     );
   }
 
+  /// Handle session status changes for wakelock management
+  void _handleSessionStatusChange(VoiceSessionStatus status) {
+    switch (status) {
+      case VoiceSessionStatus.voiceModeActive:
+      case VoiceSessionStatus.textModeActive:
+        // Session is active - acquire wakelock
+        AppLogger.d('ChatScreen: Session active, enabling wakelock');
+        _enableWakelock();
+        break;
+      case VoiceSessionStatus.ended:
+      case VoiceSessionStatus.idle:
+      case VoiceSessionStatus.initial:
+        // Session is inactive - release wakelock
+        AppLogger.d('ChatScreen: Session inactive, disabling wakelock');
+        NativeWakelockService.disable().then((_) {
+          AppLogger.d('ChatScreen: Wakelock disabled due to session status change');
+        }).catchError((e) {
+          AppLogger.w('ChatScreen: Failed to disable wakelock', e);
+        });
+        break;
+      default:
+        // For other states (awaitingMood, selectingDuration, etc.) - no wakelock changes
+        break;
+    }
+  }
 
   Future<bool> _handleBackPress(VoiceSessionState state) async {
     AppLogger.d('ChatScreen: onWillPop called');
@@ -343,57 +374,59 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
   }
 
-  Future<void> _initSession() async {
+  void _initSession() {
     final bloc = context.read<VoiceSessionBloc>();
 
-    // Start initialization
-    bloc.add(SetInitializing(true));
-
     if (widget.sessionId != null) {
-      // Load existing session
+      // Load existing session (legacy path - keep existing logic for now)
       _currentSessionId = widget.sessionId ?? '';
+      bloc.add(SetInitializing(true));
       bloc.add(ShowMoodSelector(false));
       bloc.add(ShowDurationSelector(false));
-
-      // Simulate loading delay (replace with actual loading)
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Start the session timer
+      
+      // TODO: Implement proper existing session loading
       _startSessionTimer();
-
-      // End initialization
       bloc.add(SetInitializing(false));
     } else {
       // Generate a temporary UUID for local session tracking
-      // This will be replaced with the backend session ID when the session ends
       _currentSessionId = const Uuid().v4();
 
       if (kDebugMode) {
         debugPrint('Generated temporary session ID for local tracking: $_currentSessionId');
       }
 
-      // For new sessions, show duration selector first
-      bloc.add(ShowDurationSelector(true));
-      bloc.add(SwitchMode(true)); // Ensure we start in voice mode
-
-      // End initialization
-      bloc.add(SetInitializing(false));
+      // For new sessions, ONLY request session start - no heavy initialization
+      bloc.add(const StartSessionRequested());
     }
   }
 
   void _handleDurationSelection(int minutes) {
     final bloc = context.read<VoiceSessionBloc>();
     bloc.add(ChangeDuration(minutes));
-    bloc.add(ShowDurationSelector(false));
-    bloc.add(ShowMoodSelector(true));
-    debugPrint('Duration selected: $minutes min, showing mood selector');
+    debugPrint('Duration selected: $minutes min');
   }
 
   void _handleMoodSelection(Mood selectedMood) {
     final bloc = context.read<VoiceSessionBloc>();
+    final currentState = bloc.state;
     
-    // Phase 1A.4: Dispatch BLoC event instead of direct logic
-    bloc.add(MoodSelected(selectedMood));
+    // Defensive validation: ensure duration was selected
+    if (currentState.selectedDuration == null) {
+      debugPrint('[ChatScreen] ERROR: Mood selected without duration!');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a session duration first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      // Force back to duration selector
+      bloc.add(const ShowDurationSelector(true));
+      bloc.add(const ShowMoodSelector(false));
+      return;
+    }
+    
+    // Two-step session start: Use InitialMoodSelected to trigger actual session start
+    bloc.add(InitialMoodSelected(selectedMood));
     
     debugPrint('Mood selected: $selectedMood, session is now active');
 
