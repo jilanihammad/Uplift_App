@@ -780,6 +780,20 @@ class ApiException implements Exception {
   String toString() => 'ApiException: $statusCode - $message';
 }
 
+class BackendSchemaException extends ApiException {
+  final Map<String, dynamic>? receivedResponse;
+  final String expectedField;
+  
+  BackendSchemaException({
+    required String message,
+    required this.expectedField,
+    this.receivedResponse,
+  }) : super(statusCode: 422, message: message);
+  
+  @override
+  String toString() => 'BackendSchemaException: $message (expected field: $expectedField)';
+}
+
 class TimeoutException extends IOException {
   final String message;
 

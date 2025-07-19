@@ -166,22 +166,18 @@ class MessageProcessor {
         },
       );
 
-      if (response.containsKey('response') && response['response'] != null) {
-        final responseText = response['response'] as String;
+      // Future-proof version validation for direct LLM calls
+      final responseText = _validateAndExtractResponse(response, 'direct LLM');
 
-        if (kDebugMode) {
-          print(
-              '$_directLLMLogTag Direct LLM response received: ${responseText.length} characters');
-          if (response.containsKey('usage')) {
-            print('$_directLLMLogTag Token usage: ${response['usage']}');
-          }
+      if (kDebugMode) {
+        print(
+            '$_directLLMLogTag Direct LLM response received: ${responseText.length} characters');
+        if (response.containsKey('usage')) {
+          print('$_directLLMLogTag Token usage: ${response['usage']}');
         }
-
-        return responseText.trim();
-      } else {
-        log.w('$_directLLMLogTag Invalid response format from direct LLM call');
-        throw Exception('Invalid response format from LLM');
       }
+
+      return responseText.trim();
     } catch (e) {
       log.e(
           '$_directLLMLogTag Error with direct LLM call, falling back to local response',
@@ -233,13 +229,8 @@ class MessageProcessor {
 
         final response = await apiClient.post('/ai/response', payload);
 
-        if (response != null && response.containsKey('response')) {
-          log.d('API call successful. Response received.');
-          return response['response'];
-        } else {
-          log.w('Invalid response format. Response was: $response');
-          throw Exception('Invalid backend response format');
-        }
+        // Future-proof version validation - prepare for schema versioning
+        return _validateAndExtractResponse(response, 'backend API');
       } catch (e, stackTrace) {
         log.e('Backend API Error', e, stackTrace);
         _logDetailedError(e);
@@ -766,5 +757,56 @@ $conversationText''';
     // If it looks like JSON but doesn't have quotes, it might be malformed
     // In this case, we'll let jsonDecode handle it and catch the FormatException
     return true;
+  }
+
+  /// Future-proof response validation with version awareness
+  /// Validates API response format and extracts content with explicit type safety
+  String _validateAndExtractResponse(Map<String, dynamic>? response, String source) {
+    if (response == null) {
+      throw BackendSchemaException(
+        message: '$source returned null response',
+        expectedField: 'response',
+        receivedResponse: response,
+      );
+    }
+
+    // Future enhancement: Check for schema version if present
+    if (response.containsKey('schema')) {
+      final schema = response['schema'];
+      log.d('Response includes schema version: $schema');
+      
+      // Future: Handle different schema versions here
+      switch (schema) {
+        case 'v1':
+          // Current format: {"schema": "v1", "response": "text"}
+          break;
+        case 'v2':
+          // Future format: {"schema": "v2", "content": "text", "metadata": {...}}
+          if (response.containsKey('content')) {
+            return response['content'] as String;
+          }
+          throw BackendSchemaException(
+            message: 'Schema v2 response missing content field',
+            expectedField: 'content',
+            receivedResponse: response,
+          );
+        default:
+          log.w('Unknown schema version: $schema, falling back to default parsing');
+      }
+    }
+
+    // Current format validation: expect "response" field
+    if (response.containsKey('response') && response['response'] != null) {
+      log.d('$source call successful. Response received.');
+      // Explicit cast for type safety - fails fast if backend sends wrong type
+      return response['response'] as String;
+    } else {
+      log.w('Invalid response format from $source. Response was: $response');
+      throw BackendSchemaException(
+        message: '$source response missing required field',
+        expectedField: 'response',
+        receivedResponse: response,
+      );
+    }
   }
 }
