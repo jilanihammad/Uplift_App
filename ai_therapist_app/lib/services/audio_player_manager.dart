@@ -1277,7 +1277,20 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       await _nowPlayingController.close();
       await _muteStateController.close();
 
-      // Dispose audio player
+      // CRITICAL: End AudioSession before disposing player (Android requirement)
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+        if (kDebugMode) {
+          debugPrint('🧹 AudioPlayerManager: AudioSession deactivated');
+        }
+      } catch (sessionError) {
+        if (kDebugMode) {
+          debugPrint('⚠️ AudioPlayerManager: AudioSession cleanup error: $sessionError');
+        }
+      }
+
+      // Dispose audio player (after AudioSession cleanup)
       await _audioPlayer.dispose();
 
       if (kDebugMode) {

@@ -24,6 +24,7 @@ import 'live_tts_audio_source.dart';
 import 'audio_format_negotiator.dart';
 import '../utils/opus_header_utils.dart';
 import '../utils/throttled_debug_print.dart';
+import '../exceptions/tts_exception.dart';
 
 /// Feature flag to enable in-memory TTS playback (eliminates temp WAV files)
 /// Set to true to avoid writing ~1 MiB temp files per TTS response
@@ -112,6 +113,9 @@ class SimpleTTSService implements ITTSService {
   _State _state = _State.idle;
   late String _backendUrl;
   bool _disposed = false;
+  
+  // Dispose chain mutex to prevent overlapping dispose operations
+  Completer<void>? _disposeCompleter;
 
   SimpleTTSService({
     AudioPlayerManager? audioPlayerManager,
@@ -167,6 +171,7 @@ class SimpleTTSService implements ITTSService {
       print('🔍 [TTS] Processing request: ${req.id}');
     }
     
+    WebSocketChannel? ws;
     try {
       _state = _State.connecting;
       
@@ -178,7 +183,7 @@ class SimpleTTSService implements ITTSService {
       final wsUrl = '$_backendUrl/ws/tts'.replaceFirst('http', 'ws');
       if (kDebugMode) print('🔍 [TTS] Creating WebSocket connection to: $wsUrl');
       
-      final ws = WebSocketChannel.connect(Uri.parse(wsUrl));
+      ws = WebSocketChannel.connect(Uri.parse(wsUrl));
       _state = _State.streaming;
 
       // Create event-driven completion tracker for this request
@@ -202,23 +207,34 @@ class SimpleTTSService implements ITTSService {
       // Process TTS request with fresh connection
       await _processResponse(req, ws, completionTracker);
       
-      // Always close the WebSocket after each request (simple pattern)
-      await ws.sink.close();
-      if (kDebugMode) print('🔍 [TTS] WebSocket closed for ${req.id}');
-      
       req.complete();
       if (kDebugMode) {
         print('✅ [TTS] Completed request: ${req.id}');
       }
       
     } catch (e, stackTrace) {
+      final ttsException = _convertToTtsException(e, 'TTS request processing');
       if (kDebugMode) {
-        print('❌ [TTS] Request failed: ${req.id} - $e');
+        print('❌ [TTS] Request failed: ${req.id} - ${ttsException.message}');
       }
-      req.completeError(e, stackTrace);
+      req.completeError(ttsException, stackTrace);
       _notifyTTSEnd(); // Reset TTS state on ANY error
       _fireCompletionSafely(false);
     } finally {
+      // CRITICAL: Always close WebSocket, even on error (prevents resource leaks)
+      if (ws != null) {
+        try {
+          await ws.sink.close();
+          // Wait for the TCP FIN to be observed (robust cleanup)
+          await ws.sink.done;
+          if (kDebugMode) print('🔍 [TTS] WebSocket closed for ${req.id}');
+        } catch (closeError) {
+          // Guard against close() throwing on already-closed channels
+          final ttsException = _convertToTtsException(closeError, 'WebSocket cleanup');
+          if (kDebugMode) print('⚠️ [TTS] WebSocket close error (already closed?): ${ttsException.message}');
+        }
+      }
+      
       _pendingStreams--; // Decrement when done (success or error)
       if (kDebugMode) {
         print('🔍 [TTS] Pending streams decremented to: $_pendingStreams');
@@ -268,15 +284,14 @@ class SimpleTTSService implements ITTSService {
   }
   
   /// Get optimal buffer size based on audio format
-  /// OPUS: 8KB for low-latency streaming
-  /// WAV: 32KB for header processing requirements
+  /// Both OPUS and WAV: 8KB for aggressive low-latency streaming
   int _getOptimalBufferSize(String format) {
     switch (format.toLowerCase()) {
       case 'opus':
         return 8192; // 8KB - OPUS is designed for low-latency streaming
       case 'wav':
       default:
-        return TTSStreamingConfig.bufferSize; // 32KB - WAV needs larger buffer for headers
+        return 8192; // 8KB - Aggressive threshold for faster time-to-first-audio
     }
   }
 
@@ -362,7 +377,8 @@ class SimpleTTSService implements ITTSService {
             _scheduleControllerClosureCheck(audioStreamController, liveAudioSource);
             break;
           } else if (type == 'error') {
-            throw Exception(data['detail'] ?? 'TTS error');
+            final errorDetail = data['detail'] ?? 'TTS error';
+            throw TtsNetworkException('TTS service error', errorDetail);
           }
         } else if (message is List<int>) {
           // Record first audio chunk timing
@@ -490,10 +506,17 @@ class SimpleTTSService implements ITTSService {
                 onNaturalCompletion: () {
                   // TIMING FIX: Check if mode changed since TTS started
                   if (_getCurrentGenerationCallback?.call() != genAtStart) {
-                    if (kDebugMode) {
-                      print('[TTS] Generation mismatch – ignoring completion (was $genAtStart, now ${_getCurrentGenerationCallback?.call()})');
+                    // Allow welcome messages (generation -1) to complete regardless
+                    if (genAtStart != -1) {
+                      if (kDebugMode) {
+                        print('[TTS] Generation mismatch – ignoring completion (was $genAtStart, now ${_getCurrentGenerationCallback?.call()})');
+                      }
+                      return;  // ⛔ don't re-arm VAD
                     }
-                    return;  // ⛔ don't re-arm VAD
+                    // Welcome messages (genAtStart == -1) are allowed through
+                    if (kDebugMode) {
+                      print('[TTS] Welcome message completion allowed despite generation change (was $genAtStart, now ${_getCurrentGenerationCallback?.call()})');
+                    }
                   }
                   
                   // Natural ExoPlayer completion - trigger VAD state transition immediately
@@ -649,17 +672,19 @@ class SimpleTTSService implements ITTSService {
           return; // Success - don't rethrow
           
         } catch (fallbackError) {
+          final ttsException = _convertToTtsException(fallbackError, 'WAV fallback');
           if (kDebugMode) {
-            print('❌ [TTS] WAV fallback also failed for ${req.id}: $fallbackError');
+            print('❌ [TTS] WAV fallback also failed for ${req.id}: ${ttsException.message}');
           }
           // Fall through to rethrow original error
         }
       }
       
+      final ttsException = _convertToTtsException(e, 'TTS streaming');
       if (kDebugMode) {
-        print('❌ [TTS] Streaming error for ${req.id}: $e');
+        print('❌ [TTS] Streaming error for ${req.id}: ${ttsException.message}');
       }
-      rethrow;
+      throw ttsException;
     } finally {
       // Ensure cleanup
       completionTracker.dispose();
@@ -788,7 +813,8 @@ class SimpleTTSService implements ITTSService {
           if (kDebugMode) print('🔍 [TTS] Got tts-done for ${req.id}');
           break; // Exit the await for loop
         } else if (type == 'error') {
-          throw Exception(data['detail'] ?? 'TTS error');
+          final errorDetail = data['detail'] ?? 'TTS error';
+          throw TtsNetworkException('TTS service error', errorDetail);
         }
       } else if (message is List<int>) {
         audioBuffer.addAll(message);
@@ -1004,7 +1030,8 @@ class SimpleTTSService implements ITTSService {
       
       if (kDebugMode) print('✅ [TTS] Emergency cleanup completed');
     } catch (e) {
-      if (kDebugMode) print('❌ [TTS] Error during emergency cleanup: $e');
+      final ttsException = _convertToTtsException(e, 'Emergency cleanup');
+      if (kDebugMode) print('❌ [TTS] Error during emergency cleanup: ${ttsException.message}');
     }
   }
 
@@ -1235,6 +1262,16 @@ class SimpleTTSService implements ITTSService {
     });
   }
 
+  /// Convert generic exceptions to structured TtsException
+  TtsException _convertToTtsException(Object error, String context) {
+    if (error is TtsException) {
+      return error; // Already structured
+    }
+    
+    // Use extension method for automatic conversion
+    return error.toTtsException(context);
+  }
+
   /// Get caller information for TTS duplication tracking
   String _getCallerInfo() {
     try {
@@ -1258,25 +1295,50 @@ class SimpleTTSService implements ITTSService {
 
   @override
   void dispose() {
+    // Prevent overlapping dispose operations using mutex
+    if (_disposeCompleter != null) {
+      if (kDebugMode) print('🔄 [TTS] Dispose already in progress, waiting...');
+      return; // Another dispose is already running
+    }
+    
     if (_disposed) return;
     _disposed = true;
     
-    // Complete all pending requests with error
-    while (_queue.isNotEmpty) {
-      final req = _queue.removeFirst();
-      req.completeError(Exception('Service disposed'));
+    // Set dispose mutex
+    _disposeCompleter = Completer<void>();
+    
+    try {
+      // Complete all pending requests with error
+      while (_queue.isNotEmpty) {
+        final req = _queue.removeFirst();
+        req.completeError(Exception('Service disposed'));
+      }
+      
+      // Reset TTS state on disposal
+      _notifyTTSEnd();
+      _fireCompletionSafely(false);
+      
+      // CRITICAL: Dispose AudioPlayerManager to release audio resources
+      try {
+        _audioPlayerManager.disposeAsync();
+        if (kDebugMode) print('🧹 [TTS] AudioPlayerManager disposal initiated');
+      } catch (e) {
+        if (kDebugMode) print('⚠️ [TTS] AudioPlayerManager disposal error: $e');
+      }
+      
+      // Phase 1: Close the speaking state stream controller
+      if (!_speakingStateController.isClosed) {
+        _speakingStateController.close();
+      }
+      
+      if (kDebugMode) print('🔍 [TTS] Service disposed');
+      
+      // Complete the dispose operation
+      _disposeCompleter?.complete();
+    } catch (e) {
+      if (kDebugMode) print('❌ [TTS] Error during dispose: $e');
+      _disposeCompleter?.completeError(e);
     }
-    
-    // Reset TTS state on disposal
-    _notifyTTSEnd();
-    _fireCompletionSafely(false);
-    
-    // Phase 1: Close the speaking state stream controller
-    if (!_speakingStateController.isClosed) {
-      _speakingStateController.close();
-    }
-    
-    if (kDebugMode) print('🔍 [TTS] Service disposed');
   }
 }
 

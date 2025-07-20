@@ -203,6 +203,7 @@ class TherapyService implements ITherapyService {
     List<Map<String, String>> history, {
     required Future<void> Function() onTTSPlaybackComplete,
     required void Function(String) onTTSError,
+    void Function()? onTTSStart,
   }) async {
     try {
       // Measure performance
@@ -216,6 +217,7 @@ class TherapyService implements ITherapyService {
         history,
         onTTSPlaybackComplete: onTTSPlaybackComplete,
         onTTSError: onTTSError,
+        onTTSStart: onTTSStart,
       );
 
       stopwatch.stop();
@@ -233,6 +235,7 @@ class TherapyService implements ITherapyService {
           history,
           onTTSPlaybackComplete: onTTSPlaybackComplete,
           onTTSError: onTTSError,
+          onTTSStart: onTTSStart,
         );
         return fallbackResult;
       } catch (fallbackError) {
@@ -252,6 +255,7 @@ class TherapyService implements ITherapyService {
     List<Map<String, String>> history, {
     required Future<void> Function() onTTSPlaybackComplete,
     required void Function(String) onTTSError,
+    void Function()? onTTSStart,
   }) async {
     try {
       log.d('Getting memory context for streaming...');
@@ -274,30 +278,34 @@ class TherapyService implements ITherapyService {
         }).toList();
       }
 
-      log.d('Starting WebSocket streaming to LLM...');
-      // Get streaming response from LLM via WebSocket
-      final aiResponseStream = _messageProcessor.streamMessage(
+      log.d('Getting LLM response via REST API...');
+      // Get complete response via REST API (non-streaming)
+      final aiResponse = await _messageProcessor.processMessage(
         userMessage,
         systemPrompt,
         graphResult,
-        history: conversationHistory,
+        history: conversationHistory.map((msg) => msg.map((key, value) => MapEntry(key, value.toString()))).toList(),
       );
 
-      String fullResponse = '';
-      bool ttsStarted = false;
+      log.d('AI response received, now starting TTS...');
+      // AI response is complete - NOW start TTS processing
       
-      // Create a broadcast stream to share between TTS processing and response collection
-      final broadcastStream = aiResponseStream.asBroadcastStream();
+      // Split response into sentences for faster TTS start
+      final controller = StreamController<Map<String, dynamic>>();
+      aiResponse.split(RegExp(r'(?<=[\.!?])\s+')).forEach((sentence) {
+        if (sentence.trim().isNotEmpty) {
+          controller.add({'type': 'content', 'content': sentence});
+        }
+      });
+      controller.add({'type': 'done'});
       
-      // Start TTS processing in parallel
-      final ttsProcessingFuture = _audioGenerator.processAIResponseWithStreamingTTS(
-        aiResponseStream: broadcastStream,
+      // Start TTS processing with the complete response stream
+      await _audioGenerator.processAIResponseWithStreamingTTS(
+        aiResponseStream: controller.stream,
         useTherapeuticProcessing: true, // Use therapeutic sentence processing
         onTTSStart: () {
-          if (!ttsStarted) {
-            ttsStarted = true;
-            log.i('🎵 TTS streaming started - first audio playing!');
-          }
+          log.i('🎵 TTS streaming started - first audio playing!');
+          onTTSStart?.call(); // Notify bloc that TTS actually started
         },
         onTTSComplete: () async {
           log.i('🎵 All TTS streaming completed');
@@ -308,34 +316,18 @@ class TherapyService implements ITherapyService {
           onTTSError(error);
         },
       );
-
-      // Collect the full response for memory storage and return
-      final responseCollectionFuture = () async {
-        await for (final event in broadcastStream) {
-          if (event['type'] == 'chunk' && event.containsKey('content')) {
-            fullResponse += event['content'] as String;
-          } else if (event['type'] == 'done') {
-            break;
-          } else if (event['type'] == 'error') {
-            throw Exception('AI streaming error: ${event['detail']}');
-          }
-        }
-      }();
-
-      // Wait for both TTS processing and response collection to complete
-      await Future.wait([ttsProcessingFuture, responseCollectionFuture]);
       
       // Save to memory in background after completion
-      if (fullResponse.isNotEmpty) {
-        final responseMap = {'response': fullResponse};
+      if (aiResponse.isNotEmpty) {
+        final responseMap = {'response': aiResponse};
         _memoryManager.processInsightsAndSaveMemory(
             userMessage, responseMap, graphResult);
       }
 
-      log.i('Real-time streaming completed. Full response length: ${fullResponse.length} characters');
+      log.i('Real-time streaming completed. Full response length: ${aiResponse.length} characters');
 
       return {
-        'text': fullResponse,
+        'text': aiResponse,
         'audioPath': 'streaming', // Indicate streaming was used
         'streaming': true,
       };
@@ -351,6 +343,7 @@ class TherapyService implements ITherapyService {
     List<Map<String, String>> history, {
     required Future<void> Function() onTTSPlaybackComplete,
     required void Function(String) onTTSError,
+    void Function()? onTTSStart,
   }) async {
     log.i('Using fallback TTS processing (traditional method)');
     
@@ -370,6 +363,9 @@ class TherapyService implements ITherapyService {
       // Generate audio using traditional streaming method
       String? audioPath;
       try {
+        // Notify that TTS is starting
+        onTTSStart?.call();
+        
         audioPath = await _audioGenerator.generateAndStreamAudio(
           textResponse,
           onDone: onTTSPlaybackComplete,

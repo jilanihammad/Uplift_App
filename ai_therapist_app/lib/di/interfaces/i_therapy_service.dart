@@ -65,6 +65,7 @@ abstract class ITherapyService {
     List<Map<String, String>> history, {
     required Future<void> Function() onTTSPlaybackComplete,
     required void Function(String) onTTSError,
+    void Function()? onTTSStart,
   });
   
   Future<String> processUserMessage(String userMessage, {
