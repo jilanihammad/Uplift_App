@@ -650,14 +650,23 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       if (state.isVoiceMode) {
         debugPrint(
-            '[VoiceSessionBloc] Voice mode - generating TTS response...');
-        emit(state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.streaming));
+            '[VoiceSessionBloc] Voice mode - getting AI response...');
+        emit(state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.preparing));
 
         final therapyServiceInstance = therapyService ?? DependencyContainer().therapy;
+        
+        // Debug assertion to catch parallel TTS sessions
+        assert(!isTtsActive, 
+               'Attempted to start TTS while another session is active (status: ${state.ttsStatus})');
+        
         final responseData =
             await therapyServiceInstance.processUserMessageWithStreamingAudio(
           transcription,
           history,
+          onTTSStart: () {
+            debugPrint('[VoiceSessionBloc] TTS streaming started');
+            emit(state.copyWith(ttsStatus: TtsStatus.streaming));
+          },
           onTTSPlaybackComplete: () async {
             debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
             emit(state.copyWith(isProcessingAudio: false, isAiSpeaking: false, ttsStatus: TtsStatus.idle));
@@ -844,14 +853,22 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       if (state.isVoiceMode) {
         debugPrint(
-            '[VoiceSessionBloc] Text message in voice mode - generating TTS...');
+            '[VoiceSessionBloc] Text message in voice mode - getting AI response...');
 
-        emit(state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.streaming));
+        emit(state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.preparing));
+
+        // Debug assertion to catch parallel TTS sessions
+        assert(!isTtsActive, 
+               'Attempted to start TTS while another session is active (status: ${state.ttsStatus})');
 
         final responseData =
             await therapyServiceInstance.processUserMessageWithStreamingAudio(
           event.text,
           history,
+          onTTSStart: () {
+            debugPrint('[VoiceSessionBloc] TTS streaming started');
+            emit(state.copyWith(ttsStatus: TtsStatus.streaming));
+          },
           onTTSPlaybackComplete: () async {
             debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
             emit(state.copyWith(isAiSpeaking: false, ttsStatus: TtsStatus.idle));

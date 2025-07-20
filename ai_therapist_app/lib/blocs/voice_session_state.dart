@@ -18,6 +18,7 @@ enum VoiceSessionStatus {
   ended,
   selectingDuration,
   selectingMood,
+  awaitingMood, // Waiting for mood selection before starting audio pipeline
   voiceModeActive,
   textModeActive,
 }
@@ -25,7 +26,8 @@ enum VoiceSessionStatus {
 /// Unified TTS status enum - single source of truth for TTS state across all components
 enum TtsStatus {
   idle,      // No TTS activity
-  streaming, // TTS WebSocket is streaming content
+  preparing, // Getting AI response, preparing for TTS (optional UI feedback)
+  streaming, // TTS WebSocket is streaming content  
   playing,   // Audio is actively playing through speakers
   cancelled, // TTS operation was cancelled
 }
