@@ -55,6 +55,7 @@ app.*.map.json
 # Local development keystore files
 **/*.keystore
 **/*.jks
+**/android/key.properties
 
 # Generated files
 lib/generated/
