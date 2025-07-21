@@ -180,3 +180,13 @@ class SetEndingSession extends VoiceSessionEvent {
 class UpdateSessionTimer extends VoiceSessionEvent {
   const UpdateSessionTimer();
 }
+
+// Events for two-step session start flow to prevent premature audio activation
+class StartSessionRequested extends VoiceSessionEvent {
+  const StartSessionRequested();
+}
+
+class InitialMoodSelected extends VoiceSessionEvent {
+  final Mood mood;
+  const InitialMoodSelected(this.mood);
+}
