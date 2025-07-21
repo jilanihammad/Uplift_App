@@ -22,6 +22,22 @@
           }
         },
         {
+          "client_id": "385290373302-a2g6ko06d8vdg4ejuisuflug9jn6thrl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.maya.uplift",
+            "certificate_hash": "9b9fc62ce4dbab350be7d88c9a87ec0980477a00"
+          }
+        },
+        {
+          "client_id": "385290373302-elb5hvu8le32snkpt21uheqi3rb79soe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.maya.uplift",
+            "certificate_hash": "9b143fa1065574d2b2b6efb2203c675f6a19d2e0"
+          }
+        },
+        {
           "client_id": "385290373302-ooblvvmrd0rkrfomrp17d6ejpa43bvff.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
