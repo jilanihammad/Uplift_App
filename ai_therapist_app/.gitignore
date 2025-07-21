@@ -57,7 +57,6 @@ app.*.map.json
 **/*.jks
 
 # Generated files
-lib/generated_plugin_registrant.dart
 lib/generated/
 
 # Web related

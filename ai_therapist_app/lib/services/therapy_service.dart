@@ -18,6 +18,7 @@ import '../di/interfaces/i_api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
+import '../di/dependency_container.dart';
 import 'enhanced_vad_manager.dart';
 import '../di/interfaces/i_therapy_service.dart';
 import '../models/therapy_message.dart';
@@ -209,7 +210,7 @@ class TherapyService implements ITherapyService {
       // Measure performance
       final stopwatch = Stopwatch()..start();
 
-      log.d('Starting real-time streaming TTS for user message: "$userMessage"');
+      log.d('Processing user message for AI response: "$userMessage"');
       
       // Use streaming approach instead of waiting for complete response
       final result = await _processUserMessageWithRealTimeStreaming(
@@ -288,34 +289,33 @@ class TherapyService implements ITherapyService {
       );
 
       log.d('AI response received, now starting TTS...');
+      log.d('AI response length: ${aiResponse.length} characters');
       // AI response is complete - NOW start TTS processing
       
       // Split response into sentences for faster TTS start
       final controller = StreamController<Map<String, dynamic>>();
       aiResponse.split(RegExp(r'(?<=[\.!?])\s+')).forEach((sentence) {
         if (sentence.trim().isNotEmpty) {
-          controller.add({'type': 'content', 'content': sentence});
+          controller.add({'type': 'chunk', 'content': sentence});
         }
       });
       controller.add({'type': 'done'});
       
-      // Start TTS processing with the complete response stream
-      await _audioGenerator.processAIResponseWithStreamingTTS(
-        aiResponseStream: controller.stream,
-        useTherapeuticProcessing: true, // Use therapeutic sentence processing
-        onTTSStart: () {
-          log.i('🎵 TTS streaming started - first audio playing!');
-          onTTSStart?.call(); // Notify bloc that TTS actually started
-        },
-        onTTSComplete: () async {
-          log.i('🎵 All TTS streaming completed');
-          await onTTSPlaybackComplete();
-        },
-        onError: (error) {
-          log.e('TTS streaming error: $error');
-          onTTSError(error);
-        },
-      );
+      // DIRECT TTS APPROACH: Use same path as welcome messages to avoid state conflicts
+      try {
+        log.i('🎵 TTS streaming started - first audio playing!');
+        onTTSStart?.call(); // Notify bloc that TTS actually started
+        
+        // Use SimpleTTSService directly (same as welcome messages)
+        final ttsService = DependencyContainer().ttsService;
+        await ttsService.speak(aiResponse, makeBackupFile: false);
+        
+        log.i('🎵 All TTS streaming completed');
+        await onTTSPlaybackComplete();
+      } catch (error) {
+        log.e('TTS streaming error: $error');
+        onTTSError(error.toString());
+      }
       
       // Save to memory in background after completion
       if (aiResponse.isNotEmpty) {

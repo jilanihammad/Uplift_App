@@ -640,6 +640,95 @@ void main() {
         ],
       );
     });
+
+    group('Two-Step Session Start Flow (Race Condition Fix)', () {
+      late VoiceSessionBloc bloc;
+
+      setUp(() {
+        bloc = VoiceSessionBloc(
+          voiceService: mockVoiceService,
+          vadManager: mockVadManager,
+          therapyService: mockTherapyService,
+          interfaceVoiceService: mockInterfaceVoiceService,
+        );
+      });
+
+      blocTest<VoiceSessionBloc, VoiceSessionState>(
+        'StartSessionRequested: idle → awaitingMood, shows duration selector',
+        build: () => bloc,
+        act: (bloc) => bloc.add(const StartSessionRequested()),
+        expect: () => [
+          isA<VoiceSessionState>()
+              .having((s) => s.status, 'status', VoiceSessionStatus.awaitingMood)
+              .having((s) => s.showDurationSelector, 'showDurationSelector', true)
+              .having((s) => s.showMoodSelector, 'showMoodSelector', false),
+        ],
+      );
+
+      blocTest<VoiceSessionBloc, VoiceSessionState>(
+        'Double StartSessionRequested: second request ignored',
+        build: () => bloc,
+        act: (bloc) {
+          bloc.add(const StartSessionRequested());
+          bloc.add(const StartSessionRequested()); // Second request should be ignored
+        },
+        expect: () => [
+          // Only one state change - second request ignored
+          isA<VoiceSessionState>()
+              .having((s) => s.status, 'status', VoiceSessionStatus.awaitingMood)
+              .having((s) => s.showDurationSelector, 'showDurationSelector', true),
+        ],
+      );
+
+      blocTest<VoiceSessionBloc, VoiceSessionState>(
+        'InitialMoodSelected: starts session with audio pipeline',
+        build: () => bloc,
+        seed: () => bloc.state.copyWith(status: VoiceSessionStatus.awaitingMood),
+        act: (bloc) => bloc.add(const InitialMoodSelected(Mood.happy)),
+        expect: () => [
+          isA<VoiceSessionState>()
+              .having((s) => s.status, 'status', VoiceSessionStatus.idle)
+              .having((s) => s.selectedMood, 'selectedMood', Mood.happy)
+              .having((s) => s.messages, 'messages', hasLength(1)), // Welcome message added
+        ],
+      );
+
+      blocTest<VoiceSessionBloc, VoiceSessionState>(
+        'Double InitialMoodSelected: second request ignored by session guard',
+        build: () => bloc,
+        seed: () => bloc.state.copyWith(status: VoiceSessionStatus.awaitingMood),
+        act: (bloc) {
+          bloc.add(const InitialMoodSelected(Mood.happy));
+          bloc.add(const InitialMoodSelected(Mood.sad)); // Should be ignored
+        },
+        expect: () => [
+          // Only one state change - second mood selection ignored
+          isA<VoiceSessionState>()
+              .having((s) => s.selectedMood, 'selectedMood', Mood.happy)
+              .having((s) => s.messages, 'messages', hasLength(1)),
+        ],
+      );
+
+      test('Session guard flag is reset on session end', () async {
+        // Start session 
+        bloc.add(const StartSessionRequested());
+        bloc.add(const InitialMoodSelected(Mood.happy));
+        await Future.delayed(const Duration(milliseconds: 10));
+        
+        // End session
+        bloc.add(const EndSessionRequested());
+        await Future.delayed(const Duration(milliseconds: 10));
+        
+        // Should be able to start new session now
+        bloc.add(const StartSessionRequested());
+        bloc.add(const InitialMoodSelected(Mood.sad));
+        
+        await Future.delayed(const Duration(milliseconds: 10));
+        expect(bloc.state.selectedMood, Mood.sad);
+        
+        bloc.close();
+      });
+    });
   });
 }
 
@@ -805,6 +894,97 @@ void testCharacterization_StateComputedProperties() {
     expect(durationState.sessionDurationMinutes, 45);
   });
 }
+
+// Duplicate test group - commented out to fix syntax errors
+/*  group('Two-Step Session Start Flow (Race Condition Fix)', () {
+    late VoiceSessionBloc bloc;
+
+    setUp(() {
+      bloc = VoiceSessionBloc(
+        voiceService: mockVoiceService,
+        vadManager: mockVadManager,
+        therapyService: mockTherapyService,
+        interfaceVoiceService: mockInterfaceVoiceService,
+      );
+    });
+
+    blocTest<VoiceSessionBloc, VoiceSessionState>(
+      'StartSessionRequested: idle → awaitingMood, shows duration selector',
+      build: () => bloc,
+      act: (bloc) => bloc.add(const StartSessionRequested()),
+      expect: () => [
+        isA<VoiceSessionState>()
+            .having((s) => s.status, 'status', VoiceSessionStatus.awaitingMood)
+            .having((s) => s.showDurationSelector, 'showDurationSelector', true)
+            .having((s) => s.showMoodSelector, 'showMoodSelector', false),
+      ],
+    );
+
+    blocTest<VoiceSessionBloc, VoiceSessionState>(
+      'Double StartSessionRequested: second request ignored',
+      build: () => bloc,
+      act: (bloc) {
+        bloc.add(const StartSessionRequested());
+        bloc.add(const StartSessionRequested()); // Second request should be ignored
+      },
+      expect: () => [
+        // Only one state change - second request ignored
+        isA<VoiceSessionState>()
+            .having((s) => s.status, 'status', VoiceSessionStatus.awaitingMood)
+            .having((s) => s.showDurationSelector, 'showDurationSelector', true),
+      ],
+    );
+
+    blocTest<VoiceSessionBloc, VoiceSessionState>(
+      'InitialMoodSelected: starts session with audio pipeline',
+      build: () => bloc,
+      seed: () => bloc.state.copyWith(status: VoiceSessionStatus.awaitingMood),
+      act: (bloc) => bloc.add(const InitialMoodSelected(Mood.happy)),
+      expect: () => [
+        isA<VoiceSessionState>()
+            .having((s) => s.status, 'status', VoiceSessionStatus.idle)
+            .having((s) => s.selectedMood, 'selectedMood', Mood.happy)
+            .having((s) => s.messages, 'messages', hasLength(1)), // Welcome message added
+      ],
+    );
+
+    blocTest<VoiceSessionBloc, VoiceSessionState>(
+      'Double InitialMoodSelected: second request ignored by session guard',
+      build: () => bloc,
+      seed: () => bloc.state.copyWith(status: VoiceSessionStatus.awaitingMood),
+      act: (bloc) {
+        bloc.add(const InitialMoodSelected(Mood.happy));
+        bloc.add(const InitialMoodSelected(Mood.sad)); // Should be ignored
+      },
+      expect: () => [
+        // Only one state change - second mood selection ignored
+        isA<VoiceSessionState>()
+            .having((s) => s.selectedMood, 'selectedMood', Mood.happy)
+            .having((s) => s.messages, 'messages', hasLength(1)),
+      ],
+    );
+
+    test('Session guard flag is reset on session end', () async {
+      // Start session 
+      bloc.add(const StartSessionRequested());
+      bloc.add(const InitialMoodSelected(Mood.happy));
+      await Future.delayed(const Duration(milliseconds: 10));
+      
+      // End session
+      bloc.add(const EndSessionRequested());
+      await Future.delayed(const Duration(milliseconds: 10));
+      
+      // Should be able to start new session now
+      bloc.add(const StartSessionRequested());
+      bloc.add(const InitialMoodSelected(Mood.calm));
+      
+      await Future.delayed(const Duration(milliseconds: 10));
+      expect(bloc.state.selectedMood, Mood.calm);
+      
+      bloc.close();
+    });
+  });
+*/
 
 // Mock class for AudioPlayerManager (needed for stream mocking)
 // MockAudioPlayer is now generated automatically from @GenerateMocks
