@@ -33,6 +33,7 @@ import '../services/firebase_service.dart';
 import '../services/backend_service.dart';
 import '../services/theme_service.dart';
 import '../services/navigation_service.dart';
+import '../services/subscription_manager.dart';
 
 import '../utils/connectivity_checker.dart';
 import 'interfaces/i_api_client.dart';
@@ -289,6 +290,12 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
       serviceLocator.registerLazySingleton<PreferencesService>(
           () => PreferencesService());
       debugPrint('Registered PreferencesService');
+    }
+
+    if (!serviceLocator.isRegistered<SubscriptionManager>()) {
+      serviceLocator.registerLazySingleton<SubscriptionManager>(
+          () => SubscriptionManager());
+      debugPrint('Registered SubscriptionManager');
     }
 
     if (!serviceLocator.isRegistered<ThemeService>()) {

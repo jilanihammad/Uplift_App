@@ -56,6 +56,52 @@ class AppLogger {
       _logger.t(message, error: error, stackTrace: stackTrace);
     }
   }
+  
+  // ENHANCED: Metrics tracking for production monitoring
+  
+  /// Track session initialization latency
+  static void trackSessionInitLatency(Duration latency) {
+    final latencyMs = latency.inMilliseconds;
+    
+    if (kDebugMode) {
+      _logger.i('📊 METRICS: session_init_latency=${latencyMs}ms');
+    }
+    
+    // In production, this would integrate with your analytics service
+    // For now, log as structured data that can be parsed by log aggregators
+    _logger.i('METRIC|session_init_latency|${latencyMs}ms');
+  }
+  
+  /// Track disposal errors that could indicate service lifecycle issues
+  static void trackDisposalError(String serviceName, String error) {
+    if (kDebugMode) {
+      _logger.w('📊 METRICS: disposed_service_error service=$serviceName error=$error');
+    }
+    
+    // Structured logging for production monitoring
+    _logger.w('METRIC|disposed_service_error|service=$serviceName|error=$error');
+  }
+  
+  /// Track service registration cleanup
+  static void trackServiceCleanup(String serviceName, bool success) {
+    if (kDebugMode) {
+      _logger.d('📊 METRICS: service_cleanup service=$serviceName success=$success');
+    }
+    
+    // Track cleanup success/failure for monitoring
+    _logger.i('METRIC|service_cleanup|service=$serviceName|success=$success');
+  }
+  
+  /// Track async disposal performance
+  static void trackAsyncDisposalTime(Duration duration, int serviceCount) {
+    final durationMs = duration.inMilliseconds;
+    
+    if (kDebugMode) {
+      _logger.d('📊 METRICS: async_disposal_time=${durationMs}ms services=$serviceCount');
+    }
+    
+    _logger.i('METRIC|async_disposal_time|${durationMs}ms|services=$serviceCount');
+  }
 }
 
 /// Custom filter that respects debug mode for debug messages

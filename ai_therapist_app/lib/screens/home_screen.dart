@@ -2,6 +2,7 @@
 // import 'package:flutter/material.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
@@ -11,6 +12,9 @@ import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
+import 'package:ai_therapist_app/services/subscription_manager.dart';
+import 'package:ai_therapist_app/models/subscription_tier.dart';
+import 'package:ai_therapist_app/screens/subscription_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final IProgressService? progressService;
@@ -28,14 +32,21 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Mood _currentMood = Mood.neutral;
   DateTime? _nextSessionDate;
   late IProgressService _progressService;
   late IPreferencesService _preferencesService;
   late IUserProfileService _userProfileService;
+  late SubscriptionManager _subscriptionManager;
   late UserProgress _progress;
   bool _progressInitialized = false;
+  SubscriptionTier _currentTier = SubscriptionTier.none;
+  bool _longPressDetected = false;
+  late AnimationController _buttonAnimationController;
+  late Animation<double> _buttonScaleAnimation;
+  late AnimationController _cardAnimationController;
+  late List<Animation<double>> _cardAnimations;
 
   @override
   void initState() {
@@ -43,12 +54,57 @@ class _HomeScreenState extends State<HomeScreen> {
     _progressService = widget.progressService ?? DependencyContainer().progress;
     _preferencesService = widget.preferencesService ?? DependencyContainer().preferences;
     _userProfileService = widget.userProfileService ?? DependencyContainer().userProfile;
+    _subscriptionManager = DependencyContainer().subscriptionManager;
     _progress = _progressService.progress;
+
+    // Initialize button animation
+    _buttonAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+    _buttonScaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.98,
+    ).animate(CurvedAnimation(
+      parent: _buttonAnimationController,
+      curve: Curves.easeInOut,
+    ));
+
+    // Initialize card animations
+    _cardAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    );
+    
+    // Create staggered animations for 4 cards
+    _cardAnimations = List.generate(4, (index) {
+      final start = index * 0.15; // 150ms stagger between each card
+      final end = start + 0.6; // Each animation takes 600ms
+      return Tween<double>(
+        begin: 0.0,
+        end: 1.0,
+      ).animate(CurvedAnimation(
+        parent: _cardAnimationController,
+        curve: Interval(start, end.clamp(0.0, 1.0), curve: Curves.easeOutBack),
+      ));
+    });
+
+    // Start card animations after initial load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _cardAnimationController.forward();
+      }
+    });
 
     // Listen for progress changes
     _progressService.progressChanged.addListener(_onProgressChanged);
+    
+    // Listen for subscription tier changes
+    _subscriptionManager.tierStream.listen(_onTierChanged);
+    _currentTier = _subscriptionManager.currentTier;
 
     _loadUserData();
+    _initializeSubscriptionManager();
 
     // Services are automatically initialized through dependency injection
     // No manual initialization needed here - services initialize when first accessed
@@ -62,10 +118,55 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _onTierChanged(SubscriptionTier newTier) {
+    if (mounted) {
+      setState(() {
+        _currentTier = newTier;
+      });
+      debugPrint('HomeScreen: Subscription tier changed to $newTier');
+    }
+  }
+
+  Future<void> _initializeSubscriptionManager() async {
+    try {
+      await _subscriptionManager.initialize();
+      debugPrint('HomeScreen: SubscriptionManager initialized');
+    } catch (e) {
+      debugPrint('HomeScreen: Error initializing SubscriptionManager: $e');
+    }
+  }
+
   @override
   void dispose() {
     _progressService.progressChanged.removeListener(_onProgressChanged);
+    _buttonAnimationController.dispose();
+    _cardAnimationController.dispose();
     super.dispose();
+  }
+
+  String _getRelativeSessionTime() {
+    if (_nextSessionDate == null) return 'Not scheduled';
+    
+    final now = DateTime.now();
+    final sessionDate = _nextSessionDate!;
+    final timeFormat = DateFormat('h:mm a');
+    
+    // Calculate days difference
+    final today = DateTime(now.year, now.month, now.day);
+    final sessionDay = DateTime(sessionDate.year, sessionDate.month, sessionDate.day);
+    final daysDifference = sessionDay.difference(today).inDays;
+    
+    if (daysDifference == 0) {
+      return 'Today · ${timeFormat.format(sessionDate)}';
+    } else if (daysDifference == 1) {
+      return 'Tomorrow · ${timeFormat.format(sessionDate)}';
+    } else if (daysDifference == -1) {
+      return 'Yesterday · ${timeFormat.format(sessionDate)}';
+    } else if (daysDifference > 1 && daysDifference <= 7) {
+      return '${DateFormat('EEEE').format(sessionDate)} · ${timeFormat.format(sessionDate)}';
+    } else {
+      return '${DateFormat('MMM d').format(sessionDate)} · ${timeFormat.format(sessionDate)}';
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -80,12 +181,14 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('Error syncing session data: $e');
     }
 
-    setState(() {
-      // Example data
-      _currentMood = Mood.neutral;
-      _nextSessionDate = DateTime.now().add(const Duration(days: 2));
-      _progressInitialized = true;
-    });
+    if (mounted) {
+      setState(() {
+        // Example data
+        _currentMood = Mood.neutral;
+        _nextSessionDate = DateTime.now().add(const Duration(days: 2));
+        _progressInitialized = true;
+      });
+    }
   }
 
   @override
@@ -160,22 +263,22 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Greeting card
-                _buildGreetingCard(),
+                _buildAnimatedCard(_buildGreetingCard(), 0),
 
                 const SizedBox(height: 24),
 
                 // Next session card moved up to position #2
-                if (_nextSessionDate != null) _buildNextSessionCard(),
+                if (_nextSessionDate != null) _buildAnimatedCard(_buildNextSessionCard(), 1),
 
                 const SizedBox(height: 24),
 
                 // Progress tracking
-                _buildProgressCard(),
+                _buildAnimatedCard(_buildProgressCard(), 2),
 
                 const SizedBox(height: 24),
 
                 // Quick mood check
-                _buildMoodCheckCard(),
+                _buildAnimatedCard(_buildMoodCheckCard(), 3),
 
                 // Remove the "View Past Sessions" section and spacing
                 // const SizedBox(height: 24),
@@ -193,32 +296,46 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => context.go('/chat'),
-          icon: const Icon(Icons.favorite),
-          label: const Text('Talk Now'),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
-          ),
-          elevation: 4,
-        ),
+        floatingActionButton: _buildAnimatedFloatingActionButton(),
       ),
+    );
+  }
+
+  Widget _buildAnimatedCard(Widget card, int index) {
+    if (index >= _cardAnimations.length) return card;
+    
+    return AnimatedBuilder(
+      animation: _cardAnimations[index],
+      builder: (context, child) {
+        final animationValue = _cardAnimations[index].value.clamp(0.0, 1.0);
+        return Transform.translate(
+          offset: Offset(0, 50 * (1 - animationValue)),
+          child: Opacity(
+            opacity: animationValue,
+            child: card,
+          ),
+        );
+      },
     );
   }
 
   Widget _buildGreetingCard() {
     final hour = DateTime.now().hour;
     String greeting;
+    String weatherEmoji;
 
     // Get display name using consistent logic
     String userName = _userProfileService.profile?.displayName ?? "there";
 
     if (hour < 12) {
       greeting = 'Good Morning';
+      weatherEmoji = '🌅'; // Sunrise
     } else if (hour < 17) {
       greeting = 'Good Afternoon';
+      weatherEmoji = '☀️'; // Sun
     } else {
       greeting = 'Good Evening';
+      weatherEmoji = '🌙'; // Moon
     }
 
     return Card(
@@ -238,7 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '$greeting, $userName!',
+                        '$greeting $weatherEmoji, $userName!',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -262,18 +379,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.favorite),
-              label: const Text('Start Session'),
-              style: ElevatedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
-              ),
-              onPressed: () => context.go('/chat'),
-            ),
           ],
         ),
       ),
@@ -479,8 +584,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNextSessionCard() {
-    final dateFormat = DateFormat.yMMMd().add_jm();
-
     return Card(
       elevation: 2,
       child: Padding(
@@ -505,11 +608,61 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            Text(
-              dateFormat.format(_nextSessionDate!),
-              style: const TextStyle(
-                fontSize: 16,
-              ),
+            Row(
+              children: [
+                // Calendar icon with day abbreviation
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        DateFormat('MMM').format(_nextSessionDate!).toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('d').format(_nextSessionDate!),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('E').format(_nextSessionDate!).toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 6,
+                          fontWeight: FontWeight.w500,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Relative time text
+                Expanded(
+                  child: Text(
+                    _getRelativeSessionTime(),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             Row(
@@ -853,27 +1006,29 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Stats row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildStatItem(
-                    '${_progress.sessionsThisWeek}',
-                    'Sessions',
-                    Icons.favorite,
+              // Stats row or empty state
+              _progress.sessionsThisWeek == 0 && _progress.moodLogsThisWeek == 0 && _progress.currentStreak == 0
+                ? _buildEmptyState()
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildStatItem(
+                        '${_progress.sessionsThisWeek}',
+                        'Sessions',
+                        Icons.favorite,
+                      ),
+                      _buildStatItem(
+                        '${_progress.moodLogsThisWeek}',
+                        'Mood Logs',
+                        Icons.mood,
+                      ),
+                      _buildStatItem(
+                        '${_progress.currentStreak}',
+                        'Day Streak',
+                        Icons.local_fire_department,
+                      ),
+                    ],
                   ),
-                  _buildStatItem(
-                    '${_progress.moodLogsThisWeek}',
-                    'Mood Logs',
-                    Icons.mood,
-                  ),
-                  _buildStatItem(
-                    '${_progress.currentStreak}',
-                    'Day Streak',
-                    Icons.local_fire_department,
-                  ),
-                ],
-              ),
             ],
           ),
         ),
@@ -881,58 +1036,207 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStatItem(String value, String label, IconData icon) {
-    // Define the soft colors for each icon
-    Color iconColor;
-    Color bgColor;
-
-    if (icon == Icons.favorite) {
-      // Soft pink for heart icon
-      iconColor = const Color(0xFFFF80AB);
-      bgColor = const Color(0xFFFFEBEE);
-    } else if (icon == Icons.mood) {
-      // Soft green for smiley icon
-      iconColor = const Color(0xFF66BB6A);
-      bgColor = const Color(0xFFE8F5E9);
-    } else if (icon == Icons.local_fire_department) {
-      // Soft orange for fire icon
-      iconColor = const Color(0xFFFF9800);
-      bgColor = const Color(0xFFFFF3E0);
-    } else {
-      // Default colors for any other icons
-      iconColor = Theme.of(context).primaryColor;
-      bgColor = Theme.of(context).primaryColor.withOpacity(0.1);
-    }
-
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: bgColor,
-            shape: BoxShape.circle,
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24.0),
+      child: Column(
+        children: [
+          // Friendly illustration using emoji
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Text(
+                '🌟',
+                style: TextStyle(fontSize: 40),
+              ),
+            ),
           ),
-          child: Icon(
-            icon,
-            color: iconColor,
+          const SizedBox(height: 16),
+          Text(
+            'Let\'s start your first conversation',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).primaryColor,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
+          const SizedBox(height: 8),
+          Text(
+            'Your journey to better mental health begins here',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+            ),
           ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+
+  Widget _buildAnimatedFloatingActionButton() {
+    return AnimatedBuilder(
+      animation: _buttonScaleAnimation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _buttonScaleAnimation.value,
+          child: GestureDetector(
+            onLongPress: kDebugMode ? () {
+              _longPressDetected = true;
+              debugPrint('Developer bypass activated: Long press detected');
+              HapticFeedback.mediumImpact();
+              _startSession();
+            } : null,
+            child: FloatingActionButton.extended(
+              onPressed: () async {
+                _longPressDetected = false; // Reset for normal press
+                // Trigger press animation
+                await _buttonAnimationController.forward();
+                await _buttonAnimationController.reverse();
+                
+                // Execute action after animation
+                _startSession();
+              },
+              icon: Icon(
+                kDebugMode && _currentTier == SubscriptionTier.none 
+                    ? Icons.developer_mode 
+                    : Icons.favorite
+              ),
+              label: Text(
+                kDebugMode && _currentTier == SubscriptionTier.none
+                    ? '${_getSessionButtonText()} (Long press to bypass)'
+                    : _getSessionButtonText()
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              elevation: _buttonScaleAnimation.value == 1.0 ? 4 : 2,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatItem(String value, String label, IconData icon) {
+    final numericValue = int.tryParse(value) ?? 0;
+    final hasActivity = numericValue > 0;
+    
+    // Define colors based on activity
+    Color iconColor;
+    Color bgColor;
+    Color activeColor;
+
+    if (icon == Icons.favorite) {
+      activeColor = const Color(0xFFFF80AB); // Soft pink
+      iconColor = hasActivity ? activeColor : Colors.grey.shade400;
+      bgColor = hasActivity ? const Color(0xFFFFEBEE) : Colors.grey.shade100;
+    } else if (icon == Icons.mood) {
+      activeColor = const Color(0xFF66BB6A); // Soft green
+      iconColor = hasActivity ? activeColor : Colors.grey.shade400;
+      bgColor = hasActivity ? const Color(0xFFE8F5E9) : Colors.grey.shade100;
+    } else if (icon == Icons.local_fire_department) {
+      activeColor = const Color(0xFFFF9800); // Soft orange
+      iconColor = hasActivity ? activeColor : Colors.grey.shade400;
+      bgColor = hasActivity ? const Color(0xFFFFF3E0) : Colors.grey.shade100;
+    } else {
+      activeColor = Theme.of(context).primaryColor;
+      iconColor = hasActivity ? activeColor : Colors.grey.shade400;
+      bgColor = hasActivity ? Theme.of(context).primaryColor.withOpacity(0.1) : Colors.grey.shade100;
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: Column(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+              boxShadow: hasActivity ? [
+                BoxShadow(
+                  color: activeColor.withOpacity(0.2),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                )
+              ] : null,
+            ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Icon(
+                icon,
+                key: ValueKey('$icon-$hasActivity'),
+                color: iconColor,
+                size: hasActivity ? 26 : 24,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 300),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: hasActivity ? Colors.black87 : Colors.grey.shade600,
+            ),
+            child: Text(value),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: hasActivity 
+                ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)
+                : Colors.grey.shade500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Get appropriate button text based on subscription tier
+  String _getSessionButtonText() {
+    switch (_currentTier) {
+      case SubscriptionTier.none:
+        return 'Start Free Trial';
+      case SubscriptionTier.trial:
+        return 'Talk Now';
+      case SubscriptionTier.basic:
+        return 'Start Chat';
+      case SubscriptionTier.premium:
+        return 'Talk Now';
+    }
+  }
+
+  /// Start a session based on subscription tier
+  void _startSession() {
+    // Developer bypass: Long press (3+ seconds) bypasses subscription check
+    if (kDebugMode && _longPressDetected) {
+      debugPrint('Developer bypass: Accessing chat without subscription');
+      context.go('/chat');
+      return;
+    }
+    
+    if (_currentTier.allowsChatSessions) {
+      // All paid tiers (basic and premium) can access chat
+      context.go('/chat');
+    } else {
+      // Free tier - navigate directly to subscription screen
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const SubscriptionScreen(),
+        ),
+      );
+    }
+  }
+
 }

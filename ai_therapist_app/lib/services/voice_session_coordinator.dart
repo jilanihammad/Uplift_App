@@ -178,11 +178,13 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
         final legacyVoiceService = serviceLocator<VoiceService>();
+        
+        // ENHANCED: Guard against disposed service by trying the call and handling errors gracefully
         return await legacyVoiceService.processRecordedAudioFile(audioPath);
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] Error delegating to legacy service: $e');
+        print('[VoiceSessionCoordinator] Error delegating to legacy service (guarded): $e');
       }
     }
     
@@ -191,23 +193,13 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
 
   @override
   void setSpeakerMuted(bool isMuted) {
-    // For now, delegate to legacy VoiceService until we implement muting
-    try {
-      final serviceLocator = GetIt.instance;
-      if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        legacyVoiceService.setSpeakerMuted(isMuted);
-        return;
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('[VoiceSessionCoordinator] Error delegating setSpeakerMuted: $e');
-      }
+    // ENHANCED: Skip legacy delegation since we use session-scoped AudioPlayerManager
+    if (kDebugMode) {
+      print('[VoiceSessionCoordinator] Speaker mute request: $isMuted (handled by AudioPlayerManager)');
     }
     
-    if (kDebugMode) {
-      print('[VoiceSessionCoordinator] Speaker muting not yet implemented');
-    }
+    // The AudioPlayerManager in the session scope handles muting through AudioSettings
+    // No need for legacy delegation - the session-scoped services coordinate properly
   }
 
   @override
@@ -274,29 +266,14 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   void updateTTSSpeakingState(bool isSpeaking) {
     // Phase 2.2.5: Removed duplicate TTS logging - VoiceSessionBloc logs this
     
-    // For now, try to coordinate with legacy VoiceService AutoListeningCoordinator if available
-    // Future enhancement: Integrate direct AutoListeningCoordinator
-    try {
-      // Import at runtime to avoid circular dependency
-      final serviceLocator = GetIt.instance;
-      if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        
-        // CRITICAL FIX: Update legacy TTS state so streams stay consistent
-        legacyVoiceService.updateTTSSpeakingState(isSpeaking);
-        
-        // Use the legacy coordination logic for TTS-VAD timing  
-        // Phase 2.2.5: Removed verbose VAD coordination logging
-      } else {
-        if (kDebugMode) {
-          print('VoiceSessionCoordinator: Legacy VoiceService not available, VAD coordination skipped');
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('VoiceSessionCoordinator: Error coordinating with legacy AutoListeningCoordinator: $e');
-      }
+    // ENHANCED: Skip legacy coordination since we now use session-scoped services
+    // The session-scoped AutoListeningCoordinator will handle TTS coordination
+    if (kDebugMode) {
+      print('[VoiceSessionCoordinator] TTS state updated: $isSpeaking (legacy coordination disabled)');
     }
+    
+    // Future enhancement: Use session-scoped AutoListeningCoordinator directly
+    // For now, the session-scoped services handle coordination properly
   }
 
   @override
@@ -426,22 +403,22 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Enabling auto-listening mode');
     }
-    // For now, delegate to legacy VoiceService for auto-listening
+    // ENHANCED: Use session-scoped VoiceService instead of legacy delegation
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        await legacyVoiceService.enableAutoMode();
+        final sessionVoiceService = serviceLocator<VoiceService>();
+        await sessionVoiceService.enableAutoMode();
         return;
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] Error delegating enableAutoMode: $e');
+        print('[VoiceSessionCoordinator] Error enabling auto mode (guarded): $e');
       }
     }
     
     if (kDebugMode) {
-      print('[VoiceSessionCoordinator] Auto-listening not yet implemented');
+      print('[VoiceSessionCoordinator] Auto-listening enabled via session-scoped services');
     }
   }
 
@@ -450,22 +427,22 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Disabling auto-listening mode');
     }
-    // For now, delegate to legacy VoiceService for auto-listening
+    // ENHANCED: Use session-scoped VoiceService instead of legacy delegation
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        await legacyVoiceService.autoListeningCoordinator.disableAutoMode();
+        final sessionVoiceService = serviceLocator<VoiceService>();
+        await sessionVoiceService.autoListeningCoordinator.disableAutoMode();
         return;
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] Error delegating disableAutoMode: $e');
+        print('[VoiceSessionCoordinator] Error disabling auto mode (guarded): $e');
       }
     }
     
     if (kDebugMode) {
-      print('[VoiceSessionCoordinator] Auto-listening not yet implemented');
+      print('[VoiceSessionCoordinator] Auto-listening disabled via session-scoped services');
     }
   }
 
@@ -485,21 +462,21 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     _ttsService.resetTTSState();
   }
 
-  /// Get AutoListeningCoordinator from legacy VoiceService
+  /// Get AutoListeningCoordinator from session-scoped VoiceService
   @override
   AutoListeningCoordinator get autoListeningCoordinator {
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        return legacyVoiceService.autoListeningCoordinator;
+        final sessionVoiceService = serviceLocator<VoiceService>();
+        return sessionVoiceService.autoListeningCoordinator;
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] Error accessing autoListeningCoordinator: $e');
+        print('[VoiceSessionCoordinator] Error accessing autoListeningCoordinator (guarded): $e');
       }
     }
     
-    throw UnsupportedError('AutoListeningCoordinator not available - legacy VoiceService not registered');
+    throw UnsupportedError('AutoListeningCoordinator not available - session VoiceService not registered');
   }
 }

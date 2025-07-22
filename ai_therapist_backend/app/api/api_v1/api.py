@@ -1,10 +1,13 @@
 from fastapi import APIRouter
 
 from app.api.endpoints import ai, voice
+from app.api.api_v1.endpoints import google_play_webhook, subscriptions
 
 api_router = APIRouter()
 api_router.include_router(ai.router, prefix="/llm", tags=["ai"])
 api_router.include_router(voice.router, prefix="/voice", tags=["voice"])
+api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["subscriptions"])
+api_router.include_router(google_play_webhook.router, prefix="/webhooks", tags=["webhooks"])
 
 # Add your routes here, for example:
 # @api_router.get("/")

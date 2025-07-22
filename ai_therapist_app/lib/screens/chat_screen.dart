@@ -25,6 +25,8 @@ import 'package:ai_therapist_app/screens/widgets/chat_app_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_interface_view.dart';
 import '../widgets/debug_drawer.dart';
 import '../utils/app_logger.dart';
+import '../services/subscription_manager.dart';
+import '../models/subscription_tier.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
@@ -82,6 +84,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   late final ITherapyService _therapyService;
   late final IProgressService _progressService;
   late final INavigationService _navigationService;
+  late final SubscriptionManager _subscriptionManager;
 
   // Session timer
   Timer? _sessionTimer;
@@ -176,6 +179,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _therapyService = DependencyContainer().therapy;
     _progressService = DependencyContainer().progress;
     _navigationService = DependencyContainer().navigation;
+    _subscriptionManager = DependencyContainer().subscriptionManager;
 
     // Don't enable wakelock here - only enable during active therapy session
 
@@ -272,6 +276,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
               onSendMessage: _sendMessage,
               messageController: _messageController,
               scrollController: _scrollController,
+              subscriptionTier: _subscriptionManager.currentTier,
             ),
             endDrawer: kDebugMode ? const DebugDrawer() : null,
           ),

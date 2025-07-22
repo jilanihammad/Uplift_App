@@ -17,8 +17,11 @@ import 'auto_listening_coordinator.dart';
 import 'audio_player_manager.dart';
 import 'voice_service.dart';
 import 'recording_manager.dart';
+import 'websocket_audio_manager.dart';
+import '../data/datasources/remote/api_client.dart';
 import '../utils/disposable.dart';
 import '../di/service_locator.dart';
+import '../utils/app_logger.dart';
 
 /// Manages session-scoped services using factory pattern.
 /// Creates fresh instances for each therapy session to prevent state bleed
@@ -38,18 +41,31 @@ class SessionScopeManager {
       throw StateError('Session already in progress. Call destroySessionScope() first.');
     }
     
+    // ENHANCED: Track session initialization latency
+    final initStopwatch = Stopwatch()..start();
+    
     try {
       await _createSessionServices();
+      
+      initStopwatch.stop();
       
       if (kDebugMode) {
         debugPrint('[SessionScope] Created session scope with ${_sessionServices.length} services');
       }
       
+      // Track successful session initialization
+      AppLogger.trackSessionInitLatency(initStopwatch.elapsed);
+      
     } catch (e) {
+      initStopwatch.stop();
+      
       // Error handling during creation - cleanup partial state
       if (kDebugMode) {
         debugPrint('[SessionScope] Error during scope creation: $e');
       }
+      
+      // Track failed initialization
+      AppLogger.trackDisposalError('SessionScope', 'Init failed: $e');
       
       await _cleanupPartialServices();
       rethrow;
@@ -67,7 +83,7 @@ class SessionScopeManager {
       await Future.any([
         _performDisposal(),
         Future.delayed(const Duration(seconds: 10), () {
-          throw TimeoutException('Session scope disposal timeout', const Duration(seconds: 10));
+          throw TimeoutException('Session scope disposal timeout');
         }),
       ]);
     } on TimeoutException catch (e) {
@@ -110,30 +126,53 @@ class SessionScopeManager {
         }
       }
       
-      // Dispose async services first (AudioPlayerManager, etc.) with proper timing
+      // ENHANCED: Dispose async services concurrently with Future.wait for better performance
       if (asyncServices.isNotEmpty) {
         if (kDebugMode) {
-          debugPrint('[SessionScope] Disposing ${asyncServices.length} async services');
+          debugPrint('[SessionScope] Disposing ${asyncServices.length} async services concurrently');
         }
         
+        final disposalFutures = <Future<void>>[];
+        
         for (final service in asyncServices) {
-          try {
+          final serviceName = service.runtimeType.toString();
+          
+          if (serviceName == 'AudioPlayerManager') {
             // Special handling for AudioPlayerManager session cleanup
-            if (service.runtimeType.toString() == 'AudioPlayerManager') {
-              // Use session-specific cleanup for proper TTS state management
-              await service.sessionEndCleanup();
-              if (kDebugMode) {
-                debugPrint('[SessionScope] AudioPlayerManager session cleanup completed');
-              }
-            } else if (service is SessionDisposable) {
-              await service.disposeAsync();
-            }
-          } catch (e) {
-            if (kDebugMode) {
-              debugPrint('[SessionScope] Error async disposing ${service.runtimeType}: $e');
-            }
-            // Continue with other services even if one fails
+            disposalFutures.add(
+              service.sessionEndCleanup().catchError((e) {
+                if (kDebugMode) {
+                  debugPrint('[SessionScope] Error in AudioPlayerManager cleanup: $e');
+                }
+                // Don't rethrow - continue with other services
+                return Future.value();
+              })
+            );
+          } else if (service is SessionDisposable) {
+            disposalFutures.add(
+              service.disposeAsync().catchError((e) {
+                if (kDebugMode) {
+                  debugPrint('[SessionScope] Error async disposing $serviceName: $e');
+                }
+                // Don't rethrow - continue with other services
+                return Future.value();
+              })
+            );
           }
+        }
+        
+        // Wait for all async disposals to complete before proceeding
+        if (disposalFutures.isNotEmpty) {
+          final asyncStopwatch = Stopwatch()..start();
+          await Future.wait(disposalFutures);
+          asyncStopwatch.stop();
+          
+          if (kDebugMode) {
+            debugPrint('[SessionScope] All async services disposed successfully');
+          }
+          
+          // Track async disposal performance
+          AppLogger.trackAsyncDisposalTime(asyncStopwatch.elapsed, disposalFutures.length);
         }
       }
       
@@ -164,6 +203,13 @@ class SessionScopeManager {
           }
         }
       }
+      
+      // ENHANCED FIX: Clean up service registrations to prevent dead object access
+      if (kDebugMode) {
+        debugPrint('[SessionScope] Cleaning up DI registrations for fresh session');
+      }
+      
+      // VoiceService is now a singleton and not unregistered here
       
       _sessionServices.clear();
       _disposableServices.clear();
@@ -216,7 +262,10 @@ class SessionScopeManager {
       _sessionServices[AudioPlayerManager] = audioPlayerManager;
       _disposableServices.add(audioPlayerManager);
       
-      // AutoListeningCoordinator - VAD and auto-listening management
+      // VoiceService is now a singleton and not session-scoped
+      // It will be registered globally in the DI container, not here
+      
+      // AutoListeningCoordinator - VAD and auto-listening management  
       if (kDebugMode) {
         debugPrint('[SessionScope] Creating AutoListeningCoordinator');
       }
@@ -224,7 +273,7 @@ class SessionScopeManager {
       final autoListeningCoordinator = AutoListeningCoordinator(
         audioPlayerManager: audioPlayerManager, // session-scoped
         recordingManager: serviceLocator<RecordingManager>(), // app-scoped
-        voiceService: serviceLocator<VoiceService>(), // app-scoped
+        voiceService: serviceLocator<VoiceService>(), // app-scoped singleton
       );
       _sessionServices[AutoListeningCoordinator] = autoListeningCoordinator;
       _disposableServices.add(autoListeningCoordinator);
@@ -234,10 +283,17 @@ class SessionScopeManager {
         debugPrint('[SessionScope] Creating VoiceSessionCoordinator');
       }
       
+      // Create fresh WebSocketAudioManager for this session (to avoid disposed instance issue)
+      final sessionWebSocketManager = WebSocketAudioManager(
+        apiClient: serviceLocator<ApiClient>(),
+      );
+      _sessionServices[IWebSocketAudioManager] = sessionWebSocketManager;
+      _disposableServices.add(sessionWebSocketManager);
+      
       final voiceSessionCoordinator = VoiceSessionCoordinator(
         recordingService: serviceLocator<IAudioRecordingService>(), // app-scoped
         ttsService: serviceLocator<ITTSService>(),                   // app-scoped  
-        wsManager: serviceLocator<IWebSocketAudioManager>(),         // app-scoped
+        wsManager: sessionWebSocketManager,                          // session-scoped (fresh instance)
         fileManager: serviceLocator<IAudioFileManager>(),            // app-scoped
       );
       _sessionServices[VoiceSessionCoordinator] = voiceSessionCoordinator;

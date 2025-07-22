@@ -1412,6 +1412,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     // Reset session start flag
     _sessionStarted = false;
     
+    // Physically mute the audio when session ends
+    _safeVoiceService.setSpeakerMuted(true);
+    
     emit(newState);
     
     // Note: Wakelock, navigation, VAD stopping remain in UI layer for now

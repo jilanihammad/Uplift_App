@@ -110,7 +110,7 @@ class PlaybackException implements Exception {
 }
 
 class VoiceService {
-  // Singleton instance
+  // Private constructor and singleton instance
   static VoiceService? _instance;
 
   // WebSocket functionality removed - now handled by WebSocketAudioManager
@@ -237,22 +237,16 @@ class VoiceService {
         .enableAutoModeWithAudioState(isAudioPlaying);
   }
 
-  // Factory constructor to enforce singleton pattern
+  // Factory constructor to maintain singleton instance
   factory VoiceService({
     required ApiClient apiClient,
     IAudioSettings? audioSettings,
   }) {
-    // Return existing instance if already created
     if (_instance != null) {
-      if (kDebugMode) {
-        print('Reusing existing VoiceService instance');
-      }
       return _instance!;
     }
-
-    // Create new instance if first time
     _instance = VoiceService._internal(
-      apiClient: apiClient, 
+      apiClient: apiClient,
       audioSettings: audioSettings,
     );
     return _instance!;
@@ -957,6 +951,7 @@ class VoiceService {
     }
 
     // AudioPlayerManager is disposed separately by its own dispose method
+    _audioPlayerManager.dispose();
 
     // if (_recordingStateController != null && !_recordingStateController!.isClosed) {
     //   _recordingStateController!.close();
@@ -983,6 +978,9 @@ class VoiceService {
       }
     }
   }
+
+  /// VoiceService is now session-scoped - no singleton to reset
+  /// Each session gets a fresh instance managed by SessionScopeManager
 
   // Method to dispose the voice service
   // void emitRecordingState(RecordingState state) {
@@ -1022,8 +1020,9 @@ class VoiceService {
     
     _lastPlayedFile = filePath;
     _setAiSpeaking(true);
-    if (kDebugMode)
+    if (kDebugMode) {
       print('[VoiceService] playAudioWithCallbacks: Playing $filePath');
+    }
     
     try {
       // Ensure the AudioPlayerManager's playAudio method is awaited
@@ -1031,7 +1030,9 @@ class VoiceService {
       await _audioPlayerManager.playAudio(filePath);
       onDone?.call();
     } catch (e) {
-      if (kDebugMode) print('❌ ERROR playing audio with callbacks: $e');
+      if (kDebugMode) {
+        print('❌ ERROR playing audio with callbacks: $e');
+      }
       onError?.call('Error playing audio: ${e.toString()}');
     } finally {
       _setAiSpeaking(false);
@@ -1054,14 +1055,6 @@ class VoiceService {
     }
   }
 
-  /// Centralized callback for when TTS playback is done successfully
-  void _onPlaybackDone() {
-    isAiSpeaking = false;      // single source of truth
-    _ttsSpeakingStateController.add(false);
-    if (kDebugMode) {
-      print('[VoiceService] _onPlaybackDone: TTS state cleared (AutoListeningCoordinator handles VAD restart)');
-    }
-  }
 
   /// Update TTS speaking state for auto-listening coordination
   /// This is the clean interface for external TTS state updates

@@ -36,6 +36,10 @@ dependencies:
   # firebase_app_check: ^0.2.2+10 # Enable App Check for better security - temporarily disabled
 
   web_socket_channel: ^3.0.1
+  
+  # In-app purchases (Play Billing v6+ compliance)
+  in_app_purchase: ^3.2.0
+  
   # Local storage
   shared_preferences: ^2.2.1
   sqflite: ^2.3.0

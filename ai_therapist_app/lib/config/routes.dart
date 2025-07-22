@@ -21,6 +21,7 @@ import 'package:ai_therapist_app/screens/progress_screen.dart';
 import 'package:ai_therapist_app/screens/onboarding/onboarding_wrapper.dart';
 import 'package:ai_therapist_app/screens/session_details_screen.dart';
 import 'package:ai_therapist_app/screens/diagnostic_screen.dart';
+import 'package:ai_therapist_app/screens/subscription_screen.dart';
 
 // Services for navigation guards
 import 'package:ai_therapist_app/di/dependency_container.dart';
@@ -48,6 +49,7 @@ class AppRouter {
   static const String onboarding = '/onboarding';
   static const String diagnostic = '/diagnostic';
   static const String tasks = '/tasks'; // Added tasks route
+  static const String subscription = '/subscription';
 
   // Create and configure the router
   static final GoRouter router = GoRouter(
@@ -158,6 +160,12 @@ class AppRouter {
       GoRoute(
         path: phoneLogin,
         builder: (context, state) => const PhoneLoginScreen(),
+      ),
+
+      // Subscription route
+      GoRoute(
+        path: subscription,
+        builder: (context, state) => const SubscriptionScreen(),
       ),
 
       // Session summary route

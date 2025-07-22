@@ -8,6 +8,7 @@ import '../../blocs/voice_session_event.dart';
 import 'voice_controls_panel.dart';
 import 'chat_message_list.dart';
 import 'text_input_bar.dart';
+import '../../models/subscription_tier.dart';
 
 /// Callback types for interface actions
 typedef InterfaceCallback = void Function();
@@ -19,6 +20,7 @@ class ChatInterfaceView extends StatefulWidget {
   final InterfaceCallback onSendMessage;
   final TextEditingController messageController;
   final ScrollController scrollController;
+  final SubscriptionTier subscriptionTier;
 
   const ChatInterfaceView({
     super.key,
@@ -26,6 +28,7 @@ class ChatInterfaceView extends StatefulWidget {
     required this.onSendMessage,
     required this.messageController,
     required this.scrollController,
+    required this.subscriptionTier,
   });
 
   @override
@@ -120,6 +123,18 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
 
   /// Builds the microphone button for text mode with appropriate states
   Widget _buildMicButton() {
+    // Check if voice functionality is allowed for current subscription tier
+    if (!widget.subscriptionTier.allowsVoiceSessions) {
+      // Show upgrade prompt for basic tier users
+      return IconButton(
+        icon: Icon(
+          Icons.mic_off,
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+        ),
+        onPressed: () => _showVoiceUpgradeDialog(context),
+      );
+    }
+
     return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
       builder: (context, state) {
         if (!state.isVADActive) {
@@ -176,5 +191,82 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
         curve: Curves.easeOut,
       );
     }
+  }
+
+  /// Show upgrade dialog when basic tier users try to use voice features
+  void _showVoiceUpgradeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.mic, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 8),
+            const Text('Voice Features'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Voice therapy sessions are available with Premium subscription.',
+              style: TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Theme.of(context).primaryColor),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Premium Plan',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        '\$10/month',
+                        style: TextStyle(
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('• Voice + chat therapy sessions'),
+                  const Text('• Real-time voice processing'),
+                  const Text('• All premium features'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Maybe Later'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Navigate to subscription screen
+              Navigator.pushNamed(context, '/subscription');
+            },
+            child: const Text('Upgrade Now'),
+          ),
+        ],
+      ),
+    );
   }
 }
