@@ -28,6 +28,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   final ITTSService _ttsService;
   final IWebSocketAudioManager _wsManager;
   final IAudioFileManager _fileManager;
+  final VoiceService _voiceService;
   
   // Future enhancement: Direct AutoListeningCoordinator integration
   // late final AutoListeningCoordinator _autoListening;
@@ -45,10 +46,12 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     required ITTSService ttsService,
     required IWebSocketAudioManager wsManager,
     required IAudioFileManager fileManager,
+    required VoiceService voiceService,
   }) : _recordingService = recordingService,
        _ttsService = ttsService,
        _wsManager = wsManager,
-       _fileManager = fileManager {
+       _fileManager = fileManager,
+       _voiceService = voiceService {
     _initializeCoordinator();
   }
 
@@ -177,7 +180,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
+        final legacyVoiceService = _voiceService;
         
         // ENHANCED: Guard against disposed service by trying the call and handling errors gracefully
         return await legacyVoiceService.processRecordedAudioFile(audioPath);
@@ -407,7 +410,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final sessionVoiceService = serviceLocator<VoiceService>();
+        final sessionVoiceService = _voiceService;
         await sessionVoiceService.enableAutoMode();
         return;
       }
@@ -431,7 +434,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final sessionVoiceService = serviceLocator<VoiceService>();
+        final sessionVoiceService = _voiceService;
         await sessionVoiceService.autoListeningCoordinator.disableAutoMode();
         return;
       }
@@ -468,7 +471,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final sessionVoiceService = serviceLocator<VoiceService>();
+        final sessionVoiceService = _voiceService;
         return sessionVoiceService.autoListeningCoordinator;
       }
     } catch (e) {

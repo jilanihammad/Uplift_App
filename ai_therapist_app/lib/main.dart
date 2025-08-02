@@ -723,8 +723,9 @@ Future<void> _initializeConfigAndApi() async {
     // Initialize services in a specific order to avoid conflicts
     // 1. First initialize services that don't depend on the database
     try {
+      // REVERT: Initialize VoiceService at startup since first session was working
       logger.debug('[Main] Initializing VoiceService...');
-      final voiceService = serviceLocator<VoiceService>(); // Keep legacy VoiceService for initialization
+      final voiceService = serviceLocator<VoiceService>(); // Singleton
       await voiceService.initialize();
       logger.debug('[Main] VoiceService initialized ✓');
 

@@ -110,8 +110,7 @@ class PlaybackException implements Exception {
 }
 
 class VoiceService {
-  // Private constructor and singleton instance
-  static VoiceService? _instance;
+  // FIXED: Removed singleton pattern - now session-scoped via factory registration
 
   // WebSocket functionality removed - now handled by WebSocketAudioManager
   
@@ -160,8 +159,8 @@ class VoiceService {
   // Audio settings for global mute functionality
   final IAudioSettings? _audioSettings;
 
-  // Backend server URL
-  late String _backendUrl;
+  // Backend server URL - FIXED: Remove late-init to prevent crashes
+  final String _backendUrl;
 
   // Getter for accessing backend URL from other services
   String get apiUrl => _backendUrl;
@@ -237,27 +236,14 @@ class VoiceService {
         .enableAutoModeWithAudioState(isAudioPlaying);
   }
 
-  // Factory constructor to maintain singleton instance
-  factory VoiceService({
+  // FIXED: Normal constructor with configService injection (no more singleton)
+  VoiceService({
     required ApiClient apiClient,
     IAudioSettings? audioSettings,
-  }) {
-    if (_instance != null) {
-      return _instance!;
-    }
-    _instance = VoiceService._internal(
-      apiClient: apiClient,
-      audioSettings: audioSettings,
-    );
-    return _instance!;
-  }
-
-  // Private constructor for singleton pattern
-  VoiceService._internal({
-    required ApiClient apiClient,
-    IAudioSettings? audioSettings,
+    required ConfigService configService,
   }) : _apiClient = apiClient,
-        _audioSettings = audioSettings {
+        _audioSettings = audioSettings,
+        _backendUrl = configService.apiBaseUrl {
     // _audioRecorder = AudioRecorder(); // REMOVED
     // _ensureStreamControllerIsActive(); // REMOVED, no local controller
     _audioPlayerManager = AudioPlayerManager(audioSettings: audioSettings);
@@ -298,8 +284,7 @@ class VoiceService {
     }
 
     try {
-      // Get backend URL from AppConfig instead of hardcoding
-      _backendUrl = AppConfig().backendUrl;
+      // Backend URL is now initialized in constructor from ConfigService
 
       if (kDebugMode) {
         print('Voice service initialized with API client');
@@ -1127,6 +1112,33 @@ class VoiceService {
       await _audioPlayerManager.setVolume(volume);
       if (kDebugMode) {
         print('[VoiceService] setSpeakerMuted: muted=$muted (volume=$volume) - legacy mode');
+      }
+    }
+  }
+
+  /// Reset VoiceService state between sessions to prevent contamination
+  /// This allows the singleton to be reused cleanly across sessions
+  Future<void> resetSessionState() async {
+    if (kDebugMode) {
+      print('[VoiceService] resetSessionState: Clearing TTS and audio state for new session');
+    }
+    
+    try {
+      // Reset TTS speaking state
+      _setAiSpeaking(false);
+      
+      // Stop any ongoing audio playback
+      await _audioPlayerManager.stopAudio(clearQueue: true);
+      
+      // Reset auto-listening coordinator state
+      _autoListeningCoordinator.disableAutoMode();
+      
+      if (kDebugMode) {
+        print('[VoiceService] resetSessionState: Session state reset completed');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[VoiceService] resetSessionState: Error during reset: $e');
       }
     }
   }

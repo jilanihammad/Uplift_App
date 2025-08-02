@@ -58,7 +58,7 @@ class SessionSummaryCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.8),
+                color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
@@ -74,7 +74,7 @@ class SessionSummaryCard extends StatelessWidget {
                     : 'No summary available for this session.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       height: 1.6,
-                      color: Colors.grey[800],
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
               ),
             ),

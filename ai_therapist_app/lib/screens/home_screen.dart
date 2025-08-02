@@ -9,7 +9,8 @@ import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
 import 'package:ai_therapist_app/config/routes.dart';
-import 'package:ai_therapist_app/widgets/mood_selector.dart';
+// TODO: Mood logging - commented out for backwards compatibility
+// import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/services/subscription_manager.dart';
@@ -33,7 +34,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  Mood _currentMood = Mood.neutral;
+  // TODO: Mood logging - commented out for backwards compatibility
+  // Mood _currentMood = Mood.neutral;
   DateTime? _nextSessionDate;
   late IProgressService _progressService;
   late IPreferencesService _preferencesService;
@@ -184,7 +186,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (mounted) {
       setState(() {
         // Example data
-        _currentMood = Mood.neutral;
+        // TODO: Mood logging - commented out for backwards compatibility
+        // _currentMood = Mood.neutral;
         _nextSessionDate = DateTime.now().add(const Duration(days: 2));
         _progressInitialized = true;
       });
@@ -265,20 +268,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 // Greeting card
                 _buildAnimatedCard(_buildGreetingCard(), 0),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
                 // Next session card moved up to position #2
                 if (_nextSessionDate != null) _buildAnimatedCard(_buildNextSessionCard(), 1),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
                 // Progress tracking
                 _buildAnimatedCard(_buildProgressCard(), 2),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
+                // TODO: Mood logging - commented out for backwards compatibility
                 // Quick mood check
-                _buildAnimatedCard(_buildMoodCheckCard(), 3),
+                // _buildAnimatedCard(_buildMoodCheckCard(), 3),
 
                 // Remove the "View Past Sessions" section and spacing
                 // const SizedBox(height: 24),
@@ -385,163 +389,166 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildMoodCheckCard() {
-    // Get today's mood logs count
-    final todayLogsCount = _progress.getTodayMoodLogsCount();
-    final hasReachedLimit = todayLogsCount >= 3;
+  // TODO: Mood logging - commented out for backwards compatibility
+  // Widget _buildMoodCheckCard() {
+  //   // Get today's mood logs count
+  //   final todayLogsCount = _progress.getTodayMoodLogsCount();
+  //   final hasReachedLimit = todayLogsCount >= 3;
 
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_progress.currentStreak > 0)
-                  _buildStreakBadge(_progress.currentStreak),
-              ],
-            ),
-            if (hasReachedLimit)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6.0),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.amber),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline,
-                          color: Colors.amber, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          "You've already logged your mood 3 times today. Today's logs: ${todayLogsCount}",
-                          style: const TextStyle(
-                            color: Colors.amber,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildMoodOption(Mood.happy, '🙂'),
-                _buildMoodOption(Mood.neutral, '😐'),
-                _buildMoodOption(Mood.sad, '😢'),
-                _buildMoodOption(Mood.anxious, '😰'),
-                _buildMoodOption(Mood.angry, '😠'),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Center(
-              child: TextButton(
-                onPressed: hasReachedLimit
-                    ? () {
-                        // Show limit reached dialog
-                        _showMoodLimitDialog();
-                      }
-                    : () {
-                        // Log mood and update streak
-                        _progressService.logMood(_currentMood);
+  //   return Card(
+  //     elevation: 2,
+  //     child: Padding(
+  //       padding: const EdgeInsets.all(12),
+  //       child: Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           Row(
+  //             mainAxisAlignment: MainAxisAlignment.center,
+  //             children: [
+  //               if (_progress.currentStreak > 0)
+  //                 _buildStreakBadge(_progress.currentStreak),
+  //             ],
+  //           ),
+  //           if (hasReachedLimit)
+  //             Padding(
+  //               padding: const EdgeInsets.symmetric(vertical: 6.0),
+  //               child: Container(
+  //                 padding: const EdgeInsets.all(10),
+  //                 decoration: BoxDecoration(
+  //                   color: Colors.amber.shade100,
+  //                   borderRadius: BorderRadius.circular(8),
+  //                   border: Border.all(color: Colors.amber),
+  //                 ),
+  //                 child: Row(
+  //                   children: [
+  //                     const Icon(Icons.info_outline,
+  //                         color: Colors.amber, size: 16),
+  //                     const SizedBox(width: 8),
+  //                     Expanded(
+  //                       child: Text(
+  //                         "You've already logged your mood 3 times today. Today's logs: ${todayLogsCount}",
+  //                         style: const TextStyle(
+  //                           color: Colors.amber,
+  //                           fontWeight: FontWeight.bold,
+  //                           fontSize: 12,
+  //                         ),
+  //                       ),
+  //                     ),
+  //                   ],
+  //                 ),
+  //               ),
+  //             ),
+  //           const SizedBox(height: 12),
+  //           Row(
+  //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+  //             children: [
+  //               _buildMoodOption(Mood.happy, '🙂'),
+  //               _buildMoodOption(Mood.neutral, '😐'),
+  //               _buildMoodOption(Mood.sad, '😢'),
+  //               _buildMoodOption(Mood.anxious, '😰'),
+  //               _buildMoodOption(Mood.angry, '😠'),
+  //             ],
+  //           ),
+  //           const SizedBox(height: 6),
+  //           Center(
+  //             child: TextButton(
+  //               onPressed: hasReachedLimit
+  //                   ? () {
+  //                       // Show limit reached dialog
+  //                       _showMoodLimitDialog();
+  //                     }
+  //                   : () {
+  //                       // Log mood and update streak
+  //                       _progressService.logMood(_currentMood);
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Mood logged successfully')),
-                        );
-                      },
-                style: TextButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  backgroundColor:
-                      Theme.of(context).primaryColor.withOpacity(0.1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                ),
-                child: const Text('Log My Mood'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  //                       ScaffoldMessenger.of(context).showSnackBar(
+  //                         const SnackBar(
+  //                             content: Text('Mood logged successfully')),
+  //                       );
+  //                     },
+  //               style: TextButton.styleFrom(
+  //                 padding:
+  //                     const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+  //                 backgroundColor:
+  //                     Theme.of(context).primaryColor.withOpacity(0.1),
+  //                 shape: RoundedRectangleBorder(
+  //                   borderRadius: BorderRadius.circular(30),
+  //                 ),
+  //               ),
+  //               child: const Text('Log My Mood'),
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
-  void _showMoodLimitDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Daily Limit Reached'),
-        content: const Text(
-            "You've already logged your mood 3 times today. Would you like to view your mood history instead?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.go(AppRouter.progress);
-            },
-            child: const Text('View History'),
-          ),
-        ],
-      ),
-    );
-  }
+  // TODO: Mood logging - commented out for backwards compatibility
+  // void _showMoodLimitDialog() {
+  //   showDialog(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       title: const Text('Daily Limit Reached'),
+  //       content: const Text(
+  //           "You've already logged your mood 3 times today. Would you like to view your mood history instead?"),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context),
+  //           child: const Text('Cancel'),
+  //         ),
+  //         TextButton(
+  //           onPressed: () {
+  //             Navigator.pop(context);
+  //             context.go(AppRouter.progress);
+  //           },
+  //           child: const Text('View History'),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
-  Widget _buildMoodOption(Mood mood, String emoji) {
-    final isSelected = mood == _currentMood;
+  // TODO: Mood logging - commented out for backwards compatibility
+  // Widget _buildMoodOption(Mood mood, String emoji) {
+  //   final isSelected = mood == _currentMood;
 
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _currentMood = mood;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).primaryColor.withOpacity(0.1)
-              : Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isSelected
-                ? Theme.of(context).primaryColor
-                : Theme.of(context).colorScheme.outline,
-            width: isSelected ? 2 : 1,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Theme.of(context).primaryColor.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )
-                ]
-              : null,
-        ),
-        child: Text(
-          emoji,
-          style: const TextStyle(fontSize: 24),
-        ),
-      ),
-    );
-  }
+  //   return GestureDetector(
+  //     onTap: () {
+  //       setState(() {
+  //         _currentMood = mood;
+  //       });
+  //     },
+  //     child: Container(
+  //       padding: const EdgeInsets.all(12),
+  //       decoration: BoxDecoration(
+  //         color: isSelected
+  //             ? Theme.of(context).primaryColor.withOpacity(0.1)
+  //             : Theme.of(context).colorScheme.surface,
+  //         borderRadius: BorderRadius.circular(24),
+  //         border: Border.all(
+  //           color: isSelected
+  //               ? Theme.of(context).primaryColor
+  //               : Theme.of(context).colorScheme.outline,
+  //           width: isSelected ? 2 : 1,
+  //         ),
+  //         boxShadow: isSelected
+  //             ? [
+  //                 BoxShadow(
+  //                   color: Theme.of(context).primaryColor.withOpacity(0.2),
+  //                   blurRadius: 8,
+  //                   offset: const Offset(0, 2),
+  //                 )
+  //               ]
+  //             : null,
+  //       ),
+  //       child: Text(
+  //         emoji,
+  //         style: const TextStyle(fontSize: 24),
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Widget _buildActionCard(String title, IconData icon, Color bgColor,
       Color iconColor, VoidCallback onTap) {
@@ -937,7 +944,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: InkWell(
         onTap: () => context.go(AppRouter.progress),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -949,11 +956,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       const Text(
                         'Consistency',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       // Consistency badge
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -1004,10 +1011,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
-              // Stats row or empty state
-              _progress.sessionsThisWeek == 0 && _progress.moodLogsThisWeek == 0 && _progress.currentStreak == 0
+              // Stats row or empty state - Updated to exclude mood logs
+              _progress.sessionsThisWeek == 0 && _progress.currentStreak == 0
                 ? _buildEmptyState()
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1017,11 +1024,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         'Sessions',
                         Icons.favorite,
                       ),
-                      _buildStatItem(
-                        '${_progress.moodLogsThisWeek}',
-                        'Mood Logs',
-                        Icons.mood,
-                      ),
+                      // TODO: Mood logging - commented out for backwards compatibility
+                      // _buildStatItem(
+                      //   '${_progress.moodLogsThisWeek}',
+                      //   'Mood Logs',
+                      //   Icons.mood,
+                      // ),
                       _buildStatItem(
                         '${_progress.currentStreak}',
                         'Day Streak',
@@ -1038,13 +1046,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildEmptyState() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24.0),
+      padding: const EdgeInsets.symmetric(vertical: 16.0),
       child: Column(
         children: [
           // Friendly illustration using emoji
           Container(
-            width: 80,
-            height: 80,
+            width: 60,
+            height: 60,
             decoration: BoxDecoration(
               color: Colors.blue.shade50,
               shape: BoxShape.circle,
@@ -1052,25 +1060,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: const Center(
               child: Text(
                 '🌟',
-                style: TextStyle(fontSize: 40),
+                style: TextStyle(fontSize: 30),
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             'Let\'s start your first conversation',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Theme.of(context).primaryColor,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             'Your journey to better mental health begins here',
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 12,
               color: Colors.grey.shade600,
             ),
           ),
@@ -1157,7 +1165,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: bgColor,
               shape: BoxShape.circle,
@@ -1175,15 +1183,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 icon,
                 key: ValueKey('$icon-$hasActivity'),
                 color: iconColor,
-                size: hasActivity ? 26 : 24,
+                size: hasActivity ? 22 : 20,
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           AnimatedDefaultTextStyle(
             duration: const Duration(milliseconds: 300),
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: FontWeight.bold,
               color: hasActivity ? Colors.black87 : Colors.grey.shade600,
             ),

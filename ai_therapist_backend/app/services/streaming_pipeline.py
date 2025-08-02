@@ -519,7 +519,7 @@ class EnhancedAsyncPipeline:
             raise
     
     async def stop(self) -> None:
-        """Gracefully stop the pipeline"""
+        """Gracefully stop the pipeline with full state reset"""
         if self.state == PipelineState.IDLE:
             return
         
@@ -535,12 +535,54 @@ class EnhancedAsyncPipeline:
         # Clear queues
         await self._clear_queues()
         
-        # Reset state
+        # FIXED: Reset all pipeline state to ensure clean start for next session
+        # Reset state flags
         self.state = PipelineState.IDLE
         self.flow_state = FlowControlState.FLOWING
         self.shutdown_event.clear()
         
-        self.logger.info("Pipeline stopped")
+        # Reset client tracking
+        self.active_clients.clear()
+        self.client_sequences.clear()
+        
+        # Reset timing and metrics
+        self.start_time = None
+        self.last_activity_time = time.time()
+        
+        # Reset interrupt state
+        self.interrupt_requested = False
+        self.interrupt_client_id = None
+        self.draining_start_time = None
+        self.pending_chunks_before_interrupt = 0
+        
+        # Reset chunk IDs to prevent conflicts
+        self._chunk_counter = 0
+        
+        # Reset metrics for fresh start
+        self.metrics = PipelineMetrics()
+        
+        self.logger.info("Pipeline stopped with full state reset")
+    
+    async def reset(self) -> None:
+        """Reset pipeline state for reuse in a new session"""
+        # Stop first if running
+        if self.state != PipelineState.IDLE:
+            await self.stop()
+        
+        # Additional reset for fresh session
+        self.logger.info("Resetting pipeline for new session")
+        
+        # Clear any residual data
+        self.active_clients.clear()
+        self.client_sequences.clear()
+        self._chunk_counter = 0
+        self.metrics = PipelineMetrics()
+        
+        # Ensure we're ready for a new session
+        self.state = PipelineState.IDLE
+        self.flow_state = FlowControlState.FLOWING
+        
+        self.logger.info("Pipeline reset complete - ready for new session")
     
     async def add_message(self, message: StreamingMessage) -> bool:
         """

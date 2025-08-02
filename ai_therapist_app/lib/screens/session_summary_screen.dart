@@ -118,7 +118,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         : Duration.zero;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('Session Complete'),
         automaticallyImplyLeading: false,
@@ -160,14 +160,14 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                     'Great Session!',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey[800],
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Duration: ${_formatDuration(sessionDuration)}',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[600],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   ),
                 ],

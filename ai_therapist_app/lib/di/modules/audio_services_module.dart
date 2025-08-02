@@ -18,6 +18,7 @@ import '../../services/simple_tts_service.dart';
 import '../../services/websocket_audio_manager.dart';
 import '../../services/audio_file_manager.dart';
 import '../../services/voice_session_coordinator.dart';
+import '../../services/voice_service.dart';
 import '../../services/audio_player_manager.dart';
 import '../../services/recording_manager.dart';
 
@@ -95,6 +96,7 @@ class AudioServicesModule {
           ttsService: locator<ITTSService>(),
           wsManager: locator<IWebSocketAudioManager>(),
           fileManager: locator<IAudioFileManager>(),
+          voiceService: locator<VoiceService>(),
         );
       });
     }

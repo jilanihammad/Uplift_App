@@ -34,13 +34,16 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // TODO: Mood logging - reduced from 3 to 2 tabs (removed Mood tab)
+    _tabController = TabController(length: 2, vsync: this);
     _progressService = widget.progressService ?? DependencyContainer().progress;
     _progress = _progressService.progress;
     _tasksService = TasksService();
 
     // Set the initial tab based on the provided argument
-    _tabController.index = widget.initialTabIndex;
+    // Adjust for removed Mood tab (was index 1): Overview=0, Tasks=1
+    final adjustedIndex = widget.initialTabIndex > 1 ? 1 : widget.initialTabIndex;
+    _tabController.index = adjustedIndex.clamp(0, 1);
 
     // Initialize services and load data
     _initServices();
@@ -165,7 +168,8 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
           controller: _tabController,
           tabs: const [
             Tab(text: 'Overview'),
-            Tab(text: 'Mood'),
+            // TODO: Mood logging - commented out for backwards compatibility
+            // Tab(text: 'Mood'),
             Tab(text: 'Tasks'),
           ],
         ),
@@ -174,7 +178,8 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
         controller: _tabController,
         children: [
           _buildOverviewTab(),
-          _buildMoodTab(),
+          // TODO: Mood logging - commented out for backwards compatibility
+          // _buildMoodTab(),
           _buildTasksTab(),
         ],
       ),
@@ -299,9 +304,10 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
               _realSessionCount.toString(),
               Icons.psychology),
             const Divider(),
-            _buildStatRow('Mood Entries', 
-              _progress.moodHistory.length.toString(),
-              Icons.mood),
+            // TODO: Mood logging - commented out for backwards compatibility
+            // _buildStatRow('Mood Entries', 
+            //   _progress.moodHistory.length.toString(),
+            //   Icons.mood),
             const Divider(),
             _buildStatRow('Achievements', 
               _progress.achievements.length.toString(),
@@ -412,127 +418,131 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
     );
   }
   
-  Widget _buildMoodTab() {
-    final moodData = _progressService.getMoodDataForLastDays(30);
-    
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Mood History',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (moodData.isEmpty)
-                    const Center(
-                      heightFactor: 3,
-                      child: Text(
-                        'No mood data yet',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    )
-                  else
-                    SizedBox(
-                      height: 200,
-                      child: _buildMoodChart(moodData),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildMoodInsightsCard(),
-        ],
-      ),
-    );
-  }
+  // TODO: Mood logging - commented out for backwards compatibility
+  // Widget _buildMoodTab() {
+  //   final moodData = _progressService.getMoodDataForLastDays(30);
+  //   
+  //   return SingleChildScrollView(
+  //     padding: const EdgeInsets.all(16),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Card(
+  //           elevation: 2,
+  //           shape: RoundedRectangleBorder(
+  //             borderRadius: BorderRadius.circular(12),
+  //           ),
+  //           child: Padding(
+  //             padding: const EdgeInsets.all(16),
+  //             child: Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 const Text(
+  //                   'Mood History',
+  //                   style: TextStyle(
+  //                     fontSize: 18,
+  //                     fontWeight: FontWeight.bold,
+  //                   ),
+  //                 ),
+  //                 const SizedBox(height: 16),
+  //                 if (moodData.isEmpty)
+  //                   const Center(
+  //                     heightFactor: 3,
+  //                     child: Text(
+  //                       'No mood data yet',
+  //                       style: TextStyle(
+  //                         color: Colors.grey,
+  //                         fontStyle: FontStyle.italic,
+  //                       ),
+  //                     ),
+  //                   )
+  //                 else
+  //                   SizedBox(
+  //                     height: 200,
+  //                     child: _buildMoodChart(moodData),
+  //                   ),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //         const SizedBox(height: 16),
+  //         _buildMoodInsightsCard(),
+  //       ],
+  //     ),
+  //   );
+  // }
   
-  Widget _buildMoodChart(List<MapEntry<DateTime, int>> moodData) {
-    // This is a placeholder for a chart widget
-    // In a real app, use a charting library like fl_chart
-    return Center(
-      child: Text('Mood chart would go here (${moodData.length} data points)'),
-    );
-  }
+  // TODO: Mood logging - commented out for backwards compatibility
+  // Widget _buildMoodChart(List<MapEntry<DateTime, int>> moodData) {
+  //   // This is a placeholder for a chart widget
+  //   // In a real app, use a charting library like fl_chart
+  //   return Center(
+  //     child: Text('Mood chart would go here (${moodData.length} data points)'),
+  //   );
+  // }
   
-  Widget _buildMoodInsightsCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Mood Insights',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildInsightItem(
-              'You\'ve logged your mood ${_progress.moodHistory.length} times',
-              Icons.insert_chart,
-              Colors.purple,
-            ),
-            const SizedBox(height: 8),
-            if (_progress.moodHistory.length >= 5)
-              _buildInsightItem(
-                'Your mood has been improving over the past week',
-                Icons.trending_up,
-                Colors.green,
-              ),
-            if (_progress.currentStreak > 0)
-              _buildInsightItem(
-                'You\'ve logged your mood for ${_progress.currentStreak} days in a row',
-                Icons.local_fire_department,
-                Colors.orange,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  // TODO: Mood logging - commented out for backwards compatibility
+  // Widget _buildMoodInsightsCard() {
+  //   return Card(
+  //     elevation: 2,
+  //     shape: RoundedRectangleBorder(
+  //       borderRadius: BorderRadius.circular(12),
+  //     ),
+  //     child: Padding(
+  //       padding: const EdgeInsets.all(16),
+  //       child: Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           const Text(
+  //             'Mood Insights',
+  //             style: TextStyle(
+  //               fontSize: 16,
+  //               fontWeight: FontWeight.bold,
+  //             ),
+  //           ),
+  //           const SizedBox(height: 16),
+  //           _buildInsightItem(
+  //             'You\'ve logged your mood ${_progress.moodHistory.length} times',
+  //             Icons.insert_chart,
+  //             Colors.purple,
+  //           ),
+  //           const SizedBox(height: 8),
+  //           if (_progress.moodHistory.length >= 5)
+  //             _buildInsightItem(
+  //               'Your mood has been improving over the past week',
+  //               Icons.trending_up,
+  //               Colors.green,
+  //             ),
+  //           if (_progress.currentStreak > 0)
+  //             _buildInsightItem(
+  //               'You\'ve logged your mood for ${_progress.currentStreak} days in a row',
+  //               Icons.local_fire_department,
+  //               Colors.orange,
+  //             ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
   
-  Widget _buildInsightItem(String text, IconData icon, Color color) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // TODO: Mood logging - commented out for backwards compatibility
+  // Widget _buildInsightItem(String text, IconData icon, Color color) {
+  //   return Row(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       Icon(icon, color: color, size: 18),
+  //       const SizedBox(width: 16),
+  //       Expanded(
+  //         child: Text(
+  //           text,
+  //           style: const TextStyle(
+  //             fontSize: 14,
+  //           ),
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
   
   Widget _buildTasksTab() {
     // Show pending tasks first, then completed ones

@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI Therapist App - A full-stack application providing AI-powered therapeutic conversations through voice and text interactions. The project consists of a Flutter mobile/desktop app frontend and a Python FastAPI backend.
 
+## Setup Documentation
+
+- **Linux Setup**: See `SETUP_GUIDE_LINUX.md` for comprehensive Linux installation instructions
+- **Automated Setup**: Use `setup_linux.sh` script for automatic dependency installation
+- **Quick Start**: The setup script handles Flutter, Android SDK, Python, and PostgreSQL installation
+
 ## Architecture
 
 ### Frontend (ai_therapist_app/)
@@ -116,6 +122,11 @@ The codebase is undergoing a hybrid architecture migration to decompose monolith
 - Gradual migration of AutoListeningCoordinator, VoiceService
 - Target: <15 methods per service class, 80%+ test coverage
 
+### Recent Architecture Decisions (2025-08-02)
+- **VoiceService remains singleton**: First session functionality was working correctly
+- **Session state reset strategy**: Instead of creating new instances, VoiceService.resetSessionState() clears state between sessions
+- **Session cleanup fix**: SessionScopeManager now calls resetSessionState() during disposal to prevent TTS state contamination
+
 ## Environment Configuration
 
 ### Required Environment Variables
@@ -200,13 +211,21 @@ gcloud run deploy ai-therapist-backend \
 - If TTS is not working, check OPUS codec support
 - For streaming issues, verify WebSocket connection
 - VAD sensitivity can be adjusted in AudioProcessingService
+- **Second session TTS fix**: VoiceService.resetSessionState() is called during session disposal
 
 ### Build Issues
 - Clean Flutter build: `flutter clean && flutter pub get`
 - Backend dependencies: Ensure Python 3.9+ and all requirements installed
 - Firebase config: Verify google-services.json (Android) and GoogleService-Info.plist (iOS)
+- **Linux desktop**: Ensure libgtk-3-dev is installed for Flutter Linux builds
 
 ### API Integration
 - Use the LLM manager's unified interface for provider switching
 - Check provider-specific environment variables
 - Monitor rate limits for external APIs
+
+### VoiceService Session Management
+- VoiceService is a **singleton** that persists across sessions
+- Call `resetSessionState()` between sessions to clear state
+- Constructor now requires ConfigService parameter: `VoiceService(apiClient, audioSettings, configService)`
+- Backend URL is accessed via `configService.apiBaseUrl`

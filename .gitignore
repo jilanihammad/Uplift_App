@@ -73,11 +73,17 @@ google-services.json
 GoogleService-Info.plist
 
 # Environment files
-.env
+# Backend .env contains secrets and should NEVER be committed
+ai_therapist_backend/.env
+
+# Global environment files
 .env.local
 .env.development
 .env.test
 .env.production
+
+# Frontend .env is safe to commit (contains only public config)
+# This exception allows ai_therapist_app/.env to be tracked
 
 # Generated files
 *.g.dart

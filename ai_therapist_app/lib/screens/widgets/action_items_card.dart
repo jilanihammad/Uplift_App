@@ -102,7 +102,7 @@ class ActionItemsCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -146,7 +146,7 @@ class ActionItemsCard extends StatelessWidget {
                   item,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         height: 1.5,
-                        color: Colors.grey[800],
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontWeight: FontWeight.w500,
                       ),
                 ),
@@ -163,7 +163,7 @@ class ActionItemsCard extends StatelessWidget {
                       'Personalized for you',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -178,7 +178,7 @@ class ActionItemsCard extends StatelessWidget {
             Icon(
               Icons.arrow_forward_ios,
               size: 16,
-              color: Colors.grey[400],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
         ],
       ),
@@ -189,10 +189,10 @@ class ActionItemsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: Theme.of(context).colorScheme.surfaceVariant,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.grey[300]!,
+          color: Theme.of(context).colorScheme.outline,
           width: 1,
         ),
       ),
@@ -201,20 +201,20 @@ class ActionItemsCard extends StatelessWidget {
           Icon(
             Icons.task_alt,
             size: 48,
-            color: Colors.grey[400],
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           const SizedBox(height: 12),
           Text(
             'No action items available',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[600],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
           const SizedBox(height: 8),
           Text(
             'Action items will appear here based on your conversation.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[500],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
             textAlign: TextAlign.center,
           ),

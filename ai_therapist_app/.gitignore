@@ -48,9 +48,12 @@ app.*.map.json
 **/web/firebase-config.js
 
 # Environment files
-.env
+# NOTE: This .env file is SAFE to commit - it contains only public config
+# All sensitive API keys are handled by the backend
+# .env (commented out to allow committing)
 .env.*
 !.env.example
+!.env
 
 # Local development keystore files
 **/*.keystore

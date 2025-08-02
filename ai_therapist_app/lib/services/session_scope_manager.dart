@@ -209,7 +209,14 @@ class SessionScopeManager {
         debugPrint('[SessionScope] Cleaning up DI registrations for fresh session');
       }
       
-      // VoiceService is now a singleton and not unregistered here
+      // Reset VoiceService singleton state for clean session transition
+      try {
+        final voiceService = serviceLocator<VoiceService>();
+        await voiceService.resetSessionState();
+        debugPrint('[SessionScope] VoiceService state reset for session cleanup');
+      } catch (e) {
+        debugPrint('[SessionScope] Error resetting VoiceService state: $e');
+      }
       
       _sessionServices.clear();
       _disposableServices.clear();
@@ -263,7 +270,7 @@ class SessionScopeManager {
       _disposableServices.add(audioPlayerManager);
       
       // VoiceService is now a singleton and not session-scoped
-      // It will be registered globally in the DI container, not here
+      // It will be shared across sessions but we need to reset its state between sessions
       
       // AutoListeningCoordinator - VAD and auto-listening management  
       if (kDebugMode) {
@@ -295,6 +302,7 @@ class SessionScopeManager {
         ttsService: serviceLocator<ITTSService>(),                   // app-scoped  
         wsManager: sessionWebSocketManager,                          // session-scoped (fresh instance)
         fileManager: serviceLocator<IAudioFileManager>(),            // app-scoped
+        voiceService: serviceLocator<VoiceService>(),                // app-scoped singleton
       );
       _sessionServices[VoiceSessionCoordinator] = voiceSessionCoordinator;
       _sessionServices[IVoiceService] = voiceSessionCoordinator; // Interface alias

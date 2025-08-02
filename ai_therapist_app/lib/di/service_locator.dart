@@ -421,23 +421,25 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
       
       // ALSO register legacy VoiceService for AutoListeningCoordinator coordination
       // This allows VoiceSessionCoordinator to coordinate VAD through legacy service
+      // REVERT: Back to singleton since first session was working
       if (!serviceLocator.isRegistered<VoiceService>()) {
         serviceLocator.registerLazySingleton<VoiceService>(() {
-          debugPrint('Creating legacy VoiceService for AutoListeningCoordinator coordination');
+          debugPrint('Creating VoiceService singleton');
           final service = VoiceService(
             apiClient: serviceLocator<ApiClient>(),
             audioSettings: serviceLocator<IAudioSettings>(),
+            configService: serviceLocator<ConfigService>(), // Keep constructor fix
           );
 
           // Initialize only if needed when first accessed
           service.initializeOnlyIfNeeded().then((_) {
             DependencyStatus.markInitialized('VoiceService');
-            debugPrint('Legacy VoiceService initialized for VAD coordination');
+            debugPrint('VoiceService initialized');
           });
 
           return service;
         });
-        debugPrint('✅ Legacy VoiceService registered for VAD coordination');
+        debugPrint('✅ VoiceService registered as singleton');
       }
       
       // Mark audio services as initialized for dependency tracking
@@ -448,23 +450,25 @@ Future<void> setupServiceLocator({bool useRefactoredVoicePipeline = false}) asyn
       debugPrint('🔄 Using LEGACY VoiceService');
       
       // Register the original monolithic VoiceService (legacy)
+      // REVERT: Back to singleton since first session was working
       if (!serviceLocator.isRegistered<VoiceService>()) {
         serviceLocator.registerLazySingleton<VoiceService>(() {
-          debugPrint('Creating VoiceService instance (lazy initialization)');
+          debugPrint('Creating VoiceService singleton');
           final service = VoiceService(
             apiClient: serviceLocator<ApiClient>(),
             audioSettings: serviceLocator<IAudioSettings>(),
+            configService: serviceLocator<ConfigService>(), // Keep constructor fix
           );
 
           // Initialize only if needed when first accessed
           service.initializeOnlyIfNeeded().then((_) {
             DependencyStatus.markInitialized('VoiceService');
-            debugPrint('VoiceService initialized on first access');
+            debugPrint('VoiceService initialized');
           });
 
           return service;
         });
-        debugPrint('✅ Registered legacy VoiceService with true lazy initialization');
+        debugPrint('✅ VoiceService registered as singleton');
       }
     }
 

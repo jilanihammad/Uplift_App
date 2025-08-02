@@ -700,12 +700,18 @@ class ConnectionManager:
                             logger.error(f"Error cleaning up pipeline {pipeline_id}: {e}")
                     del _pipeline_pool[pipeline_id]
                     
-    async def get_or_create_pipeline(self, client_id: str, config: Optional[FlowControlConfig] = None) -> EnhancedAsyncPipeline:
+    async def get_or_create_pipeline(self, client_id: str, config: Optional[FlowControlConfig] = None, conversation_id: Optional[str] = None) -> EnhancedAsyncPipeline:
         """Get existing pipeline or create new one for client"""
-        # Use user-based pipeline pooling to share across sessions
+        # FIXED: Include conversation_id in pipeline identification to prevent cross-session reuse
         user_info = self.active_connections.get(client_id, {}).get("user_info", {})
         user_id = user_info.get("user_id", "anonymous")
-        pipeline_id = f"pipeline_{user_id}"
+        
+        # Create unique pipeline ID per conversation/session
+        if conversation_id:
+            pipeline_id = f"pipeline_{user_id}_{conversation_id}"
+        else:
+            # Fallback to timestamp-based ID if no conversation_id
+            pipeline_id = f"pipeline_{user_id}_{int(time.time() * 1000)}"
         
         async with _pool_lock:
             # Check if pipeline exists and is still valid
@@ -912,9 +918,9 @@ async def websocket_streaming_tts(
         # Set binary frame capability on websocket object
         websocket._supports_binary_frames = supports_binary
         
-        # Get or create pipeline for this client
+        # Get or create pipeline for this client with conversation-specific ID
         config = FlowControlConfig()
-        pipeline = await connection_manager.get_or_create_pipeline(client_id, config)
+        pipeline = await connection_manager.get_or_create_pipeline(client_id, config, conversation_id)
         
         # Register client with pipeline
         init_frame = await pipeline.register_client(client_id, websocket)
@@ -1325,17 +1331,31 @@ async def websocket_streaming_tts(
         # Clean up client connection and pipeline session
         await connection_manager.disconnect(client_id)
         
-        # Unregister from pipeline if it exists
+        # FIXED: Force pipeline cleanup on disconnect to prevent stale state in next session
         if client_id in connection_manager.pipeline_sessions:
             pipeline_id = connection_manager.pipeline_sessions[client_id]
-            if pipeline_id in _pipeline_pool:
-                pipeline_ref = _pipeline_pool[pipeline_id]
-                pipeline = pipeline_ref()
-                if pipeline:
-                    try:
-                        await pipeline.unregister_client(client_id)
-                    except Exception as e:
-                        logger.error(f"Error unregistering client {client_id}: {e}")
+            
+            # Log pipeline cleanup for monitoring
+            logger.info(f"Cleaning up pipeline {pipeline_id} for disconnected client {client_id}")
+            
+            async with _pool_lock:
+                if pipeline_id in _pipeline_pool:
+                    pipeline_ref = _pipeline_pool[pipeline_id]
+                    pipeline = pipeline_ref()
+                    if pipeline:
+                        try:
+                            # Unregister client first
+                            await pipeline.unregister_client(client_id)
+                            
+                            # Force stop the pipeline to ensure clean state
+                            await pipeline.stop()
+                            logger.info(f"Pipeline {pipeline_id} stopped successfully")
+                        except Exception as e:
+                            logger.error(f"Error cleaning up pipeline {pipeline_id}: {e}")
+                    
+                    # Remove from pool to force recreation on next session
+                    del _pipeline_pool[pipeline_id]
+                    logger.info(f"Pipeline {pipeline_id} removed from pool")
 
 @router.post("/synthesize", response_class=JSONResponse)
 async def synthesize_voice(request: Request):
