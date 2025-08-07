@@ -204,7 +204,7 @@ class TherapyService implements ITherapyService {
     List<Map<String, String>> history, {
     required Future<void> Function() onTTSPlaybackComplete,
     required void Function(String) onTTSError,
-    void Function()? onTTSStart,
+    void Function(String)? onTTSStart,
   }) async {
     try {
       // Measure performance
@@ -256,7 +256,7 @@ class TherapyService implements ITherapyService {
     List<Map<String, String>> history, {
     required Future<void> Function() onTTSPlaybackComplete,
     required void Function(String) onTTSError,
-    void Function()? onTTSStart,
+    void Function(String)? onTTSStart,
   }) async {
     try {
       log.d('Getting memory context for streaming...');
@@ -304,7 +304,7 @@ class TherapyService implements ITherapyService {
       // DIRECT TTS APPROACH: Use same path as welcome messages to avoid state conflicts
       try {
         log.i('🎵 TTS streaming started - first audio playing!');
-        onTTSStart?.call(); // Notify bloc that TTS actually started
+        onTTSStart?.call(aiResponse); // Notify bloc with response text when TTS starts
         
         // Use SimpleTTSService directly (same as welcome messages)
         final ttsService = DependencyContainer().ttsService;
@@ -343,7 +343,7 @@ class TherapyService implements ITherapyService {
     List<Map<String, String>> history, {
     required Future<void> Function() onTTSPlaybackComplete,
     required void Function(String) onTTSError,
-    void Function()? onTTSStart,
+    void Function(String)? onTTSStart,
   }) async {
     log.i('Using fallback TTS processing (traditional method)');
     
@@ -364,7 +364,7 @@ class TherapyService implements ITherapyService {
       String? audioPath;
       try {
         // Notify that TTS is starting
-        onTTSStart?.call();
+        onTTSStart?.call(textResponse);
         
         audioPath = await _audioGenerator.generateAndStreamAudio(
           textResponse,

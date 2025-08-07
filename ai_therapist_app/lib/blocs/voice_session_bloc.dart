@@ -630,23 +630,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         return;
       }
 
-      final nextUserSequence = state.currentMessageSequence + 1;
+      // Phase 1.1.4: Use MessageCoordinator for user message (consistent with text mode)
+      _messageCoordinator.addUserMessage(transcription);
 
-      final userMessage = TherapyMessage(
-        id: const Uuid().v4(),
-        content: transcription,
-        isUser: true,
-        timestamp: DateTime.now(),
-        sequence: nextUserSequence,
-      );
-
-      final messagesWithUser = List.of(state.messages)..add(userMessage);
       emit(state.copyWith(
-        messages: messagesWithUser,
-        currentMessageSequence: nextUserSequence,
+        messages: _messageCoordinator.messages,
+        currentMessageSequence: _messageCoordinator.currentSequence,
       ));
 
-      final history = _buildConversationHistory(messagesWithUser);
+      // Use MessageCoordinator for conversation history
+      final history = _messageCoordinator.buildConversationHistory();
 
       if (state.isVoiceMode) {
         debugPrint(
@@ -663,9 +656,17 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             await therapyServiceInstance.processUserMessageWithStreamingAudio(
           transcription,
           history,
-          onTTSStart: () {
-            debugPrint('[VoiceSessionBloc] TTS streaming started');
-            emit(state.copyWith(ttsStatus: TtsStatus.streaming));
+          onTTSStart: (responseText) {
+            debugPrint('[VoiceSessionBloc] TTS streaming started - adding message to chat immediately');
+            
+            // Phase 1.1.4: Add Maya's message to chat IMMEDIATELY when TTS starts
+            _messageCoordinator.addAIMessage(responseText);
+            
+            emit(state.copyWith(
+              ttsStatus: TtsStatus.streaming,
+              messages: _messageCoordinator.messages,
+              currentMessageSequence: _messageCoordinator.currentSequence,
+            ));
           },
           onTTSPlaybackComplete: () async {
             debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
@@ -690,21 +691,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         debugPrint(
             '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
 
-        final nextAISequence = state.currentMessageSequence + 1;
-
-        final mayaMessage = TherapyMessage(
-          id: const Uuid().v4(),
-          content: mayaResponseText,
-          isUser: false,
-          timestamp: DateTime.now(),
-          sequence: nextAISequence,
-        );
-
-        final finalMessages = List.of(messagesWithUser)..add(mayaMessage);
-        emit(state.copyWith(
-          messages: finalMessages,
-          currentMessageSequence: nextAISequence,
-        ));
+        // Note: Maya's message is now added to MessageCoordinator in onTTSStart callback
+        // This ensures it appears in chat immediately when TTS begins, not when it completes
       } else {
         // Text mode - only get text response without TTS
         debugPrint(
@@ -726,23 +714,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         debugPrint(
             '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
 
-        final nextAISequence = state.currentMessageSequence + 1;
+        // Phase 1.1.4: Use MessageCoordinator for AI message (consistent with voice mode)
+        _messageCoordinator.addAIMessage(mayaResponseText);
 
-        final mayaMessage = TherapyMessage(
-          id: const Uuid().v4(),
-          content: mayaResponseText,
-          isUser: false,
-          timestamp: DateTime.now(),
-          sequence: nextAISequence,
-        );
-
-        final finalMessages = List.of(messagesWithUser)..add(mayaMessage);
         emit(state.copyWith(
-          messages: finalMessages,
-          currentMessageSequence: nextAISequence,
+          messages: _messageCoordinator.messages,
+          currentMessageSequence: _messageCoordinator.currentSequence,
+          isProcessingAudio: false,
         ));
-
-        emit(state.copyWith(isProcessingAudio: false));
       }
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error in _onProcessAudio: $e');
@@ -865,9 +844,17 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             await therapyServiceInstance.processUserMessageWithStreamingAudio(
           event.text,
           history,
-          onTTSStart: () {
-            debugPrint('[VoiceSessionBloc] TTS streaming started');
-            emit(state.copyWith(ttsStatus: TtsStatus.streaming));
+          onTTSStart: (responseText) {
+            debugPrint('[VoiceSessionBloc] TTS streaming started - adding message to chat immediately');
+            
+            // Phase 1.1.4: Add Maya's message to chat IMMEDIATELY when TTS starts
+            _messageCoordinator.addAIMessage(responseText);
+            
+            emit(state.copyWith(
+              ttsStatus: TtsStatus.streaming,
+              messages: _messageCoordinator.messages,
+              currentMessageSequence: _messageCoordinator.currentSequence,
+            ));
           },
           onTTSPlaybackComplete: () async {
             debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
@@ -892,7 +879,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
 
       // Phase 1.1.4: Use MessageCoordinator for AI message
-      final mayaResponse = _messageCoordinator.addAIMessage(mayaResponseText);
+      // Only add message for text mode - voice mode already adds it in onTTSStart callback
+      if (!state.isVoiceMode) {
+        final mayaResponse = _messageCoordinator.addAIMessage(mayaResponseText);
+      }
 
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
@@ -1287,12 +1277,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // Use SessionStateManager for mood selection and session setup
       final newState = _sessionManager.selectMood(mood);
       
-      // Add welcome message using MessageCoordinator
-      final welcomeMessage = _messageCoordinator.addWelcomeMessage(mood);
-      
       // Reset managers for fresh session
       _messageCoordinator.resetMessages();
-      _messageCoordinator.addWelcomeMessage(mood); // Re-add after reset
+      
+      // Add welcome message using MessageCoordinator (after reset)
+      final welcomeMessage = _messageCoordinator.addWelcomeMessage(mood);
       _timerManager.stopTimer();
       
       // Update state with new message and sequence - SET TO ACTIVE (not idle)
