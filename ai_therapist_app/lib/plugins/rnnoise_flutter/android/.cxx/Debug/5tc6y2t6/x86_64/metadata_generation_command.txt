@@ -1,0 +1,20 @@
+                        -H/home/muneeeba/hammad/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp
+-DCMAKE_SYSTEM_NAME=Android
+-DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+-DCMAKE_SYSTEM_VERSION=21
+-DANDROID_PLATFORM=android-21
+-DANDROID_ABI=x86_64
+-DCMAKE_ANDROID_ARCH_ABI=x86_64
+-DANDROID_NDK=/home/muneeeba/Android/Sdk/ndk/27.0.12077973
+-DCMAKE_ANDROID_NDK=/home/muneeeba/Android/Sdk/ndk/27.0.12077973
+-DCMAKE_TOOLCHAIN_FILE=/home/muneeeba/Android/Sdk/ndk/27.0.12077973/build/cmake/android.toolchain.cmake
+-DCMAKE_MAKE_PROGRAM=/home/muneeeba/Android/Sdk/cmake/3.22.1/bin/ninja
+-DCMAKE_CXX_FLAGS=-std=c++14 -fexceptions
+-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=/home/muneeeba/hammad/ai_therapist_app/build/rnnoise_flutter/intermediates/cxx/Debug/5tc6y2t6/obj/x86_64
+-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=/home/muneeeba/hammad/ai_therapist_app/build/rnnoise_flutter/intermediates/cxx/Debug/5tc6y2t6/obj/x86_64
+-DCMAKE_BUILD_TYPE=Debug
+-B/home/muneeeba/hammad/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/Debug/5tc6y2t6/x86_64
+-GNinja
+-DANDROID_STL=c++_shared
+                        Build command args: []
+                        Version: 2
