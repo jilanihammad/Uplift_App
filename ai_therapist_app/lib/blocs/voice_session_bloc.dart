@@ -87,6 +87,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   // PHASE 2B: Cancelable operation for pending auto-enable operations
   CancelableOperation? _pendingAutoEnable;
   
+  // Gate to prevent TTS from starting during atomic audio reset
+  Completer<void>? _atomicResetCompleter;
+  
   // NATURAL UX: Flag to defer VAD start until current TTS naturally finishes
   bool _deferAutoMode = false;
   
@@ -495,6 +498,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint(
           '[VoiceSessionBloc] Preparing for voice mode (will unmute TTS stream)');
       try {
+        // Begin atomic reset gate
+        _atomicResetCompleter = Completer<void>();
         // Unmute audio but keep stream alive
         audioPlayerManager.mute(false);
         debugPrint('[VoiceSessionBloc] Audio unmuted for voice mode');
@@ -516,6 +521,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         _safeVoiceService.autoListeningCoordinator.reset(); // Counter/timer cleanup
         
         debugPrint('[VoiceSessionBloc] Atomic reset sequence complete - audio, TTS, and VAD state cleaned');
+        // End atomic reset gate
+        _atomicResetCompleter?.complete();
 
         // RACE CONDITION FIX: Defensive worker synchronization for voice mode
         // Ensures any previous VAD worker has completely exited before enabling auto mode
@@ -553,6 +560,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
         debugPrint('[VoiceSessionBloc] Voice mode switch complete - natural transition logic active');
       } catch (e) {
+        // Ensure gate is released on errors
+        _atomicResetCompleter?.complete();
         debugPrint('[VoiceSessionBloc] Failed to prepare for voice mode: $e');
         emit(state.copyWith(errorMessage: e.toString()));
       }
@@ -1060,6 +1069,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     debugPrint('[VoiceSessionBloc] Playing welcome message TTS: ${event.welcomeMessage}');
     
     try {
+      // Ensure any in-flight atomic reset has finished before starting TTS
+      if (_atomicResetCompleter != null && !_atomicResetCompleter!.isCompleted) {
+        if (kDebugMode) {
+          debugPrint('[VoiceSessionBloc] Waiting for atomic reset to finish before welcome TTS');
+        }
+        await _atomicResetCompleter!.future;
+      }
       // Use VoiceService TTS state management to properly coordinate with auto-listening
       if (kDebugMode) {
         debugPrint('🎯 [TTS-TRACK] updateTTSSpeakingState(true) - Welcome message starting');

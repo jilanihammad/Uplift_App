@@ -1,0 +1,46 @@
+{
+  "buildFiles": [
+    "/home/muneeeba/hammad/ai_therapist_app/lib/plugins/rnnoise_flutter/android/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/muneeeba/Android/Sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/muneeeba/hammad/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/Debug/5tc6y2t6/armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/muneeeba/Android/Sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/muneeeba/hammad/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/Debug/5tc6y2t6/armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "rnnoise::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "rnnoise",
+      "output": "/home/muneeeba/hammad/ai_therapist_app/lib/plugins/rnnoise_flutter/android/.cxx/Debug/5tc6y2t6/armeabi-v7a/librnnoise.a"
+    },
+    "rnnoise_flutter::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "rnnoise_flutter",
+      "output": "/home/muneeeba/hammad/ai_therapist_app/build/rnnoise_flutter/intermediates/cxx/Debug/5tc6y2t6/obj/armeabi-v7a/librnnoise_flutter.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/muneeeba/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/muneeeba/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}
