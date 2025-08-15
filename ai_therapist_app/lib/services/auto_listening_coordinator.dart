@@ -358,10 +358,7 @@ class AutoListeningCoordinator with SessionDisposable {
             '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active: $aiAudioActive | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (!_autoModeEnabled) {
-        if (kDebugMode) {
-          print(
-              '[AutoListeningCoordinator] [UNIFIED-TTS] Ignored unified TTS state change because autoMode is disabled');
-        }
+        // Reduce log noise: ignore state changes when auto mode is disabled
         return;
       }
 

@@ -159,7 +159,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
                           key: 'audio_state_debounced');
         }
       } else if (kDebugMode) {
-        AppLogger.v('AudioPlayerManager: Duplicate state change to $_pendingStateChange ignored (debounced)');
+        // Reduce noise: only log duplicate state change at verbose level if truly useful
+        // AppLogger.v('AudioPlayerManager: Duplicate state change ignored (debounced)');
       }
       _pendingStateChange = null;
     });
