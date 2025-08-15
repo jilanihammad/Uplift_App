@@ -283,22 +283,31 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   /// Handle session status changes for wakelock management
   void _handleSessionStatusChange(VoiceSessionStatus status) {
+    // De-dupe wakelock toggles by short-circuiting when the target state is already applied
     switch (status) {
       case VoiceSessionStatus.voiceModeActive:
       case VoiceSessionStatus.textModeActive:
-        // Session is active - acquire wakelock
-        AppLogger.d('ChatScreen: Session active, enabling wakelock');
-        _enableWakelock();
+        // Session is active - acquire wakelock if not already enabled
+        NativeWakelockService.isEnabled.then((enabled) {
+          if (!enabled) {
+            AppLogger.d('ChatScreen: Session active, enabling wakelock');
+            _enableWakelock();
+          }
+        });
         break;
       case VoiceSessionStatus.ended:
       case VoiceSessionStatus.idle:
       case VoiceSessionStatus.initial:
-        // Session is inactive - release wakelock
-        AppLogger.d('ChatScreen: Session inactive, disabling wakelock');
-        NativeWakelockService.disable().then((_) {
-          AppLogger.d('ChatScreen: Wakelock disabled due to session status change');
-        }).catchError((e) {
-          AppLogger.w('ChatScreen: Failed to disable wakelock', e);
+        // Session is inactive - release wakelock if currently enabled
+        NativeWakelockService.isEnabled.then((enabled) {
+          if (enabled) {
+            AppLogger.d('ChatScreen: Session inactive, disabling wakelock');
+            NativeWakelockService.disable().then((_) {
+              AppLogger.d('ChatScreen: Wakelock disabled due to session status change');
+            }).catchError((e) {
+              AppLogger.w('ChatScreen: Failed to disable wakelock', e);
+            });
+          }
         });
         break;
       default:
