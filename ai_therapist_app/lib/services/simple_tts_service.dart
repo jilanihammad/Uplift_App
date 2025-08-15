@@ -421,31 +421,8 @@ class SimpleTTSService implements ITTSService {
                 final bool alreadyStreamingFriendly = WavHeaderUtils.isStreamingFriendly(audioBuffer);
                 
                 if (alreadyStreamingFriendly) {
-                  // 🧪 TEMPORARY TEST: Force modify even streaming-friendly headers to use 0x7FFFFFFF
-                  // This tests if ExoPlayer handles 0x7FFFFFFF better than 0xFFFFFFFF
-                  if (kDebugMode) {
-                    print('🧪 [TTS] TEMP TEST: Force-modifying streaming-friendly headers to test 0x7FFFFFFF vs 0xFFFFFFFF');
-                  }
-                  
-                  originalHeaderInfo = WavHeaderUtils.parseWavHeader(audioBuffer);
-                  
-                  if (originalHeaderInfo != null) {
-                    // Create streaming header with 0x7FFFFFFF placeholder size
-                    final streamingHeader = WavHeaderUtils.createStreamingHeader(originalHeaderInfo);
-                    
-                    // Extract PCM data from original audio
-                    final pcmData = WavHeaderUtils.extractPcmData(audioBuffer, originalHeaderInfo);
-                    
-                    // Combine streaming header with PCM data
-                    streamingAudioData = WavHeaderUtils.combineHeaderAndPcm(streamingHeader, pcmData);
-                    
-                    if (kDebugMode) {
-                      print('🧪 [TTS] TEMP TEST: Created 0x7FFFFFFF headers: header=${streamingHeader.length}B, PCM=${pcmData.length}B, total=${streamingAudioData.length}B');
-                    }
-                  } else {
-                    // Fallback to original data
-                    streamingAudioData = Uint8List.fromList(audioBuffer);
-                  }
+                  // Keep original streaming-friendly headers untouched
+                  streamingAudioData = Uint8List.fromList(audioBuffer);
                 } else {
                   // Headers need modification for streaming compatibility
                   originalHeaderInfo = WavHeaderUtils.parseWavHeader(audioBuffer);
