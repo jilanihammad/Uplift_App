@@ -62,10 +62,12 @@ class SimpleTTSService implements ITTSService {
     // 🔍 TTS DUPLICATION TRACKING
     final caller = _getCallerInfo();
     if (kDebugMode) {
+      // Log pending as the value after this request is added (prevents negative display)
+      final pendingDisplay = (_pendingStreams < 0 ? 0 : _pendingStreams) + 1;
       print('🎯 [TTS-TRACK] speak() called by: $caller');
       print('🎯 [TTS-TRACK] Text: "${text.substring(0, text.length.clamp(0, 50))}${text.length > 50 ? "..." : ""}"');
       print('🎯 [TTS-TRACK] Voice: $voice, Format: $format');
-      print('🎯 [TTS-TRACK] Current queue size: ${_queue.length}, Pending: $_pendingStreams');
+      print('🎯 [TTS-TRACK] Current queue size: ${_queue.length}, Pending: $pendingDisplay');
     }
 
     // Determine optimal format - prefer OPUS if enabled, fallback to WAV
@@ -235,7 +237,12 @@ class SimpleTTSService implements ITTSService {
         }
       }
       
-      _pendingStreams--; // Decrement when done (success or error)
+      // Decrement when done (success or error) and clamp to zero
+      if (_pendingStreams > 0) {
+        _pendingStreams--;
+      } else {
+        _pendingStreams = 0;
+      }
       if (kDebugMode) {
         print('🔍 [TTS] Pending streams decremented to: $_pendingStreams');
       }
