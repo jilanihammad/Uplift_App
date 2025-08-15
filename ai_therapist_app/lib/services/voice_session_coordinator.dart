@@ -349,7 +349,12 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     }
 
     // Dispose all services synchronously
-    _recordingService.dispose();
+    // IMPORTANT: Do not dispose the app-scoped AudioRecordingService here.
+    // Disposing it can cause late idempotent stop calls to hit a disposed service.
+    // Instead, attempt to stop recording safely and leave the singleton alive.
+    try {
+      _recordingService.tryStopRecording();
+    } catch (_) {}
     // IMPORTANT: Do not dispose the app-scoped TTS service here.
     // Disposing it marks the singleton as permanently disposed, so subsequent
     // sessions cannot start TTS (queue pumps are no-ops when _disposed=true).
