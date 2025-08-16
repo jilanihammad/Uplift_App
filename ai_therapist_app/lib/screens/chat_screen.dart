@@ -550,14 +550,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
     }
 
-    // Explicitly stop VAD to prevent it from continuing to run
-    try {
-      await DependencyContainer().vadManager.stopListening();
-      debugPrint('[ChatScreen] VAD explicitly stopped in _endSession');
-    } catch (e) {
-      debugPrint('[ChatScreen] Failed to stop VAD in _endSession: $e');
-    }
-
     // Start ending session
     bloc.add(SetEndingSession(true));
     bloc.add(SetProcessing(true));
@@ -567,17 +559,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Stop audio and clean up resources through the bloc - WAIT for completion
     bloc.add(const EndSession());
 
-    // Give the EndSession event time to complete audio cleanup
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Additional safety: Force stop audio directly
-    try {
-      await _voiceService.stopAudio();
-      await _voiceService.stopRecording();
-      _voiceService.resetTTSState();
-    } catch (e) {
-      debugPrint('[ChatScreen] Direct audio cleanup error: $e');
-    }
+    // Give the EndSession event a brief moment to perform cleanup
+    await Future.delayed(const Duration(milliseconds: 200));
 
     // Show progress dialog
     if (mounted) {

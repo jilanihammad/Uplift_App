@@ -348,38 +348,19 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
       print('[VoiceSessionCoordinator] Disposing all services...');
     }
 
-    // Dispose all services synchronously
-    // IMPORTANT: Do not dispose the app-scoped AudioRecordingService here.
-    // Disposing it can cause late idempotent stop calls to hit a disposed service.
-    // Instead, attempt to stop recording safely and leave the singleton alive.
-    try {
-      _recordingService.tryStopRecording();
-    } catch (_) {}
-    // IMPORTANT: Do not dispose the app-scoped TTS service here.
-    // Disposing it marks the singleton as permanently disposed, so subsequent
-    // sessions cannot start TTS (queue pumps are no-ops when _disposed=true).
-    // Instead, attempt to gracefully stop audio and reset TTS state.
-    try {
-      _ttsService.stopAudio();
-    } catch (_) {}
-    try {
-      _ttsService.resetTTSState();
-    } catch (_) {}
+    // Dispose all services synchronously (centralize teardown in VoiceSessionBloc)
     // IMPORTANT: Do not dispose the app-scoped WebSocketAudioManager here.
     // Disposing it would mark the singleton as permanently disposed, breaking
     // subsequent sessions. Instead, attempt to gracefully end any active
     // session and disconnect without disposing the singleton instance.
+    // Delegate stop/reset/cleanup responsibilities to VoiceSessionBloc's centralized teardown.
+    // Only ensure network session is ended and connection dropped to avoid lingering sockets.
     try {
       // Fire-and-forget since dispose() is sync
       _wsManager.endSession();
     } catch (_) {}
     try {
       _wsManager.disconnectFromBackend();
-    } catch (_) {}
-    // IMPORTANT: Do not dispose the app-scoped AudioFileManager here.
-    // Instead, optionally trigger a lightweight cleanup of temp files.
-    try {
-      _fileManager.cleanupTempFiles();
     } catch (_) {}
 
     // Close stream controllers (fire and forget)
