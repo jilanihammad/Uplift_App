@@ -16,6 +16,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 ## 1) Architecture & lifecycle
 
 ### 1.1 App‑scoped singletons: never dispose on session end
+- Status: Completed (2025-08-15)
 - **Problem**: Disposing app‑scoped services (e.g., `WebSocketAudioManager`, TTS) in session teardown marks them permanently disposed, breaking subsequent sessions.
 - **Actions**:
   - In app‑scoped coordinators (e.g., `VoiceSessionCoordinator`), replace `dispose()` calls for shared services with:
@@ -26,6 +27,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 - **Impact**: Prevents "has been disposed" bad states on second session; reduces cold‑start overhead.
 
 ### 1.2 Single ownership of session teardown
+- Status: Completed (2025-08-15)
 - **Problem**: Multiple layers attempt to stop audio/VAD/recording, yielding duplicate "already stopped" logs and edge timing issues.
 - **Actions**:
   - Centralize teardown in `VoiceSessionBloc` end‐session handler.
@@ -38,6 +40,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 ## 2) State consistency (Bloc ↔ services)
 
 ### 2.1 Route listening state through Bloc events
+- Status: Completed (2025-08-15)
 - **Problem**: Bloc state (`isAutoListeningEnabled`) can drift from `AutoListeningCoordinator.autoModeEnabled` when services are called directly.
 - **Actions**:
   - Use `EnableAutoMode` and `DisableAutoMode` events so the Bloc updates its own state and instructs the service/coordinator.
@@ -46,6 +49,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 - **Impact**: Eliminates false "already active, skipping" paths that block re-arming.
 
 ### 2.2 Mic toggle (mute/unmute) behavior
+- Status: Completed (2025-08-15)
 - **Problem**: Unmute may not re‑enable auto mode due to stale flags or in‑flight TTS.
 - **Actions**:
   - On mute: `add(DisableAutoMode())`, then `tryStopRecording()` (idempotent). Bloc sets `isAutoListeningEnabled=false`.
@@ -59,6 +63,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 ## 3) Concurrency & timing
 
 ### 3.1 Atomic reset gating
+- Status: Completed (2025-08-15)
 - **Problem**: Mid‑reset TTS/playback starts can be canceled or misrouted.
 - **Actions**:
   - Preserve the existing "atomic reset completer" pattern around audio resets (player + TTS + VAD). Await before starting TTS (e.g., welcome message).
@@ -78,6 +83,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 ## 4) Audio pipeline & streaming
 
 ### 4.1 WAV header modification warnings
+- Status: Completed (2025-08-15)
 - **Observation**: Media3 WavExtractor warning appears, but playback is fine.
 - **Actions**:
   - Keep support for streaming‑friendly headers untouched by default (no rewrite) to reduce warnings.
@@ -95,6 +101,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 - **Impact**: Gradual speed/perf improvements with low risk.
 
 ### 4.3 In‑memory playback as default
+- Status: Completed (pre-existing; confirmed on 2025-08-15)
 - **Status**: Already implemented; keep it the default path.
 - **Actions**:
   - Fall back to file‑based playback only on errors.
@@ -137,6 +144,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 - **Impact**: Correct, responsive toggle UI.
 
 ### 7.2 Wake‑lock de‑duplication
+- Status: Completed (2025-08-15)
 - **Status**: You added async checks to avoid redundant toggles; keep this pattern.
 - **Files**: `lib/screens/chat_screen.dart`.
 - **Impact**: Less UI/framework churn.
