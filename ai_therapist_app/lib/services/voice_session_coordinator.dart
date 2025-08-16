@@ -376,7 +376,11 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     try {
       _wsManager.disconnectFromBackend();
     } catch (_) {}
-    _fileManager.dispose();
+    // IMPORTANT: Do not dispose the app-scoped AudioFileManager here.
+    // Instead, optionally trigger a lightweight cleanup of temp files.
+    try {
+      _fileManager.cleanupTempFiles();
+    } catch (_) {}
 
     // Close stream controllers (fire and forget)
     _audioLevelController.close();
