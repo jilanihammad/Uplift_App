@@ -192,20 +192,16 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Talk and Speaker buttons row
+            // Mic mute and Speaker buttons row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // Talk/Stop Button
-                _buildTalkButton(
-                  isRecording: data.rec,
+                // Mic Mute Toggle Button (replaces Talk)
+                _buildMicMuteButton(
+                  isMicEnabled: context.read<VoiceSessionBloc>().state.isMicEnabled,
                   onTap: () {
                     final bloc = context.read<VoiceSessionBloc>();
-                    if (data.rec) {
-                      bloc.add(StopListening());
-                    } else {
-                      bloc.add(StartListening());
-                    }
+                    bloc.add(ToggleMicMute());
                   },
                 ),
                 // Speaker Toggle Button
@@ -264,8 +260,8 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     );
   }
 
-  Widget _buildTalkButton({
-    required bool isRecording,
+  Widget _buildMicMuteButton({
+    required bool isMicEnabled,
     required VoidCallback onTap,
   }) {
     return Container(
@@ -273,9 +269,9 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: (isRecording
-                ? Colors.red
-                : Theme.of(context).primaryColor)
+        color: (isMicEnabled
+                ? Theme.of(context).primaryColor
+                : Colors.grey)
             .withOpacity(0.85),
         boxShadow: [
           BoxShadow(
@@ -286,20 +282,16 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
         ],
       ),
       child: Tooltip(
-        message: isRecording ? 'Stop Recording' : 'Start Recording',
+        message: isMicEnabled ? 'Mute mic' : 'Unmute mic',
         child: Material(
           color: Colors.transparent,
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
             child: Center(
-              child: Text(
-                isRecording ? 'Stop' : 'Talk',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+              child: Icon(
+                isMicEnabled ? Icons.mic : Icons.mic_off,
+                color: Colors.white,
               ),
             ),
           ),
