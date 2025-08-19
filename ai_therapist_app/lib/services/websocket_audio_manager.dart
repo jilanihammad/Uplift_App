@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../di/interfaces/i_websocket_audio_manager.dart';
@@ -20,6 +21,15 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
   Timer? _keepAliveTimer;
   static const Duration _connectionTimeout = Duration(seconds: 30);
   static const Duration _keepAliveInterval = Duration(seconds: 25);
+  // Graceful idle close: keep socket open briefly for fast reuse after session end
+  Timer? _idleCloseTimer;
+  static const Duration _idleCloseDelay = Duration(seconds: 30);
+  // Exponential backoff for reconnection attempts
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 5;
+  static const Duration _baseBackoff = Duration(seconds: 1);
+  static const Duration _maxBackoff = Duration(seconds: 30);
+  Timer? _reconnectTimer;
   
   // Stream controllers for connection state and messages
   final StreamController<bool> _connectionStateController = 
@@ -104,6 +114,8 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       _lastUsed = now;
+      _resetReconnectAttempts();
+      _cancelReconnectTimer();
       
       // Setup message handling
       _setupMessageHandling();
@@ -163,6 +175,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       };
       
       _channel!.sink.add(jsonEncode(message));
+      _lastUsed = DateTime.now();
       
       if (kDebugMode && audioData.isNotEmpty) {
         debugPrint('[WebSocketAudioManager] Streamed ${audioData.length} bytes');
@@ -197,6 +210,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       };
       
       _channel!.sink.add(jsonEncode(message));
+      _lastUsed = DateTime.now();
       
       if (kDebugMode) {
         debugPrint('[WebSocketAudioManager] Sent chunk $chunkIndex (${chunk.length} bytes)');
@@ -227,6 +241,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       };
       
       _channel!.sink.add(jsonEncode(message));
+      _lastUsed = DateTime.now();
       
       if (kDebugMode) {
         debugPrint('[WebSocketAudioManager] Finalized audio stream');
@@ -253,6 +268,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       }
       
       _channel!.sink.add(jsonEncode(message));
+      _lastUsed = DateTime.now();
       
       if (kDebugMode) {
         debugPrint('[WebSocketAudioManager] Sent message: ${message['type']}');
@@ -272,6 +288,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       throw StateError('WebSocketAudioManager has been disposed');
     }
     
+    _cancelIdleClose();
     _currentSessionId = sessionId;
     
     // Create session-specific controller
@@ -337,6 +354,10 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       final controller = _activeSessions.remove(sessionId);
       controller?.close();
       _currentSessionId = null;
+      // Schedule graceful idle close to reduce dial-ups while allowing rapid reuse
+      if (_isConnected) {
+        _scheduleIdleClose();
+      }
     }
   }
 
@@ -369,6 +390,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       if (kDebugMode) {
         debugPrint('[WebSocketAudioManager] Sent keep-alive ping');
       }
+      _lastUsed = DateTime.now();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[WebSocketAudioManager] Keep-alive failed: $e');
@@ -420,6 +442,13 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
     
     // Clean up current connection
     await _cleanupConnection();
+    // Backoff reconnection only if session active or recently used
+    final now = DateTime.now();
+    final shouldAttemptReconnect =
+        _currentSessionId != null || (_lastUsed != null && now.difference(_lastUsed!) < _connectionTimeout);
+    if (shouldAttemptReconnect && !_disposed) {
+      _scheduleReconnectWithBackoff();
+    }
   }
 
   @override
@@ -453,7 +482,7 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
       }
       
       _errorController.add('Reconnection failed: $e');
-      rethrow;
+      _scheduleReconnectWithBackoff();
     }
   }
 
@@ -517,6 +546,8 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
   /// Clean up WebSocket connection and related resources
   Future<void> _cleanupConnection() async {
     stopKeepAliveTimer();
+    _cancelIdleClose();
+    _cancelReconnectTimer();
     
     _wsSubscription?.cancel();
     _wsSubscription = null;
@@ -588,5 +619,68 @@ class WebSocketAudioManager implements IWebSocketAudioManager {
     if (kDebugMode) {
       debugPrint('[WebSocketAudioManager] Disposed successfully');
     }
+  }
+
+  // ===== Idle close helpers =====
+  void _scheduleIdleClose() {
+    _cancelIdleClose();
+    _idleCloseTimer = Timer(_idleCloseDelay, () async {
+      if (_isConnected && _currentSessionId == null) {
+        if (kDebugMode) {
+          debugPrint('[WebSocketAudioManager] Idle close timer fired – closing idle WebSocket');
+        }
+        await disconnectFromBackend();
+      }
+    });
+    if (kDebugMode) {
+      debugPrint('[WebSocketAudioManager] Scheduled idle close in ${_idleCloseDelay.inSeconds}s');
+    }
+  }
+
+  void _cancelIdleClose() {
+    _idleCloseTimer?.cancel();
+    _idleCloseTimer = null;
+  }
+
+  // ===== Reconnection backoff helpers =====
+  void _scheduleReconnectWithBackoff() {
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      if (kDebugMode) {
+        debugPrint('[WebSocketAudioManager] Max reconnection attempts reached; giving up');
+      }
+      return;
+    }
+    _reconnectAttempts++;
+    final delay = _computeBackoffDelay(_reconnectAttempts);
+    _cancelReconnectTimer();
+    if (kDebugMode) {
+      debugPrint('[WebSocketAudioManager] Scheduling reconnect attempt #$_reconnectAttempts in ${delay.inSeconds}s');
+    }
+    _reconnectTimer = Timer(delay, () async {
+      if (_disposed) return;
+      try {
+        await reconnect();
+        _resetReconnectAttempts();
+      } catch (_) {
+        // reconnect() schedules the next attempt on failure
+      }
+    });
+  }
+
+  Duration _computeBackoffDelay(int attempt) {
+    final millis = _baseBackoff.inMilliseconds * (1 << (attempt - 1));
+    final clamped = millis > _maxBackoff.inMilliseconds
+        ? _maxBackoff.inMilliseconds
+        : millis;
+    return Duration(milliseconds: clamped);
+  }
+
+  void _resetReconnectAttempts() {
+    _reconnectAttempts = 0;
+  }
+
+  void _cancelReconnectTimer() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
   }
 }

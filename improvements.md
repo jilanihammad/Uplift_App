@@ -114,6 +114,7 @@ This document lists recommended actions to harden the app, prevent regressions, 
 ## 5) Recording configuration
 
 ### 5.1 Align recording settings to RNNoise
+- Status: Completed (2025-08-19)
 - **Problem**: RNNoise operates at 48 kHz; recording paths sometimes use 44.1 kHz and 2 channels.
 - **Actions**:
   - Prefer mono 48 kHz for mic capture to avoid resampling; reduces CPU and file size.
