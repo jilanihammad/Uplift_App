@@ -63,6 +63,8 @@ class VoiceSessionState extends Equatable {
   final int currentMessageSequence; // Added for message sequencing
   final bool speakerMuted; // Track speaker mute state
   final double amplitude; // Real-time audio amplitude [0-1] for visualization
+  // Session timer remaining seconds (counts down from selected duration)
+  final int timerRemainingSeconds;
 
   const VoiceSessionState({
     required this.status,
@@ -93,6 +95,7 @@ class VoiceSessionState extends Equatable {
     required this.currentMessageSequence, // Added
     this.speakerMuted = false,
     this.amplitude = 0.0,
+    this.timerRemainingSeconds = 0,
   });
 
   factory VoiceSessionState.initial({
@@ -127,6 +130,7 @@ class VoiceSessionState extends Equatable {
       currentMessageSequence: 0, // Initialize sequence
       speakerMuted: false,
       amplitude: 0.0,
+      timerRemainingSeconds: 0,
     );
   }
 
@@ -161,6 +165,7 @@ class VoiceSessionState extends Equatable {
     int? currentMessageSequence, // Added
     bool? speakerMuted,
     double? amplitude,
+    int? timerRemainingSeconds,
   }) {
     return VoiceSessionState(
       status: status ?? this.status,
@@ -198,6 +203,7 @@ class VoiceSessionState extends Equatable {
           currentMessageSequence ?? this.currentMessageSequence, // Added
       speakerMuted: speakerMuted ?? this.speakerMuted,
       amplitude: amplitude ?? this.amplitude,
+      timerRemainingSeconds: timerRemainingSeconds ?? this.timerRemainingSeconds,
     );
   }
 
@@ -231,6 +237,7 @@ class VoiceSessionState extends Equatable {
         currentMessageSequence, // Added
         speakerMuted,
         amplitude,
+        timerRemainingSeconds,
       ];
 
   bool get canSend {
@@ -247,7 +254,7 @@ class VoiceSessionState extends Equatable {
   bool get isInitializing => status == VoiceSessionStatus.loading;
   int get sessionDurationMinutes => selectedDuration?.inMinutes ?? 0;
   int get sessionTimerSeconds =>
-      0; // TODO: Implement actual timer logic if needed
+      timerRemainingSeconds;
   bool get isEndingSession => status == VoiceSessionStatus.ended;
   bool get isProcessing => isProcessingAudio;
   bool get isSpeakerMuted => speakerMuted;

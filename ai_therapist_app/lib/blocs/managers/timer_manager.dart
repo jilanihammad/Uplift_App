@@ -112,6 +112,8 @@ class TimerManager {
       debugPrint('[TimerManager] Starting session timer');
     }
     
+    // Emit initial update so UI shows correct starting remaining value immediately
+    _updateElapsedTime(forceEmit: true);
     // Create a periodic timer that fires every second
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_isPaused) {
@@ -167,15 +169,17 @@ class TimerManager {
   }
   
   /// Update elapsed time and trigger callbacks
-  void _updateElapsedTime() {
+  void _updateElapsedTime({bool forceEmit = false}) {
     if (_sessionStartTime != null) {
       // Calculate total elapsed time
       final currentSessionTime = DateTime.now().difference(_sessionStartTime!);
       final totalElapsed = _accumulatedTime + currentSessionTime;
       
       // Only update if time actually changed (to handle sub-second timing)
-      if (totalElapsed.inSeconds > _accumulatedTime.inSeconds) {
-        _accumulatedTime = _accumulatedTime + const Duration(seconds: 1);
+      if (forceEmit || totalElapsed.inSeconds > _accumulatedTime.inSeconds) {
+        if (!forceEmit) {
+          _accumulatedTime = _accumulatedTime + const Duration(seconds: 1);
+        }
         
         // Trigger time update callback
         onTimeUpdate?.call(elapsedSeconds, remainingSeconds);
