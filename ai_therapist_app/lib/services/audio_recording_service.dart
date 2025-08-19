@@ -59,10 +59,11 @@ class AudioRecordingService implements IAudioRecordingService {
   
   /// Initialize default recording settings
   void _initializeDefaultSettings() {
+    // Prefer RNNoise-aligned settings: mono 48 kHz, with 44.1 kHz fallback elsewhere
     _recordingSettings = {
       'encoder': AudioEncoder.aacLc,
       'bitRate': 128000,
-      'sampleRate': 44100,
+      'sampleRate': 48000,
       'numChannels': 1,
     };
   }
@@ -374,7 +375,7 @@ class AudioRecordingService implements IAudioRecordingService {
         break;
       case 'medium':
         _recordingSettings['bitRate'] = 128000;
-        _recordingSettings['sampleRate'] = 44100;
+        _recordingSettings['sampleRate'] = 48000; // prefer 48 kHz for RNNoise alignment
         break;
       case 'high':
         _recordingSettings['bitRate'] = 256000;
@@ -386,7 +387,7 @@ class AudioRecordingService implements IAudioRecordingService {
         }
         _audioQuality = 'medium';
         _recordingSettings['bitRate'] = 128000;
-        _recordingSettings['sampleRate'] = 44100;
+        _recordingSettings['sampleRate'] = 48000;
         break;
     }
     

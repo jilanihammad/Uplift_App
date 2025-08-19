@@ -131,7 +131,7 @@ class LLMConfig:
         
         (ModelProvider.GROQ, ModelType.TRANSCRIPTION): ModelConfig(
             provider=ModelProvider.GROQ,
-            model_id=os.getenv("GROQ_TRANSCRIPTION_MODEL_ID", "distil-whisper-large-v3-en"),
+            model_id=os.getenv("GROQ_TRANSCRIPTION_MODEL_ID", "whisper-large-v3-turbo"),
             base_url=os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1"),
             api_key_env="GROQ_API_KEY",
             default_params={
