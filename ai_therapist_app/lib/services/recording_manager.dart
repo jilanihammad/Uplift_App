@@ -214,15 +214,39 @@ class RecordingManager {
       // 🚨 CORRUPTION DIAGNOSTIC - Verify path is still clean after PathManager
       print('🛡️ RecordingManager.startRecording() received path: $filePath');
 
-      // Configure recording
-      await recorder.start(
-        RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: filePath,
-      );
+      // Configure recording: prefer mono 48 kHz to align with RNNoise
+      // Fallback to 44.1 kHz on devices that don't support 48 kHz
+      try {
+        await recorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            numChannels: 1,
+            bitRate: 128000,
+            sampleRate: 48000,
+          ),
+          path: filePath,
+        );
+        if (kDebugMode) {
+          AppLogger.d(' RecordingManager: Started recording at 48 kHz mono (preferred)');
+        }
+      } on Exception catch (primaryError) {
+        if (kDebugMode) {
+          print('⚠️ RecordingManager: 48 kHz start failed ($primaryError), retrying at 44.1 kHz');
+        }
+        // Retry with 44.1 kHz (widely supported)
+        await recorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            numChannels: 1,
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: filePath,
+        );
+        if (kDebugMode) {
+          AppLogger.d(' RecordingManager: Started recording at 44.1 kHz mono (fallback)');
+        }
+      }
 
       _lastRecordedPath = filePath;
 
