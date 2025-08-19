@@ -398,7 +398,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       
       // Reset managers
       _messageCoordinator.resetMessages();
+      // Prepare timer to count down from selected duration (if any)
       _timerManager.stopTimer();
+      if (state.selectedDuration != null) {
+        _timerManager.setSessionDuration(state.selectedDuration!);
+        _timerManager.startTimer();
+        // Initialize displayed remaining time immediately
+        add(const UpdateSessionTimer());
+      }
       
       emit(newState);
       
@@ -449,6 +456,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       isProcessingAudio: false,
       isAiSpeaking: false,
     ));
+    // Ensure timer is stopped and UI reflects 0
+    _timerManager.stopTimer();
+    add(const UpdateSessionTimer());
   }
 
   void _onStartListening(
@@ -1194,7 +1204,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   void _onUpdateSessionTimer(
-      UpdateSessionTimer event, Emitter<VoiceSessionState> emit) {}
+      UpdateSessionTimer event, Emitter<VoiceSessionState> emit) {
+    // Pull remaining time from TimerManager and reflect in state
+    final remaining = _timerManager.remainingSeconds;
+    if (state.timerRemainingSeconds != remaining) {
+      emit(state.copyWith(timerRemainingSeconds: remaining));
+    }
+  }
 
   // ========== Two-Step Session Start Flow ==========
   
@@ -1315,7 +1331,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       
       // Add welcome message using MessageCoordinator (after reset)
       final welcomeMessage = _messageCoordinator.addWelcomeMessage(mood);
+      // Start or restart session countdown timer now that session is active
       _timerManager.stopTimer();
+      if (state.selectedDuration != null) {
+        _timerManager.setSessionDuration(state.selectedDuration!);
+        _timerManager.startTimer();
+        add(const UpdateSessionTimer());
+      }
       
       // Update state with new message and sequence - SET TO ACTIVE (not idle)
       final finalState = newState.copyWith(
