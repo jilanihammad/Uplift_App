@@ -453,30 +453,28 @@ class ObservabilityManager:
         self.health_status = "healthy"
         
     async def start(self):
-        """Start all observability components."""
-        await self.logger.start()
-        await self.metrics_collector.start()
+        """Start all observability components (disabled)."""
+        # Background observability loops are disabled to prevent idle CPU usage
+        # on serverless platforms (e.g., Cloud Run). Intentionally do nothing.
+        return
         
     async def stop(self):
-        """Stop all observability components."""
-        await self.logger.stop()
-        await self.metrics_collector.stop()
+        """Stop all observability components (disabled)."""
+        # No background tasks were started, so there is nothing to stop.
+        return
     
     async def log_async(self, level: str, service: str, message: str, **kwargs):
-        """Log a message asynchronously with smart sampling."""
-        # Smart sampling for logs
-        if self.log_sample_rate < 1.0:
-            import random
-            if random.random() > self.log_sample_rate:
-                return
-        
-        await self.logger.log_async(level, service, message, **kwargs)
+        """Log a message (disabled background logger)."""
+        # Background logging is disabled; drop observability logs to avoid
+        # creating any background activity. Intentionally no-op.
+        return
     
     def record_metric(self, metric_name: str, value: float, 
                      labels: Optional[Dict[str, str]] = None,
                      metric_type: str = "gauge"):
-        """Record a metric with smart sampling."""
-        self.metrics_collector.record_metric(metric_name, value, labels, metric_type)
+        """Record a metric (disabled)."""
+        # Drop metrics to avoid background work when idle.
+        return
     
     def get_health_status(self) -> Dict[str, Any]:
         """Get comprehensive health status."""
