@@ -9,9 +9,9 @@ echo "===================================================="
 PROJECT_ID="upliftapp-cd86e"
 SERVICE_NAME="ai-therapist-backend"
 REGION="us-central1"
-MIN_INSTANCES=1
+MIN_INSTANCES=0
 MAX_INSTANCES=5
-MEMORY="1Gi"
+MEMORY="512Mi"
 CPU="1"
 TIMEOUT="300s"
 CONCURRENCY=80
@@ -194,8 +194,9 @@ if ! gcloud run deploy "$SERVICE_NAME" \
     --region="$REGION" \
     --min-instances="$MIN_INSTANCES" \
     --max-instances="$MAX_INSTANCES" \
-    --memory=2Gi \
-    --cpu=2 \
+    --memory="$MEMORY" \
+    --cpu="$CPU" \
+    --cpu-throttling \
     --timeout="$TIMEOUT" \
     --concurrency=80 \
     --allow-unauthenticated; then
