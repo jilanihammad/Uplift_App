@@ -30,6 +30,13 @@ class MemoryService {
   // In-memory cache of emotional states
   final List<EmotionalState> _emotionalStates = [];
 
+  // Key personal anchors remembered about the user
+  final List<UserAnchor> _anchors = [];
+
+  // Persistent session counter for anchor decay tracking
+  int _sessionCounter = 0;
+  SharedPreferences? _preferences;
+
   // User preferences
   final Map<String, dynamic> _userPreferences = {};
 
@@ -87,10 +94,14 @@ class MemoryService {
         // Load emotional states from database
         await _loadEmotionalStates();
 
+        // Load user anchors and session counter for personalized memory
+        await _loadAnchors();
+        await _loadSessionCounter();
+
         _isInitialized = true;
         logger.info('MemoryService initialized successfully');
         logger.debug(
-            'Loaded ${_conversationMemories.length} memories, ${_insights.length} insights, and ${_emotionalStates.length} emotional states');
+            'Loaded ${_conversationMemories.length} memories, ${_insights.length} insights, ${_emotionalStates.length} emotional states, and ${_anchors.length} anchors');
       });
     } catch (e) {
       logger.error('Failed to initialize MemoryService', error: e);
@@ -250,6 +261,207 @@ class MemoryService {
     } catch (e) {
       logger.error('Failed to load emotional states', error: e);
       // Continue with empty emotional states rather than crashing
+    }
+  }
+
+  /// Load persisted user anchors into memory
+  Future<void> _loadAnchors() async {
+    try {
+      final anchorRecords = await _databaseProvider.query(
+        'user_anchors',
+        orderBy: 'last_seen_at DESC',
+      );
+
+      _anchors
+        ..clear()
+        ..addAll(anchorRecords.map(UserAnchor.fromJson));
+
+      logger.debug('Loaded ${_anchors.length} user anchors');
+    } catch (e) {
+      logger.error('Failed to load user anchors', error: e);
+      _anchors.clear();
+    }
+  }
+
+  /// Load persisted session counter for anchor decay tracking
+  Future<void> _loadSessionCounter() async {
+    try {
+      _preferences ??= await SharedPreferences.getInstance();
+      _sessionCounter = _preferences?.getInt('memory_session_counter') ?? 0;
+      logger.debug('Loaded memory session counter: $_sessionCounter');
+    } catch (e) {
+      logger.warning('Failed to load session counter from preferences: $e');
+      _sessionCounter = 0;
+    }
+  }
+
+  /// Increment the session counter and persist it for decay tracking
+  Future<int> incrementSessionCounter() async {
+    await initializeIfNeeded();
+    _sessionCounter += 1;
+
+    try {
+      _preferences ??= await SharedPreferences.getInstance();
+      await _preferences?.setInt('memory_session_counter', _sessionCounter);
+    } catch (e) {
+      logger.warning('Failed to persist session counter: $e');
+    }
+
+    return _sessionCounter;
+  }
+
+  /// Retrieve current session index without incrementing
+  int get currentSessionIndex => _sessionCounter;
+
+  /// Return an immutable snapshot of active anchors
+  List<UserAnchor> getAnchors() => List.unmodifiable(_anchors);
+
+  /// Add a new anchor or update an existing one
+  Future<UserAnchor> addOrUpdateAnchor({
+    required String anchorText,
+    String? anchorType,
+    double confidence = 0.5,
+    required int sessionIndex,
+  }) async {
+    await initializeIfNeeded();
+
+    final normalized = UserAnchor.normalize(anchorText);
+    final existingIndex = _anchors.indexWhere(
+      (anchor) => anchor.normalizedText == normalized,
+    );
+
+    if (existingIndex != -1) {
+      final existing = _anchors[existingIndex];
+      final updated = existing.copyWith(
+        anchorText: anchorText.length > existing.anchorText.length
+            ? anchorText
+            : existing.anchorText,
+        anchorType: anchorType ?? existing.anchorType,
+        confidence: confidence > existing.confidence
+            ? confidence
+            : existing.confidence,
+        mentionCount: existing.mentionCount + 1,
+        lastSeenAt: DateTime.now(),
+        lastSessionIndex: sessionIndex,
+      );
+
+      await _databaseProvider.update(
+        'user_anchors',
+        updated.toJson(),
+        where: 'id = ?',
+        whereArgs: [existing.id],
+      );
+
+      _anchors[existingIndex] = updated;
+      return updated;
+    }
+
+    final now = DateTime.now();
+    final newAnchor = UserAnchor(
+      anchorText: anchorText,
+      normalizedText: normalized,
+      anchorType: anchorType,
+      confidence: confidence,
+      mentionCount: 1,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      firstSessionIndex: sessionIndex,
+      lastSessionIndex: sessionIndex,
+    );
+
+    final insertData = Map<String, dynamic>.from(newAnchor.toJson());
+    insertData.remove('id');
+    final insertedId = await _databaseProvider.insert('user_anchors', insertData);
+    final persisted = newAnchor.copyWith(id: insertedId);
+
+    _anchors.add(persisted);
+    await pruneAnchors(maxAnchors: 3);
+    return persisted;
+  }
+
+  /// Ensure we only keep a limited number of anchors prioritized by relevance
+  Future<void> pruneAnchors({int maxAnchors = 3}) async {
+    if (_anchors.length <= maxAnchors) {
+      return;
+    }
+
+    // Sort by mention count descending, then by last seen recency
+    _anchors.sort((a, b) {
+      if (b.mentionCount != a.mentionCount) {
+        return b.mentionCount.compareTo(a.mentionCount);
+      }
+      return b.lastSeenAt.compareTo(a.lastSeenAt);
+    });
+
+    final toRemove = _anchors.sublist(maxAnchors);
+    _anchors.removeRange(maxAnchors, _anchors.length);
+
+    for (final anchor in toRemove) {
+      if (anchor.id != null) {
+        await _databaseProvider.delete(
+          'user_anchors',
+          where: 'id = ?',
+          whereArgs: [anchor.id],
+        );
+      }
+    }
+  }
+
+  /// Anchors that have not been mentioned within the threshold sessions
+  List<UserAnchor> getAnchorsNeedingCheck(
+    int sessionIndex, {
+    int threshold = 5,
+  }) {
+    return _anchors.where((anchor) {
+      final sessionsSinceMention = sessionIndex - anchor.lastSessionIndex;
+      final alreadyPromptedRecently =
+          anchor.lastPromptedSession >= anchor.lastSessionIndex &&
+              (sessionIndex - anchor.lastPromptedSession) < threshold;
+      return sessionsSinceMention >= threshold && !alreadyPromptedRecently;
+    }).toList();
+  }
+
+  /// Update anchor to reflect that a gentle check-in prompt has been queued
+  Future<void> markAnchorPrompted(UserAnchor anchor, int sessionIndex) async {
+    if (anchor.id == null) {
+      return;
+    }
+
+    final updated = anchor.copyWith(lastPromptedSession: sessionIndex);
+    await _databaseProvider.update(
+      'user_anchors',
+      updated.toJson(),
+      where: 'id = ?',
+      whereArgs: [anchor.id],
+    );
+
+    final index = _anchors.indexWhere((a) => a.id == anchor.id);
+    if (index != -1) {
+      _anchors[index] = updated;
+    }
+  }
+
+  /// Update anchor metadata after a mention without increasing count
+  Future<void> refreshAnchor(UserAnchor anchor, int sessionIndex) async {
+    if (anchor.id == null) {
+      return;
+    }
+
+    final refreshed = anchor.copyWith(
+      lastSeenAt: DateTime.now(),
+      lastSessionIndex: sessionIndex,
+    );
+
+    await _databaseProvider.update(
+      'user_anchors',
+      refreshed.toJson(),
+      where: 'id = ?',
+      whereArgs: [anchor.id],
+    );
+
+    final index = _anchors.indexWhere((a) => a.id == anchor.id);
+    if (index != -1) {
+      _anchors[index] = refreshed;
     }
   }
 
