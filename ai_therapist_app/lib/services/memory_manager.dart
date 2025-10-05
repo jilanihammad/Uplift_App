@@ -5,6 +5,7 @@ import '../services/memory_service.dart';
 import '../utils/logging_service.dart';
 import '../di/initialization_tracker.dart';
 import '../di/interfaces/i_memory_manager.dart';
+import '../models/conversation_memory.dart';
 
 /// Handles management of conversation memory and context for therapy sessions
 class MemoryManager implements IMemoryManager {
@@ -224,6 +225,8 @@ class MemoryManager implements IMemoryManager {
     try {
       await _safeInitialize();
 
+      final sessionIndex = await _memoryService.incrementSessionCounter();
+
       // Extract any insights detected in the response
       if (response.containsKey('insights') && response['insights'] != null) {
         final insights = response['insights'];
@@ -266,6 +269,13 @@ class MemoryManager implements IMemoryManager {
           logger.warning('Error updating emotional state: $e');
         }
       }
+
+      // Update key anchors based on new information
+      await _updateKeyAnchors(
+        userMessage: userMessage,
+        graphResult: graphResult,
+        sessionIndex: sessionIndex,
+      );
     } catch (e) {
       logger.error('Error processing insights and saving memory', error: e);
       // Fail gracefully - don't throw
@@ -300,6 +310,253 @@ class MemoryManager implements IMemoryManager {
       // Log but allow operation to continue
       logger.error('Failed to initialize in _safeInitialize', error: e);
     }
+  }
+
+  Future<void> _updateKeyAnchors({
+    required String userMessage,
+    required Map<String, dynamic> graphResult,
+    required int sessionIndex,
+  }) async {
+    final candidates = _extractAnchorCandidates(userMessage, graphResult);
+    final candidateNormalized =
+        candidates.map((c) => c.normalizedText).toSet();
+
+    for (final candidate in candidates) {
+      await _memoryService.addOrUpdateAnchor(
+        anchorText: candidate.anchorText,
+        anchorType: candidate.anchorType,
+        confidence: candidate.confidence,
+        sessionIndex: sessionIndex,
+      );
+    }
+
+    // Refresh anchors that were referenced but not captured as new candidates
+    final lowerMessage = userMessage.toLowerCase();
+    for (final anchor in _memoryService.getAnchors()) {
+      if (candidateNormalized.contains(anchor.normalizedText)) {
+        continue;
+      }
+
+      if (_messageMentionsAnchor(lowerMessage, anchor)) {
+        await _memoryService.refreshAnchor(anchor, sessionIndex);
+      }
+    }
+  }
+
+  List<_AnchorCandidate> _extractAnchorCandidates(
+    String userMessage,
+    Map<String, dynamic> graphResult,
+  ) {
+    final lower = userMessage.toLowerCase();
+    final seen = <String>{};
+    final candidates = <_AnchorCandidate>[];
+
+    void addCandidate(String text, {String? type, double confidence = 0.6}) {
+      final normalized = UserAnchor.normalize(text);
+      if (normalized.isEmpty || seen.contains(normalized)) {
+        return;
+      }
+      seen.add(normalized);
+      candidates.add(_AnchorCandidate(
+        anchorText: text.trim(),
+        normalizedText: normalized,
+        anchorType: type,
+        confidence: confidence,
+      ));
+    }
+
+    // Relationship-focused anchors
+    final relationshipPattern = RegExp(
+      r'\bmy\s+(wife|husband|partner|boyfriend|girlfriend|fiancé|fiancee|son|daughter|child|kid|kids|mom|mother|dad|father|sister|brother|grandma|grandmother|grandpa|grandfather|best friend|friend)\b',
+      caseSensitive: false,
+    );
+    for (final match in relationshipPattern.allMatches(lower)) {
+      addCandidate(match.group(0) ?? '',
+          type: 'relationship', confidence: 0.9);
+    }
+
+    // Life events and milestones
+    final eventKeywords = <String, String>{
+      'wedding': 'life_event',
+      'married': 'life_event',
+      'engaged': 'life_event',
+      'anniversary': 'life_event',
+      'pregnant': 'life_event',
+      'baby': 'life_event',
+      'newborn': 'life_event',
+      'passed away': 'life_event',
+      'funeral': 'life_event',
+      'lost my job': 'life_event',
+      'got fired': 'life_event',
+      'laid off': 'life_event',
+      'got promoted': 'life_event',
+      'promotion': 'life_event',
+      'started a business': 'life_event',
+      'graduation': 'life_event',
+    };
+    eventKeywords.forEach((phrase, type) {
+      if (lower.contains(phrase)) {
+        addCandidate(phrase, type: type, confidence: 0.75);
+      }
+    });
+
+    // Passions and deeply held values
+    final passionPattern = RegExp(
+      r'(?:i\s+(?:really\s+)?love|i\s+am\s+passionate\s+about|it\s+means\s+so\s+much\s+to\s+me|it\s+means\s+a\s+lot\s+to\s+me|important\s+to\s+me|matters\s+a\s+lot\s+to\s+me)\s+([^\.;,]+)',
+      caseSensitive: false,
+    );
+    for (final match in passionPattern.allMatches(lower)) {
+      final raw = match.group(1)?.trim();
+      if (raw != null && raw.isNotEmpty) {
+        addCandidate(raw, type: 'passion', confidence: 0.65);
+      }
+    }
+
+    // Goals or enduring priorities
+    final goalPattern = RegExp(
+      r'(?:my\s+goal\s+is|i\s+want\s+to|i\s+hope\s+to|i\s+am\s+working\s+on)\s+([^\.;,]+)',
+      caseSensitive: false,
+    );
+    for (final match in goalPattern.allMatches(lower)) {
+      final raw = match.group(1)?.trim();
+      if (raw != null && raw.isNotEmpty) {
+        addCandidate(raw, type: 'goal', confidence: 0.6);
+      }
+    }
+
+    // Topic-informed anchors (fallback when nothing else is captured)
+    final analysis = graphResult['analysis'] as Map<String, dynamic>?;
+    final topics = (analysis?['topics'] as List?)
+            ?.map((e) => e.toString().toLowerCase())
+            .toList() ??
+        [];
+
+    if (candidates.isEmpty && topics.isNotEmpty) {
+      for (final topic in topics) {
+        switch (topic) {
+          case 'work':
+            addCandidate('work and career', type: 'work', confidence: 0.5);
+            break;
+          case 'family':
+            addCandidate('family connections', type: 'family', confidence: 0.5);
+            break;
+          case 'relationships':
+            addCandidate('romantic relationships',
+                type: 'relationship', confidence: 0.5);
+            break;
+          case 'finances':
+            addCandidate('financial stability',
+                type: 'finances', confidence: 0.5);
+            break;
+        }
+      }
+    }
+
+    return candidates;
+  }
+
+  bool _messageMentionsAnchor(String lowerMessage, UserAnchor anchor) {
+    if (lowerMessage.contains(anchor.normalizedText)) {
+      return true;
+    }
+
+    // Additional checks for anchor types when normalized text differs
+    if (anchor.anchorType == 'relationship') {
+      const relationshipTerms = [
+        'wife',
+        'husband',
+        'partner',
+        'boyfriend',
+        'girlfriend',
+        'fiancé',
+        'fiancee',
+        'son',
+        'daughter',
+        'child',
+        'kids',
+        'mom',
+        'mother',
+        'dad',
+        'father',
+        'sister',
+        'brother',
+        'grandma',
+        'grandpa',
+        'friend',
+      ];
+      return relationshipTerms.any((term) => lowerMessage.contains(term));
+    }
+
+    if (anchor.anchorType == 'work') {
+      return lowerMessage.contains('work') ||
+          lowerMessage.contains('job') ||
+          lowerMessage.contains('career');
+    }
+
+    if (anchor.anchorType == 'finances') {
+      return lowerMessage.contains('money') ||
+          lowerMessage.contains('finance');
+    }
+
+    return false;
+  }
+
+  Future<String> getAnchorGuidance(
+    String userMessage,
+    Map<String, dynamic> graphResult,
+  ) async {
+    await _safeInitialize();
+
+    final anchors = _memoryService.getAnchors();
+    if (anchors.isEmpty) {
+      return '';
+    }
+
+    final sessionIndex = _memoryService.currentSessionIndex;
+    final lowerMessage = userMessage.toLowerCase();
+    final topics = ((graphResult['analysis'] as Map<String, dynamic>?)?['topics']
+            as List?)
+            ?.map((e) => e.toString().toLowerCase())
+            .toSet() ??
+        <String>{};
+
+    final relevantAnchors = anchors.where((anchor) {
+      if (_messageMentionsAnchor(lowerMessage, anchor)) {
+        return true;
+      }
+      if (anchor.anchorType == null) {
+        return false;
+      }
+      return topics.contains(anchor.anchorType) ||
+          topics.contains(anchor.anchorType!.toLowerCase());
+    }).toList();
+
+    final guidance = StringBuffer();
+
+    if (relevantAnchors.isNotEmpty) {
+      guidance.writeln(
+          'KEY PERSONAL DETAILS (reference gently and only if the user steers the conversation there):');
+      for (final anchor in relevantAnchors) {
+        guidance.writeln('- ${anchor.anchorText}');
+      }
+    }
+
+    final staleAnchors = _memoryService
+        .getAnchorsNeedingCheck(sessionIndex, threshold: 5);
+    if (staleAnchors.isNotEmpty) {
+      guidance.writeln(
+          'It has been several sessions since these mattered; if the moment feels natural, softly check whether they are still important:');
+      for (final anchor in staleAnchors) {
+        guidance.writeln('- ${anchor.anchorText}');
+      }
+
+      for (final anchor in staleAnchors) {
+        await _memoryService.markAnchorPrompted(anchor, sessionIndex);
+      }
+    }
+
+    final text = guidance.toString().trim();
+    return text.isEmpty ? '' : text;
   }
 
   /// Get memory context in background process
@@ -485,4 +742,18 @@ class MemoryManager implements IMemoryManager {
 
   @override
   int get memoryCount => 0;
+}
+
+class _AnchorCandidate {
+  final String anchorText;
+  final String normalizedText;
+  final String? anchorType;
+  final double confidence;
+
+  _AnchorCandidate({
+    required this.anchorText,
+    required this.normalizedText,
+    this.anchorType,
+    required this.confidence,
+  });
 }

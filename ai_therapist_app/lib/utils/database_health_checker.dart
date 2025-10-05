@@ -96,6 +96,21 @@ class DatabaseHealthChecker {
         value TEXT NOT NULL
       )
     ''',
+    'user_anchors': '''
+      CREATE TABLE IF NOT EXISTS user_anchors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        anchor_text TEXT NOT NULL,
+        normalized_text TEXT NOT NULL UNIQUE,
+        anchor_type TEXT,
+        confidence REAL DEFAULT 0.0,
+        mention_count INTEGER NOT NULL DEFAULT 1,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        first_session_index INTEGER NOT NULL DEFAULT 0,
+        last_session_index INTEGER NOT NULL DEFAULT 0,
+        last_prompted_session INTEGER NOT NULL DEFAULT -1
+      )
+    ''',
   };
 
   Future<void> runHealthCheck() async {

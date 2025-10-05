@@ -267,8 +267,15 @@ class TherapyService implements ITherapyService {
       // Process through conversation graph to get context
       final graphResult = await _conversationFlowManager.processUserInput(userMessage);
 
-      // Build system prompt with context
-      final systemPrompt = _buildSystemPromptWithContext(_systemPrompt, memoryContext, graphResult);
+      // Build system prompt with context and personalized anchor guidance
+      final anchorGuidance =
+          await _memoryManager.getAnchorGuidance(userMessage, graphResult);
+      final systemPrompt = _buildSystemPromptWithContext(
+        _systemPrompt,
+        memoryContext,
+        graphResult,
+        anchorGuidance: anchorGuidance,
+      );
       
       // Prepare conversation history for WebSocket streaming
       List<Map<String, dynamic>> conversationHistory = [];
@@ -285,7 +292,10 @@ class TherapyService implements ITherapyService {
         userMessage,
         systemPrompt,
         graphResult,
-        history: conversationHistory.map((msg) => msg.map((key, value) => MapEntry(key, value.toString()))).toList(),
+        history: conversationHistory
+            .map((msg) =>
+                msg.map((key, value) => MapEntry(key, value.toString())))
+            .toList(),
       );
 
       log.d('AI response received, now starting TTS...');
@@ -349,7 +359,8 @@ class TherapyService implements ITherapyService {
     
     try {
       // Get complete text response first (traditional approach)
-      final textResponse = await processUserMessage(userMessage, history: history);
+      final textResponse =
+          await processUserMessage(userMessage, history: history);
       
       if (textResponse.trim().isEmpty) {
         log.w('Empty text response from fallback processing');
@@ -455,12 +466,19 @@ class TherapyService implements ITherapyService {
       final memoryContext = await _memoryManager.getMemoryContext();
       log.d('Memory context retrieved: ${memoryContext.length} characters');
 
+      final anchorGuidance =
+          await _memoryManager.getAnchorGuidance(userMessage, graphResult);
+
       log.d('Processing message through MessageProcessor...');
       // Process message using the MessageProcessor
       final aiResponse = await _messageProcessor.processMessage(
           userMessage,
           _buildSystemPromptWithContext(
-              _systemPrompt, memoryContext, graphResult),
+            _systemPrompt,
+            memoryContext,
+            graphResult,
+            anchorGuidance: anchorGuidance,
+          ),
           graphResult,
           history: history);
 
@@ -482,13 +500,22 @@ class TherapyService implements ITherapyService {
   }
 
   // Build system prompt with context and graph information
-  String _buildSystemPromptWithContext(String basePrompt, String memoryContext,
-      Map<String, dynamic> graphResult) {
+  String _buildSystemPromptWithContext(
+    String basePrompt,
+    String memoryContext,
+    Map<String, dynamic> graphResult, {
+    String? anchorGuidance,
+  }) {
     // Add memory context if available
     String effectiveSystemPrompt = basePrompt;
     if (memoryContext.isNotEmpty) {
       effectiveSystemPrompt =
           '$effectiveSystemPrompt\n\nRELEVANT CONTEXT FROM PREVIOUS SESSIONS:\n$memoryContext';
+    }
+
+    if (anchorGuidance != null && anchorGuidance.isNotEmpty) {
+      effectiveSystemPrompt =
+          '$effectiveSystemPrompt\n\nPERSONAL ANCHOR NOTES (use only if the user steers the conversation there):\n$anchorGuidance';
     }
 
     // Add graph-specific prompt guidance if available

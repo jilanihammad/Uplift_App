@@ -20,7 +20,7 @@ class AppDatabase implements IAppDatabase {
   static Database? _database;
 
   // Current database version - increment when schema changes
-  static const int _databaseVersion = 5;
+  static const int _databaseVersion = 6;
 
   // Database file name
   static const String _databaseName = 'app_database.db';
@@ -220,6 +220,23 @@ class AppDatabase implements IAppDatabase {
             value TEXT NOT NULL
           )
         ''');
+
+        // Create user_anchors table for key personal anchors
+        await txn.execute('''
+          CREATE TABLE user_anchors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            anchor_text TEXT NOT NULL,
+            normalized_text TEXT NOT NULL UNIQUE,
+            anchor_type TEXT,
+            confidence REAL DEFAULT 0.0,
+            mention_count INTEGER NOT NULL DEFAULT 1,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            first_session_index INTEGER NOT NULL DEFAULT 0,
+            last_session_index INTEGER NOT NULL DEFAULT 0,
+            last_prompted_session INTEGER NOT NULL DEFAULT -1
+          )
+        ''');
       });
 
       debugPrint('Database schema created successfully');
@@ -259,8 +276,13 @@ class AppDatabase implements IAppDatabase {
           await _migrateToV5(txn);
         }
 
+        // Migration to version 6: Add user_anchors table
+        if (oldVersion < 6) {
+          await _migrateToV6(txn);
+        }
+
         // Add future migrations here:
-        // if (oldVersion < 6) await _migrateToV6(txn);
+        // if (oldVersion < 7) await _migrateToV7(txn);
       });
 
       debugPrint('Database upgraded successfully to version $newVersion');
@@ -507,6 +529,42 @@ class AppDatabase implements IAppDatabase {
     }
 
     debugPrint('Migration to version 5 completed');
+  }
+
+  /// Migration to version 6: Create user_anchors table if missing
+  Future<void> _migrateToV6(Transaction txn) async {
+    debugPrint('Applying migration to version 6...');
+
+    try {
+      final anchorsExists = await txn.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        ['user_anchors'],
+      );
+
+      if (anchorsExists.isEmpty) {
+        await txn.execute('''
+          CREATE TABLE user_anchors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            anchor_text TEXT NOT NULL,
+            normalized_text TEXT NOT NULL UNIQUE,
+            anchor_type TEXT,
+            confidence REAL DEFAULT 0.0,
+            mention_count INTEGER NOT NULL DEFAULT 1,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            first_session_index INTEGER NOT NULL DEFAULT 0,
+            last_session_index INTEGER NOT NULL DEFAULT 0,
+            last_prompted_session INTEGER NOT NULL DEFAULT -1
+          )
+        ''');
+        debugPrint('Created user_anchors table');
+      }
+    } catch (e) {
+      debugPrint('Error during migration to version 6: $e');
+      rethrow;
+    }
+
+    debugPrint('Migration to version 6 completed');
   }
 
   /// Check if a table exists in the database

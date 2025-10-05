@@ -154,3 +154,102 @@ class EmotionalState {
     );
   }
 }
+
+/// Represents a key personal anchor remembered about the user.
+class UserAnchor {
+  final int? id;
+  final String anchorText;
+  final String normalizedText;
+  final String? anchorType;
+  final double confidence;
+  final int mentionCount;
+  final DateTime firstSeenAt;
+  final DateTime lastSeenAt;
+  final int firstSessionIndex;
+  final int lastSessionIndex;
+  final int lastPromptedSession;
+
+  const UserAnchor({
+    this.id,
+    required this.anchorText,
+    required this.normalizedText,
+    this.anchorType,
+    this.confidence = 0.0,
+    this.mentionCount = 1,
+    DateTime? firstSeenAt,
+    DateTime? lastSeenAt,
+    this.firstSessionIndex = 0,
+    this.lastSessionIndex = 0,
+    this.lastPromptedSession = -1,
+  })  : firstSeenAt = firstSeenAt ?? DateTime.now(),
+        lastSeenAt = lastSeenAt ?? DateTime.now();
+
+  UserAnchor copyWith({
+    int? id,
+    String? anchorText,
+    String? normalizedText,
+    String? anchorType,
+    double? confidence,
+    int? mentionCount,
+    DateTime? firstSeenAt,
+    DateTime? lastSeenAt,
+    int? firstSessionIndex,
+    int? lastSessionIndex,
+    int? lastPromptedSession,
+  }) {
+    return UserAnchor(
+      id: id ?? this.id,
+      anchorText: anchorText ?? this.anchorText,
+      normalizedText: normalizedText ?? this.normalizedText,
+      anchorType: anchorType ?? this.anchorType,
+      confidence: confidence ?? this.confidence,
+      mentionCount: mentionCount ?? this.mentionCount,
+      firstSeenAt: firstSeenAt ?? this.firstSeenAt,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      firstSessionIndex: firstSessionIndex ?? this.firstSessionIndex,
+      lastSessionIndex: lastSessionIndex ?? this.lastSessionIndex,
+      lastPromptedSession: lastPromptedSession ?? this.lastPromptedSession,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'anchor_text': anchorText,
+      'normalized_text': normalizedText,
+      'anchor_type': anchorType,
+      'confidence': confidence,
+      'mention_count': mentionCount,
+      'first_seen_at': firstSeenAt.toIso8601String(),
+      'last_seen_at': lastSeenAt.toIso8601String(),
+      'first_session_index': firstSessionIndex,
+      'last_session_index': lastSessionIndex,
+      'last_prompted_session': lastPromptedSession,
+    };
+
+    if (id != null) {
+      map['id'] = id;
+    }
+
+    return map;
+  }
+
+  factory UserAnchor.fromJson(Map<String, dynamic> json) {
+    return UserAnchor(
+      id: json['id'] as int?,
+      anchorText: json['anchor_text'] as String,
+      normalizedText: json['normalized_text'] as String,
+      anchorType: json['anchor_type'] as String?,
+      confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
+      mentionCount: json['mention_count'] as int? ?? 1,
+      firstSeenAt: DateTime.parse(json['first_seen_at'] as String),
+      lastSeenAt: DateTime.parse(json['last_seen_at'] as String),
+      firstSessionIndex: json['first_session_index'] as int? ?? 0,
+      lastSessionIndex: json['last_session_index'] as int? ?? 0,
+      lastPromptedSession: json['last_prompted_session'] as int? ?? -1,
+    );
+  }
+
+  static String normalize(String text) {
+    return text.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+}
