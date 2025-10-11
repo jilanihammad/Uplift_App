@@ -633,6 +633,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   Future<void> _onProcessAudio(
       ProcessAudio event, Emitter<VoiceSessionState> emit) async {
+    if (_sessionManager.state.status == VoiceSessionStatus.ended) {
+      debugPrint('[VoiceSessionBloc] Ignoring ProcessAudio - session is ending');
+      return;
+    }
     debugPrint('[VoiceSessionBloc] Processing audio file: ${event.audioPath}');
     emit(state.copyWith(isProcessingAudio: true));
 
@@ -646,6 +650,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         emit(state.copyWith(
             isProcessingAudio: false,
             errorMessage: 'Could not understand audio'));
+        return;
+      }
+
+      if (_sessionManager.state.status == VoiceSessionStatus.ended) {
+        debugPrint(
+            '[VoiceSessionBloc] Session ending detected after transcription - aborting TTS');
+        emit(state.copyWith(isProcessingAudio: false));
         return;
       }
 
@@ -829,6 +840,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   Future<void> _onProcessTextMessage(
       ProcessTextMessage event, Emitter<VoiceSessionState> emit) async {
+    if (_sessionManager.state.status == VoiceSessionStatus.ended) {
+      debugPrint('[VoiceSessionBloc] Ignoring ProcessTextMessage - session is ending');
+      return;
+    }
     debugPrint(
         '[VoiceSessionBloc] Received ProcessTextMessage: \'${event.text}\'');
     debugPrint('[VoiceSessionBloc] Current state - isVoiceMode: ${state.isVoiceMode}, isProcessingAudio: ${state.isProcessingAudio}');

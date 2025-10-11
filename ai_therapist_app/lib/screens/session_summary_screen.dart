@@ -117,17 +117,20 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         ? now.difference(widget.messages.first.timestamp)
         : Duration.zero;
 
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Session Complete'),
         automaticallyImplyLeading: false,
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: Theme.of(context).textTheme.headlineSmall?.copyWith(
+        titleTextStyle: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
-              color: Theme.of(context).primaryColor,
+              color: colorScheme.primary,
             ),
       ),
       body: SingleChildScrollView(
@@ -140,12 +143,12 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: colorScheme.primary.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(50),
                 ),
                 child: Icon(
                   Icons.check_circle,
-                  color: Colors.green,
+                  color: colorScheme.primary,
                   size: 48,
                 ),
               ),
@@ -158,16 +161,16 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                 children: [
                   Text(
                     'Great Session!',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    style: theme.textTheme.headlineMedium?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey[800],
+                          color: theme.textTheme.headlineMedium?.color,
                         ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Duration: ${_formatDuration(sessionDuration)}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[600],
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
                         ),
                   ),
                 ],
@@ -202,8 +205,8 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                     icon: const Icon(Icons.calendar_month),
                     label: const Text('Schedule Next Session'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      foregroundColor: Colors.white,
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -222,9 +225,9 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                     icon: const Icon(Icons.home),
                     label: const Text('Back to Home'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: colorScheme.primary,
                       side: BorderSide(
-                        color: Theme.of(context).primaryColor,
+                        color: colorScheme.primary,
                         width: 1.5,
                       ),
                       shape: RoundedRectangleBorder(
@@ -246,26 +249,22 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.05),
+                  color: colorScheme.secondaryContainer.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.blue.withOpacity(0.2),
-                    width: 1,
-                  ),
                 ),
                 child: Row(
                   children: [
                     Icon(
                       Icons.info_outline,
-                      color: Colors.blue[600],
+                      color: colorScheme.secondary,
                       size: 20,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         'Remember, small steps lead to big changes. Take your time with these action items.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.blue[700],
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSecondaryContainer,
                               fontStyle: FontStyle.italic,
                             ),
                       ),
