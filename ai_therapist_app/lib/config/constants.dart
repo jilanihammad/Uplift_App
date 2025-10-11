@@ -2,7 +2,7 @@
 
 class AppConstants {
   // App Info
-  static const String appName = 'AI Therapist';
+  static const String appName = 'Maya';
   static const String appVersion = '1.0.0';
   
   // Storage Keys
