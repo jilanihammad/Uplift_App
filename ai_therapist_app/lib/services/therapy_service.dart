@@ -277,14 +277,23 @@ class TherapyService implements ITherapyService {
         anchorGuidance: anchorGuidance,
       );
       
-      // Prepare conversation history for WebSocket streaming
-      List<Map<String, dynamic>> conversationHistory = [];
-      if (history.isNotEmpty) {
-        conversationHistory = history.map((msg) => <String, dynamic>{
-          'role': msg['isUser'] == 'true' ? 'user' : 'assistant',
+      // Prepare conversation history for LLM in {role, content} format
+      final normalizedHistory = history.map((msg) {
+        final rawRole = (msg['role'] ?? msg['isUser'] ?? '').toLowerCase();
+        final role = rawRole == 'user'
+            ? 'user'
+            : rawRole == 'assistant'
+                ? 'assistant'
+                : rawRole == 'true'
+                    ? 'user'
+                    : rawRole == 'false'
+                        ? 'assistant'
+                        : 'user';
+        return <String, String>{
+          'role': role,
           'content': msg['content'] ?? '',
-        }).toList();
-      }
+        };
+      }).toList();
 
       log.d('Getting LLM response via REST API...');
       // Get complete response via REST API (non-streaming)
@@ -292,10 +301,7 @@ class TherapyService implements ITherapyService {
         userMessage,
         systemPrompt,
         graphResult,
-        history: conversationHistory
-            .map((msg) =>
-                msg.map((key, value) => MapEntry(key, value.toString())))
-            .toList(),
+        history: normalizedHistory,
       );
 
       log.d('AI response received, now starting TTS...');

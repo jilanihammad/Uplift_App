@@ -99,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Login to Uplift')),
+        appBar: AppBar(title: const Text('Login to Maya')),
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Form(
@@ -109,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Uplift',
+                  'Maya',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,

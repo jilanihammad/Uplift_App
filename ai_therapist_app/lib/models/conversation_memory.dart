@@ -169,7 +169,7 @@ class UserAnchor {
   final int lastSessionIndex;
   final int lastPromptedSession;
 
-  const UserAnchor({
+  UserAnchor({
     this.id,
     required this.anchorText,
     required this.normalizedText,

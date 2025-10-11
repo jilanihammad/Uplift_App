@@ -481,7 +481,7 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                 ),
               ],
               child: MaterialApp.router(
-                title: 'AI Therapist',
+                title: 'Maya',
                 theme: AppTheme.lightTheme,
                 darkTheme: AppTheme.darkTheme,
                 themeMode: themeService.themeMode,

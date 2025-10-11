@@ -1,4 +1,4 @@
-# Improvements Plan for AI Therapist App
+# Anchor rememberance
 
 This document lists recommended actions to harden the app, prevent regressions, and improve perceived speed and reliability. Each item includes the rationale, expected impact, and concrete guidance for a new engineer.
 
