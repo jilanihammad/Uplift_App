@@ -1,160 +1,75 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working inside `ai_therapist_app`.
 
-## Development Commands
+## Core Commands
 
-### Flutter Frontend Commands
 ```bash
-# Development
+# setup
 flutter clean
 flutter pub get
-flutter run
 
-# Building
-flutter build apk --debug          # Android debug
-flutter build apk --release        # Android release
-flutter build ios                  # iOS build
-flutter build web                  # Web build
+# run app
+dart run build_runner clean   # only if code-gen artifacts exist
+flutter run                    # choose device or emulator
 
-# Testing
-flutter test                       # Run all unit tests
-flutter test test/services/        # Test specific directory
-flutter test --coverage           # Generate coverage report
-flutter test integration_test      # Run integration tests
+# code quality
+flutter analyze
+dart format .
 
-# Code Quality
-flutter analyze                   # Static analysis
-dart format .                     # Format code
+# testing
+flutter test                   # all unit/widget tests
+flutter test integration_test  # integration tests
 
-# Icons Generation
-flutter pub run flutter_launcher_icons
+# builds
+flutter build apk --debug
+flutter build apk --release
+flutter build ios --no-codesign
 ```
 
-### Backend Commands (Python/FastAPI)
-```bash
-# Setup virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-.\venv\Scripts\activate   # Windows
+## High-Level Architecture
 
-# Install dependencies
-pip install -r requirements.txt
+### State & Presentation
+- **BLoC-driven UI**: `lib/blocs` holds `VoiceSessionBloc` plus helper managers for timers, messages, and session scope.
+- **Theme-aware screens**: Widgets rely on `Theme.of(context).colorScheme` (recently updated session summary/action cards included).
+- **Routing & navigation**: `lib/config/routes.dart` uses `go_router` with auth/onboarding redirects.
 
-# Run development server
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+### Services & Features
+- **Voice pipeline** (`lib/services`):
+  - `voice_service.dart` orchestrates recording, TTS, and backend calls via `VoiceSessionCoordinator` and `AutoListeningCoordinator`.
+  - `audio_generator.dart`, `simple_tts_service.dart`, and `websocket_audio_manager.dart` handle streaming and playback.
+- **LLM interaction**: `message_processor.dart` chooses between direct LLM calls and backend proxy based on config; history handling tuned to avoid role confusion.
+- **Memory & anchors**: `memory_manager.dart`, `conversation_memory.dart`, and `memory_service.dart` persist session memories, anchors, and emotional states.
+- **Config & feature flags**: `config_service.dart`, `app_config.dart`, and `utils/feature_flags.dart` centralize environment toggles (e.g., direct LLM mode, streaming switches).
+- **Dependency injection**: `di/service_locator.dart` + `di/dependency_container.dart` register services; scoped session services use `SessionScopeManager`.
 
-# Database migrations
-alembic upgrade head
-```
+### Real-Time Audio Flow
+1. Auto-listening VAD detects speech (`AutoListeningCoordinator`).
+2. `VoiceService` records via RNNoise-enhanced recorder (`audio_recording_service.dart`).
+3. Transcription/LLM handled by `message_processor.dart` and `therapy_service.dart`.
+4. TTS streams back through `simple_tts_service.dart` → `AudioPlayerManager`.
+5. Session end guard prevents new TTS once `VoiceSessionStatus.ended` is set.
 
-## Architecture Overview
+## Backend Interface (FYI)
+Although backend lives in `ai_therapist_backend/`, the Flutter app expects:
+- REST endpoints at `/ai/response`, `/therapy/end_session`, etc.
+- WebSocket at `/ws/tts` for streaming audio.
+- Auth via Firebase (token refresh handled in `auth_service.dart`).
 
-### Frontend Architecture (Flutter/BLoC)
+## Testing Strategy
+- **Unit/Widget tests** live in `test/` (use `bloc_test`, `mocktail`).
+- **Integration tests** under `integration_test/` for end-to-end voice session scenarios.
+- Add new tests alongside feature work; keep `flutter analyze` clean.
 
-The app follows BLoC pattern with dependency injection:
+## Recent Updates (2025-10)
+- Session summary/action cards now theme-aware (no hard-coded light colors).
+- Session end guard prevents late TTS playback.
+- Conversation history normalization fixes “Maya speaking in first person”.
+- Login/app titles rebranded from “Uplift” to “Maya”.
+- Config/service layers support direct LLM mode and anchor guidance.
 
-```
-lib/
-├── blocs/              # Business Logic Components
-│   ├── voice_session_bloc.dart (911 lines - manages session state)
-│   └── managers/       # Specialized state managers
-├── services/           # Core business services
-│   ├── voice_service.dart (1,088 lines - audio/TTS/WebSocket)
-│   ├── auto_listening_coordinator.dart (1,282 lines - VAD/recording)
-│   └── websocket_audio_manager.dart (WebSocket communication)
-├── di/                 # Dependency injection
-│   ├── service_locator.dart (814 lines - GetIt setup)
-│   └── dependency_container.dart (custom DI container)
-└── screens/            # UI layer
-```
-
-**Key Architectural Patterns:**
-- State Management: BLoC pattern with `flutter_bloc`
-- DI: Hybrid approach using GetIt + custom DependencyContainer
-- Audio Processing: Custom RNNoise plugin for noise cancellation
-- Real-time Communication: WebSocket-based audio streaming
-
-### Backend Architecture (FastAPI)
-
-```
-app/
-├── api/                # API endpoints
-├── services/           # Business logic
-│   ├── voice_service.py (TTS/streaming)
-│   ├── llm_manager.py (unified LLM interface)
-│   └── streaming_pipeline.py (audio streaming)
-├── models/             # SQLAlchemy models
-└── core/               # Configuration and security
-```
-
-**Key Features:**
-- Multiple LLM support: OpenAI, Anthropic, Google Gemini
-- Audio streaming with OPUS codec
-- PostgreSQL with SQLAlchemy ORM
-- Google Cloud Run deployment ready
-
-## Critical Refactoring Areas
-
-Based on JulyIssues.md, these services need decomposition:
-1. **VoiceSessionBloc** (911 lines) - Extract message handling, timer logic, and state management
-2. **AutoListeningCoordinator** (1,282 lines) - Separate VAD, recording, and audio processing
-3. **VoiceService** (1,088 lines) - Split audio, TTS, WebSocket, and permissions
-
-## Threading Model
-
-```
-Main Thread:
-├── VoiceService
-├── AutoListeningCoordinator
-└── VoiceSessionBloc
-
-Background Isolates:
-├── WebSocketAudioManager (dart:isolate)
-└── Audio Processing (Platform Channels)
-
-Native Threads:
-├── RNNoise VAD (C++)
-├── Android AudioManager
-└── Android TextToSpeech
-```
-
-## Testing Approach
-
-### Flutter Testing
-- Unit tests use `mockito` for mocking
-- BLoC tests use `bloc_test` package
-- Integration tests in `integration_test/` directory
-- Characterization tests before refactoring (see `test/blocs/voice_session_bloc_characterization_test.dart`)
-
-### Backend Testing
-- pytest framework (implied from structure)
-- Test files in `tests/` directory
-
-## Environment Configuration
-
-### Frontend
-- Environment variables via `flutter_dotenv`
-- API configuration in `lib/config/api.dart`
-- Firebase configuration in `firebase_options.dart`
-
-### Backend
-- Configuration in `app/core/config.py`
-- Environment variables in `.env` file
-- Google Cloud secrets for production
-
-## Recent Development Focus
-
-Based on git history:
-- OPUS audio codec implementation for streaming
-- TTS streaming improvements
-- WebSocket safety and cleanup
-- Voice session management refactoring
-
-## Important Notes
-
-- The app uses Firebase for authentication, storage, and Firestore
-- Custom RNNoise plugin for real-time noise cancellation
-- WebSocket-based real-time audio streaming between frontend and backend
-- Multiple build scripts available (`build_*.ps1` files)
-- Comprehensive refactoring plan in `JulyIssues.md`
+## Contribution Tips
+- Reference `docs/` files (e.g., `TTS_BUFFERING_IMPLEMENTATION.md`) for historical context.
+- Prefer `Theme.of(context).colorScheme` over literal colors.
+- When editing voice pipeline, ensure cleanup paths (session end, auto mode) remain consistent.
+- Update this file whenever architecture or workflows change—avoid stale line counts or assumptions.

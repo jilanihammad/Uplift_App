@@ -7,19 +7,22 @@ class SessionSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Theme.of(context).primaryColor.withOpacity(0.1),
-            Theme.of(context).primaryColor.withOpacity(0.05),
+            colorScheme.primary.withOpacity(0.1),
+            colorScheme.primary.withOpacity(0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Theme.of(context).primaryColor.withOpacity(0.2),
+          color: colorScheme.primary.withOpacity(0.2),
           width: 1,
         ),
       ),
@@ -33,7 +36,7 @@ class SessionSummaryCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor,
+                    color: colorScheme.primary,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -46,9 +49,9 @@ class SessionSummaryCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Session Summary',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: Theme.of(context).primaryColor,
+                          color: colorScheme.primary,
                         ),
                   ),
                 ),
@@ -58,7 +61,7 @@ class SessionSummaryCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.8),
+                color: colorScheme.surfaceVariant,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
@@ -72,9 +75,9 @@ class SessionSummaryCard extends StatelessWidget {
                 summary.isNotEmpty
                     ? summary
                     : 'No summary available for this session.',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                style: theme.textTheme.bodyLarge?.copyWith(
                       height: 1.6,
-                      color: Colors.grey[800],
+                      color: theme.textTheme.bodyLarge?.color,
                     ),
               ),
             ),
