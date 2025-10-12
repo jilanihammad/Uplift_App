@@ -18,6 +18,9 @@ class ActionItemsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     if (actionItems.isEmpty) {
       return _buildEmptyState(context);
     }
@@ -28,13 +31,13 @@ class ActionItemsCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.green.withOpacity(0.1),
-            Colors.green.withOpacity(0.05),
+            colorScheme.secondary.withOpacity(0.1),
+            colorScheme.secondary.withOpacity(0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.green.withOpacity(0.2),
+          color: colorScheme.secondary.withOpacity(0.2),
           width: 1,
         ),
       ),
@@ -48,7 +51,7 @@ class ActionItemsCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.green,
+                    color: colorScheme.secondary,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -61,9 +64,9 @@ class ActionItemsCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Your Action Plan',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: Colors.green[700],
+                          color: colorScheme.onSecondaryContainer,
                         ),
                   ),
                 ),
@@ -71,13 +74,13 @@ class ActionItemsCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.2),
+                    color: colorScheme.secondary.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${actionItems.length} items',
                     style: TextStyle(
-                      color: Colors.green[700],
+                      color: colorScheme.onSecondaryContainer,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -98,11 +101,14 @@ class ActionItemsCard extends StatelessWidget {
   }
 
   Widget _buildActionItem(BuildContext context, String item, int index) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: colorScheme.surfaceVariant,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -119,10 +125,10 @@ class ActionItemsCard extends StatelessWidget {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.1),
+              color: colorScheme.secondary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: Colors.green.withOpacity(0.3),
+                color: colorScheme.secondary.withOpacity(0.3),
                 width: 2,
               ),
             ),
@@ -130,7 +136,7 @@ class ActionItemsCard extends StatelessWidget {
               child: Text(
                 '${index + 1}',
                 style: TextStyle(
-                  color: Colors.green[700],
+                  color: colorScheme.onSecondaryContainer,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -144,9 +150,9 @@ class ActionItemsCard extends StatelessWidget {
               children: [
                 Text(
                   item,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  style: theme.textTheme.bodyLarge?.copyWith(
                         height: 1.5,
-                        color: Colors.grey[800],
+                        color: theme.textTheme.bodyLarge?.color,
                         fontWeight: FontWeight.w500,
                       ),
                 ),
@@ -156,14 +162,14 @@ class ActionItemsCard extends StatelessWidget {
                     Icon(
                       Icons.lightbulb_outline,
                       size: 16,
-                      color: Colors.orange[600],
+                      color: colorScheme.tertiary,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       'Personalized for you',
-                      style: TextStyle(
+                      style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -173,12 +179,12 @@ class ActionItemsCard extends StatelessWidget {
             ),
           ),
           if (onAddToTasks != null)
-            _buildAddToTasksButton(item)
+            _buildAddToTasksButton(context, item)
           else
             Icon(
               Icons.arrow_forward_ios,
               size: 16,
-              color: Colors.grey[400],
+              color: theme.iconTheme.color?.withOpacity(0.4),
             ),
         ],
       ),
@@ -186,13 +192,16 @@ class ActionItemsCard extends StatelessWidget {
   }
 
   Widget _buildEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: colorScheme.surfaceVariant,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.grey[300]!,
+          color: colorScheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -201,20 +210,20 @@ class ActionItemsCard extends StatelessWidget {
           Icon(
             Icons.task_alt,
             size: 48,
-            color: Colors.grey[400],
+            color: theme.iconTheme.color?.withOpacity(0.4),
           ),
           const SizedBox(height: 12),
           Text(
             'No action items available',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[600],
+            style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.textTheme.titleMedium?.color?.withOpacity(0.7),
                 ),
           ),
           const SizedBox(height: 8),
           Text(
             'Action items will appear here based on your conversation.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[500],
+            style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.6),
                 ),
             textAlign: TextAlign.center,
           ),
@@ -223,7 +232,9 @@ class ActionItemsCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAddToTasksButton(String item) {
+  Widget _buildAddToTasksButton(BuildContext context, String item) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final isAlreadyAdded = isItemAlreadyAdded?.call(item) ?? false;
     
     return Column(
@@ -238,14 +249,14 @@ class ActionItemsCard extends StatelessWidget {
           },
           icon: Icon(isAlreadyAdded ? Icons.check_circle : Icons.add_task),
           iconSize: 20,
-          color: isAlreadyAdded ? Colors.green[600] : Colors.blue[600],
+          color: isAlreadyAdded ? colorScheme.secondary : colorScheme.primary,
           tooltip: isAlreadyAdded ? 'Remove from Tasks' : 'Add to Tasks',
         ),
         Text(
           isAlreadyAdded ? 'Added to\nTasks' : 'Add to\nTasks',
           style: TextStyle(
             fontSize: 10,
-            color: isAlreadyAdded ? Colors.green[600] : Colors.blue[600],
+            color: isAlreadyAdded ? colorScheme.secondary : colorScheme.primary,
             fontWeight: isAlreadyAdded ? FontWeight.bold : FontWeight.normal,
           ),
           textAlign: TextAlign.center,
