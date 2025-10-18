@@ -114,7 +114,8 @@ class MemoryService {
   Future<void> _ensureTablesExist() async {
     try {
       // Get DatabaseOperationManager to prevent database locks
-      final dbOpManager = DependencyContainer().databaseOperationManagerConcrete;
+      final dbOpManager =
+          DependencyContainer().databaseOperationManagerConcrete;
 
       // Check if required tables exist - this should be read-only
       final convMemoriesExists = await dbOpManager.queueOperation<bool>(
@@ -337,9 +338,8 @@ class MemoryService {
             ? anchorText
             : existing.anchorText,
         anchorType: anchorType ?? existing.anchorType,
-        confidence: confidence > existing.confidence
-            ? confidence
-            : existing.confidence,
+        confidence:
+            confidence > existing.confidence ? confidence : existing.confidence,
         mentionCount: existing.mentionCount + 1,
         lastSeenAt: DateTime.now(),
         lastSessionIndex: sessionIndex,
@@ -371,7 +371,8 @@ class MemoryService {
 
     final insertData = Map<String, dynamic>.from(newAnchor.toJson());
     insertData.remove('id');
-    final insertedId = await _databaseProvider.insert('user_anchors', insertData);
+    final insertedId =
+        await _databaseProvider.insert('user_anchors', insertData);
     final persisted = newAnchor.copyWith(id: insertedId);
 
     _anchors.add(persisted);
@@ -381,20 +382,53 @@ class MemoryService {
 
   /// Ensure we only keep a limited number of anchors prioritized by relevance
   Future<void> pruneAnchors({int maxAnchors = 3}) async {
-    if (_anchors.length <= maxAnchors) {
+    if (_anchors.isEmpty) {
       return;
     }
 
-    // Sort by mention count descending, then by last seen recency
-    _anchors.sort((a, b) {
-      if (b.mentionCount != a.mentionCount) {
-        return b.mentionCount.compareTo(a.mentionCount);
-      }
-      return b.lastSeenAt.compareTo(a.lastSeenAt);
-    });
+    final nameAnchors =
+        _anchors.where((anchor) => anchor.anchorType == 'name').toList();
+    final otherAnchors =
+        _anchors.where((anchor) => anchor.anchorType != 'name').toList();
 
-    final toRemove = _anchors.sublist(maxAnchors);
-    _anchors.removeRange(maxAnchors, _anchors.length);
+    if (nameAnchors.isNotEmpty) {
+      otherAnchors.sort((a, b) {
+        if (b.mentionCount != a.mentionCount) {
+          return b.mentionCount.compareTo(a.mentionCount);
+        }
+        return b.lastSeenAt.compareTo(a.lastSeenAt);
+      });
+    } else {
+      otherAnchors.sort((a, b) {
+        if (b.mentionCount != a.mentionCount) {
+          return b.mentionCount.compareTo(a.mentionCount);
+        }
+        return b.lastSeenAt.compareTo(a.lastSeenAt);
+      });
+    }
+
+    final allowedOtherCount = maxAnchors <= 0
+        ? 0
+        : ((maxAnchors - nameAnchors.length).clamp(0, maxAnchors)).toInt();
+    final keptOthers = otherAnchors.take(allowedOtherCount).toList();
+    final toKeep = [...nameAnchors, ...keptOthers];
+
+    // If there are no limits, ensure we still respect maxAnchors for others
+    if (maxAnchors > 0 && toKeep.length > maxAnchors && nameAnchors.isEmpty) {
+      toKeep.sort((a, b) {
+        if (b.mentionCount != a.mentionCount) {
+          return b.mentionCount.compareTo(a.mentionCount);
+        }
+        return b.lastSeenAt.compareTo(a.lastSeenAt);
+      });
+      toKeep.removeRange(maxAnchors, toKeep.length);
+    }
+
+    final toRemove =
+        _anchors.where((anchor) => !toKeep.contains(anchor)).toList();
+    _anchors
+      ..clear()
+      ..addAll(toKeep);
 
     for (final anchor in toRemove) {
       if (anchor.id != null) {

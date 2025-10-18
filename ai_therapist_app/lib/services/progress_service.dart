@@ -303,9 +303,17 @@ class ProgressService implements IProgressService {
       }
       _moodHistory[today]!.add(entry);
       
-      // Update progress mood history
+      // Update progress mood history using daily average mood index
       final updatedMoodHistory = Map<DateTime, int>.from(_currentProgress.moodHistory);
-      updatedMoodHistory[todayDateTime] = (updatedMoodHistory[todayDateTime] ?? 0) + 1;
+      final dayEntries = _moodHistory[today]!;
+      final moodSum = dayEntries
+          .map((entry) => (entry['mood'] as Mood).index)
+          .fold<int>(0, (sum, idx) => sum + idx);
+      final avgMoodIndex = moodSum / dayEntries.length;
+      final dailyMoodScore = (avgMoodIndex + 1)
+          .clamp(1, Mood.values.length)
+          .round();
+      updatedMoodHistory[todayDateTime] = dailyMoodScore;
       
       // Update the progress object
       _currentProgress = _currentProgress.copyWith(
@@ -314,6 +322,9 @@ class ProgressService implements IProgressService {
       
       // Save to persistent storage
       await _saveProgress();
+
+      // Notify listeners
+      _progressChangedController.value = _currentProgress;
       
       if (kDebugMode) {
         print('Mood logged: $mood, Notes: $notes');
@@ -466,6 +477,7 @@ class ProgressService implements IProgressService {
     );
     
     await _saveProgress();
+    _progressChangedController.value = _currentProgress;
   }
   
   // Sync session data from repository (call this after session completion)
@@ -486,7 +498,8 @@ class ProgressService implements IProgressService {
     final startDate = endDate.subtract(Duration(days: days));
     
     return _currentProgress.moodHistory.entries
-        .where((entry) => entry.key.isAfter(startDate) && entry.key.isBefore(endDate))
+        .where((entry) =>
+            !entry.key.isBefore(startDate) && !entry.key.isAfter(endDate))
         .toList()
       ..sort((a, b) => a.key.compareTo(b.key));
   }
@@ -508,5 +521,6 @@ class ProgressService implements IProgressService {
   Future<void> resetProgress() async {
     _currentProgress = UserProgress();
     await _saveProgress();
+    _progressChangedController.value = _currentProgress;
   }
-} 
+}

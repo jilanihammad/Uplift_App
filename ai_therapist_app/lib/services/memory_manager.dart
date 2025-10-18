@@ -11,10 +11,10 @@ import '../models/conversation_memory.dart';
 class MemoryManager implements IMemoryManager {
   // Static mutex to guard initialization across all instances
   static final Mutex _initMutex = Mutex();
-  
+
   // Static initialization tracking to prevent double initialization
   static bool _staticInitialized = false;
-  
+
   // The underlying memory service
   final MemoryService _memoryService;
 
@@ -25,7 +25,6 @@ class MemoryManager implements IMemoryManager {
   String? _lastInitError;
   int _initAttempts = 0;
   static const int _maxInitAttempts = 3;
-
 
   // Constructor
   MemoryManager({required MemoryService memoryService})
@@ -49,7 +48,7 @@ class MemoryManager implements IMemoryManager {
 
     // Acquire mutex to prevent concurrent initialization
     await _initMutex.acquire();
-    
+
     try {
       // Double-check inside mutex
       if (_staticInitialized && _isInitialized) {
@@ -60,16 +59,15 @@ class MemoryManager implements IMemoryManager {
       }
 
       _initAttempts++;
-      
+
       // Add stack trace to understand where initialization is called from
       if (kDebugMode) {
         logger.debug(
-          'Initializing MemoryManager (attempt $_initAttempts of $_maxInitAttempts)\n'
-          'Called from: ${StackTrace.current.toString().split('\n').take(5).join('\n')}'
-        );
+            'Initializing MemoryManager (attempt $_initAttempts of $_maxInitAttempts)\n'
+            'Called from: ${StackTrace.current.toString().split('\n').take(5).join('\n')}');
       } else {
         logger.debug(
-          'Initializing MemoryManager (attempt $_initAttempts of $_maxInitAttempts)');
+            'Initializing MemoryManager (attempt $_initAttempts of $_maxInitAttempts)');
       }
 
       // Use initialization tracker for consistent initialization pattern
@@ -115,18 +113,21 @@ class MemoryManager implements IMemoryManager {
     if (_staticInitialized && _isInitialized) {
       return;
     }
-    
+
     if (!_isInitialized && _initAttempts < _maxInitAttempts) {
       if (kDebugMode) {
-        logger.debug('MemoryManager.initializeIfNeeded() - triggering initialization');
+        logger.debug(
+            'MemoryManager.initializeIfNeeded() - triggering initialization');
       }
       await init();
     } else if (_isInitialized) {
       if (kDebugMode) {
-        logger.debug('MemoryManager.initializeIfNeeded() - already initialized');
+        logger
+            .debug('MemoryManager.initializeIfNeeded() - already initialized');
       }
     } else {
-      logger.warning('MemoryManager.initializeIfNeeded() - max attempts reached');
+      logger
+          .warning('MemoryManager.initializeIfNeeded() - max attempts reached');
     }
   }
 
@@ -134,7 +135,8 @@ class MemoryManager implements IMemoryManager {
   @override
   Future<void> initializeOnlyIfNeeded() async {
     if (kDebugMode) {
-      logger.debug('MemoryManager.initializeOnlyIfNeeded() - delegating to initializeIfNeeded()');
+      logger.debug(
+          'MemoryManager.initializeOnlyIfNeeded() - delegating to initializeIfNeeded()');
     }
     return initializeIfNeeded();
   }
@@ -318,8 +320,7 @@ class MemoryManager implements IMemoryManager {
     required int sessionIndex,
   }) async {
     final candidates = _extractAnchorCandidates(userMessage, graphResult);
-    final candidateNormalized =
-        candidates.map((c) => c.normalizedText).toSet();
+    final candidateNormalized = candidates.map((c) => c.normalizedText).toSet();
 
     for (final candidate in candidates) {
       await _memoryService.addOrUpdateAnchor(
@@ -351,6 +352,67 @@ class MemoryManager implements IMemoryManager {
     final seen = <String>{};
     final candidates = <_AnchorCandidate>[];
 
+    String _titleCaseSegment(String input) {
+      return input.replaceAllMapped(RegExp(r"[A-Za-z]+"), (match) {
+        final segment = match.group(0)!;
+        return segment[0].toUpperCase() + segment.substring(1).toLowerCase();
+      });
+    }
+
+    String? _sanitizeName(String raw) {
+      if (raw.isEmpty) return null;
+      var candidate = raw.split(RegExp(r"[\.,!?]")).first;
+      candidate = candidate.replaceAll(RegExp(r"[^A-Za-z'\-\s]"), ' ').trim();
+      if (candidate.isEmpty) return null;
+
+      final words =
+          candidate.split(RegExp(r"\s+")).where((w) => w.isNotEmpty).toList();
+      if (words.isEmpty || words.length > 3) {
+        return null;
+      }
+
+      const disallowed = {
+        'feeling',
+        'feel',
+        'feels',
+        'feelin',
+        'doing',
+        'going',
+        'trying',
+        'being',
+        'living',
+        'working',
+        'worried',
+        'anxious',
+        'sad',
+        'happy',
+        'tired',
+        'good',
+        'bad',
+        'okay',
+        'ok',
+        'fine',
+        'alright',
+        'better',
+        'worse',
+        'stressed',
+        'stress',
+        'angry',
+        'maybe',
+      };
+
+      if (words.any((w) => disallowed.contains(w.toLowerCase()))) {
+        return null;
+      }
+
+      final formatted = words.map(_titleCaseSegment).join(' ');
+      if (formatted.isEmpty || formatted.length > 40) {
+        return null;
+      }
+
+      return formatted;
+    }
+
     void addCandidate(String text, {String? type, double confidence = 0.6}) {
       final normalized = UserAnchor.normalize(text);
       if (normalized.isEmpty || seen.contains(normalized)) {
@@ -365,14 +427,74 @@ class MemoryManager implements IMemoryManager {
       ));
     }
 
+    // Preferred name anchors
+    final namePattern = RegExp(
+      r"\b(my name is|call me|you can call me)\s+([A-Za-z][A-Za-z'\- ]{1,40})",
+      caseSensitive: false,
+    );
+    for (final match in namePattern.allMatches(userMessage)) {
+      final raw = match.group(2);
+      final cleaned = raw != null ? _sanitizeName(raw) : null;
+      if (cleaned != null) {
+        addCandidate(cleaned, type: 'name', confidence: 0.98);
+      }
+    }
+
+    final introPattern = RegExp(
+      r"\bi['’]?m\s+([A-Za-z][A-Za-z'\- ]{1,40})",
+      caseSensitive: false,
+    );
+    for (final match in introPattern.allMatches(userMessage)) {
+      final raw = match.group(1);
+      final cleaned = raw != null ? _sanitizeName(raw) : null;
+      if (cleaned == null) {
+        continue;
+      }
+
+      final trailing = userMessage.substring(match.end).trim();
+      if (trailing.isNotEmpty) {
+        final trailingWord = trailing.split(RegExp(r"\s+")).first.toLowerCase();
+        const stopWords = {
+          'and',
+          'but',
+          'so',
+          'because',
+          'since',
+          'while',
+          'when',
+          'feeling',
+          'feel',
+          'feelings',
+          'feels',
+          'facing',
+          'having',
+          'working',
+          'living',
+          'doing',
+          'going',
+          'struggling',
+          'dealing',
+          'experiencing',
+          'getting',
+          'taking',
+          'thinking',
+          'sleeping',
+        };
+        if (stopWords.contains(trailingWord)) {
+          continue;
+        }
+      }
+
+      addCandidate(cleaned, type: 'name', confidence: 0.9);
+    }
+
     // Relationship-focused anchors
     final relationshipPattern = RegExp(
       r'\bmy\s+(wife|husband|partner|boyfriend|girlfriend|fiancé|fiancee|son|daughter|child|kid|kids|mom|mother|dad|father|sister|brother|grandma|grandmother|grandpa|grandfather|best friend|friend)\b',
       caseSensitive: false,
     );
     for (final match in relationshipPattern.allMatches(lower)) {
-      addCandidate(match.group(0) ?? '',
-          type: 'relationship', confidence: 0.9);
+      addCandidate(match.group(0) ?? '', type: 'relationship', confidence: 0.9);
     }
 
     // Life events and milestones
@@ -494,8 +616,7 @@ class MemoryManager implements IMemoryManager {
     }
 
     if (anchor.anchorType == 'finances') {
-      return lowerMessage.contains('money') ||
-          lowerMessage.contains('finance');
+      return lowerMessage.contains('money') || lowerMessage.contains('finance');
     }
 
     return false;
@@ -514,11 +635,11 @@ class MemoryManager implements IMemoryManager {
 
     final sessionIndex = _memoryService.currentSessionIndex;
     final lowerMessage = userMessage.toLowerCase();
-    final topics = ((graphResult['analysis'] as Map<String, dynamic>?)?['topics']
-            as List?)
-            ?.map((e) => e.toString().toLowerCase())
-            .toSet() ??
-        <String>{};
+    final topics =
+        ((graphResult['analysis'] as Map<String, dynamic>?)?['topics'] as List?)
+                ?.map((e) => e.toString().toLowerCase())
+                .toSet() ??
+            <String>{};
 
     final relevantAnchors = anchors.where((anchor) {
       if (_messageMentionsAnchor(lowerMessage, anchor)) {
@@ -534,20 +655,44 @@ class MemoryManager implements IMemoryManager {
     final guidance = StringBuffer();
 
     if (relevantAnchors.isNotEmpty) {
+      relevantAnchors.sort((a, b) {
+        if (a.anchorType == 'name' && b.anchorType != 'name') {
+          return -1;
+        }
+        if (b.anchorType == 'name' && a.anchorType != 'name') {
+          return 1;
+        }
+        return b.confidence.compareTo(a.confidence);
+      });
       guidance.writeln(
           'KEY PERSONAL DETAILS (reference gently and only if the user steers the conversation there):');
       for (final anchor in relevantAnchors) {
-        guidance.writeln('- ${anchor.anchorText}');
+        final detail = anchor.anchorType == 'name'
+            ? 'Preferred name: ${anchor.anchorText}. Use it naturally but sparingly.'
+            : anchor.anchorText;
+        guidance.writeln('- $detail');
       }
     }
 
-    final staleAnchors = _memoryService
-        .getAnchorsNeedingCheck(sessionIndex, threshold: 5);
+    final staleAnchors =
+        _memoryService.getAnchorsNeedingCheck(sessionIndex, threshold: 5);
     if (staleAnchors.isNotEmpty) {
+      staleAnchors.sort((a, b) {
+        if (a.anchorType == 'name' && b.anchorType != 'name') {
+          return -1;
+        }
+        if (b.anchorType == 'name' && a.anchorType != 'name') {
+          return 1;
+        }
+        return b.lastSeenAt.compareTo(a.lastSeenAt);
+      });
       guidance.writeln(
           'It has been several sessions since these mattered; if the moment feels natural, softly check whether they are still important:');
       for (final anchor in staleAnchors) {
-        guidance.writeln('- ${anchor.anchorText}');
+        final detail = anchor.anchorType == 'name'
+            ? 'Confirm they still prefer the name ${anchor.anchorText}. Treat this gently.'
+            : anchor.anchorText;
+        guidance.writeln('- $detail');
       }
 
       for (final anchor in staleAnchors) {
@@ -627,7 +772,8 @@ class MemoryManager implements IMemoryManager {
   }
 
   @override
-  Future<void> updateContext(String sessionId, Map<String, dynamic> context) async {
+  Future<void> updateContext(
+      String sessionId, Map<String, dynamic> context) async {
     // Not implemented in underlying service
     logger.debug('updateContext not implemented: $sessionId');
   }
