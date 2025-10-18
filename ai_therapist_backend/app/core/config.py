@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # Legacy Groq names mapped to new ones for backward compatibility
     GROQ_LLM_MODEL: str = os.getenv("GROQ_LLM_MODEL", "llama3-70b-8192")  # Alias for GROQ_LLM_MODEL_ID
 
+    # Firebase authentication settings
+    FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "")
+    FIREBASE_AUTH_AUDIENCE: Optional[str] = os.getenv("FIREBASE_AUTH_AUDIENCE")
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
         if not v:  # Handle empty string case

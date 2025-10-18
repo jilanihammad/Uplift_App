@@ -9,3 +9,4 @@ from app.models.action_plan import ActionPlan  # noqa
 from app.models.note import Note  # noqa
 from app.models.reminder import Reminder  # noqa
 from app.models.subscription import Subscription, SubscriptionPlan  # noqa
+from app.models.user_identity import UserIdentity  # noqa

@@ -1,0 +1,5 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/upliftapp-cd86e/test-build', '-f', 'Dockerfile.test', '.']
+images:
+- 'gcr.io/upliftapp-cd86e/test-build'

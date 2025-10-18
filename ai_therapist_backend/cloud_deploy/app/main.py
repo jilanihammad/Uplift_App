@@ -418,6 +418,24 @@ class SessionResponse(BaseModel):
     last_modified: str
     isSynced: bool = True
 
+
+class SessionReminderRequest(BaseModel):
+    scheduled_time: datetime
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+class SessionReminderResponse(BaseModel):
+    id: Optional[str] = None
+    scheduled_time: Optional[datetime] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    is_completed: bool = False
+
+
+SESSION_REMINDER_TITLE = "Therapy Session Reminder"
+_session_reminder_state: Optional[SessionReminderResponse] = None
+
 @app.get("/sessions", status_code=status.HTTP_200_OK)
 async def get_sessions():
     """Get all sessions"""
@@ -519,6 +537,33 @@ async def delete_session(session_id: str):
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
+
+
+@app.get("/session-reminder", status_code=status.HTTP_200_OK, response_model=SessionReminderResponse)
+async def get_session_reminder():
+    """Return the cached session reminder (stub implementation)."""
+    if _session_reminder_state is None:
+        return SessionReminderResponse()
+    return _session_reminder_state
+
+
+@app.put("/session-reminder", status_code=status.HTTP_200_OK, response_model=SessionReminderResponse)
+async def upsert_session_reminder(request: SessionReminderRequest):
+    """Store the session reminder in memory (stub)."""
+    global _session_reminder_state
+
+    reminder_id = _session_reminder_state.id if _session_reminder_state else str(uuid.uuid4())
+    title = request.title or (_session_reminder_state.title if _session_reminder_state else SESSION_REMINDER_TITLE)
+
+    _session_reminder_state = SessionReminderResponse(
+        id=reminder_id,
+        scheduled_time=request.scheduled_time,
+        title=title,
+        description=request.description,
+        is_completed=False,
+    )
+
+    return _session_reminder_state
 
 @app.post("/sessions/{session_id}/messages", status_code=status.HTTP_200_OK)
 async def add_session_message(session_id: str, message: dict):
