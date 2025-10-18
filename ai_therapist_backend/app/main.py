@@ -1075,6 +1075,8 @@ async def transcribe_file(file: UploadFile = File(...)):
 
 # Add the database and CRUD imports
 from app.crud import session as crud_session
+from app.crud import reminder as crud_reminder
+from app.api.deps.auth import AuthenticatedUser, get_current_user
 
 # Session-related schemas
 class SessionUpdateRequest(BaseModel):
@@ -1091,6 +1093,21 @@ class SessionResponse(BaseModel):
     last_modified: str
     isSynced: bool = True
 
+
+class SessionReminderRequest(BaseModel):
+    scheduled_time: datetime
+    title: Optional[str] = None
+    description: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+class SessionReminderResponse(BaseModel):
+    id: Optional[int] = None
+    scheduled_time: Optional[datetime] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    is_completed: bool = False
+
 class MessageRequest(BaseModel):
     content: str
     is_user_message: bool = True
@@ -1098,15 +1115,14 @@ class MessageRequest(BaseModel):
     sequence: Optional[int] = None
 
 @app.get("/sessions", status_code=status.HTTP_200_OK)
-async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] = None):
+async def get_sessions(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Get all sessions, optionally filtered by user_id"""
     try:
-        logger.info(f"Getting sessions for user {user_id if user_id else 'DEFAULT'}")
-        
-        # IMPORTANT: In production, this would use JWT tokens for authentication
-        # For now, we use a default user_id (1) if none is provided
-        effective_user_id = user_id or 1
-        logger.info(f"Using effective user_id: {effective_user_id} for fetching sessions")
+        effective_user_id = current_user.user.id
+        logger.info(f"Getting sessions for user {effective_user_id}")
         
         try:
             # Try to get sessions from database first
@@ -1214,7 +1230,11 @@ async def get_sessions(db: DBSession = Depends(get_db), user_id: Optional[int] =
         ]
 
 @app.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=SessionResponse)
-async def create_session(request: SessionUpdateRequest = None, db: DBSession = Depends(get_db)):
+async def create_session(
+    request: SessionUpdateRequest = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Create a new session"""
     try:
         logger.info("Creating new session")
@@ -1223,9 +1243,7 @@ async def create_session(request: SessionUpdateRequest = None, db: DBSession = D
         if not request:
             request = SessionUpdateRequest()
         
-        # For now, use a default user_id if none was provided
-        # In a real implementation, you would get the user_id from the authentication
-        user_id = request.user_id if request and request.user_id else 1
+        user_id = current_user.user.id
         logger.info(f"Creating session for user_id: {user_id}")
         
         # Create session in database
@@ -1247,7 +1265,11 @@ async def create_session(request: SessionUpdateRequest = None, db: DBSession = D
         raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
 
 @app.get("/sessions/{session_id}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
-async def get_session(session_id: str, db: DBSession = Depends(get_db)):
+async def get_session(
+    session_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Get a specific session"""
     try:
         logger.info(f"Getting session {session_id}")
@@ -1256,7 +1278,7 @@ async def get_session(session_id: str, db: DBSession = Depends(get_db)):
         session = crud_session.get_session(db, session_id)
         
         # If session not found, return 404
-        if not session:
+        if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         
         # Return the session in the expected format
@@ -1277,7 +1299,12 @@ async def get_session(session_id: str, db: DBSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error getting session: {str(e)}")
 
 @app.patch("/sessions/{session_id}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
-async def update_session(session_id: str, request: SessionUpdateRequest, db: DBSession = Depends(get_db)):
+async def update_session(
+    session_id: str,
+    request: SessionUpdateRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Update a session"""
     try:
         logger.info(f"Updating session {session_id} with data: {request}")
@@ -1292,21 +1319,25 @@ async def update_session(session_id: str, request: SessionUpdateRequest, db: DBS
         logger.info(f"Update data: {update_data}")
         
         try:
-            # Update the session in the database
-            session = crud_session.update_session(db, session_id, update_data)
-            
-            # If session not found, try to create it
+            existing_session = crud_session.get_session(db, session_id)
+            if existing_session and existing_session.user_id != current_user.user.id:
+                raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+            # Update the session in the database if it already exists
+            session = None
+            if existing_session:
+                session = crud_session.update_session(db, session_id, update_data)
+
+            # If session not found, create it for the current user
             if not session:
                 logger.warning(f"Session {session_id} not found, attempting to create it")
-                user_id = request.user_id or 1  # Use default user_id if not provided
-                
-                # Create a new session with the provided ID and data
-                session = crud_session.create_session(db, user_id=user_id, title=request.title)
-                
-                # Update the session if summary is provided
-                if request.summary:
-                    session = crud_session.update_session(db, session.id, {"summary": request.summary})
-                
+                session = crud_session.create_session(
+                    db,
+                    user_id=current_user.user.id,
+                    title=request.title,
+                    summary=request.summary,
+                )
+
                 logger.info(f"Created new session {session.id} as fallback")
             
             # Return the updated session
@@ -1353,11 +1384,19 @@ async def update_session(session_id: str, request: SessionUpdateRequest, db: DBS
         }
 
 @app.delete("/sessions/{session_id}", status_code=status.HTTP_200_OK)
-async def delete_session(session_id: str, db: DBSession = Depends(get_db)):
+async def delete_session(
+    session_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Delete a session"""
     try:
         logger.info(f"Deleting session {session_id}")
         
+        session = crud_session.get_session(db, session_id)
+        if not session or session.user_id != current_user.user.id:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
         # Delete the session from the database
         success = crud_session.delete_session(db, session_id)
         
@@ -1374,15 +1413,91 @@ async def delete_session(session_id: str, db: DBSession = Depends(get_db)):
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
+
+@app.get("/session-reminder", status_code=status.HTTP_200_OK, response_model=SessionReminderResponse)
+async def get_session_reminder(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Fetch the next scheduled therapy session reminder for the user."""
+    try:
+        effective_user_id = current_user.user.id
+        reminder = crud_reminder.get_next_session_reminder(db, effective_user_id)
+
+        if not reminder:
+            logger.info(f"No session reminder found for user {effective_user_id}")
+            return SessionReminderResponse()
+
+        logger.info(
+            "Returning session reminder for user %s at %s",
+            effective_user_id,
+            reminder.scheduled_time.isoformat() if reminder.scheduled_time else "unknown",
+        )
+
+        return SessionReminderResponse(
+            id=reminder.id,
+            scheduled_time=reminder.scheduled_time,
+            title=reminder.title,
+            description=reminder.description,
+            is_completed=reminder.is_completed,
+        )
+    except Exception as e:
+        logger.error(f"Error fetching session reminder: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Unable to fetch session reminder")
+
+
+@app.put("/session-reminder", status_code=status.HTTP_200_OK, response_model=SessionReminderResponse)
+async def upsert_session_reminder(
+    request: SessionReminderRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Create or update the user's next session reminder."""
+    try:
+        effective_user_id = current_user.user.id
+
+        reminder = crud_reminder.upsert_session_reminder(
+            db,
+            user_id=effective_user_id,
+            scheduled_time=request.scheduled_time,
+            title=request.title,
+            description=request.description,
+        )
+
+        logger.info(
+            "Upserted session reminder %s for user %s at %s",
+            reminder.id,
+            effective_user_id,
+            reminder.scheduled_time.isoformat() if reminder.scheduled_time else "unknown",
+        )
+
+        return SessionReminderResponse(
+            id=reminder.id,
+            scheduled_time=reminder.scheduled_time,
+            title=reminder.title,
+            description=reminder.description,
+            is_completed=reminder.is_completed,
+        )
+    except Exception as e:
+        logger.error(f"Error upserting session reminder: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Unable to update session reminder")
+
 @app.post("/sessions/{session_id}/messages", status_code=status.HTTP_200_OK)
-async def add_session_message(session_id: str, message: MessageRequest, db: DBSession = Depends(get_db)):
+async def add_session_message(
+    session_id: str,
+    message: MessageRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Add a message to a session"""
     try:
         logger.info(f"Adding message to session {session_id}")
         
         # Check if session exists
         session = crud_session.get_session(db, session_id)
-        if not session:
+        if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         
         # Add message to database
@@ -1405,14 +1520,19 @@ async def add_session_message(session_id: str, message: MessageRequest, db: DBSe
         raise HTTPException(status_code=500, detail=f"Error adding message: {str(e)}")
 
 @app.post("/sessions/{session_id}/messages/batch", status_code=status.HTTP_200_OK)
-async def add_session_messages_batch(session_id: str, messages: List[MessageRequest], db: DBSession = Depends(get_db)):
+async def add_session_messages_batch(
+    session_id: str,
+    messages: List[MessageRequest],
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
     """Add multiple messages to a session in a single batch"""
     try:
         logger.info(f"Adding batch of {len(messages)} messages to session {session_id}")
         
         # Check if session exists
         session = crud_session.get_session(db, session_id)
-        if not session:
+        if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         
         # Convert requests to dict format for the crud function
@@ -1511,6 +1631,8 @@ def debug_env():
 async def stream_chat_from_llm(
     session_id: str,
     request_data: ChatStreamRequestBody,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
 ):
     """
     Streams chat completions from the LLM for a given session.
@@ -1524,7 +1646,11 @@ async def stream_chat_from_llm(
     try:
         import time
         from app.core.observability import record_latency, record_counter
-        
+
+        session = crud_session.get_session(db, session_id)
+        if not session or session.user_id != current_user.user.id:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
         request_start_time = time.time()
         logger.info(f"Received chat stream request for session_id: {session_id} with {len(request_data.history)} messages in history.")
         
