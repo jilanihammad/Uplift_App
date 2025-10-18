@@ -9,6 +9,8 @@ import 'package:ai_therapist_app/di/events/auth_events.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/di/interfaces/i_api_client.dart';
 
 class AuthService implements IAuthService {
   // Keys for shared preferences
@@ -37,14 +39,66 @@ class AuthService implements IAuthService {
   AuthService({
     required UserProfileService userProfileService,
     required IAuthEventHandler authEventHandler,
-  }) : _userProfileService = userProfileService,
-       _authEventHandler = authEventHandler;
+  })  : _userProfileService = userProfileService,
+        _authEventHandler = authEventHandler;
 
   // Ensure the service is initialized before use
   Future<void> _ensureInitialized() async {
     if (!_initialized) {
       _prefs = await SharedPreferences.getInstance();
       _initialized = true;
+
+      final existingToken = _prefs.getString(AUTH_TOKEN_KEY);
+      final apiClient = _apiClientInstance;
+      if (existingToken != null &&
+          existingToken.isNotEmpty &&
+          apiClient != null) {
+        apiClient.setAuthToken(existingToken);
+      }
+
+      if ((existingToken == null || existingToken.isEmpty) &&
+          FirebaseAuth.instance.currentUser != null) {
+        await _storeFirebaseToken(forceRefresh: false);
+      }
+    }
+  }
+
+  IApiClient? get _apiClientInstance {
+    try {
+      return DependencyContainer().apiClient;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _persistAuthToken(String? token) async {
+    if (token == null || token.isEmpty) {
+      return;
+    }
+    await _ensureInitialized();
+    await _prefs.setString(AUTH_TOKEN_KEY, token);
+
+    final apiClient = _apiClientInstance;
+    if (apiClient != null) {
+      apiClient.setAuthToken(token);
+    }
+  }
+
+  Future<String?> _storeFirebaseToken({bool forceRefresh = false}) async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) {
+        return null;
+      }
+
+      final token = await firebaseUser.getIdToken(forceRefresh);
+      await _persistAuthToken(token);
+      return token;
+    } catch (e) {
+      if (kDebugMode) {
+        print('AuthService: Failed to refresh Firebase token: $e');
+      }
+      return null;
     }
   }
 
@@ -68,8 +122,9 @@ class AuthService implements IAuthService {
     if (firebaseUser != null) {
       // Verify the token is still valid
       try {
-        // Force token refresh to ensure it's valid
-        await firebaseUser.getIdToken(true);
+        // Force token refresh to ensure it's valid and cache it
+        final token = await firebaseUser.getIdToken(true);
+        await _persistAuthToken(token);
         print("AuthService: User has valid Firebase token");
         return true;
       } catch (e) {
@@ -114,7 +169,8 @@ class AuthService implements IAuthService {
           );
         }
         // Emit event that user has completed signup
-        await _authEventHandler.handleUserSignupCompleted(UserSignupCompletedEvent(
+        await _authEventHandler
+            .handleUserSignupCompleted(UserSignupCompletedEvent(
           userId: await _getCurrentUserId(),
         ));
       }
@@ -362,6 +418,8 @@ class AuthService implements IAuthService {
           );
         }
 
+        await _storeFirebaseToken(forceRefresh: true);
+
         return true;
       } catch (credentialError) {
         print(
@@ -431,6 +489,8 @@ class AuthService implements IAuthService {
         );
       }
 
+      await _storeFirebaseToken(forceRefresh: true);
+
       return true;
     } catch (e) {
       print('Auto-retrieval sign-in error: $e');
@@ -485,6 +545,8 @@ class AuthService implements IAuthService {
         ));
       }
 
+      await _storeFirebaseToken(forceRefresh: true);
+
       return true;
     } catch (e) {
       if (kDebugMode) {
@@ -523,11 +585,14 @@ class AuthService implements IAuthService {
       await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, false);
 
       // Emit registration completed event
-      await _authEventHandler.handleUserRegistrationCompleted(UserRegistrationCompletedEvent(
+      await _authEventHandler
+          .handleUserRegistrationCompleted(UserRegistrationCompletedEvent(
         userId: user.uid,
         email: email,
         name: name,
       ));
+
+      await _storeFirebaseToken(forceRefresh: true);
 
       return true;
     } catch (e) {
@@ -543,7 +608,7 @@ class AuthService implements IAuthService {
   Future<void> completeSignup() async {
     await _ensureInitialized();
     await _prefs.setBool(HAS_COMPLETED_SIGNUP_KEY, true);
-    
+
     // Emit signup completed event
     final userId = await _getCurrentUserId();
     await _authEventHandler.handleUserSignupCompleted(UserSignupCompletedEvent(
@@ -691,6 +756,8 @@ class AuthService implements IAuthService {
           );
         }
 
+        await _storeFirebaseToken(forceRefresh: true);
+
         return true;
       } catch (authError) {
         print(
@@ -735,7 +802,7 @@ class AuthService implements IAuthService {
   Future<bool> logout() async {
     try {
       await _ensureInitialized();
-      
+
       // Get user ID before logout
       final userId = await _getCurrentUserId();
 
@@ -744,7 +811,8 @@ class AuthService implements IAuthService {
 
       // Clear local auth token
       await _prefs.remove(AUTH_TOKEN_KEY);
-      
+      _apiClientInstance?.clearAuthToken();
+
       // Emit logout event
       await _authEventHandler.handleUserLoggedOut(UserLoggedOutEvent(
         userId: userId,
@@ -778,7 +846,8 @@ class AuthService implements IAuthService {
 
       // Optionally, check token validity
       try {
-        await firebaseUser.getIdToken(true);
+        final token = await firebaseUser.getIdToken(true);
+        await _persistAuthToken(token);
         return true;
       } catch (e) {
         print("AuthService: Error refreshing token during verification: $e");

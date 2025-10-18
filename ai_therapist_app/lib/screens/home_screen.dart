@@ -11,17 +11,20 @@ import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
+import 'package:ai_therapist_app/models/session_reminder.dart';
 
 class HomeScreen extends StatefulWidget {
   final IProgressService? progressService;
   final IPreferencesService? preferencesService;
   final IUserProfileService? userProfileService;
-  
+  final ISessionScheduleService? sessionScheduleService;
+
   const HomeScreen({
     Key? key,
     this.progressService,
     this.preferencesService,
     this.userProfileService,
+    this.sessionScheduleService,
   }) : super(key: key);
 
   @override
@@ -34,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late IProgressService _progressService;
   late IPreferencesService _preferencesService;
   late IUserProfileService _userProfileService;
+  late ISessionScheduleService _sessionScheduleService;
   late UserProgress _progress;
   bool _progressInitialized = false;
 
@@ -41,8 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _progressService = widget.progressService ?? DependencyContainer().progress;
-    _preferencesService = widget.preferencesService ?? DependencyContainer().preferences;
-    _userProfileService = widget.userProfileService ?? DependencyContainer().userProfile;
+    _preferencesService =
+        widget.preferencesService ?? DependencyContainer().preferences;
+    _userProfileService =
+        widget.userProfileService ?? DependencyContainer().userProfile;
+    _sessionScheduleService =
+        widget.sessionScheduleService ?? DependencyContainer().sessionSchedule;
     _progress = _progressService.progress;
 
     // Listen for progress changes
@@ -69,21 +77,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadUserData() async {
-    // In a real app, fetch data from API or local storage
-    // Simulate data loading
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    // Sync session data to ensure consistency card shows real data
     try {
       await _progressService.syncSessionData();
     } catch (e) {
       debugPrint('Error syncing session data: $e');
     }
 
+    SessionReminder? reminder;
+    try {
+      reminder = await _sessionScheduleService.loadReminder(forceRefresh: true);
+    } catch (e) {
+      debugPrint('Error loading session reminder: $e');
+      reminder = _sessionScheduleService.currentReminder;
+    }
+
+    if (!mounted) return;
+
     setState(() {
-      // Example data
       _currentMood = Mood.neutral;
-      _nextSessionDate = DateTime.now().add(const Duration(days: 2));
+      _nextSessionDate = reminder?.scheduledTime;
       _progressInitialized = true;
     });
   }
@@ -541,35 +553,43 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   onPressed: () async {
-                    print('Remind Me button pressed');
                     if (_nextSessionDate == null) {
-                      print('No session scheduled to remind!');
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                             content: Text('No session scheduled to remind!')),
                       );
                       return;
                     }
+
+                    final now = DateTime.now();
+                    if (_nextSessionDate!.isBefore(now)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text(
+                                'The scheduled session is in the past. Please reschedule.')),
+                      );
+                      return;
+                    }
+
                     try {
-                      print(
-                          'Scheduling notification for: \\${_nextSessionDate}');
                       await NotificationService().scheduleNotification(
                         id: 1001, // Use a fixed or unique ID
                         title: 'Therapy Session Reminder',
                         body: 'You have a therapy session scheduled now.',
                         scheduledDateTime: _nextSessionDate!,
                       );
-                      print('Notification scheduled successfully');
+
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Reminder set!')),
                       );
-                    } catch (e, stack) {
-                      print('Error scheduling notification: \\${e.toString()}');
-                      print(stack);
+                    } catch (e) {
+                      debugPrint('Error scheduling notification: $e');
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                            content: Text(
-                                'Failed to set reminder: \\${e.toString()}')),
+                          content: Text(
+                            'Failed to set reminder: ${e.toString()}',
+                          ),
+                        ),
                       );
                     }
                   },
@@ -651,17 +671,43 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: () {
-                  // Save the new session date
-                  setState(() {
-                    _nextSessionDate = selectedDate;
-                  });
+                onPressed: () async {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Session rescheduled successfully'),
-                    ),
-                  );
+
+                  try {
+                    final reminder =
+                        await _sessionScheduleService.scheduleSession(
+                      selectedDate,
+                      title: 'Next Therapy Session',
+                    );
+
+                    if (!mounted) return;
+
+                    setState(() {
+                      _nextSessionDate =
+                          reminder?.scheduledTime ?? selectedDate;
+                    });
+
+                    final formattedDate = DateFormat.yMMMd().add_jm().format(
+                          (_nextSessionDate ?? selectedDate),
+                        );
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Session rescheduled for $formattedDate'),
+                      ),
+                    );
+                  } catch (e) {
+                    debugPrint('Error scheduling session reminder: $e');
+
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                            'We couldn\'t update the schedule. Please try again.'),
+                      ),
+                    );
+                  }
                 },
                 child: const Text('Confirm'),
               ),
@@ -723,7 +769,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6),
                 ),
               ),
             ],
@@ -835,7 +884,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icon(
                         Icons.bar_chart,
                         size: 20,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.6),
                       ),
                       const SizedBox(width: 4),
                       IconButton(
@@ -929,7 +981,8 @@ class _HomeScreenState extends State<HomeScreen> {
           label,
           style: TextStyle(
             fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            color:
+                Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
           ),
         ),
       ],

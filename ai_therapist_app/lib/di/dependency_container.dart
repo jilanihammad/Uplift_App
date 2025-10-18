@@ -32,7 +32,7 @@ class DependencyContainer {
       // The DependencyContainer now acts as a wrapper around the existing
       // service locator registrations. We don't need to re-register services
       // that are already registered in setupServiceLocator.
-      
+
       // Just mark as initialized since services are already registered
       _isInitialized = true;
     } catch (e) {
@@ -48,7 +48,8 @@ class DependencyContainer {
       if (_locator.isRegistered<T>()) {
         return _locator.get<T>();
       }
-      throw StateError('DependencyContainer not initialized. Call initialize() first.');
+      throw StateError(
+          'DependencyContainer not initialized. Call initialize() first.');
     }
     return _locator.get<T>();
   }
@@ -71,16 +72,22 @@ class DependencyContainer {
 
   // Convenience getters for commonly used services
   IConfigService get config => get<IConfigService>();
-  ConfigService get configService => get<ConfigService>(); // Concrete implementation for backward compatibility
+  ConfigService get configService => get<
+      ConfigService>(); // Concrete implementation for backward compatibility
   IApiClient get apiClient => get<IApiClient>();
-  ApiClient get apiClientConcrete => get<ApiClient>(); // Concrete implementation for backward compatibility
+  ApiClient get apiClientConcrete =>
+      get<ApiClient>(); // Concrete implementation for backward compatibility
   IDatabase get database => get<IDatabase>();
   IAppDatabase get appDatabase => get<IAppDatabase>();
-  AppDatabase get appDatabaseConcrete => get<AppDatabase>(); // Concrete implementation for backward compatibility
-  IDatabaseOperationManager get databaseOperationManager => get<IDatabaseOperationManager>();
-  DatabaseOperationManager get databaseOperationManagerConcrete => get<DatabaseOperationManager>(); // Concrete implementation
+  AppDatabase get appDatabaseConcrete =>
+      get<AppDatabase>(); // Concrete implementation for backward compatibility
+  IDatabaseOperationManager get databaseOperationManager =>
+      get<IDatabaseOperationManager>();
+  DatabaseOperationManager get databaseOperationManagerConcrete =>
+      get<DatabaseOperationManager>(); // Concrete implementation
   IMemoryManager get memoryManager => get<IMemoryManager>();
-  MemoryManager get memoryManagerConcrete => get<MemoryManager>(); // Concrete implementation for backward compatibility
+  MemoryManager get memoryManagerConcrete => get<
+      MemoryManager>(); // Concrete implementation for backward compatibility
   IThemeService get theme => get<IThemeService>();
   IPreferencesService get preferences => get<IPreferencesService>();
   INavigationService get navigation => get<INavigationService>();
@@ -95,7 +102,8 @@ class DependencyContainer {
   IAuthEventHandler get authEventHandler => get<IAuthEventHandler>();
   IOnboardingService get onboarding => get<IOnboardingService>();
   ITherapyService get therapy => get<ITherapyService>();
-  
+  ISessionScheduleService get sessionSchedule => get<ISessionScheduleService>();
+
   // Audio services
   IVoiceService get voiceService => get<IVoiceService>();
   AudioGenerator get audioGenerator => get<AudioGenerator>();
@@ -103,7 +111,7 @@ class DependencyContainer {
   VADManager get vadManager => get<VADManager>();
   RecordingManager get recordingManager => get<RecordingManager>();
   IAudioSettings get audioSettings => get<IAudioSettings>();
-  
+
   // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;
 }

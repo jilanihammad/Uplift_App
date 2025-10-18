@@ -24,6 +24,7 @@ class MessageProcessor {
 
   // Cache for API responses to avoid redundant processing
   final Map<String, String> _responseCache = {};
+  String? _lastFallbackResponse;
 
   // List of predefined therapist responses based on keywords
   final Map<String, List<String>> _responseTemplates = {
@@ -248,6 +249,20 @@ class MessageProcessor {
         {'message': userMessage, 'templates': _responseTemplates});
   }
 
+  String _pickNonRepeating(List<String> options, int index) {
+    if (options.isEmpty) {
+      return '';
+    }
+    var choice = options[index % options.length];
+    if (_lastFallbackResponse != null &&
+        options.length > 1 &&
+        choice == _lastFallbackResponse) {
+      choice = options[(index + 1) % options.length];
+    }
+    _lastFallbackResponse = choice;
+    return choice;
+  }
+
   /// Generate a fallback response locally (without compute)
   String _generateFallbackResponseLocally(String userMessage) {
     final lowerMessage = userMessage.toLowerCase();
@@ -270,7 +285,7 @@ class MessageProcessor {
     if (matchedKeywords.isNotEmpty) {
       final keyword = matchedKeywords[seed % matchedKeywords.length];
       final responses = _responseTemplates[keyword]!;
-      return responses[seed % responses.length];
+      return _pickNonRepeating(responses, seed);
     }
 
     // Default responses for when no keywords match
@@ -281,7 +296,7 @@ class MessageProcessor {
       "That sounds challenging. Would you like to explore this further together?",
     ];
 
-    return defaultResponses[seed % defaultResponses.length];
+    return _pickNonRepeating(defaultResponses, seed);
   }
 
   /// Generate a fallback response in a separate compute isolate
@@ -378,10 +393,11 @@ class MessageProcessor {
 
   /// Generate end of session summary
   Future<Map<String, dynamic>> generateSessionSummary(
-      List<Map<String, dynamic>> messages, String systemPrompt, {
-      String? sessionTitle,
-      int? userId,
-    }) async {
+    List<Map<String, dynamic>> messages,
+    String systemPrompt, {
+    String? sessionTitle,
+    int? userId,
+  }) async {
     try {
       log.i('Generating session summary for ${messages.length} messages');
 
@@ -390,8 +406,8 @@ class MessageProcessor {
         return await _generateSessionSummaryDirectLLM(messages, systemPrompt);
       } else {
         // Use backend proxy (original behavior)
-        return await _generateSessionSummaryViaBackend(messages, systemPrompt, 
-          sessionTitle: sessionTitle, userId: userId);
+        return await _generateSessionSummaryViaBackend(messages, systemPrompt,
+            sessionTitle: sessionTitle, userId: userId);
       }
     } catch (e) {
       log.e('Error ending session', e);
@@ -454,9 +470,11 @@ $conversationText''';
         final jsonCandidate = _extractJsonFromResponse(responseText);
         if (jsonCandidate != null && _isValidJsonFormat(jsonCandidate)) {
           try {
-            final parsedJson = json.decode(jsonCandidate) as Map<String, dynamic>;
+            final parsedJson =
+                json.decode(jsonCandidate) as Map<String, dynamic>;
 
-            log.i('Session summary generated successfully via direct LLM (JSON format)');
+            log.i(
+                'Session summary generated successfully via direct LLM (JSON format)');
             return {
               'summary':
                   parsedJson['summary'] ?? 'Session completed successfully.',
@@ -473,7 +491,8 @@ $conversationText''';
             // Continue to plain text processing
           }
         } else {
-          log.i('LLM response detected as plain text format, processing accordingly');
+          log.i(
+              'LLM response detected as plain text format, processing accordingly');
         }
 
         // If JSON parsing fails, create summary from text
@@ -496,10 +515,11 @@ $conversationText''';
 
   /// Generate session summary using backend proxy (original behavior)
   Future<Map<String, dynamic>> _generateSessionSummaryViaBackend(
-      List<Map<String, dynamic>> messages, String systemPrompt, {
-      String? sessionTitle,
-      int? userId,
-    }) async {
+    List<Map<String, dynamic>> messages,
+    String systemPrompt, {
+    String? sessionTitle,
+    int? userId,
+  }) async {
     try {
       log.i('Making API call to end_session with payload: ${json.encode({
             'messages_count': messages.length,
@@ -508,10 +528,10 @@ $conversationText''';
 
       // Make API call to end session and get summary
       final payload = {
-        'messages': messages, 
+        'messages': messages,
         'system_prompt': systemPrompt,
       };
-      
+
       // Add optional session metadata if provided
       if (sessionTitle != null) {
         payload['session_title'] = sessionTitle;
@@ -519,7 +539,7 @@ $conversationText''';
       if (userId != null) {
         payload['user_id'] = userId;
       }
-      
+
       final response = await apiClient.post('/therapy/end_session', payload);
 
       if (response != null) {
@@ -673,11 +693,12 @@ $conversationText''';
         return;
       }
 
-      log.d('Starting message streaming with graph state: ${graphResult['state'] ?? 'unknown'}');
-      
+      log.d(
+          'Starting message streaming with graph state: ${graphResult['state'] ?? 'unknown'}');
+
       // Prepare the conversation history
       List<Map<String, dynamic>> conversationHistory = history ?? [];
-      
+
       // Add system prompt to history if provided
       if (systemPrompt.isNotEmpty) {
         conversationHistory.insert(0, {
@@ -687,7 +708,7 @@ $conversationText''';
       }
 
       log.d('Streaming message via WebSocket to LLM...');
-      
+
       // Stream the response from GroqService
       await for (final chunk in _groqService.streamChatCompletionViaWebSocket(
         message: userMessage,
@@ -695,7 +716,6 @@ $conversationText''';
       )) {
         yield chunk;
       }
-      
     } catch (e) {
       log.e('Error in message streaming', e);
       yield {
@@ -708,36 +728,37 @@ $conversationText''';
   /// Extract potential JSON content from LLM response text
   String? _extractJsonFromResponse(String responseText) {
     // First try to find JSON wrapped in code blocks
-    final codeBlockRegex = RegExp(r'```(?:json)?\s*(\{.*?\})\s*```', dotAll: true);
+    final codeBlockRegex =
+        RegExp(r'```(?:json)?\s*(\{.*?\})\s*```', dotAll: true);
     final codeBlockMatch = codeBlockRegex.firstMatch(responseText);
     if (codeBlockMatch != null) {
       return codeBlockMatch.group(1)?.trim();
     }
-    
+
     // Then try to find standalone JSON object
     final jsonRegex = RegExp(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', dotAll: true);
     final jsonMatch = jsonRegex.firstMatch(responseText);
     if (jsonMatch != null) {
       return jsonMatch.group(0)?.trim();
     }
-    
+
     return null;
   }
 
   /// Enhanced JSON format validation to reduce false positives
   bool _isValidJsonFormat(String text) {
     final trimmed = text.trim();
-    
+
     // Basic structure check - must start with { and end with }
     if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
       return false;
     }
-    
+
     // Must contain at least one colon (key-value pairs)
     if (!trimmed.contains(':')) {
       return false;
     }
-    
+
     // Should have matching braces
     int braceCount = 0;
     for (int i = 0; i < trimmed.length; i++) {
@@ -745,15 +766,16 @@ $conversationText''';
       if (trimmed[i] == '}') braceCount--;
       if (braceCount < 0) return false; // More closing than opening braces
     }
-    
+
     // Final brace count should be zero
     if (braceCount != 0) return false;
-    
+
     // Quick validation for common JSON patterns
-    if (trimmed.contains('"') && (trimmed.contains('":') || trimmed.contains('" :'))) {
+    if (trimmed.contains('"') &&
+        (trimmed.contains('":') || trimmed.contains('" :'))) {
       return true;
     }
-    
+
     // If it looks like JSON but doesn't have quotes, it might be malformed
     // In this case, we'll let jsonDecode handle it and catch the FormatException
     return true;
@@ -761,7 +783,8 @@ $conversationText''';
 
   /// Future-proof response validation with version awareness
   /// Validates API response format and extracts content with explicit type safety
-  String _validateAndExtractResponse(Map<String, dynamic>? response, String source) {
+  String _validateAndExtractResponse(
+      Map<String, dynamic>? response, String source) {
     if (response == null) {
       throw BackendSchemaException(
         message: '$source returned null response',
@@ -774,7 +797,7 @@ $conversationText''';
     if (response.containsKey('schema')) {
       final schema = response['schema'];
       log.d('Response includes schema version: $schema');
-      
+
       // Future: Handle different schema versions here
       switch (schema) {
         case 'v1':
@@ -791,7 +814,8 @@ $conversationText''';
             receivedResponse: response,
           );
         default:
-          log.w('Unknown schema version: $schema, falling back to default parsing');
+          log.w(
+              'Unknown schema version: $schema, falling back to default parsing');
       }
     }
 

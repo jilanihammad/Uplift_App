@@ -9,6 +9,7 @@ import '../../services/navigation_service.dart';
 import '../../services/progress_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/groq_service.dart';
+import '../../services/session_schedule_service.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../services/websocket_audio_manager.dart';
 import '../../services/memory_manager.dart';
@@ -33,7 +34,7 @@ class ServicesModule {
     }
 
     // Only register interface mappings for services already registered in service_locator.dart
-    
+
     // Register interface for PreferencesService (already registered)
     if (!locator.isRegistered<IPreferencesService>()) {
       locator.registerLazySingleton<IPreferencesService>(
@@ -72,6 +73,12 @@ class ServicesModule {
     if (!locator.isRegistered<IGroqService>()) {
       locator.registerLazySingleton<IGroqService>(
         () => locator<GroqService>(),
+      );
+    }
+
+    if (!locator.isRegistered<ISessionScheduleService>()) {
+      locator.registerLazySingleton<ISessionScheduleService>(
+        () => locator<SessionScheduleService>(),
       );
     }
 
@@ -140,7 +147,8 @@ class ServicesModule {
       );
     }
     // Register interface for TherapyService (only if concrete service is registered)
-    if (!locator.isRegistered<ITherapyService>() && locator.isRegistered<TherapyService>()) {
+    if (!locator.isRegistered<ITherapyService>() &&
+        locator.isRegistered<TherapyService>()) {
       locator.registerLazySingleton<ITherapyService>(
         () => locator<TherapyService>(),
       );
@@ -173,7 +181,8 @@ class _MockThemeService extends IThemeService {
 
   @override
   Future<void> toggleTheme() async {
-    _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    _themeMode =
+        _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
     notifyListeners();
   }
 
@@ -185,7 +194,6 @@ class _MockThemeService extends IThemeService {
   }
 
   @override
-  ThemeData get theme => _themeMode == ThemeMode.dark 
-      ? ThemeData.dark() 
-      : ThemeData.light();
+  ThemeData get theme =>
+      _themeMode == ThemeMode.dark ? ThemeData.dark() : ThemeData.light();
 }
