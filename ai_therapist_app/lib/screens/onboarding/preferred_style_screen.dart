@@ -23,10 +23,9 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
   @override
   void initState() {
     super.initState();
-    // Get available styles
-    _therapistStyles = TherapistStyle.availableStyles;
-    // Pre-fill with existing data if available
-    _selectedStyleId = _preferencesService.getCurrentTherapistStyle().id;
+    final cbtStyle = TherapistStyle.getById('cbt');
+    _therapistStyles = [cbtStyle];
+    _selectedStyleId = cbtStyle.id;
   }
   
   Future<void> _saveAndContinue() async {
@@ -79,14 +78,14 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Choose your therapy approach',
+                'Cognitive Behavioral Therapy (CBT)',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 16),
               Text(
-                'Select a therapeutic approach that aligns with your preferences. You can change this later in settings.',
+                'Maya currently uses a CBT-informed approach focused on practical tools, reframing, and supportive coaching. This default style cannot be changed at this time.',
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
@@ -107,15 +106,15 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isLoading 
-                    ? const CircularProgressIndicator()
-                    : const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text(
+                          'Continue',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                 ),
               ),
             ],

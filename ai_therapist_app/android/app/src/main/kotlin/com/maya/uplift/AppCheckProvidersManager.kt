@@ -4,8 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.AppCheckProviderFactory
 import com.google.firebase.appcheck.FirebaseAppCheck
-import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import java.util.concurrent.TimeUnit
 
@@ -25,6 +25,8 @@ class AppCheckProvidersManager(private val context: Context) {
      * Falls back to Debug provider if Play Integrity fails
      */
     fun initialize() {
+        val isDebug = isDebugBuild()
+
         try {
             Log.d(TAG, "Initializing App Check providers...")
             
@@ -37,11 +39,9 @@ class AppCheckProvidersManager(private val context: Context) {
             
             // Get App Check instance
             val firebaseAppCheck = FirebaseAppCheck.getInstance()
-            
-            // Determine if this is a debug build
-            val isDebug = isDebugBuild()
+
             Log.d(TAG, "Build type: ${if (isDebug) "DEBUG" else "RELEASE"}")
-            
+
             if (isDebug) {
                 installDebugProvider(firebaseAppCheck)
             } else {
@@ -50,7 +50,7 @@ class AppCheckProvidersManager(private val context: Context) {
                     installPlayIntegrityProvider(firebaseAppCheck)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error installing Play Integrity provider: ${e.message}")
-                    installDebugProvider(firebaseAppCheck)
+                    throw IllegalStateException("Play Integrity provider installation failed", e)
                 }
             }
             
@@ -60,13 +60,22 @@ class AppCheckProvidersManager(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing App Check: ${e.message}")
             e.printStackTrace()
-            // Last resort - try to install debug provider directly
-            try {
-                val appCheck = FirebaseAppCheck.getInstance()
-                appCheck.installAppCheckProviderFactory(DebugAppCheckProviderFactory.getInstance())
-                Log.d(TAG, "Installed fallback Debug provider after error")
-            } catch (fallbackError: Exception) {
-                Log.e(TAG, "Even fallback provider installation failed: ${fallbackError.message}")
+
+            if (isDebug) {
+                try {
+                    val appCheck = FirebaseAppCheck.getInstance()
+                    val factory = getDebugProviderFactory()
+                    if (factory != null) {
+                        appCheck.installAppCheckProviderFactory(factory)
+                        Log.d(TAG, "Installed fallback Debug provider after error in debug mode")
+                    } else {
+                        Log.w(TAG, "Debug provider factory not available during fallback")
+                    }
+                } catch (fallbackError: Exception) {
+                    Log.e(TAG, "Even fallback provider installation failed: ${fallbackError.message}")
+                }
+            } else {
+                throw e
             }
         }
     }
@@ -77,14 +86,40 @@ class AppCheckProvidersManager(private val context: Context) {
     private fun installDebugProvider(appCheck: FirebaseAppCheck) {
         try {
             Log.d(TAG, "Installing Debug provider...")
-            appCheck.installAppCheckProviderFactory(DebugAppCheckProviderFactory.getInstance())
-            Log.d(TAG, "Debug provider installed successfully")
+            val factory = getDebugProviderFactory()
+            if (factory != null) {
+                appCheck.installAppCheckProviderFactory(factory)
+                Log.d(TAG, "Debug provider installed successfully")
+            } else {
+                Log.w(TAG, "Debug provider factory not found; skipping install")
+                throw IllegalStateException("Debug App Check provider not present")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to install Debug provider: ${e.message}")
             throw e
         }
     }
-    
+
+    private fun getDebugProviderFactory(): AppCheckProviderFactory? {
+        return try {
+            val factoryClass = Class.forName("com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory")
+            val getInstance = factoryClass.getMethod("getInstance")
+            val factory = getInstance.invoke(null)
+            if (factory is AppCheckProviderFactory) {
+                factory
+            } else {
+                Log.w(TAG, "Unexpected debug provider factory type: ${factory?.javaClass?.name}")
+                null
+            }
+        } catch (classNotFound: ClassNotFoundException) {
+            Log.w(TAG, "DebugAppCheckProviderFactory class not found on classpath")
+            null
+        } catch (reflectionError: Exception) {
+            Log.e(TAG, "Failed to obtain DebugAppCheckProviderFactory: ${reflectionError.message}")
+            null
+        }
+    }
+
     /**
      * Install Play Integrity provider for production
      */

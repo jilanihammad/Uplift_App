@@ -1,18 +1,19 @@
 // lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:ai_therapist_app/config/app_config.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/config/routes.dart';
-import 'package:ai_therapist_app/models/therapist_style.dart';
 
 class SettingsScreen extends StatefulWidget {
   final IPreferencesService? preferencesService;
   final NotificationService? notificationService;
   final IThemeService? themeService;
   final IUserProfileService? userProfileService;
-  
+
   const SettingsScreen({
     super.key,
     this.preferencesService,
@@ -25,16 +26,30 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+class _CrisisResource {
+  final String region;
+  final String description;
+  final String contact;
+  final bool isLink;
+
+  const _CrisisResource({
+    required this.region,
+    required this.description,
+    required this.contact,
+    this.isLink = false,
+  });
+}
+
 class _SettingsScreenState extends State<SettingsScreen> {
   late IPreferencesService _preferencesService;
   late NotificationService _notificationService;
   late IThemeService _themeService;
   late IUserProfileService _userProfileService;
+  final AppConfig _appConfig = AppConfig();
   bool _darkModeEnabled = false;
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
   String _selectedLanguage = 'English';
-  late String _therapistStyleId;
   late bool _useVoiceByDefault;
   TimeOfDay? _dailyCheckInTime;
   bool _dailyCheckInEnabled = false;
@@ -42,14 +57,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _preferencesService = widget.preferencesService ?? DependencyContainer().preferences;
-    _notificationService = widget.notificationService ?? DependencyContainer().get<NotificationService>();
+    _preferencesService =
+        widget.preferencesService ?? DependencyContainer().preferences;
+    _notificationService = widget.notificationService ??
+        DependencyContainer().get<NotificationService>();
     _themeService = widget.themeService ?? DependencyContainer().theme;
-    _userProfileService = widget.userProfileService ?? DependencyContainer().userProfile;
+    _userProfileService =
+        widget.userProfileService ?? DependencyContainer().userProfile;
 
     // Load preferences
-    _therapistStyleId =
-        _preferencesService.preferences?.therapistStyleId ?? 'cbt';
     _useVoiceByDefault =
         _preferencesService.preferences?.useVoiceByDefault ?? false;
     _dailyCheckInTime = _preferencesService.preferences?.dailyCheckInTime;
@@ -67,18 +83,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           // User Profile Section
           _buildUserProfileSection(),
-          
+
           _buildSection(
             title: 'Therapy Experience',
             children: [
-              ListTile(
-                title: const Text('Therapist Style'),
-                subtitle: Text(TherapistStyle.getById(_therapistStyleId).name),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  context.push('/settings/therapist_style');
-                },
-              ),
               SwitchListTile(
                 title: const Text('Use Voice by Default'),
                 subtitle:
@@ -163,67 +171,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          _buildSection(
-            title: 'Notifications',
-            children: [
-              SwitchListTile(
-                title: const Text('Enable Notifications'),
-                subtitle: const Text('Receive reminders and updates'),
-                value: _notificationsEnabled,
-                onChanged: (value) {
-                  setState(() {
-                    _notificationsEnabled = value;
-                  });
-                },
-              ),
-              SwitchListTile(
-                title: const Text('Sounds'),
-                subtitle: const Text('Play sounds for notifications'),
-                value: _soundEnabled,
-                onChanged: _notificationsEnabled
-                    ? (value) {
-                        setState(() {
-                          _soundEnabled = value;
-                        });
-                      }
-                    : null,
-              ),
-            ],
-          ),
+          // Notifications section intentionally hidden until backend wiring is ready.
           _buildSection(
             title: 'Privacy & Security',
             children: [
               ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined),
                 title: const Text('Data Privacy'),
-                subtitle: const Text('Manage your data and privacy settings'),
+                subtitle: const Text('Review how we handle your information'),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
-                  // Navigate to privacy settings
+                  _launchExternalUri(Uri.parse(_appConfig.privacyPolicyUrl));
                 },
               ),
               ListTile(
-                title: const Text('Security'),
-                subtitle: const Text('Change password and security options'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  // Navigate to security settings
-                },
+                leading: const Icon(Icons.psychology_alt_outlined),
+                title: const Text('AI-Assisted Care Disclosure'),
+                subtitle:
+                    const Text('Understand Maya\'s role and usage guidelines'),
+                trailing: const Icon(Icons.info_outline),
+                onTap: _showAiDisclosureDialog,
               ),
-            ],
-          ),
-          _buildSection(
-            title: 'Developer Tools',
-            children: [
               ListTile(
-                title: const Text('Diagnostics'),
-                subtitle: const Text('Test TTS and LLM functionality'),
+                leading: const Icon(Icons.health_and_safety_outlined),
+                title: const Text('Crisis Support Resources'),
+                subtitle: const Text(
+                    'Find immediate help if you or someone else is at risk'),
                 trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  context.push(AppRouter.diagnostic);
-                },
+                onTap: _showCrisisSupportSheet,
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_forever_outlined),
+                title: const Text('Request Account Deletion'),
+                subtitle: const Text('Remove your account and personal data'),
+                trailing: const Icon(Icons.arrow_forward_ios),
+                onTap: _confirmAccountDeletion,
               ),
             ],
           ),
+          // Help & Support section will be added in a future release when backend support is ready.
           _buildSection(
             title: 'About',
             children: [
@@ -235,14 +221,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Terms of Service'),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
-                  // Show terms of service
+                  _launchExternalUri(Uri.parse(_appConfig.termsOfServiceUrl));
                 },
               ),
               ListTile(
                 title: const Text('Privacy Policy'),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
-                  // Show privacy policy
+                  _launchExternalUri(Uri.parse(_appConfig.privacyPolicyUrl));
                 },
               ),
             ],
@@ -256,7 +242,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final userProfile = _userProfileService.profile;
     final userName = userProfile?.displayName ?? 'User';
     final userEmail = userProfile?.email;
-    
+
     return _buildSection(
       title: 'Profile',
       children: [
@@ -275,27 +261,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: Text(
             userProfile?.firstName ?? userProfile?.displayName ?? 'Not set',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.8),
             ),
           ),
           trailing: const Icon(Icons.edit),
           onTap: () => _showEditNameDialog(),
         ),
-        if (userEmail != null && userEmail.isNotEmpty)
-          ListTile(
-            leading: const Icon(Icons.email_outlined),
-            title: const Text('Email'),
-            subtitle: Text(
-              userEmail,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios),
-            onTap: () {
-              context.push('/profile');
-            },
-          ),
       ],
     );
   }
@@ -322,6 +296,151 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ...children,
         const Divider(),
       ],
+    );
+  }
+
+  Future<bool> _launchExternalUri(Uri uri,
+      {LaunchMode mode = LaunchMode.externalApplication}) async {
+    try {
+      final launched = await launchUrl(uri, mode: mode);
+      if (!launched && mounted) {
+        _showSnack('Unable to open ${uri.toString()}');
+      }
+      return launched;
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Unable to open ${uri.toString()}');
+      }
+      return false;
+    }
+  }
+
+  void _showAiDisclosureDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('AI-Assisted Care'),
+        content: const Text(
+          'Maya provides AI-assisted emotional support and should not replace professional care. '
+          'If you are in crisis or facing an emergency, please contact emergency services or a licensed mental health professional immediately.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCrisisSupportSheet() {
+    final resources = [
+      const _CrisisResource(
+        region: 'United States & Canada',
+        description: '988 Suicide & Crisis Lifeline',
+        contact: '988',
+      ),
+      const _CrisisResource(
+        region: 'United Kingdom & Ireland',
+        description: 'Samaritans (24/7)',
+        contact: '+44-116-123',
+      ),
+      const _CrisisResource(
+        region: 'Australia',
+        description: 'Lifeline (24/7)',
+        contact: '13 11 14',
+      ),
+      const _CrisisResource(
+        region: 'International',
+        description: 'Find helplines worldwide',
+        contact: 'https://www.opencounseling.com/suicide-hotlines',
+        isLink: true,
+      ),
+    ];
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  'If you or someone else is in danger, please contact local emergency services immediately.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              ...resources.map((resource) => ListTile(
+                    leading: const Icon(Icons.support_agent_outlined),
+                    title: Text(resource.region),
+                    subtitle: Text(resource.description),
+                    trailing: const Icon(Icons.arrow_forward_ios),
+                    onTap: () async {
+                      final Uri uri = resource.isLink
+                          ? Uri.parse(resource.contact)
+                          : Uri(
+                              scheme: 'tel',
+                              path: resource.contact
+                                  .replaceAll(RegExp(r'[^0-9+]'), ''),
+                            );
+                      final launched = await _launchExternalUri(uri,
+                          mode: resource.isLink
+                              ? LaunchMode.externalApplication
+                              : LaunchMode.platformDefault);
+                      if (launched && context.mounted) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                  )),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmAccountDeletion() async {
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text(
+          'Deleting your account will remove your profile, session history, and stored memories. '
+          'This action is permanent. Would you like to continue to the deletion request form?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('CONTINUE'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed == true) {
+      final launched = await _launchExternalUri(
+        Uri.parse(_appConfig.accountDeletionUrl),
+      );
+      if (launched && mounted) {
+        _showSnack('Opening account deletion request in your browser...');
+      }
+    }
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -407,11 +526,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showEditNameDialog() async {
-    final currentFirstName = _userProfileService.profile?.firstName ?? 
-                             _userProfileService.profile?.displayName ?? '';
-    
+    final currentFirstName = _userProfileService.profile?.firstName ??
+        _userProfileService.profile?.displayName ??
+        '';
+
     final controller = TextEditingController(text: currentFirstName);
-    
+
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -450,12 +570,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-    
+
     if (result != null && result.isNotEmpty) {
       try {
         // Update firstName in the service
         await _userProfileService.updateProfile(firstName: result);
-        
+
         // Show success message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -478,7 +598,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
     }
-    
+
     controller.dispose();
   }
 }

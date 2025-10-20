@@ -65,6 +65,8 @@ class VoiceSessionState extends Equatable {
   final double amplitude; // Real-time audio amplitude [0-1] for visualization
   // Session timer remaining seconds (counts down from selected duration)
   final int timerRemainingSeconds;
+  // Flag indicating time limit reached and auto end flow should trigger
+  final bool autoEndTriggered;
 
   const VoiceSessionState({
     required this.status,
@@ -96,6 +98,7 @@ class VoiceSessionState extends Equatable {
     this.speakerMuted = false,
     this.amplitude = 0.0,
     this.timerRemainingSeconds = 0,
+    this.autoEndTriggered = false,
   });
 
   factory VoiceSessionState.initial({
@@ -131,6 +134,7 @@ class VoiceSessionState extends Equatable {
       speakerMuted: false,
       amplitude: 0.0,
       timerRemainingSeconds: 0,
+      autoEndTriggered: false,
     );
   }
 
@@ -166,6 +170,7 @@ class VoiceSessionState extends Equatable {
     bool? speakerMuted,
     double? amplitude,
     int? timerRemainingSeconds,
+    bool? autoEndTriggered,
   }) {
     return VoiceSessionState(
       status: status ?? this.status,
@@ -204,6 +209,7 @@ class VoiceSessionState extends Equatable {
       speakerMuted: speakerMuted ?? this.speakerMuted,
       amplitude: amplitude ?? this.amplitude,
       timerRemainingSeconds: timerRemainingSeconds ?? this.timerRemainingSeconds,
+      autoEndTriggered: autoEndTriggered ?? this.autoEndTriggered,
     );
   }
 
@@ -238,6 +244,7 @@ class VoiceSessionState extends Equatable {
         speakerMuted,
         amplitude,
         timerRemainingSeconds,
+        autoEndTriggered,
       ];
 
   bool get canSend {

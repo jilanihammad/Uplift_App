@@ -28,6 +28,7 @@ ios/Runner/GeneratedPluginRegistrant.*
 **/android/**/GeneratedPluginRegistrant.java
 **/android/key.properties
 *.jks
+*API key*.txt
 
 # iOS specific
 **/ios/**/*.mode1v3

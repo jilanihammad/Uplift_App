@@ -16,7 +16,6 @@ import 'package:ai_therapist_app/screens/history_screen.dart';
 import 'package:ai_therapist_app/screens/resources_screen.dart';
 import 'package:ai_therapist_app/screens/settings_screen.dart';
 import 'package:ai_therapist_app/screens/session_summary_screen.dart';
-import 'package:ai_therapist_app/screens/therapist_style_screen.dart';
 import 'package:ai_therapist_app/screens/progress_screen.dart';
 import 'package:ai_therapist_app/screens/onboarding/onboarding_wrapper.dart';
 import 'package:ai_therapist_app/screens/session_details_screen.dart';
@@ -43,7 +42,6 @@ class AppRouter {
   static const String resources = '/resources';
   static const String settings = '/settings';
   static const String sessionSummary = '/session_summary';
-  static const String therapistStyle = '/therapist_style';
   static const String progress = '/progress';
   static const String onboarding = '/onboarding';
   static const String diagnostic = '/diagnostic';
@@ -251,10 +249,6 @@ class AppRouter {
             builder: (context, state) => const SettingsScreen(),
             routes: [
               // Therapist style selection sub-route
-              GoRoute(
-                path: 'therapist_style',
-                builder: (context, state) => const TherapistStyleScreen(),
-              ),
             ],
           ),
 

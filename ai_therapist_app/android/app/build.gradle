@@ -76,6 +76,15 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+            universalApk false
+        }
+    }
 }
 
 flutter {
@@ -91,9 +100,9 @@ dependencies {
     implementation platform('com.google.firebase:firebase-bom:33.12.0')
     implementation 'com.google.firebase:firebase-analytics'
     
-    // Firebase App Check - add these to fix "No AppCheckProvider installed" error
+    // Firebase App Check
     implementation 'com.google.firebase:firebase-appcheck-playintegrity'
-    implementation 'com.google.firebase:firebase-appcheck-debug'
+    debugImplementation 'com.google.firebase:firebase-appcheck-debug'
     
     // Exclude core-common from Flutter dependencies
     configurations.all {

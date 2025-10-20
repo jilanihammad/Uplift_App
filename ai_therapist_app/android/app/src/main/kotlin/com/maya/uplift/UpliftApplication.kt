@@ -11,25 +11,27 @@ class UpliftApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        
-        Log.d(TAG, "Application onCreate called - NO APP CHECK VERSION")
-        
+
+        Log.d(TAG, "Application onCreate called")
+
         try {
-            // ONLY initialize Firebase - NO APP CHECK
-            try {
-                val app = FirebaseApp.getInstance()
-                Log.d(TAG, "Using existing Firebase app - NO APP CHECK")
+            val firebaseApp = try {
+                FirebaseApp.getInstance()
             } catch (e: Exception) {
-                FirebaseApp.initializeApp(this)
-                Log.d(TAG, "Initialized Firebase - NO APP CHECK")
+                FirebaseApp.initializeApp(this)?.also {
+                    Log.d(TAG, "Initialized Firebase app instance")
+                }
             }
-            
-            // NO APP CHECK INITIALIZATION - it's causing problems
-            Log.d(TAG, "App Check has been DISABLED to fix issues")
-            
+
+            if (firebaseApp == null) {
+                Log.e(TAG, "Failed to initialize Firebase app; App Check cannot proceed")
+                return
+            }
+
+            AppCheckProvidersManager(this).initialize()
+            Log.d(TAG, "Firebase App Check initialization complete")
         } catch (e: Exception) {
-            Log.e(TAG, "Error during initialization: ${e.message}")
-            e.printStackTrace()
+            Log.e(TAG, "Error during App Check initialization", e)
         }
     }
 } 

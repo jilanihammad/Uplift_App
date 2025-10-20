@@ -63,6 +63,7 @@ class SessionStateManager {
       messages: [],
       isInitialGreetingPlayed: false,
       currentMessageSequence: 0,
+      autoEndTriggered: false,
     );
     
     return _state;

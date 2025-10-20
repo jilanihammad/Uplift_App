@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/i_api_client.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class AuthService implements IAuthService {
   // Keys for shared preferences
@@ -25,7 +26,12 @@ class AuthService implements IAuthService {
 
   // SharedPreferences instance
   late SharedPreferences _prefs;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(),
+  );
   bool _initialized = false;
+  String? _cachedAuthToken;
 
   // For phone auth
   String? _verificationId;
@@ -48,15 +54,27 @@ class AuthService implements IAuthService {
       _prefs = await SharedPreferences.getInstance();
       _initialized = true;
 
-      final existingToken = _prefs.getString(AUTH_TOKEN_KEY);
-      final apiClient = _apiClientInstance;
-      if (existingToken != null &&
-          existingToken.isNotEmpty &&
-          apiClient != null) {
-        apiClient.setAuthToken(existingToken);
+      String? secureToken = await _secureStorage.read(key: AUTH_TOKEN_KEY);
+      final legacyToken = _prefs.getString(AUTH_TOKEN_KEY);
+
+      if (secureToken == null &&
+          legacyToken != null &&
+          legacyToken.isNotEmpty) {
+        secureToken = legacyToken;
+        await _secureStorage.write(key: AUTH_TOKEN_KEY, value: legacyToken);
+        await _prefs.remove(AUTH_TOKEN_KEY);
       }
 
-      if ((existingToken == null || existingToken.isEmpty) &&
+      _cachedAuthToken = secureToken;
+
+      final apiClient = _apiClientInstance;
+      if (_cachedAuthToken != null &&
+          _cachedAuthToken!.isNotEmpty &&
+          apiClient != null) {
+        apiClient.setAuthToken(_cachedAuthToken!);
+      }
+
+      if ((_cachedAuthToken == null || _cachedAuthToken!.isEmpty) &&
           FirebaseAuth.instance.currentUser != null) {
         await _storeFirebaseToken(forceRefresh: false);
       }
@@ -76,7 +94,9 @@ class AuthService implements IAuthService {
       return;
     }
     await _ensureInitialized();
-    await _prefs.setString(AUTH_TOKEN_KEY, token);
+    await _secureStorage.write(key: AUTH_TOKEN_KEY, value: token);
+    await _prefs.remove(AUTH_TOKEN_KEY);
+    _cachedAuthToken = token;
 
     final apiClient = _apiClientInstance;
     if (apiClient != null) {
@@ -135,8 +155,7 @@ class AuthService implements IAuthService {
     }
 
     // Fall back to token check
-    final token = _prefs.getString(AUTH_TOKEN_KEY);
-    return token != null && token.isNotEmpty;
+    return _cachedAuthToken != null && _cachedAuthToken!.isNotEmpty;
   }
 
   // Check if user has completed signup process
@@ -810,7 +829,9 @@ class AuthService implements IAuthService {
       await FirebaseAuth.instance.signOut();
 
       // Clear local auth token
+      await _secureStorage.delete(key: AUTH_TOKEN_KEY);
       await _prefs.remove(AUTH_TOKEN_KEY);
+      _cachedAuthToken = null;
       _apiClientInstance?.clearAuthToken();
 
       // Emit logout event

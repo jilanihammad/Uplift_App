@@ -181,6 +181,16 @@ class UpdateSessionTimer extends VoiceSessionEvent {
   const UpdateSessionTimer();
 }
 
+/// Fired when the selected session duration reaches zero
+class AutoEndTriggered extends VoiceSessionEvent {
+  const AutoEndTriggered();
+}
+
+/// Clears the auto-end trigger flag after the UI begins the end-session flow
+class ClearAutoEndTrigger extends VoiceSessionEvent {
+  const ClearAutoEndTrigger();
+}
+
 // Events for two-step session start flow to prevent premature audio activation
 class StartSessionRequested extends VoiceSessionEvent {
   const StartSessionRequested();

@@ -24,7 +24,12 @@ flutter pub get
 
 # Build release APK
 Write-Host "Building release APK..." -ForegroundColor Green
-flutter build apk --release --dart-define=API_BASE_URL=$backendApi --dart-define=FIREBASE_PROJECT=$firebaseProject
+flutter build apk --release `
+    --obfuscate `
+    --split-debug-info=build/symbols `
+    --target-platform android-arm,android-arm64,android-x64 `
+    --dart-define=API_BASE_URL=$backendApi `
+    --dart-define=FIREBASE_PROJECT=$firebaseProject
 
 # Check if build was successful
 if ($LASTEXITCODE -eq 0) {
@@ -33,6 +38,18 @@ if ($LASTEXITCODE -eq 0) {
     $destPath = Join-Path -Path $outputDir -ChildPath $apkName
     
     Copy-Item -Path $sourcePath -Destination $destPath -Force
+
+    $symbolsSource = "build\symbols"
+    if (Test-Path $symbolsSource) {
+        $symbolsDest = Join-Path -Path $outputDir -ChildPath "symbols"
+        if (Test-Path $symbolsDest) {
+            Remove-Item -Recurse -Force $symbolsDest
+        }
+        Copy-Item -Path $symbolsSource -Destination $symbolsDest -Recurse -Force
+        Write-Host "Debug symbols copied to: $symbolsDest" -ForegroundColor Cyan
+    } else {
+        Write-Host "Warning: Debug symbols directory not found." -ForegroundColor Yellow
+    }
     
     Write-Host "Release build successful!" -ForegroundColor Green
     Write-Host "APK saved to: $destPath" -ForegroundColor Cyan
