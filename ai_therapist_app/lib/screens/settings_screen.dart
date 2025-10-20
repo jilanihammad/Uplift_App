@@ -1,11 +1,14 @@
 // lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
+import 'package:ai_therapist_app/services/remote_config_service.dart';
+import 'package:ai_therapist_app/utils/feature_flags.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -210,6 +213,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           // Help & Support section will be added in a future release when backend support is ready.
+          if (kDebugMode)
+            _buildSection(
+              title: 'Debug Tools',
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.cloud_sync_outlined),
+                  title: const Text('Refresh Remote Config'),
+                  subtitle: const Text('Fetch latest feature flags from Firebase'),
+                  trailing: const Icon(Icons.refresh),
+                  onTap: _refreshRemoteConfig,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.flag_outlined),
+                  title: const Text('Show Feature Flags'),
+                  subtitle: const Text('View current feature flag values'),
+                  trailing: const Icon(Icons.info_outline),
+                  onTap: _showFeatureFlags,
+                ),
+              ],
+            ),
           _buildSection(
             title: 'About',
             children: [
@@ -600,5 +623,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     controller.dispose();
+  }
+
+  /// Manually refresh Firebase Remote Config (debug mode only)
+  Future<void> _refreshRemoteConfig() async {
+    try {
+      _showSnack('Fetching latest remote config...');
+      await RemoteConfigService().refresh();
+      if (mounted) {
+        _showSnack('Remote config refreshed! Memory persistence: ${FeatureFlags.isMemoryPersistenceEnabled}');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Failed to refresh remote config: $e');
+      }
+    }
+  }
+
+  /// Show current feature flag values (debug mode only)
+  void _showFeatureFlags() {
+    final flags = FeatureFlags.getAllFlags();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Feature Flags'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final entry in flags.entries)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(fontFamily: 'monospace'),
+                      ),
+                    ),
+                    Icon(
+                      entry.value ? Icons.check_circle : Icons.cancel,
+                      color: entry.value ? Colors.green : Colors.grey,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }

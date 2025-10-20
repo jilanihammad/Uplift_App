@@ -20,7 +20,7 @@ class AppDatabase implements IAppDatabase {
   static Database? _database;
 
   // Current database version - increment when schema changes
-  static const int _databaseVersion = 6;
+  static const int _databaseVersion = 7;
 
   // Database file name
   static const String _databaseName = 'app_database.db';
@@ -226,7 +226,7 @@ class AppDatabase implements IAppDatabase {
           CREATE TABLE user_anchors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             anchor_text TEXT NOT NULL,
-            normalized_text TEXT NOT NULL UNIQUE,
+            normalized_text TEXT NOT NULL,
             anchor_type TEXT,
             confidence REAL DEFAULT 0.0,
             mention_count INTEGER NOT NULL DEFAULT 1,
@@ -234,7 +234,13 @@ class AppDatabase implements IAppDatabase {
             last_seen_at TEXT NOT NULL,
             first_session_index INTEGER NOT NULL DEFAULT 0,
             last_session_index INTEGER NOT NULL DEFAULT 0,
-            last_prompted_session INTEGER NOT NULL DEFAULT -1
+            last_prompted_session INTEGER NOT NULL DEFAULT -1,
+            server_id TEXT,
+            client_anchor_id TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(normalized_text),
+            UNIQUE(client_anchor_id)
           )
         ''');
       });
@@ -281,8 +287,10 @@ class AppDatabase implements IAppDatabase {
           await _migrateToV6(txn);
         }
 
-        // Add future migrations here:
-        // if (oldVersion < 7) await _migrateToV7(txn);
+        // Migration to version 7: Extend user_anchors for backend sync metadata
+        if (oldVersion < 7) {
+          await _migrateToV7(txn);
+        }
       });
 
       debugPrint('Database upgraded successfully to version $newVersion');
@@ -546,7 +554,7 @@ class AppDatabase implements IAppDatabase {
           CREATE TABLE user_anchors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             anchor_text TEXT NOT NULL,
-            normalized_text TEXT NOT NULL UNIQUE,
+            normalized_text TEXT NOT NULL,
             anchor_type TEXT,
             confidence REAL DEFAULT 0.0,
             mention_count INTEGER NOT NULL DEFAULT 1,
@@ -554,7 +562,13 @@ class AppDatabase implements IAppDatabase {
             last_seen_at TEXT NOT NULL,
             first_session_index INTEGER NOT NULL DEFAULT 0,
             last_session_index INTEGER NOT NULL DEFAULT 0,
-            last_prompted_session INTEGER NOT NULL DEFAULT -1
+            last_prompted_session INTEGER NOT NULL DEFAULT -1,
+            server_id TEXT,
+            client_anchor_id TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(normalized_text),
+            UNIQUE(client_anchor_id)
           )
         ''');
         debugPrint('Created user_anchors table');
@@ -565,6 +579,50 @@ class AppDatabase implements IAppDatabase {
     }
 
     debugPrint('Migration to version 6 completed');
+  }
+
+  /// Migration to version 7: Extend user_anchors with sync metadata columns
+  Future<void> _migrateToV7(Transaction txn) async {
+    debugPrint('Applying migration to version 7...');
+
+    Future<void> safeAlter(String statement) async {
+      try {
+        await txn.execute(statement);
+      } catch (e) {
+        debugPrint('Migration v7: ignoring alter error for "$statement": $e');
+      }
+    }
+
+    try {
+      await safeAlter('ALTER TABLE user_anchors ADD COLUMN server_id TEXT');
+      await safeAlter(
+          'ALTER TABLE user_anchors ADD COLUMN client_anchor_id TEXT');
+      await safeAlter('ALTER TABLE user_anchors ADD COLUMN updated_at TEXT');
+      await safeAlter(
+          'ALTER TABLE user_anchors ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0');
+
+      await txn.execute('''
+        UPDATE user_anchors
+        SET client_anchor_id = CASE
+              WHEN client_anchor_id IS NULL OR client_anchor_id = '' THEN normalized_text
+              ELSE client_anchor_id
+            END,
+            updated_at = CASE
+              WHEN updated_at IS NULL OR updated_at = '' THEN last_seen_at
+              ELSE updated_at
+            END
+      ''');
+
+      await txn.execute(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_user_anchors_client_id ON user_anchors(client_anchor_id)');
+      await txn.execute(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_user_anchors_normalized ON user_anchors(normalized_text)');
+
+      debugPrint('Migration to version 7 completed');
+    } catch (e) {
+      debugPrint('Error during migration to version 7: $e');
+      rethrow;
+    }
   }
 
   /// Check if a table exists in the database

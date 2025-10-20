@@ -25,12 +25,13 @@ import 'package:ai_therapist_app/screens/widgets/chat_app_bar.dart';
 import 'package:ai_therapist_app/screens/widgets/chat_interface_view.dart';
 import '../widgets/debug_drawer.dart';
 import '../utils/app_logger.dart';
+import '../utils/feature_flags.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
-  
+
   const ChatScreen({
-    super.key, 
+    super.key,
     this.sessionId,
   });
 
@@ -55,9 +56,9 @@ class ChatScreen extends StatelessWidget {
 
 class _ChatScreenBody extends StatefulWidget {
   final String? sessionId;
-  
+
   const _ChatScreenBody({
-    super.key, 
+    super.key,
     this.sessionId,
   });
 
@@ -85,7 +86,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
   // Session timer
   Timer? _sessionTimer;
-  
+
   // Debounce timer for metrics changes
   Timer? _metricsChangeTimer;
 
@@ -96,7 +97,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
       // Sanity check - verify wakelock is actually enabled
       final enabled = await NativeWakelockService.isEnabled;
-      AppLogger.d('ChatScreen: Wakelock enabled successfully - KEEP_SCREEN_ON = $enabled');
+      AppLogger.d(
+          'ChatScreen: Wakelock enabled successfully - KEEP_SCREEN_ON = $enabled');
     } catch (e) {
       AppLogger.w('ChatScreen: Failed to enable wakelock', e);
     }
@@ -115,14 +117,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         sessionState.messages.isNotEmpty;
 
     if (!isActiveSession) {
-      AppLogger.d('ChatScreen: Not in active session, skipping wakelock management');
+      AppLogger.d(
+          'ChatScreen: Not in active session, skipping wakelock management');
       return;
     }
 
     switch (state) {
       case AppLifecycleState.resumed:
         // Re-enable wakelock when app comes back to foreground (engine is attached)
-        AppLogger.d('ChatScreen: App resumed, re-enabling wakelock for active session');
+        AppLogger.d(
+            'ChatScreen: App resumed, re-enabling wakelock for active session');
         _enableWakelock();
         break;
       case AppLifecycleState.paused:
@@ -132,7 +136,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Keep wakelock active during therapy session - do NOT disable
         // Screen should stay on even when notification shade is pulled down,
         // proximity sensor triggers, or other brief interruptions occur
-        AppLogger.d('ChatScreen: App lifecycle changed to $state, keeping wakelock active for session');
+        AppLogger.d(
+            'ChatScreen: App lifecycle changed to $state, keeping wakelock active for session');
         break;
     }
   }
@@ -159,10 +164,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     if (isActiveSession) {
       // Called on rotation, PiP, split-screen, etc. - re-apply wakelock
-      AppLogger.d('ChatScreen: Metrics changed, re-enabling wakelock for active session');
+      AppLogger.d(
+          'ChatScreen: Metrics changed, re-enabling wakelock for active session');
       _enableWakelock();
     } else {
-      AppLogger.d('ChatScreen: Metrics changed, but not in active session - skipping wakelock');
+      AppLogger.d(
+          'ChatScreen: Metrics changed, but not in active session - skipping wakelock');
     }
   }
 
@@ -171,7 +178,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     super.initState();
     AppLogger.d('ChatScreen: initState called');
     WidgetsBinding.instance.addObserver(this);
-    
+
     // Phase 1B.2: Standardized DI - use DependencyContainer for UI layer
     _therapyService = DependencyContainer().therapy;
     _progressService = DependencyContainer().progress;
@@ -234,61 +241,61 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       ],
       child: BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
         builder: (context, state) {
-        // Handle initialization state
-        if (state.isInitializing) {
-          return Scaffold(
-            appBar: const ChatAppBar.simple(),
-            body: const Center(child: CircularProgressIndicator()),
-          );
-        }
+          // Handle initialization state
+          if (state.isInitializing) {
+            return Scaffold(
+              appBar: const ChatAppBar.simple(),
+              body: const Center(child: CircularProgressIndicator()),
+            );
+          }
 
-        // Handle duration selector
-        if (state.showDurationSelector) {
-          return Scaffold(
-            appBar: const ChatAppBar.simple(),
-            body: DurationSelector(
-              selectedDuration: state.sessionDurationMinutes,
-              onDurationSelected: _handleDurationSelection,
+          // Handle duration selector
+          if (state.showDurationSelector) {
+            return Scaffold(
+              appBar: const ChatAppBar.simple(),
+              body: DurationSelector(
+                selectedDuration: state.sessionDurationMinutes,
+                onDurationSelected: _handleDurationSelection,
+              ),
+            );
+          }
+
+          // Handle mood selector
+          if (state.showMoodSelector) {
+            return Scaffold(
+              appBar: const ChatAppBar.simple(),
+              body: MoodSelectorScreen(
+                selectedMood: _initialMood,
+                onMoodSelected: _handleMoodSelection,
+              ),
+            );
+          }
+
+          // Main chat interface
+          return PopScope(
+            canPop: true,
+            onPopInvoked: (didPop) async {
+              if (!didPop) return;
+              final shouldPop = await _handleBackPress(state);
+              if (!shouldPop && mounted) {
+                // Prevent pop if not allowed
+                // You may want to use Navigator.of(context).maybePop() or similar if needed
+              }
+            },
+            child: Scaffold(
+              appBar: ChatAppBar(
+                therapistStyle: _therapistStyle,
+                onEndSession: () => _endSession(),
+              ),
+              body: ChatInterfaceView(
+                onSwitchMode: _toggleChatMode,
+                onSendMessage: _sendMessage,
+                messageController: _messageController,
+                scrollController: _scrollController,
+              ),
+              endDrawer: kDebugMode ? const DebugDrawer() : null,
             ),
           );
-        }
-
-        // Handle mood selector
-        if (state.showMoodSelector) {
-          return Scaffold(
-            appBar: const ChatAppBar.simple(),
-            body: MoodSelectorScreen(
-              selectedMood: _initialMood,
-              onMoodSelected: _handleMoodSelection,
-            ),
-          );
-        }
-
-        // Main chat interface
-        return PopScope(
-          canPop: true,
-          onPopInvoked: (didPop) async {
-            if (!didPop) return;
-            final shouldPop = await _handleBackPress(state);
-            if (!shouldPop && mounted) {
-              // Prevent pop if not allowed
-              // You may want to use Navigator.of(context).maybePop() or similar if needed
-            }
-          },
-          child: Scaffold(
-            appBar: ChatAppBar(
-              therapistStyle: _therapistStyle,
-              onEndSession: () => _endSession(),
-            ),
-            body: ChatInterfaceView(
-              onSwitchMode: _toggleChatMode,
-              onSendMessage: _sendMessage,
-              messageController: _messageController,
-              scrollController: _scrollController,
-            ),
-            endDrawer: kDebugMode ? const DebugDrawer() : null,
-          ),
-        );
         },
       ),
     );
@@ -316,7 +323,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           if (enabled) {
             AppLogger.d('ChatScreen: Session inactive, disabling wakelock');
             NativeWakelockService.disable().then((_) {
-              AppLogger.d('ChatScreen: Wakelock disabled due to session status change');
+              AppLogger.d(
+                  'ChatScreen: Wakelock disabled due to session status change');
             }).catchError((e) {
               AppLogger.w('ChatScreen: Failed to disable wakelock', e);
             });
@@ -346,7 +354,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
     return true;
   }
-
 
   Future<void> _initializeServices() async {
     AppLogger.d('ChatScreen: _initializeServices called');
@@ -403,7 +410,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       bloc.add(SetInitializing(true));
       bloc.add(ShowMoodSelector(false));
       bloc.add(ShowDurationSelector(false));
-      
+
       // TODO: Implement proper existing session loading
       _startSessionTimer();
       bloc.add(SetInitializing(false));
@@ -412,7 +419,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       _currentSessionId = const Uuid().v4();
 
       if (kDebugMode) {
-        debugPrint('Generated temporary session ID for local tracking: $_currentSessionId');
+        debugPrint(
+            'Generated temporary session ID for local tracking: $_currentSessionId');
       }
 
       // For new sessions, ONLY request session start - no heavy initialization
@@ -429,7 +437,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   void _handleMoodSelection(Mood selectedMood) {
     final bloc = context.read<VoiceSessionBloc>();
     final currentState = bloc.state;
-    
+
     // Defensive validation: ensure duration was selected
     if (currentState.selectedDuration == null) {
       debugPrint('[ChatScreen] ERROR: Mood selected without duration!');
@@ -444,10 +452,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       bloc.add(const ShowMoodSelector(false));
       return;
     }
-    
+
     // Two-step session start: Use InitialMoodSelected to trigger actual session start
     bloc.add(InitialMoodSelected(selectedMood));
-    
+
     debugPrint('Mood selected: $selectedMood, session is now active');
 
     // UI concerns remain in UI layer (as planned)
@@ -467,8 +475,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Start session timer (UI concern)
     _startSessionTimer();
   }
-
-
 
   void _startSessionTimer() {
     // Cancel any existing timer
@@ -658,7 +664,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
   }
 
-
   Future<Map<String, dynamic>> _generateSessionSummary(
       List<TherapyMessage> messages) async {
     if (kDebugMode) {
@@ -678,11 +683,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     }
 
     // Generate session title to pass to backend
-    final sessionTitle = 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+    final sessionTitle =
+        'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
 
     // Get session summary from therapy service, passing session metadata
     final sessionData = await _therapyService.endSessionWithMessages(
-      messageList, 
+      messageList,
       sessionTitle: sessionTitle,
       userId: 1, // Default user ID for now
     );
@@ -698,8 +704,11 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       'id': sessionData['id'], // Include backend session ID
       'summary': sessionData['summary'] as String? ??
           'Thank you for your session today. I hope our conversation was helpful.',
-      'action_items': actionItemsDynamic.map((item) => item.toString()).toList(),
-      'actionItems': actionItemsDynamic.map((item) => item.toString()).toList(), // Keep both for compatibility
+      'action_items':
+          actionItemsDynamic.map((item) => item.toString()).toList(),
+      'actionItems': actionItemsDynamic
+          .map((item) => item.toString())
+          .toList(), // Keep both for compatibility
       'insights': insightsDynamic.map((item) => item.toString()).toList(),
     };
   }
@@ -712,38 +721,49 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       // If we have a backend session ID from the response, use it
       final backendSessionId = sessionData['id']?.toString();
       final sessionIdToUse = backendSessionId ?? _currentSessionId;
-      
+
+      var actionItems = <String>[];
+      final insights = (sessionData['insights'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList();
+
       if (kDebugMode) {
-        debugPrint('Saving session with ID: $sessionIdToUse (backend ID: $backendSessionId)');
+        debugPrint(
+            'Saving session with ID: $sessionIdToUse (backend ID: $backendSessionId)');
       }
 
       // If we have a backend session ID, the session is already created on the backend
       // Just save to local database for offline access
       if (backendSessionId != null) {
         // Extract action items from session data
-        final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
-            sessionData['actionItems'] as List<dynamic>? ??
-            [];
-        final actionItems = actionItemsDynamic.map((item) => item.toString()).toList();
-        
+        final actionItemsDynamic =
+            sessionData['action_items'] as List<dynamic>? ??
+                sessionData['actionItems'] as List<dynamic>? ??
+                [];
+        actionItems =
+            actionItemsDynamic.map((item) => item.toString()).toList();
+
         await sessionRepository.saveSession(
           sessionId: sessionIdToUse,
-          title: 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}',
+          title:
+              'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}',
           summary: sessionData['summary'],
           actionItems: actionItems,
           messages: messages.map((m) => m.toJson()).toList(),
         );
-        
+
         if (kDebugMode) {
-          debugPrint('Saved session $sessionIdToUse to local database with ${actionItems.length} action items');
+          debugPrint(
+              'Saved session $sessionIdToUse to local database with ${actionItems.length} action items');
           debugPrint('Action items saved: ${actionItems.join(", ")}');
         }
-        
+
         // Update current session ID to the backend ID
         _currentSessionId = sessionIdToUse;
       } else {
         // Fallback: when backend doesn't return an ID we create the session ourselves
-        final sessionTitle = 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
+        final sessionTitle =
+            'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
 
         try {
           final createdSession = await sessionRepository.createSession(
@@ -760,10 +780,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         }
 
         // Extract action items from session data for fallback case too
-        final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
-            sessionData['actionItems'] as List<dynamic>? ??
-            [];
-        final actionItems = actionItemsDynamic.map((item) => item.toString()).toList();
+        final actionItemsDynamic =
+            sessionData['action_items'] as List<dynamic>? ??
+                sessionData['actionItems'] as List<dynamic>? ??
+                [];
+        actionItems =
+            actionItemsDynamic.map((item) => item.toString()).toList();
 
         await sessionRepository.saveSession(
           sessionId: _currentSessionId,
@@ -771,6 +793,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           summary: sessionData['summary'],
           actionItems: actionItems,
           messages: messages.map((m) => m.toJson()).toList(),
+        );
+      }
+
+      if (FeatureFlags.isMemoryPersistenceEnabled) {
+        await _syncSessionSummaryRemote(
+          sessionIdToUse,
+          sessionData,
+          actionItems,
+          insights,
         );
       }
 
@@ -782,6 +813,32 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         debugPrint('Error saving session to repository: $e');
       }
       // Continue anyway - we don't want to block the user
+    }
+  }
+
+  Future<void> _syncSessionSummaryRemote(
+    String sessionId,
+    Map<String, dynamic> sessionData,
+    List<String> actionItems,
+    List<String> insights,
+  ) async {
+    try {
+      final apiClient = DependencyContainer().apiClientConcrete;
+      final summaryPayload = {
+        'session_id': sessionId,
+        'summary_json': {
+          'summary': sessionData['summary'],
+          'action_items': actionItems,
+          'insights': insights,
+        },
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      await apiClient.post('/session_summaries:upsert', summaryPayload);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Failed to sync session summary to server: $e');
+      }
     }
   }
 
@@ -805,5 +862,4 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     debugPrint('🔄 Mode switch complete');
   }
-
 }

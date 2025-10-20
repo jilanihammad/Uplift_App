@@ -315,32 +315,6 @@ Future<void> setupServiceLocator(
     // ===== SIMPLE DOMAIN SERVICES =====
     // These services have minimal dependencies but may need initialization later
 
-    if (!serviceLocator.isRegistered<service_ms.MemoryService>()) {
-      serviceLocator.registerLazySingleton<service_ms.MemoryService>(
-          () => service_ms.MemoryService(
-                databaseProvider: serviceLocator<DatabaseProvider>(),
-              ));
-      debugPrint('Registered MemoryService with constructor injection');
-    }
-
-    // Register new refactored services
-    if (!serviceLocator.isRegistered<MemoryManager>()) {
-      serviceLocator.registerLazySingleton<MemoryManager>(() {
-        debugPrint('Creating MemoryManager instance (lazy initialization)');
-        final manager = MemoryManager(
-          memoryService: serviceLocator<service_ms.MemoryService>(),
-        );
-
-        // Note: Initialization will be handled when the service is actually used
-        // This prevents race conditions from automatic initialization during registration
-        debugPrint(
-            'MemoryManager instance created - initialization deferred until first use');
-
-        return manager;
-      });
-      debugPrint('Registered MemoryManager with true lazy initialization');
-    }
-
     // ===== REGISTER ConversationBufferMemory (if not already done elsewhere) =====
     // This is a dependency for MessageProcessor
     if (!serviceLocator.isRegistered<ConversationBufferMemory>()) {
@@ -516,6 +490,30 @@ Future<void> setupServiceLocator(
       serviceLocator.registerLazySingleton<UserProfileService>(
           () => UserProfileService());
       debugPrint('Registered UserProfileService');
+    }
+
+    if (!serviceLocator.isRegistered<service_ms.MemoryService>()) {
+      serviceLocator.registerLazySingleton<service_ms.MemoryService>(
+        () => service_ms.MemoryService(
+          databaseProvider: serviceLocator<DatabaseProvider>(),
+          apiClient: serviceLocator<ApiClient>(),
+          userProfileService: serviceLocator<UserProfileService>(),
+        ),
+      );
+      debugPrint('Registered MemoryService with backend sync dependencies');
+    }
+
+    if (!serviceLocator.isRegistered<MemoryManager>()) {
+      serviceLocator.registerLazySingleton<MemoryManager>(() {
+        debugPrint('Creating MemoryManager instance (lazy initialization)');
+        final manager = MemoryManager(
+          memoryService: serviceLocator<service_ms.MemoryService>(),
+        );
+        debugPrint(
+            'MemoryManager instance created - initialization deferred until first use');
+        return manager;
+      });
+      debugPrint('Registered MemoryManager with backend-aware MemoryService');
     }
 
     // Register OnboardingService

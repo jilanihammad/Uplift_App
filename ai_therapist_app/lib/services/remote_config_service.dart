@@ -15,6 +15,7 @@ class RemoteConfigService {
   static const String _ttsStreamingKey = 'tts_streaming_enabled';
   static const String _ttsBufferKey = 'tts_streaming_buffer_size';
   static const String _ttsMaxMemoryKey = 'tts_max_memory_duration_seconds';
+  static const String _memoryPersistenceKey = 'memory_persistence_enabled';
 
   static const String _cacheTtsKey =
       'remote_config_cache_tts_streaming_enabled';
@@ -22,6 +23,8 @@ class RemoteConfigService {
       'remote_config_cache_tts_streaming_buffer_size';
   static const String _cacheMaxMemoryKey =
       'remote_config_cache_tts_max_memory_duration_seconds';
+  static const String _cacheMemoryPersistenceKey =
+      'remote_config_cache_memory_persistence_enabled';
 
   FirebaseRemoteConfig get _remoteConfig => FirebaseRemoteConfig.instance;
 
@@ -46,6 +49,7 @@ class RemoteConfigService {
       _ttsStreamingKey: AppConfig().ttsStreamingEnabled,
       _ttsBufferKey: AppConfig().ttsStreamingBufferSize,
       _ttsMaxMemoryKey: AppConfig().ttsMaxMemoryDurationSeconds,
+      _memoryPersistenceKey: FeatureFlags.isMemoryPersistenceEnabled,
     });
 
     try {
@@ -54,10 +58,13 @@ class RemoteConfigService {
       debugPrint('[RemoteConfigService] Failed to fetch remote config: $e');
     }
 
-    await _cacheAndApplyOverrides(prefs,
-        ttsStreamingEnabled: _remoteConfig.getBool(_ttsStreamingKey),
-        bufferSize: _remoteConfig.getInt(_ttsBufferKey),
-        maxMemorySeconds: _remoteConfig.getInt(_ttsMaxMemoryKey));
+    await _cacheAndApplyOverrides(
+      prefs,
+      ttsStreamingEnabled: _remoteConfig.getBool(_ttsStreamingKey),
+      bufferSize: _remoteConfig.getInt(_ttsBufferKey),
+      maxMemorySeconds: _remoteConfig.getInt(_ttsMaxMemoryKey),
+      memoryPersistenceEnabled: _remoteConfig.getBool(_memoryPersistenceKey),
+    );
   }
 
   /// Force-refresh remote config (useful for manual toggles or diagnostics).
@@ -69,10 +76,13 @@ class RemoteConfigService {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    await _cacheAndApplyOverrides(prefs,
-        ttsStreamingEnabled: _remoteConfig.getBool(_ttsStreamingKey),
-        bufferSize: _remoteConfig.getInt(_ttsBufferKey),
-        maxMemorySeconds: _remoteConfig.getInt(_ttsMaxMemoryKey));
+    await _cacheAndApplyOverrides(
+      prefs,
+      ttsStreamingEnabled: _remoteConfig.getBool(_ttsStreamingKey),
+      bufferSize: _remoteConfig.getInt(_ttsBufferKey),
+      maxMemorySeconds: _remoteConfig.getInt(_ttsMaxMemoryKey),
+      memoryPersistenceEnabled: _remoteConfig.getBool(_memoryPersistenceKey),
+    );
   }
 
   /// Directly apply an override (used for integration tests and manual
@@ -81,12 +91,16 @@ class RemoteConfigService {
     bool? ttsStreamingEnabled,
     int? bufferSize,
     int? maxMemorySeconds,
+    bool? memoryPersistenceEnabled,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await _cacheAndApplyOverrides(prefs,
-        ttsStreamingEnabled: ttsStreamingEnabled,
-        bufferSize: bufferSize,
-        maxMemorySeconds: maxMemorySeconds);
+    await _cacheAndApplyOverrides(
+      prefs,
+      ttsStreamingEnabled: ttsStreamingEnabled,
+      bufferSize: bufferSize,
+      maxMemorySeconds: maxMemorySeconds,
+      memoryPersistenceEnabled: memoryPersistenceEnabled,
+    );
   }
 
   Future<void> _applyCachedOverrides(SharedPreferences prefs) async {
@@ -99,12 +113,23 @@ class RemoteConfigService {
         ? prefs.getInt(_cacheMaxMemoryKey)
         : null;
 
-    if (cachedTts != null || cachedBuffer != null || cachedMaxMemory != null) {
+    final bool? cachedMemoryPersistence = prefs.containsKey(_cacheMemoryPersistenceKey)
+        ? prefs.getBool(_cacheMemoryPersistenceKey)
+        : null;
+
+    if (cachedTts != null ||
+        cachedBuffer != null ||
+        cachedMaxMemory != null ||
+        cachedMemoryPersistence != null) {
       AppConfig().applyRuntimeOverrides(
         ttsStreamingEnabled: cachedTts,
         ttsStreamingBufferSize: cachedBuffer,
         ttsMaxMemoryDurationSeconds: cachedMaxMemory,
       );
+      if (cachedMemoryPersistence != null) {
+      FeatureFlags.setEnabled(
+          FeatureFlags.memoryPersistenceEnabled, cachedMemoryPersistence);
+      }
     }
   }
 
@@ -113,6 +138,7 @@ class RemoteConfigService {
     bool? ttsStreamingEnabled,
     int? bufferSize,
     int? maxMemorySeconds,
+    bool? memoryPersistenceEnabled,
   }) async {
     if (ttsStreamingEnabled != null) {
       await prefs.setBool(_cacheTtsKey, ttsStreamingEnabled);
@@ -124,6 +150,12 @@ class RemoteConfigService {
 
     if (maxMemorySeconds != null && maxMemorySeconds > 0) {
       await prefs.setInt(_cacheMaxMemoryKey, maxMemorySeconds);
+    }
+
+    if (memoryPersistenceEnabled != null) {
+      await prefs.setBool(_cacheMemoryPersistenceKey, memoryPersistenceEnabled);
+      FeatureFlags.setEnabled(
+          FeatureFlags.memoryPersistenceEnabled, memoryPersistenceEnabled);
     }
 
     AppConfig().applyRuntimeOverrides(

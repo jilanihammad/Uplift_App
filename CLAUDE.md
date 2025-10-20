@@ -17,9 +17,12 @@ AI Therapist App - A full-stack application providing AI-powered therapeutic con
 
 ### Backend (ai_therapist_backend/)
 - **Framework**: FastAPI with modular service architecture
-- **Database**: PostgreSQL with SQLAlchemy ORM
+- **Database**: PostgreSQL (Cloud SQL) with SQLAlchemy ORM
+- **Cloud SQL Instance**: `jilaniuplift` in `us-central1`, database: `ai_therapist`
+- **Automatic Migrations**: Runs `alembic upgrade head` on Cloud Run startup via `scripts/entrypoint.sh`
 - **LLM Integration**: Unified LLM manager supporting OpenAI, Groq, Anthropic, Google, Azure, DeepSeek
-- **Deployment**: Google Cloud Run with Cloud SQL
+- **Deployment**: Google Cloud Run with Cloud SQL connection
+- **Personalization API**: `/api/v1/profile`, `/api/v1/anchors`, `/api/v1/session_summaries` with Firebase JWT auth
 
 ## Common Development Commands
 
@@ -61,8 +64,15 @@ pip install -r requirements-dev.txt
 python scripts/dev.py local
 
 # Database migrations
+# IMPORTANT: Cloud Run runs migrations automatically via entrypoint.sh
+# Manual migrations are only needed for local development or troubleshooting
+
+# For local development with Cloud SQL Proxy
+cloud-sql-proxy upliftapp-cd86e:us-central1:jilaniuplift --port=5433
+export DATABASE_URL="postgresql://postgres:7860@localhost:5433/ai_therapist"
 alembic upgrade head                        # Apply migrations
 alembic revision -m "Description"           # Create new migration
+alembic stamp head                          # Mark migration as applied (troubleshooting only)
 
 # Deploy to production
 bash deploy_to_cloud.sh
@@ -133,11 +143,25 @@ FIREBASE_API_KEY=your-key
 
 ### Database Setup
 ```bash
-# Initialize database
+# Cloud SQL Connection (for local development)
+# Instance: upliftapp-cd86e:us-central1:jilaniuplift
+# Database: ai_therapist
+# User: postgres, Password: 7860
+
+# Install and run Cloud SQL Proxy
+cloud-sql-proxy upliftapp-cd86e:us-central1:jilaniuplift --port=5433
+
+# Set DATABASE_URL for local development
+export DATABASE_URL="postgresql://postgres:7860@localhost:5433/ai_therapist"
+
+# Initialize database (migrations run automatically on Cloud Run)
 alembic upgrade head
 
 # Seed with test data (if needed)
 python scripts/seed_db.py
+
+# Production DATABASE_URL (set in Cloud Run)
+# postgresql://postgres:7860@/ai_therapist?host=/cloudsql/upliftapp-cd86e:us-central1:jilaniuplift
 ```
 
 ## Important Implementation Notes
@@ -206,7 +230,85 @@ gcloud run deploy ai-therapist-backend \
 - Backend dependencies: Ensure Python 3.9+ and all requirements installed
 - Firebase config: Verify google-services.json (Android) and GoogleService-Info.plist (iOS)
 
+### Database Issues
+- **Migration errors on Cloud Run**: Check that `DATABASE_URL` points to Cloud SQL (not localhost/SQLite)
+- **DuplicateTable errors**: Use `alembic stamp head` to mark existing tables as migrated
+- **Connection refused**: Ensure Cloud SQL Proxy is running for local development
+- **Password authentication failed**: Verify Cloud SQL postgres password is set to `7860`
+
 ### API Integration
 - Use the LLM manager's unified interface for provider switching
 - Check provider-specific environment variables
 - Monitor rate limits for external APIs
+
+## Personalization & Persistence
+
+### Backend Tables (added in latest migration)
+- **user_profiles**: `id (uuid)`, `user_id (unique)`, `preferred_name`, `pronouns`, `locale`, `version`, `updated_at`
+- **session_anchors**: `id (uuid)`, `user_id`, `client_anchor_id`, `anchor_text`, `anchor_type`, `confidence`, `is_deleted`, `last_seen_session_index`, `updated_at`
+- **session_summaries**: `id (uuid)`, `user_id`, `session_id (unique)`, `summary_json`, `updated_at`
+
+### API Endpoints (requires Firebase JWT)
+```bash
+# Profile management
+GET /api/v1/profile                         # Get current profile + ETag
+PUT /api/v1/profile                         # Update profile (optimistic concurrency)
+
+# Anchor management
+GET /api/v1/anchors?since=<timestamp>       # Get deltas with tombstones
+POST /api/v1/anchors:upsert                 # Idempotent upsert by client_anchor_id
+POST /api/v1/anchors:delete                 # Mark anchor as deleted (tombstone)
+
+# Session summaries
+POST /api/v1/session_summaries:upsert       # Idempotent upsert by session_id
+```
+
+### Feature Flag
+- Client-side sync gated by `memory_persistence_enabled` feature flag
+- MemoryService syncs profile/anchors with backend when enabled
+- ChatScreen pushes session summaries after local save
+- Offline queue persists pending updates in SharedPreferences
+
+## Logging & Observability
+
+### Logging Utilities (app/core/logging_utils.py)
+- **ISO-8601 UTC timestamps**: Unified format `2025-10-20T02:53:48Z` across all environments
+- **PII scrubbing**: `preview_text()` truncates user messages at INFO level (full text only at DEBUG)
+- **Header redaction**: `redact_headers()` protects cookies and auth tokens
+- **Latency timing**: `LatencyTimer` class uses monotonic clock for accurate measurements
+- **Request tracing**: `create_log_context()` and correlation IDs for distributed tracing
+
+### Follow-up Improvements
+See `LOGGING_IMPROVEMENTS_FOLLOWUP.md` for remaining tasks:
+- Header redaction in auth/voice endpoints (1-2 hours)
+- Correlation ID propagation (2-3 hours)
+- Monotonic timing updates (3-4 hours)
+- Log level policy cleanup (2-3 hours)
+
+## Recently Logged Updates
+
+### Cloud SQL Migration (commits: e3e306a8, edbbe0bb)
+- Backend now connects to Cloud SQL (instance `jilaniuplift` in `us-central1`)
+- Migrations run automatically via `scripts/entrypoint.sh` on Cloud Run startup
+- New Alembic revision adds `user_profiles`, `session_anchors`, `session_summaries`
+- Migration stamped to head and tested against Cloud SQL
+- `deploy_to_cloud.sh` updated with Cloud SQL connection and DATABASE_URL
+
+### Personalization Features
+- Personalization API exposed at `/api/v1/profile`, `/api/v1/anchors`, `/api/v1/session_summaries`
+- All endpoints require Firebase JWT and support idempotent updates
+- UUID primary keys and soft-delete semantics for all tables
+- Desktop/mobile builds gate personalization sync behind `memory_persistence_enabled`
+
+### Logging Improvements (commit: c8a526d8)
+- Created `app/core/logging_utils.py` with security-focused logging helpers
+- Updated `app/core/logger.py` with ISO-8601 UTC timestamps
+- Updated `app/services/streaming_pipeline.py` to scrub PII from logs
+- Preview text only at INFO level, full text at DEBUG level
+- Documented remaining improvements in `LOGGING_IMPROVEMENTS_FOLLOWUP.md`
+
+### Flutter Client Sync
+- MemoryService now syncs profile basics and anchors with backend when `memory_persistence_enabled` is enabled
+- ChatScreen pushes session summaries via `/session_summaries:upsert` after local save
+- MemoryService queues profile/anchor updates locally (SharedPreferences) and flushes once network sync succeeds
+- Improved offline resilience of personalization features

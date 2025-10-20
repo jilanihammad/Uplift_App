@@ -168,6 +168,10 @@ class UserAnchor {
   final int firstSessionIndex;
   final int lastSessionIndex;
   final int lastPromptedSession;
+  final String? serverId;
+  final String clientAnchorId;
+  final DateTime updatedAt;
+  final bool isDeleted;
 
   UserAnchor({
     this.id,
@@ -181,8 +185,14 @@ class UserAnchor {
     this.firstSessionIndex = 0,
     this.lastSessionIndex = 0,
     this.lastPromptedSession = -1,
+    this.serverId,
+    String? clientAnchorId,
+    DateTime? updatedAt,
+    this.isDeleted = false,
   })  : firstSeenAt = firstSeenAt ?? DateTime.now(),
-        lastSeenAt = lastSeenAt ?? DateTime.now();
+        lastSeenAt = lastSeenAt ?? DateTime.now(),
+        clientAnchorId = clientAnchorId ?? normalizedText,
+        updatedAt = updatedAt ?? DateTime.now();
 
   UserAnchor copyWith({
     int? id,
@@ -196,6 +206,10 @@ class UserAnchor {
     int? firstSessionIndex,
     int? lastSessionIndex,
     int? lastPromptedSession,
+    String? serverId,
+    String? clientAnchorId,
+    DateTime? updatedAt,
+    bool? isDeleted,
   }) {
     return UserAnchor(
       id: id ?? this.id,
@@ -209,6 +223,10 @@ class UserAnchor {
       firstSessionIndex: firstSessionIndex ?? this.firstSessionIndex,
       lastSessionIndex: lastSessionIndex ?? this.lastSessionIndex,
       lastPromptedSession: lastPromptedSession ?? this.lastPromptedSession,
+      serverId: serverId ?? this.serverId,
+      clientAnchorId: clientAnchorId ?? this.clientAnchorId,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isDeleted: isDeleted ?? this.isDeleted,
     );
   }
 
@@ -224,6 +242,10 @@ class UserAnchor {
       'first_session_index': firstSessionIndex,
       'last_session_index': lastSessionIndex,
       'last_prompted_session': lastPromptedSession,
+      'server_id': serverId,
+      'client_anchor_id': clientAnchorId,
+      'updated_at': updatedAt.toIso8601String(),
+      'is_deleted': isDeleted ? 1 : 0,
     };
 
     if (id != null) {
@@ -246,6 +268,12 @@ class UserAnchor {
       firstSessionIndex: json['first_session_index'] as int? ?? 0,
       lastSessionIndex: json['last_session_index'] as int? ?? 0,
       lastPromptedSession: json['last_prompted_session'] as int? ?? -1,
+      serverId: json['server_id'] as String?,
+      clientAnchorId: json['client_anchor_id'] as String?,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.parse(json['last_seen_at'] as String),
+      isDeleted: (json['is_deleted'] as int? ?? 0) == 1,
     );
   }
 
