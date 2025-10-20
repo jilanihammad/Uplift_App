@@ -13,6 +13,7 @@ Core Features:
 
 import asyncio
 import json
+from app.core.logging_utils import preview_text
 import time
 import logging
 import weakref
@@ -1476,7 +1477,10 @@ class EnhancedAsyncPipeline:
             network_metrics = client_metadata.get("network_metrics", {})
             network_quality = self.assess_network_quality(network_metrics) if network_metrics else "good"
             
-            self.logger.info(f"TTS processing: format={optimal_format}, network={network_quality}, text='{text_chunk.text[:50]}...'")
+            # Use preview_text to avoid logging full PII at INFO level
+            self.logger.info(f"TTS processing: format={optimal_format}, network={network_quality}, preview='{preview_text(text_chunk.text)}'")
+            # Full text available at DEBUG level only
+            self.logger.debug(f"TTS full text: {text_chunk.text}")
             
             # TTS generation parameters with adaptive format
             tts_params = {
@@ -1556,7 +1560,8 @@ class EnhancedAsyncPipeline:
             total_latency = (time.time() - chunk_timestamp) * 1000
             self.metrics.update_timing("avg_tts_latency_ms", total_latency)
             
-            self.logger.info(f"TTS completed for '{text_chunk.text[:30]}...': {audio_chunks_generated} chunks, {total_latency:.1f}ms, format: {optimal_format}")
+            # Use preview_text to avoid logging full PII at INFO level
+            self.logger.info(f"TTS completed for preview='{preview_text(text_chunk.text, max_length=30)}': {audio_chunks_generated} chunks, {total_latency:.1f}ms, format: {optimal_format}")
             
             # TTS processing completed for this text chunk - send completion sentinel
             completion_sentinel = CompletionSentinel(
