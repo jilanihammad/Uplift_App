@@ -82,6 +82,7 @@ void main() {
       );
       // Re-initialize for other tests (set test cache dir directly)
       final testDir = Directory.systemTemp.createTempSync('test_cache_reset');
+      pathManager = PathManager.instance;
       pathManager.debugSetCacheDir(testDir.path);
     });
 
@@ -161,7 +162,7 @@ void main() {
       expect(PathManager.TTS_PREFIX, equals('tts_stream_'));
       expect(PathManager.TTS_DEFAULT_EXT, equals('wav'));
       expect(PathManager.RECORDING_EXT, equals('m4a'));
-      expect(PathManager.VAD_FILENAME, equals('vad_monitor.wav'));
+      expect(PathManager.VAD_FILENAME, equals('vad_monitor.m4a'));
     });
   });
 }

@@ -142,6 +142,13 @@ adb shell ls /data/data/com.yourapp.package/cache/
 - [ ] Welcome message plays
 - [ ] Normal operation resumes
 
+### Release Regression Add-ons
+- [ ] Remote kill switch toggled off (via Remote Config or debug override) and streaming path confirms fallback to full-buffer mode
+- [ ] Remote kill switch toggled back on and streaming resumes (watch `[TTS] Using STREAMING path` logs)
+- [ ] Settings → Privacy & Security entries open AI disclosure dialog, crisis resources sheet, and account deletion link
+- [ ] Account deletion dialog surfaces warning before launching external browser
+- [ ] Privacy Policy/Terms links open in external browser without crashing
+
 ## Common Issues & Solutions
 
 ### Issue: "Access denied for recorder"

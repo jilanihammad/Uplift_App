@@ -84,7 +84,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Register for Uplift')),
+        appBar: AppBar(title: const Text('Register for Maya')),
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Form(
@@ -92,7 +92,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: ListView(
               children: [
                 const Text(
-                  'Uplift',
+                  'Maya',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,

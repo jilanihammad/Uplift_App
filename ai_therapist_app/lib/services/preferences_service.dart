@@ -9,12 +9,12 @@ import '../data/datasources/local/prefs_manager.dart';
 // Implementation of user preferences service with persistent storage
 class PreferencesService implements IPreferencesService {
   static const String _preferencesKey = 'user_preferences';
-  
+
   final PrefsManager _prefsManager;
   UserPreferences? _preferences;
 
   // Constructor with dependency injection
-  PreferencesService({PrefsManager? prefsManager}) 
+  PreferencesService({PrefsManager? prefsManager})
       : _prefsManager = prefsManager ?? PrefsManager();
 
   // Get current preferences
@@ -28,17 +28,28 @@ class PreferencesService implements IPreferencesService {
     if (_preferences != null) {
       return;
     }
-    
+
     try {
       // Initialize the preferences manager
       await _prefsManager.init();
 
       // Try to load existing preferences from persistent storage
-      final Map<String, dynamic>? savedPrefs = _prefsManager.getJson(_preferencesKey);
-      
+      final Map<String, dynamic>? savedPrefs =
+          _prefsManager.getJson(_preferencesKey);
+
       if (savedPrefs != null) {
         // Load existing preferences
         _preferences = UserPreferences.fromJson(savedPrefs);
+
+        if (_preferences?.therapistStyleId != 'cbt') {
+          _preferences = _preferences!.copyWith(therapistStyleId: 'cbt');
+          await _savePreferences();
+          if (kDebugMode) {
+            print(
+                'Legacy therapist style detected. Resetting to CBT for consistency');
+          }
+        }
+
         if (kDebugMode) {
           print('Preferences loaded from storage');
         }
@@ -59,7 +70,7 @@ class PreferencesService implements IPreferencesService {
 
         // Save default preferences to storage
         await _savePreferences();
-        
+
         if (kDebugMode) {
           print('Default preferences created and saved');
         }
@@ -93,6 +104,7 @@ class PreferencesService implements IPreferencesService {
   @override
   Future<void> updatePreferences(UserPreferences newPreferences) async {
     _preferences = newPreferences.copyWith(
+      therapistStyleId: 'cbt',
       lastUpdated: DateTime.now(),
     );
 
@@ -122,8 +134,10 @@ class PreferencesService implements IPreferencesService {
       await init();
     }
 
+    final enforcedStyleId = 'cbt';
+
     _preferences = _preferences!.copyWith(
-      therapistStyleId: therapistStyleId,
+      therapistStyleId: enforcedStyleId,
       reminderEnabled: reminderEnabled,
       reminderTime: reminderTime,
       darkModeEnabled: darkModeEnabled,
@@ -160,10 +174,10 @@ class PreferencesService implements IPreferencesService {
   // Set the therapist style
   @override
   Future<void> setTherapistStyle(String styleId) async {
-    await updateSinglePreference(therapistStyleId: styleId);
+    await updateSinglePreference(therapistStyleId: 'cbt');
 
     if (kDebugMode) {
-      print('Therapist style updated to: $styleId');
+      print('Therapist style forcibly set to CBT (requested: $styleId)');
     }
   }
 

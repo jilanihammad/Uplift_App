@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ai_therapist_app/blocs/managers/session_state_manager.dart';
 import 'package:ai_therapist_app/blocs/voice_session_state.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
+import 'package:ai_therapist_app/models/therapist_style.dart';
 
 void main() {
   group('SessionStateManager', () {
@@ -145,9 +146,9 @@ void main() {
       });
 
       test('setTherapistStyle updates style', () {
-        final mockStyle = {'name': 'cognitive', 'approach': 'structured'};
-        final state = manager.setTherapistStyle(mockStyle);
-        expect(state.therapistStyle, mockStyle);
+        final style = TherapistStyle.getById('cbt');
+        final state = manager.setTherapistStyle(style);
+        expect(state.therapistStyle, style);
       });
     });
 

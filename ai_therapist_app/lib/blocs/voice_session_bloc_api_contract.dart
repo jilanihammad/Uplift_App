@@ -86,6 +86,8 @@ abstract class VoiceSessionEventContract {
   static const Type setInitializing = SetInitializing;
   static const Type setEndingSession = SetEndingSession;
   static const Type updateSessionTimer = UpdateSessionTimer;
+  static const Type autoEndTriggered = AutoEndTriggered;
+  static const Type clearAutoEndTrigger = ClearAutoEndTrigger;
 }
 
 /// State Contract - All state properties and computed getters that must be maintained
@@ -124,6 +126,7 @@ abstract class VoiceSessionStateContract {
   String? get transcribedText;
   bool get isInitialGreetingPlayed;
   int get currentMessageSequence;
+  bool get autoEndTriggered;
   
   // Computed Properties (getters that must be maintained)
   bool get canSend; // => !isProcessingAudio && !isVoiceMode

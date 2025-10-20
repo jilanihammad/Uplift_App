@@ -32,6 +32,7 @@ dependencies:
   cloud_firestore: ^5.6.6
   firebase_messaging: ^15.2.5
   firebase_analytics: ^11.4.5
+  firebase_remote_config: ^5.3.2
   google_sign_in: ^6.1.4
   # firebase_app_check: ^0.2.2+10 # Enable App Check for better security - temporarily disabled
 
@@ -39,6 +40,7 @@ dependencies:
   # Local storage
   shared_preferences: ^2.2.1
   sqflite: ^2.3.0
+  flutter_secure_storage: ^9.2.2
 
   # Environment and configuration
   flutter_dotenv: ^5.1.0

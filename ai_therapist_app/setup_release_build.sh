@@ -64,19 +64,25 @@ fi
 echo ""
 echo "🔨 Step 3: Build Release APK"
 echo "============================"
-echo "Building release APK..."
+echo "Building release APK with obfuscation and split debug info..."
 
-flutter build apk --release
+flutter build apk \
+  --release \
+  --obfuscate \
+  --split-debug-info=build/symbols \
+  --target-platform android-arm,android-arm64,android-x64
 
 if [ $? -eq 0 ]; then
     echo ""
     echo "🎉 SUCCESS! Release APK built successfully!"
     echo "📱 APK location: build/app/outputs/flutter-apk/app-release.apk"
+    echo "🧩 Debug symbols: build/symbols (upload to Crashlytics/Sentry for deobfuscation)"
     echo ""
     echo "Next steps:"
     echo "1. Test the APK on your device"
-    echo "2. For Play Store: flutter build appbundle --release"
-    echo "3. Keep your keystore and key.properties files safe!"
+    echo "2. For Play Store: flutter build appbundle --release --obfuscate --split-debug-info=build/symbols --target-platform android-arm,android-arm64,android-x64"
+    echo "3. Archive the build/symbols directory with the release artifacts"
+    echo "4. Keep your keystore and key.properties files safe!"
 else
     echo "❌ Release build failed. Check the error messages above."
     echo ""

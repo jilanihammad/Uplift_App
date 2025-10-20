@@ -214,11 +214,24 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   @override
   Widget build(BuildContext context) {
     AppLogger.v('ChatScreen: build called');
-    return BlocListener<VoiceSessionBloc, VoiceSessionState>(
-      listener: (context, state) {
-        // Wakelock management based on session status
-        _handleSessionStatusChange(state.status);
-      },
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<VoiceSessionBloc, VoiceSessionState>(
+          listenWhen: (previous, current) => previous.status != current.status,
+          listener: (context, state) {
+            // Wakelock management based on session status
+            _handleSessionStatusChange(state.status);
+          },
+        ),
+        BlocListener<VoiceSessionBloc, VoiceSessionState>(
+          listenWhen: (previous, current) =>
+              !previous.autoEndTriggered && current.autoEndTriggered,
+          listener: (context, state) {
+            // Session duration reached zero - run the confirmed end-session flow
+            unawaited(_endSession(autoTriggered: true));
+          },
+        ),
+      ],
       child: BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
         builder: (context, state) {
         // Handle initialization state
@@ -265,7 +278,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
           child: Scaffold(
             appBar: ChatAppBar(
               therapistStyle: _therapistStyle,
-              onEndSession: _endSession,
+              onEndSession: () => _endSession(),
             ),
             body: ChatInterfaceView(
               onSwitchMode: _toggleChatMode,
@@ -368,9 +381,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     final userPreferences = preferencesService.preferences;
 
     // Set therapist style
-    _therapistStyle = TherapistStyle.getById(
-      userPreferences?.therapistStyleId ?? 'humanistic',
-    );
+    _therapistStyle = TherapistStyle.getById('cbt');
 
     // Initialize therapy service if needed
     await _therapyService.init();
@@ -486,13 +497,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _messageController.clear();
   }
 
-
-  Future<void> _endSession() async {
+  Future<void> _endSession({bool autoTriggered = false}) async {
     final bloc = context.read<VoiceSessionBloc>();
     final state = bloc.state;
 
-    // Prevent multiple end session calls
-    if (state.isEndingSession) {
+    if (autoTriggered) {
+      bloc.add(const ClearAutoEndTrigger());
+    }
+
+    // Prevent duplicate manual requests
+    if (state.isEndingSession && !autoTriggered) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Session ending in progress...')),
       );
@@ -514,35 +528,36 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       return;
     }
 
-    // Show confirmation dialog FIRST - before any state changes
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('End Session'),
-        content: const Text('Are you sure you want to end this session?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('End Session'),
-          ),
-        ],
-      ),
-    );
+    if (!autoTriggered) {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('End Session'),
+          content: const Text('Are you sure you want to end this session?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('End Session'),
+            ),
+          ],
+        ),
+      );
 
-    // If user cancels, exit early with NO state changes
-    if (result != true || !mounted) return;
+      // If user cancels, exit early with NO state changes
+      if (result != true || !mounted) return;
+    } else if (!mounted) {
+      return;
+    }
 
-    // Only execute session ending logic AFTER user confirms
-    
-    // Phase 1A.4: Dispatch BLoC event for core business logic
-    bloc.add(const EndSessionRequested());
+    if (!state.isEndingSession) {
+      bloc.add(const EndSessionRequested());
+    }
 
-    // UI concerns remain in UI layer (as planned)
-    // Disable wakelock since session is ending (confirmed)
+    // Disable wakelock since session is ending (confirmed or auto-triggered)
     try {
       await NativeWakelockService.disable();
       debugPrint('[ChatScreen] Wakelock disabled successfully in _endSession');
@@ -550,7 +565,10 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       debugPrint('[ChatScreen] Failed to disable wakelock in _endSession: $e');
     }
 
-    // Start ending session
+    // Stop local session timer updates
+    _sessionTimer?.cancel();
+    _sessionTimer = null;
+
     bloc.add(SetEndingSession(true));
     bloc.add(SetProcessing(true));
 
@@ -596,14 +614,16 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       if (!mounted) return;
 
       // Use backend session ID for navigation if available
-      final sessionIdForNavigation = sessionData['id']?.toString() ?? _currentSessionId;
-      
+      final sessionIdForNavigation =
+          sessionData['id']?.toString() ?? _currentSessionId;
+
       context.pushReplacement(
         '/session_summary',
         extra: {
           'sessionId': sessionIdForNavigation,
           'summary': sessionData['summary'],
-          'actionItems': sessionData['action_items'] ?? sessionData['actionItems'],
+          'actionItems':
+              sessionData['action_items'] ?? sessionData['actionItems'],
           'insights': sessionData['insights'],
           'messages': state.messages,
           'initialMood': _initialMood,
@@ -722,18 +742,20 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         // Update current session ID to the backend ID
         _currentSessionId = sessionIdToUse;
       } else {
-        // Fallback: old flow for when backend doesn't return an ID
+        // Fallback: when backend doesn't return an ID we create the session ourselves
         final sessionTitle = 'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
-        
+
         try {
-          await sessionRepository.getSession(_currentSessionId);
-        } catch (e) {
           final createdSession = await sessionRepository.createSession(
             sessionTitle,
             id: _currentSessionId,
           );
           if (createdSession.id != _currentSessionId) {
             _currentSessionId = createdSession.id;
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('Failed to create backend session: $e');
           }
         }
 
@@ -742,7 +764,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
             sessionData['actionItems'] as List<dynamic>? ??
             [];
         final actionItems = actionItemsDynamic.map((item) => item.toString()).toList();
-        
+
         await sessionRepository.saveSession(
           sessionId: _currentSessionId,
           title: sessionTitle,

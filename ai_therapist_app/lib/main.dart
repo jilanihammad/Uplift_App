@@ -33,6 +33,7 @@ import 'package:ai_therapist_app/services/memory_manager.dart';
 import 'package:ai_therapist_app/services/message_processor.dart';
 import 'package:ai_therapist_app/services/audio_generator.dart';
 import 'package:ai_therapist_app/services/conversation_flow_manager.dart';
+import 'package:ai_therapist_app/services/remote_config_service.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'package:ai_therapist_app/firebase_options.dart';
@@ -144,8 +145,10 @@ Future<void> main() async {
   await PathManager.instance.init();
 
   AppLogger.i('App initialization starting...');
-  // Set zone error fatal to false to avoid Flutter zone binding errors
-  BindingBase.debugZoneErrorsAreFatal = false;
+  // Only relax zone fatal errors during development where extra diagnostics are helpful
+  if (kDebugMode) {
+    BindingBase.debugZoneErrorsAreFatal = false;
+  }
 
   logger.info('[Main] Starting app initialization.');
 
@@ -167,7 +170,12 @@ Future<void> main() async {
     AppConfig().logConfig();
     debugPrint('[main.dart] AppConfig initialized');
     logger.info('[Main] AppConfig initialized with environment variables.');
-    
+
+    // 1.55. Apply cached remote-config overrides (supports offline kill switch)
+    await RemoteConfigService().preloadCachedOverrides();
+    debugPrint('[main.dart] Remote config cached overrides applied');
+    logger.info('[Main] Applied cached remote-config overrides.');
+
     // 1.6. Initialize FeatureFlags early (before service locator)
     await FeatureFlags.init();
     FeatureFlags.debugPrintFlags();
@@ -182,6 +190,11 @@ Future<void> main() async {
           '[main.dart] Firebase initialized successfully via ensureFirebaseInitialized()');
       logger.info(
           '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
+
+      // Fetch remote config now that Firebase is available
+      await RemoteConfigService().initialize();
+      debugPrint('[main.dart] Remote config fetched and applied');
+      logger.info('[Main] Remote config fetched and applied.');
       // The debug print about App Check being disabled is already in ensureFirebaseInitialized()
     } else {
       debugPrint(
@@ -230,10 +243,12 @@ Future<void> main() async {
     logger.info('[Main] Setting up service locator...');
     final useNewVoicePipeline = FeatureFlags.useNewVoicePipeline;
     debugPrint('[main.dart] useRefactoredVoicePipeline = $useNewVoicePipeline');
-    logger.info('[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
-    
+    logger.info(
+        '[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
+
     try {
-      await setupServiceLocator(useRefactoredVoicePipeline: useNewVoicePipeline);
+      await setupServiceLocator(
+          useRefactoredVoicePipeline: useNewVoicePipeline);
       debugPrint('[main.dart] Service locator setup complete.');
       logger.info('[Main] Service locator setup complete.');
     } catch (e) {
@@ -306,7 +321,7 @@ void _initializeLogging() {
     // Set to true to enable more verbose logs in production for troubleshooting
     // Set to false by default to reduce logging overhead in production
     enableVerboseLogsInRelease: false,
-    
+
     // Set to true to enable verbose debugging with stack traces in debug builds
     // Set to false by default to reduce log noise during normal development
     enableVerboseDebug: false,
@@ -703,7 +718,8 @@ Future<void> _initializeConfigAndApi() async {
     // Initialize database operations manager first
     try {
       logger.debug('[Main] Getting DatabaseOperationManager...');
-      final dbOpManager = DependencyContainer().databaseOperationManagerConcrete;
+      final dbOpManager =
+          DependencyContainer().databaseOperationManagerConcrete;
       final appDatabase = DependencyContainer().appDatabaseConcrete;
 
       // Check and repair database health
@@ -724,7 +740,8 @@ Future<void> _initializeConfigAndApi() async {
     // 1. First initialize services that don't depend on the database
     try {
       logger.debug('[Main] Initializing VoiceService...');
-      final voiceService = serviceLocator<VoiceService>(); // Keep legacy VoiceService for initialization
+      final voiceService = serviceLocator<
+          VoiceService>(); // Keep legacy VoiceService for initialization
       await voiceService.initialize();
       logger.debug('[Main] VoiceService initialized ✓');
 
@@ -825,7 +842,8 @@ Future<void> initializeHeavyServices() async {
       final appDatabase = DependencyContainer().appDatabaseConcrete;
       if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
         logger.debug('[Main] Checking database health...');
-        final dbManager = DependencyContainer().databaseOperationManagerConcrete;
+        final dbManager =
+            DependencyContainer().databaseOperationManagerConcrete;
         final isHealthy =
             await dbManager.checkAndRepairDatabaseHealth(appDatabase);
         if (isHealthy) {
@@ -864,7 +882,8 @@ Future<void> initializeHeavyServices() async {
       // Schedule database optimization for later (after app is visible)
       if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
         Future.delayed(const Duration(seconds: 3), () {
-          final dbManager = DependencyContainer().databaseOperationManagerConcrete;
+          final dbManager =
+              DependencyContainer().databaseOperationManagerConcrete;
           dbManager.optimizeDatabase(appDatabase).then((_) {
             logger.debug('[Main] Database optimization completed');
           });

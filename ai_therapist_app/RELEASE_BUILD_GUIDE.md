@@ -61,7 +61,11 @@ flutter doctor --android-licenses
 ### 4. Build Release APK
 
 ```bash
-flutter build apk --release
+flutter build apk \
+  --release \
+  --obfuscate \
+  --split-debug-info=build/symbols \
+  --target-platform android-arm,android-arm64,android-x64
 ```
 
 **Expected output:**
@@ -69,11 +73,19 @@ flutter build apk --release
 ✓ Built build/app/outputs/flutter-apk/app-release.apk
 ```
 
+🧩 **Debug symbols** are emitted to `build/symbols`. Archive this directory alongside the APK and upload to Crashlytics/Sentry for de-obfuscating stack traces.
+
 ### 5. Build App Bundle (for Play Store)
 
 ```bash
-flutter build appbundle --release
+flutter build appbundle \
+  --release \
+  --obfuscate \
+  --split-debug-info=build/symbols \
+  --target-platform android-arm,android-arm64,android-x64
 ```
+
+> Reuse the same `build/symbols` directory—do not delete it between APK and AAB builds.
 
 ## Security Notes
 

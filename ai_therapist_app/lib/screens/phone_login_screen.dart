@@ -77,7 +77,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Uplift',
+                  'Maya',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,

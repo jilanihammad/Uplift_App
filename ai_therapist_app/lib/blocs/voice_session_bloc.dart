@@ -168,6 +168,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<SetInitializing>(_onSetInitializing);
     on<SetEndingSession>(_onSetEndingSession);
     on<UpdateSessionTimer>(_onUpdateSessionTimer);
+    on<AutoEndTriggered>(_onAutoEndTriggered);
+    on<ClearAutoEndTrigger>(_onClearAutoEndTrigger);
     // Two-step session start flow to prevent premature audio activation
     on<StartSessionRequested>(_onStartSessionRequested);
     on<InitialMoodSelected>(_onInitialMoodSelected);
@@ -1493,6 +1495,26 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         .toList();
   }
 
+  void _onAutoEndTriggered(
+      AutoEndTriggered event, Emitter<VoiceSessionState> emit) {
+    if (state.autoEndTriggered) {
+      return; // Already flagged, avoid redundant emissions
+    }
+    final newState = state.copyWith(autoEndTriggered: true);
+    _sessionManager.updateState(newState);
+    emit(newState);
+  }
+
+  void _onClearAutoEndTrigger(
+      ClearAutoEndTrigger event, Emitter<VoiceSessionState> emit) {
+    if (!state.autoEndTriggered) {
+      return; // Nothing to clear
+    }
+    final newState = state.copyWith(autoEndTriggered: false);
+    _sessionManager.updateState(newState);
+    emit(newState);
+  }
+
   // Phase 1.1.4: Timer callback methods for coordination
   void _onTimerUpdate(int elapsedSeconds, int remainingSeconds) {
     // Timer updates can trigger state updates for UI refresh
@@ -1505,6 +1527,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     if (kDebugMode) {
       debugPrint('[VoiceSessionBloc] Session time expired - requesting session end');
     }
+    add(const AutoEndTriggered());
     add(const EndSessionRequested());
   }
 

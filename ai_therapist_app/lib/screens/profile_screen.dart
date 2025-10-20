@@ -12,7 +12,7 @@ import 'package:go_router/go_router.dart';
 class ProfileScreen extends StatefulWidget {
   final IUserProfileService? userProfileService;
   final IThemeService? themeService;
-  
+
   const ProfileScreen({
     super.key,
     this.userProfileService,
@@ -25,7 +25,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
   bool _isLoading = true;
@@ -38,7 +37,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _userProfileService = widget.userProfileService ?? DependencyContainer().userProfile;
+    _userProfileService =
+        widget.userProfileService ?? DependencyContainer().userProfile;
     _themeService = widget.themeService ?? DependencyContainer().theme;
     _loadUserProfile();
     _darkModeEnabled = _themeService.isDarkMode;
@@ -54,7 +54,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (_userProfile != null) {
       _nameController.text = _userProfile!.name;
-      _emailController.text = _userProfile!.email ?? '';
     }
 
     if (mounted) {
@@ -67,7 +66,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     super.dispose();
   }
 
@@ -81,7 +79,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await _userProfileService.updateProfile(
         name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
       );
 
       if (mounted) {
@@ -125,8 +122,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         appBar: AppBar(
           title: const Text('Your Profile'),
           actions: [
-            IconButton(
-              icon: Icon(_isEditing ? Icons.save : Icons.edit),
+            TextButton(
               onPressed: () {
                 if (_isEditing) {
                   _saveProfile();
@@ -136,6 +132,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   });
                 }
               },
+              child: Text(
+                _isEditing ? 'Save' : 'Edit',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
@@ -172,22 +175,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
-                  ),
-                  enabled: _isEditing,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your email';
-                    }
-                    return null;
-                  },
-                ),
                 if (_userProfile != null) ...[
                   const SizedBox(height: 32),
                   const Divider(),
@@ -213,24 +200,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
                 const SizedBox(height: 32),
                 const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.notifications_outlined),
-                  title: const Text('Notification Preferences'),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () {
-                    // Navigate to notification settings
-                  },
-                ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.favorite),
-                  title: const Text('Therapist Style'),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () {
-                    context.push('/settings/therapist_style');
-                  },
-                ),
-                const Divider(),
                 SwitchListTile(
                   secondary: Icon(
                     _darkModeEnabled ? Icons.dark_mode : Icons.light_mode,
@@ -244,15 +213,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     });
                     _themeService
                         .setTheme(value ? ThemeMode.dark : ThemeMode.light);
-                  },
-                ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.help_outline),
-                  title: const Text('Help & Support'),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () {
-                    // Navigate to help/support
                   },
                 ),
                 const Divider(),
