@@ -158,6 +158,8 @@ Supporting utilities:
 - Personalization API exposed at `/api/v1/profile`, `/api/v1/anchors`, `/api/v1/session_summaries`; all require Firebase JWT and support idempotent updates.
 - Desktop/mobile builds currently gate personalization sync behind `memory_persistence_enabled`; client-side sync implementation is next.
 - Home screen UI refreshed: greeting card uses a FilledButton with theme colors, “Talk Now” uses an OutlinedButton wrapped in a surfaceVariant container for lighter look in light theme.
+- MemoryService now syncs profile basics and anchors with the backend when `memory_persistence_enabled` is enabled; ChatScreen pushes session summaries via `/session_summaries:upsert` after local save.
+- MemoryService queues profile/anchor updates locally (SharedPreferences) and flushes them once network sync succeeds, improving offline resilience of personalization.
 
 ---
 

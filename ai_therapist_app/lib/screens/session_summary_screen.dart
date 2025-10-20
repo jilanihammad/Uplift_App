@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../models/therapy_message.dart';
 import '../widgets/mood_selector.dart';
 import '../services/tasks_service.dart';
+import '../services/memory_service.dart';
+import '../models/conversation_memory.dart';
+import '../utils/feature_flags.dart';
 import '../di/dependency_container.dart';
 import 'widgets/session_summary_card.dart';
 import 'widgets/action_items_card.dart';
@@ -32,6 +35,7 @@ class SessionSummaryScreen extends StatefulWidget {
 
 class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
   late TasksService _tasksService;
+  List<UserAnchor> _savedAnchors = const [];
   
   @override
   void initState() {
@@ -41,6 +45,10 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
     
     // Sync session data when summary screen is shown
     _syncProgressData();
+
+    if (FeatureFlags.isMemoryPersistenceEnabled) {
+      _loadSavedAnchors();
+    }
   }
   
   Future<void> _syncProgressData() async {
@@ -107,6 +115,20 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _loadSavedAnchors() async {
+    try {
+      final memoryService = DependencyContainer().get<MemoryService>();
+      await memoryService.initializeIfNeeded();
+      final anchors = memoryService.getAnchors();
+      if (!mounted) return;
+      setState(() {
+        _savedAnchors = anchors;
+      });
+    } catch (e) {
+      debugPrint('Failed to load saved anchors: $e');
     }
   }
 
@@ -194,6 +216,20 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
             ),
 
             const SizedBox(height: 40),
+
+            if (FeatureFlags.isMemoryPersistenceEnabled && _savedAnchors.isNotEmpty)
+              _buildSavedDetailsCard(context),
+
+            if (FeatureFlags.isMemoryPersistenceEnabled && _savedAnchors.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 24.0),
+                child: Text(
+                  'We’ll start remembering important details you share during future sessions.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.65),
+                  ),
+                ),
+              ),
 
             // Action buttons
             Column(
@@ -444,6 +480,61 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildSavedDetailsCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceVariant.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.bookmark_added_outlined,
+                  color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Saved Details',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ..._savedAnchors.map((anchor) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(width: 4),
+                  Icon(Icons.star_rounded,
+                      size: 16, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      anchor.anchorText,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

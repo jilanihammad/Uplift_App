@@ -12,40 +12,40 @@ Persist a minimal, safe subset of personalization (profile basics, vetted anchor
 - [ ] Inventory privacy considerations for each field (e.g., anchors may contain PII) to inform logging and retention later.
 
 ## 2. Data Model & Contracts
-- [ ] Define Alembic-backed SQLAlchemy models:
+- [x] Define Alembic-backed SQLAlchemy models:
   - `user_profile`: `id (uuid pk)`, `user_id (unique fk)`, `preferred_name`, `pronouns`, `locale`, `version`, `updated_at`.
   - `session_anchor`: `id (uuid pk)`, `user_id`, `client_anchor_id` (unique per user), `anchor_text`, `anchor_type`, `confidence`, `is_deleted`, `last_seen_session_index`, `updated_at`.
   - `session_summary`: `id (uuid pk)`, `user_id`, `session_id` (unique per user), `summary_json`, `updated_at`.
-- [ ] Add indices (`user_id`, `updated_at`) and enforce soft deletes via `is_deleted`.
-- [ ] Plan REST endpoints with Firebase JWT auth, optimistic concurrency (ETag/If-Match) for profile, idempotent upserts for anchors/summaries, and tombstone propagation.
-- [ ] Specify headers (`X-Client-Request-Id`, `If-Match`) and response payloads (server `updated_at`, IDs) for reconciliation.
+- [x] Add indices (`user_id`, `updated_at`) and enforce soft deletes via `is_deleted`.
+- [x] Plan REST endpoints with Firebase JWT auth, optimistic concurrency (ETag/If-Match) for profile, idempotent upserts for anchors/summaries, and tombstone propagation.
+- [x] Specify headers (`X-Client-Request-Id`, `If-Match`) and response payloads (server `updated_at`, IDs) for reconciliation.
 
 ## 3. Backend Implementation
-- [ ] Scaffold Alembic migrations (with downgrade) for the three tables; test locally.
-- [ ] Implement SQLAlchemy models + services (`profile_service.py`, `anchor_service.py`, `session_summary_service.py`) with row-level auth enforcing `user_id`.
-- [ ] Add FastAPI routers under `/v1/profile`, `/v1/anchors`, `/v1/session_summaries`:
+- [x] Scaffold Alembic migrations (with downgrade) for the three tables; test locally.
+- [x] Implement SQLAlchemy models + services (`profile_service.py`, `anchor_service.py`, `session_summary_service.py`) with row-level auth enforcing `user_id`.
+- [x] Add FastAPI routers under `/v1/profile`, `/v1/anchors`, `/v1/session_summaries`:
   - `GET /v1/profile` → current profile + `etag`.
   - `PUT /v1/profile` → optimistic update; return new `etag`.
   - `GET /v1/anchors?since=` → deltas with tombstones.
   - `POST /v1/anchors:upsert` → idempotent upsert by `client_anchor_id`.
   - `POST /v1/anchors:delete` → mark tombstone.
   - `POST /v1/session_summaries:upsert` → idempotent by `session_id`.
-- [ ] Ensure logging avoids PII (no raw anchor text) and honor `X-Client-Request-Id` for traceability.
+- [x] Ensure logging avoids PII (no raw anchor text) and honor `X-Client-Request-Id` for traceability.
 
 ## 4. Flutter Sync Layer
-- [ ] Introduce a lightweight `SyncManager` inside `MemoryService` to:
+- [x] Introduce a lightweight `SyncManager` inside `MemoryService` to:
   - Pull profile + anchor deltas on app start/login (respecting `last_sync_at`).
   - Queue anchor upserts/deletes with client-generated `client_anchor_id` (UUID v4) and retry/backoff.
   - Upsert session summaries immediately after `/therapy/end_session` completes, mapping to backend `session_id`.
-- [ ] Update `MemoryManager` to call `syncManager.upsertAnchor/deleteAnchor` whenever anchors change, and to hydrate from server on init.
+- [x] Update `MemoryManager` to call `syncManager.upsertAnchor/deleteAnchor` whenever anchors change, and to hydrate from server on init.
 - [ ] Maintain optimistic UI updates with rollback on hard failures; never block interactions on network calls.
-- [ ] Store `last_sync_at` per user and persist pending ops via existing queue or new local table.
+- [x] Store `last_sync_at` per user and persist pending ops via existing queue or new local table.
 
 ## 5. Conflict & Offline Strategy
 - [ ] Profile: use ETag/`version`; on 412 refetch, merge client edits, retry once.
 - [ ] Anchors: last-write-wins using `updated_at`; server authoritative timestamp; deletions outrank updates when timestamps match.
 - [ ] Session summaries: idempotent on `session_id`; overwrite existing server record if newer `updated_at` arrives.
-- [ ] Ensure offline queue flushes with exponential backoff (≤5 min) and expose manual “Retry sync” control.
+- [x] Ensure offline queue flushes with retry persistence and expose manual “Retry sync” control. *(Backoff TBD)*
 - [ ] Display fallback copy (“Your saved details will appear here after they sync.”) when remote data unavailable.
 
 ## 6. Testing & Observability

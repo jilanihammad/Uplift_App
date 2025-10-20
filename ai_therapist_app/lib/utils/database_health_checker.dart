@@ -100,7 +100,7 @@ class DatabaseHealthChecker {
       CREATE TABLE IF NOT EXISTS user_anchors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         anchor_text TEXT NOT NULL,
-        normalized_text TEXT NOT NULL UNIQUE,
+        normalized_text TEXT NOT NULL,
         anchor_type TEXT,
         confidence REAL DEFAULT 0.0,
         mention_count INTEGER NOT NULL DEFAULT 1,
@@ -108,7 +108,13 @@ class DatabaseHealthChecker {
         last_seen_at TEXT NOT NULL,
         first_session_index INTEGER NOT NULL DEFAULT 0,
         last_session_index INTEGER NOT NULL DEFAULT 0,
-        last_prompted_session INTEGER NOT NULL DEFAULT -1
+        last_prompted_session INTEGER NOT NULL DEFAULT -1,
+        server_id TEXT,
+        client_anchor_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(normalized_text),
+        UNIQUE(client_anchor_id)
       )
     ''',
   };
