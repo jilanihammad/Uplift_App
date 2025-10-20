@@ -74,6 +74,7 @@ echo "Created temporary deployment directory."
 echo "Copying files to deployment directory..."
 cp -r "ai_therapist_backend/app" "$TEMP_DIR/"
 cp -r "ai_therapist_backend/alembic" "$TEMP_DIR/"
+cp -r "ai_therapist_backend/scripts" "$TEMP_DIR/"
 cp "ai_therapist_backend/alembic.ini" "$TEMP_DIR/"
 cp "ai_therapist_backend/main.py" "$TEMP_DIR/"
 cp "ai_therapist_backend/requirements.txt" "$TEMP_DIR/"
@@ -148,16 +149,15 @@ RUN echo "Audio error" > /app/static/audio/error.mp3
 RUN echo "Audio error" > /tmp/static/audio/error.mp3
 RUN chmod 777 /app/static/audio/error.mp3 /tmp/static/audio/error.mp3
 
-# Create SQLite database directory with proper permissions
-RUN mkdir -p /app/data
-RUN touch /app/data/app.db
-RUN chmod 777 /app/data/app.db
+# Copy and configure entrypoint script for migrations
+COPY scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Environment variables
 ENV PORT=8080
 ENV ENVIRONMENT=production
 ENV GOOGLE_CLOUD=1
-ENV DATABASE_URL=sqlite:///./data/app.db
+# DATABASE_URL will be set by Cloud Run environment variables
 ENV OPENAI_API_KEY=$openai_api_key
 ENV GOOGLE_API_KEY=$google_api_key
 ENV GROQ_API_KEY=$groq_api_key
@@ -168,8 +168,8 @@ ENV OPENAI_TRANSCRIPTION_MODEL=whisper-1
 ENV PYTHONUNBUFFERED=1
 ENV USE_GROQ=0
 
-# Force the application to run on port 8080 for Cloud Run
-CMD uvicorn app.main:app --host 0.0.0.0 --port 8080
+# Run migrations and start application via entrypoint
+CMD ["/app/entrypoint.sh"]
 EOF
 
 # Display the deployment directory contents for verification
@@ -186,8 +186,8 @@ if ! gcloud builds submit "$TEMP_DIR" --tag="gcr.io/$PROJECT_ID/$BUILD_TAG"; the
     exit 1
 fi
 
-# Deploy the built image
-echo "Deploying to Cloud Run..."
+# Deploy the built image with Cloud SQL connection
+echo "Deploying to Cloud Run with Cloud SQL..."
 if ! gcloud run deploy "$SERVICE_NAME" \
     --image="gcr.io/$PROJECT_ID/$BUILD_TAG" \
     --platform=managed \
@@ -199,6 +199,8 @@ if ! gcloud run deploy "$SERVICE_NAME" \
     --cpu-throttling \
     --timeout="$TIMEOUT" \
     --concurrency=80 \
+    --add-cloudsql-instances="upliftapp-cd86e:us-central1:jilaniuplift" \
+    --set-env-vars="DATABASE_URL=postgresql://postgres:7860@/ai_therapist?host=/cloudsql/upliftapp-cd86e:us-central1:jilaniuplift" \
     --allow-unauthenticated; then
     echo "Error: Deployment to Cloud Run failed."
     exit 1

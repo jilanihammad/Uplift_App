@@ -20,11 +20,10 @@ config = context.config
 
 # Set sqlalchemy.url from settings
 from app.core.config import settings
-#config.set_main_option("sqlalchemy.url", str(settings.SQLALCHEMY_DATABASE_URI))
 
-config.set_main_option("sqlalchemy.url", 
-    f"postgresql://postgres:{urllib.parse.quote('7860')}@localhost/ai_therapist_new")
-# config.set_main_option("sqlalchemy.url", "postgresql://postgres:7860@localhost/ai_therapist")
+# Use DATABASE_URL from environment if available, otherwise use settings
+database_url = os.getenv("DATABASE_URL") or str(settings.SQLALCHEMY_DATABASE_URI)
+config.set_main_option("sqlalchemy.url", database_url)
 
 print(f"Postgres Server: {settings.POSTGRES_SERVER}")
 print(f"Postgres User: {settings.POSTGRES_USER}")

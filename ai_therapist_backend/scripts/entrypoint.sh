@@ -1,23 +1,22 @@
 #!/bin/bash
 set -e
 
-# Wait for PostgreSQL to be ready
-echo "Waiting for PostgreSQL..."
-while ! pg_isready -h ${POSTGRES_SERVER} -p 5432 -U ${POSTGRES_USER}; do
-  sleep 1
-done
-echo "PostgreSQL is ready!"
+echo "Starting entrypoint script..."
 
 # Run migrations
-echo "Running migrations..."
-alembic upgrade head
+echo "Running Alembic migrations..."
+alembic upgrade head || {
+    echo "ERROR: Alembic migration failed!"
+    exit 1
+}
+echo "Migrations completed successfully"
 
-# Seed initial data
-echo "Seeding initial data..."
-python -m scripts.seed_db
+# Seed initial data (if needed)
+if [ -f "scripts/seed_db.py" ]; then
+    echo "Seeding initial data..."
+    python -m scripts.seed_db || echo "Warning: Seeding failed, continuing..."
+fi
 
 # Start the application
-echo "Starting application..."
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-exec "$@"
+echo "Starting application on port ${PORT:-8080}..."
+exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --timeout-keep-alive 300

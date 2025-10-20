@@ -23,5 +23,9 @@ EXPOSE 8080
 # Increase keepalive timeout
 ENV UVICORN_TIMEOUT=300
 
-# Start the application with a longer timeout
-CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 300 
+# Copy entrypoint script
+COPY scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Start the application with migrations via entrypoint script
+CMD ["/app/entrypoint.sh"] 
