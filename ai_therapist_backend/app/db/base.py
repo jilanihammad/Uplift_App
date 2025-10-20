@@ -10,3 +10,6 @@ from app.models.note import Note  # noqa
 from app.models.reminder import Reminder  # noqa
 from app.models.subscription import Subscription, SubscriptionPlan  # noqa
 from app.models.user_identity import UserIdentity  # noqa
+from app.models.user_profile import UserProfile  # noqa
+from app.models.session_anchor import SessionAnchor  # noqa
+from app.models.session_summary import SessionSummary  # noqa
