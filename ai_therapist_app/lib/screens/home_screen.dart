@@ -102,6 +102,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isLightTheme = theme.brightness == Brightness.light;
+
     return WillPopScope(
       onWillPop: () async {
         // If already on home, show exit confirmation
@@ -205,15 +209,43 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => context.go('/chat'),
-          icon: const Icon(Icons.favorite),
-          label: const Text('Talk Now'),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
+        floatingActionButton: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceVariant,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: isLightTheme
+                  ? [
+                      BoxShadow(
+                        color: colorScheme.primary.withOpacity(0.08),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      ),
+                    ]
+                  : [],
+            ),
+            child: OutlinedButton.icon(
+              onPressed: () => context.go('/chat'),
+              icon: Icon(Icons.favorite, color: colorScheme.primary),
+              label: Text(
+                'Talk Now',
+                style: TextStyle(color: colorScheme.primary),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                side: BorderSide(color: colorScheme.primary.withOpacity(0.5)),
+                foregroundColor: colorScheme.primary,
+              ),
+            ),
           ),
-          elevation: 4,
         ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       ),
     );
   }
@@ -224,6 +256,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Get display name using consistent logic
     String userName = _userProfileService.profile?.displayName ?? "there";
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isLightTheme = theme.brightness == Brightness.light;
 
     if (hour < 12) {
       greeting = 'Good Morning';
@@ -274,17 +310,37 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.favorite),
-              label: const Text('Start Session'),
-              style: ElevatedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: isLightTheme
+                    ? [
+                        BoxShadow(
+                          color: colorScheme.primary.withOpacity(0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ]
+                    : [],
               ),
-              onPressed: () => context.go('/chat'),
+              padding: const EdgeInsets.all(4),
+              child: FilledButton.icon(
+                icon: const Icon(Icons.favorite),
+                label: const Text('Start Session'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  minimumSize: const Size.fromHeight(0),
+                ),
+                onPressed: () => context.go('/chat'),
+              ),
             ),
           ],
         ),

@@ -21,6 +21,8 @@ Comprehensive reference for engineers, product managers, and stakeholders workin
    - Unified LLM manager with provider switching (OpenAI, Groq, Anthropic, Google, Azure, DeepSeek).
    - Real-time voice pipeline via WebSocket streaming and rate-limited REST endpoints.
    - PostgreSQL + SQLAlchemy for persistence.
+   - Cloud Run entrypoint runs `alembic upgrade head` on container start; manual migrations are only for troubleshooting. Make sure `DATABASE_URL` targets Cloud SQL (not localhost) before any manual run.
+   - Personalization persistence (profile basics, anchors, session summaries) exposed via `/api/v1/profile`, `/api/v1/anchors`, `/api/v1/session_summaries` with Firebase-auth guards and idempotent semantics.
 3. **Shared Contracts**
    - REST endpoints (`/api/v1/...`) and WebSocket channels for TTS/audio events.
    - Auth via Firebase JWT → backend validation.
@@ -146,6 +148,16 @@ Supporting utilities:
 - **Data Safety**: Ensure declarations cover audio capture, transcript storage, and analytics usage. Provide privacy policy links inside the app (Settings/About).
 - **Build Artifacts**: Prefer `flutter build appbundle` for release; backend deployed via Cloud Run (continuous or manual using `deploy_to_cloud.sh`).
 - **Observability Post-Launch**: Monitor error logs (App Logger, backend structured logs), TTS latency metrics, and rate limit dashboards.
+- **Personalization Sync Rollout**: New backend endpoints are protected by the `memory_persistence_enabled` flag on the client. Keep it disabled until staging validates end-to-end profile/anchor/session summary sync.
+
+---
+
+## Recently Logged Updates
+- Backend now connects to Cloud SQL (instance `jilaniuplift` in `us-central1`) and runs migrations automatically via `scripts/entrypoint.sh` on Cloud Run startup.
+- New Alembic revision adds `user_profiles`, `session_anchors`, and `session_summaries` with UUID primary keys and soft-delete semantics; migration stamped head and tested against Cloud SQL.
+- Personalization API exposed at `/api/v1/profile`, `/api/v1/anchors`, `/api/v1/session_summaries`; all require Firebase JWT and support idempotent updates.
+- Desktop/mobile builds currently gate personalization sync behind `memory_persistence_enabled`; client-side sync implementation is next.
+- Home screen UI refreshed: greeting card uses a FilledButton with theme colors, “Talk Now” uses an OutlinedButton wrapped in a surfaceVariant container for lighter look in light theme.
 
 ---
 
