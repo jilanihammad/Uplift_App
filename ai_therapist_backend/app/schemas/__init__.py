@@ -12,6 +12,12 @@ from .session_summary import (
     SessionSummaryMutationResponse,
     SessionSummaryUpsertRequest,
 )
+from .mood_entry import (
+    MoodEntriesResponse,
+    MoodEntryBatchUpsertRequest,
+    MoodEntryBatchUpsertResponse,
+    MoodEntryOut,
+)
 
 __all__ = [
     "ProfileResponse",
@@ -23,4 +29,8 @@ __all__ = [
     "AnchorMutationResponse",
     "SessionSummaryUpsertRequest",
     "SessionSummaryMutationResponse",
+    "MoodEntryBatchUpsertRequest",
+    "MoodEntryBatchUpsertResponse",
+    "MoodEntriesResponse",
+    "MoodEntryOut",
 ]
