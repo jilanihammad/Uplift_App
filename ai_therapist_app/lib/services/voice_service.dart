@@ -114,14 +114,14 @@ class VoiceService {
   static VoiceService? _instance;
 
   // WebSocket functionality removed - now handled by WebSocketAudioManager
-  
+
   // Mutex to prevent concurrent TTS operations
   final Mutex _ttsLock = Mutex();
-  
+
   // NEW: Debounce mechanism to prevent duplicate playback calls
   String? _lastPlayedFile;
   Timer? _playbackDebounceTimer;
-  
+
   // Stream controllers for voice recording states - REMOVED
   // StreamController<RecordingState>? _recordingStateController;
   // Stream<RecordingState>? _recordingStateStream;
@@ -156,7 +156,7 @@ class VoiceService {
 
   // API client for making requests to backend
   final ApiClient _apiClient;
-  
+
   // Audio settings for global mute functionality
   final IAudioSettings? _audioSettings;
 
@@ -252,7 +252,7 @@ class VoiceService {
 
     // Create new instance if first time
     _instance = VoiceService._internal(
-      apiClient: apiClient, 
+      apiClient: apiClient,
       audioSettings: audioSettings,
     );
     return _instance!;
@@ -262,13 +262,15 @@ class VoiceService {
   VoiceService._internal({
     required ApiClient apiClient,
     IAudioSettings? audioSettings,
-  }) : _apiClient = apiClient,
+  })  : _apiClient = apiClient,
         _audioSettings = audioSettings {
     // _audioRecorder = AudioRecorder(); // REMOVED
     // _ensureStreamControllerIsActive(); // REMOVED, no local controller
     _audioPlayerManager = AudioPlayerManager(audioSettings: audioSettings);
     _recordingManager = RecordingManager(); // Already initialized here
-    _audioRecordingService = AudioRecordingService(recordingManager: _recordingManager); // Phase 2.1.1: Inject shared RecordingManager
+    _audioRecordingService = AudioRecordingService(
+        recordingManager:
+            _recordingManager); // Phase 2.1.1: Inject shared RecordingManager
     _vadManager = VADManager();
     _autoListeningCoordinator = AutoListeningCoordinator(
       audioPlayerManager: _audioPlayerManager,
@@ -277,7 +279,8 @@ class VoiceService {
     );
     if (kDebugMode) {
       print('VoiceService initialized with constructor injection');
-      print('[VoiceService] AudioRecordingService added with shared RecordingManager - Phase 2.1.1 Hotfix');
+      print(
+          '[VoiceService] AudioRecordingService added with shared RecordingManager - Phase 2.1.1 Hotfix');
       print(
           '[VoiceService] AutoListeningCoordinator initialized. Forcing auto mode enabled.');
     }
@@ -451,11 +454,13 @@ class VoiceService {
   /// Returns null if already stopped or not recording
   Future<String?> tryStopRecording() async {
     if (kDebugMode) {
-      print('⏹️ VOICE DEBUG: VoiceService.tryStopRecording called - delegating to AudioRecordingService');
+      print(
+          '⏹️ VOICE DEBUG: VoiceService.tryStopRecording called - delegating to AudioRecordingService');
     }
 
     String? recordedFilePath;
-    if (_audioRecordingService.isRecording || _autoListeningCoordinator.isRecording) {
+    if (_audioRecordingService.isRecording ||
+        _autoListeningCoordinator.isRecording) {
       // Phase 2.1.1: Delegate to AudioRecordingService (idempotent version)
       recordedFilePath = await _audioRecordingService.tryStopRecording();
       _recordingPath = recordedFilePath;
@@ -520,7 +525,7 @@ class VoiceService {
         }
         // RACE CONDITION FIX: Mark transcription complete before file cleanup
         _recordingManager.markTranscriptionComplete(recordedFilePath);
-        
+
         // Successfully transcribed, now delete the file
         await FileCleanupManager.safeDelete(recordedFilePath);
         return transcription.isNotEmpty ? transcription : "";
@@ -558,36 +563,40 @@ class VoiceService {
   // Note: File deletion is now handled by FileCleanupManager.safeDelete
 
   /// Custom transcription method with extended timeout for large audio files
-  Future<dynamic> _transcribeWithCustomTimeout(Map<String, dynamic> body) async {
+  Future<dynamic> _transcribeWithCustomTimeout(
+      Map<String, dynamic> body) async {
     try {
       // Use a longer timeout for transcription (45 seconds instead of 15)
       const transcriptionTimeout = Duration(seconds: 45);
-      
+
       if (kDebugMode) {
         print('⏹️ VOICE DEBUG: Using extended timeout (45s) for transcription');
       }
-      
+
       // Get auth token
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('auth_token');
-      
+
       // Build headers
       final headers = {
         'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
       };
-      
+
       // Make direct HTTP call with extended timeout
-      final response = await http.post(
-        Uri.parse('$_backendUrl/voice/transcribe'),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(transcriptionTimeout);
-      
+      final response = await http
+          .post(
+            Uri.parse('$_backendUrl/voice/transcribe'),
+            headers: headers,
+            body: jsonEncode(body),
+          )
+          .timeout(transcriptionTimeout);
+
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
-        throw Exception('Transcription API returned ${response.statusCode}: ${response.body}');
+        throw Exception(
+            'Transcription API returned ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -939,7 +948,7 @@ class VoiceService {
     _disposed = true;
 
     // WebSocket cleanup removed - handled by TTSService
-    
+
     // Clean up debounce timer
     _playbackDebounceTimer?.cancel();
 
@@ -963,7 +972,7 @@ class VoiceService {
     // }
 
     _recordingManager.dispose();
-    
+
     // Phase 2.1.1: Dispose AudioRecordingService
     _audioRecordingService.dispose();
 
@@ -1010,21 +1019,22 @@ class VoiceService {
     // DEBOUNCE: Prevent duplicate calls for the same file within 100ms
     if (_lastPlayedFile == filePath) {
       if (kDebugMode) {
-        print('[VoiceService] playAudioWithCallbacks: DEBOUNCED duplicate call for $filePath');
+        print(
+            '[VoiceService] playAudioWithCallbacks: DEBOUNCED duplicate call for $filePath');
       }
       // Still trigger callbacks since caller expects them
       onDone?.call();
       return;
     }
-    
+
     // Cancel any pending debounce timer
     _playbackDebounceTimer?.cancel();
-    
+
     _lastPlayedFile = filePath;
     _setAiSpeaking(true);
     if (kDebugMode)
       print('[VoiceService] playAudioWithCallbacks: Playing $filePath');
-    
+
     try {
       // Ensure the AudioPlayerManager's playAudio method is awaited
       // and it signals completion appropriately for onDone/onError.
@@ -1035,7 +1045,7 @@ class VoiceService {
       onError?.call('Error playing audio: ${e.toString()}');
     } finally {
       _setAiSpeaking(false);
-      
+
       // Clear the debounce after a short delay
       _playbackDebounceTimer = Timer(const Duration(milliseconds: 100), () {
         _lastPlayedFile = null;
@@ -1046,20 +1056,22 @@ class VoiceService {
   void _setAiSpeaking(bool speaking) {
     isAiSpeaking = speaking;
     _ttsSpeakingStateController.add(speaking);
-    
+
     // SIMPLIFIED: Only update TTS state - AutoListeningCoordinator handles VAD coordination
     // The single TTS "done" signal approach eliminates competing VAD restart triggers
     if (kDebugMode) {
-      print('[VoiceService] _setAiSpeaking: TTS state set to $speaking (VAD coordination handled by AutoListeningCoordinator)');
+      print(
+          '[VoiceService] _setAiSpeaking: TTS state set to $speaking (VAD coordination handled by AutoListeningCoordinator)');
     }
   }
 
   /// Centralized callback for when TTS playback is done successfully
   void _onPlaybackDone() {
-    isAiSpeaking = false;      // single source of truth
+    isAiSpeaking = false; // single source of truth
     _ttsSpeakingStateController.add(false);
     if (kDebugMode) {
-      print('[VoiceService] _onPlaybackDone: TTS state cleared (AutoListeningCoordinator handles VAD restart)');
+      print(
+          '[VoiceService] _onPlaybackDone: TTS state cleared (AutoListeningCoordinator handles VAD restart)');
     }
   }
 
@@ -1069,14 +1081,15 @@ class VoiceService {
     // RACE CONDITION FIX: Prevent duplicate calls with same state
     if (_currentTtsState == isSpeaking) {
       if (kDebugMode) {
-        print('[VoiceService] updateTTSSpeakingState: State already $_currentTtsState, ignoring duplicate call');
+        print(
+            '[VoiceService] updateTTSSpeakingState: State already $_currentTtsState, ignoring duplicate call');
       }
       return;
     }
-    
+
     _currentTtsState = isSpeaking; // Update tracked state
     _setAiSpeaking(isSpeaking);
-    
+
     // NEW: only toggle listening, never touch autoModeEnabled
     if (!isSpeaking) {
       // BYPASS FIX: Check voice mode before re-arming VAD
@@ -1086,14 +1099,16 @@ class VoiceService {
         }
         return;
       }
-      autoListeningCoordinator.startListening();   // guarantees VAD on
+      autoListeningCoordinator.startListening(); // guarantees VAD on
       if (kDebugMode) {
-        print('[VoiceService] updateTTSSpeakingState: TTS done, starting listening');
+        print(
+            '[VoiceService] updateTTSSpeakingState: TTS done, starting listening');
       }
     } else {
-      autoListeningCoordinator.stopListening();    // guarantees VAD off
+      autoListeningCoordinator.stopListening(); // guarantees VAD off
       if (kDebugMode) {
-        print('[VoiceService] updateTTSSpeakingState: TTS started, stopping listening');
+        print(
+            '[VoiceService] updateTTSSpeakingState: TTS started, stopping listening');
       }
     }
   }
@@ -1101,21 +1116,24 @@ class VoiceService {
   /// Legacy VAD pause method - now no-op as echo-loop prevention removed
   Future<void> pauseVAD() async {
     if (kDebugMode) {
-      print('[VoiceService] pauseVAD: Legacy method - no action needed with new TTS architecture');
+      print(
+          '[VoiceService] pauseVAD: Legacy method - no action needed with new TTS architecture');
     }
   }
 
   /// Legacy VAD resume method - now no-op as echo-loop prevention removed
   Future<void> resumeVAD() async {
     if (kDebugMode) {
-      print('[VoiceService] resumeVAD: Legacy method - no action needed with new TTS architecture');
+      print(
+          '[VoiceService] resumeVAD: Legacy method - no action needed with new TTS architecture');
     }
   }
 
   // Public method to reset TTS state
   void resetTTSState() {
     if (kDebugMode) {
-      print('[VoiceService] resetTTSState: Resetting TTS state to false (VAD coordination handled by AutoListeningCoordinator)');
+      print(
+          '[VoiceService] resetTTSState: Resetting TTS state to false (VAD coordination handled by AutoListeningCoordinator)');
     }
     _setAiSpeaking(false);
   }
@@ -1133,7 +1151,8 @@ class VoiceService {
       final volume = muted ? 0.0 : 1.0;
       await _audioPlayerManager.setVolume(volume);
       if (kDebugMode) {
-        print('[VoiceService] setSpeakerMuted: muted=$muted (volume=$volume) - legacy mode');
+        print(
+            '[VoiceService] setSpeakerMuted: muted=$muted (volume=$volume) - legacy mode');
       }
     }
   }

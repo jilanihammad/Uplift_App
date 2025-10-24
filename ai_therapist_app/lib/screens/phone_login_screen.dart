@@ -171,11 +171,12 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                 onPressed: isVerifying
                     ? null
                     : () {
-                        if (otpController.text.isNotEmpty && _verificationId != null) {
+                        if (otpController.text.isNotEmpty &&
+                            _verificationId != null) {
                           setState(() {
                             isVerifying = true;
                           });
-                          
+
                           // Verify OTP
                           context.read<AuthBloc>().add(
                                 PhoneCodeSubmitEvent(
@@ -183,7 +184,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                                   smsCode: otpController.text,
                                 ),
                               );
-                          
+
                           Navigator.pop(context);
                         }
                       },
@@ -200,4 +201,4 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       ),
     );
   }
-} 
+}

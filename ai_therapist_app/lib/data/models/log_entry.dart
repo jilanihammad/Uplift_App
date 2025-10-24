@@ -1,12 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum LogLevel {
-  debug,
-  info,
-  warning,
-  error,
-  critical
-}
+enum LogLevel { debug, info, warning, error, critical }
 
 class LogEntry {
   final String id;
@@ -63,4 +57,4 @@ class LogEntry {
         return LogLevel.info;
     }
   }
-} 
+}

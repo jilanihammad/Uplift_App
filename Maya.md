@@ -160,6 +160,7 @@ Supporting utilities:
 - Home screen UI refreshed: greeting card uses a FilledButton with theme colors, “Talk Now” uses an OutlinedButton wrapped in a surfaceVariant container for lighter look in light theme.
 - MemoryService now syncs profile basics and anchors with the backend when `memory_persistence_enabled` is enabled; ChatScreen pushes session summaries via `/session_summaries:upsert` after local save.
 - MemoryService queues profile/anchor updates locally (SharedPreferences) and flushes them once network sync succeeds, improving offline resilience of personalization.
+- Mood persistence MVP shipped: Cloud SQL `user_mood_entries` table + Flutter SQLite cache with `mood_persistence_enabled` feature flag, batched sync, and 60-day retention.
 
 ---
 

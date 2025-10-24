@@ -6,7 +6,7 @@ Persist a minimal, safe subset of personalization (profile basics, vetted anchor
 ---
 
 ## 1. Scope & Audit
-- [ ] Confirm scope guardrails: this patch touches only user profile (preferred_name, pronouns, locale), anchors (non-generic, confidence-gated), and session summaries; defer mood logs, streaks, and free-form memories.
+- [ ] Confirm scope guardrails: original patch touched only user profile (preferred_name, pronouns, locale), anchors (non-generic, confidence-gated), and session summaries; mood logs are now in scope via the new persistence workstream.
 - [ ] Trace where these three domains are currently stored client-side (`MemoryManager`, `PreferencesService`, `SessionRepository`) and document serialization formats.
 - [ ] Review backend models/routes to verify no existing persistence for these domains; list any partial overlaps (e.g., current `sessions` table).
 - [ ] Inventory privacy considerations for each field (e.g., anchors may contain PII) to inform logging and retention later.

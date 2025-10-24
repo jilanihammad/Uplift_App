@@ -8,27 +8,27 @@ class UserRepository implements IUserRepository {
   final IApiClient apiClient;
   late SharedPreferences _prefs;
   bool _initialized = false;
-  
+
   UserRepository({
     required this.apiClient,
   }) {
     _initPrefs();
   }
-  
+
   Future<void> _initPrefs() async {
     if (!_initialized) {
       _prefs = await SharedPreferences.getInstance();
       _initialized = true;
     }
   }
-  
+
   // Get user profile
   @override
   Future<User> getUserProfile() async {
     final response = await apiClient.get('/api/v1/users/me');
     return User.fromJson(response);
   }
-  
+
   // Update user profile
   @override
   Future<User> updateProfile({
@@ -40,15 +40,15 @@ class UserRepository implements IUserRepository {
     if (name != null) body['name'] = name;
     if (email != null) body['email'] = email;
     if (profileImage != null) body['profile_image'] = profileImage;
-    
+
     final response = await apiClient.put(
       '/api/v1/users/me',
       body,
     );
-    
+
     return User.fromJson(response);
   }
-  
+
   // Update user preferences
   @override
   Future<User> updatePreferences(Map<String, dynamic> preferences) async {
@@ -58,10 +58,10 @@ class UserRepository implements IUserRepository {
         'preferences': preferences,
       },
     );
-    
+
     return User.fromJson(response);
   }
-  
+
   // Get user ID
   @override
   Future<String?> getUserId() async {

@@ -22,7 +22,9 @@ class LoggingConfig {
   bool _enableVerboseDebug = false;
 
   // Initializes logging configuration
-  void init({bool enableVerboseLogsInRelease = false, bool enableVerboseDebug = false}) {
+  void init(
+      {bool enableVerboseLogsInRelease = false,
+      bool enableVerboseDebug = false}) {
     // Configure default log levels based on build type
     if (kDebugMode) {
       // In debug mode, show all logs by default

@@ -8,16 +8,17 @@ class ProfileExperienceScreen extends StatefulWidget {
   const ProfileExperienceScreen({Key? key}) : super(key: key);
 
   @override
-  State<ProfileExperienceScreen> createState() => _ProfileExperienceScreenState();
+  State<ProfileExperienceScreen> createState() =>
+      _ProfileExperienceScreenState();
 }
 
 class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _userProfileService = DependencyContainer().get<UserProfileService>();
-  
+
   TherapyExperience? _selectedExperience;
   bool _isLoading = false;
-  
+
   // Therapy experience options with descriptions
   final List<Map<String, dynamic>> _experienceOptions = [
     {
@@ -46,7 +47,7 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       'description': 'I\'d rather not share my experience',
     },
   ];
-  
+
   @override
   void initState() {
     super.initState();
@@ -55,7 +56,7 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       _selectedExperience = _userProfileService.profile!.therapyExperience;
     }
   }
-  
+
   Future<void> _saveAndContinue() async {
     if (_selectedExperience == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -63,11 +64,11 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       await _userProfileService.updateProfile(
         therapyExperience: _selectedExperience,
@@ -108,8 +109,8 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
               Text(
                 'Tell us about your therapy experience',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -117,12 +118,12 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
-              
+
               // Experience options
               ..._buildExperienceOptions(),
-              
+
               const SizedBox(height: 48),
-              
+
               // Continue Button
               SizedBox(
                 width: double.infinity,
@@ -134,15 +135,15 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isLoading 
-                    ? const CircularProgressIndicator()
-                    : const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text(
+                          'Continue',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                 ),
               ),
             ],
@@ -151,11 +152,11 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       ),
     );
   }
-  
+
   List<Widget> _buildExperienceOptions() {
     return _experienceOptions.map((option) {
       final isSelected = _selectedExperience == option['value'];
-      
+
       return Padding(
         padding: const EdgeInsets.only(bottom: 16.0),
         child: InkWell(
@@ -197,9 +198,8 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
                       option['title'],
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -222,4 +222,4 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       );
     }).toList();
   }
-} 
+}

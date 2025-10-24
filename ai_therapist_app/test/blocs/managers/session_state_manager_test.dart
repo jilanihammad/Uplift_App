@@ -1,5 +1,5 @@
 /// Unit tests for SessionStateManager
-/// 
+///
 /// These tests verify the pure state management logic of SessionStateManager.
 /// No mocking required as this manager has no external dependencies.
 
@@ -47,7 +47,7 @@ void main() {
         // First set some state
         manager.selectMood(Mood.happy);
         manager.setError('Test error');
-        
+
         // Then start new session
         final state = manager.startNewSession();
 
@@ -81,10 +81,10 @@ void main() {
         // First call
         manager.setSessionEnding();
         expect(manager.state.status, VoiceSessionStatus.ended);
-        
+
         // Try to change something else
         manager.setError('Should not change');
-        
+
         // Second call should not change anything
         final state = manager.setSessionEnding();
         expect(state.status, VoiceSessionStatus.ended);
@@ -163,7 +163,7 @@ void main() {
       test('clearError removes error state', () {
         // First set an error
         manager.setError('Test error');
-        
+
         // Then clear it
         final state = manager.clearError();
 
@@ -191,17 +191,16 @@ void main() {
       });
 
       test('getSessionConfigSummary generates summary', () {
-        expect(manager.getSessionConfigSummary(), 
-               'Mood: not selected, Duration: 0min, Style: default');
+        expect(manager.getSessionConfigSummary(),
+            'Mood: not selected, Duration: 0min, Style: default');
 
         manager.selectMood(Mood.stressed);
         manager.selectDuration(const Duration(minutes: 45));
-        manager.updateState(manager.state.copyWith(
-          activeTherapyStyleName: 'mindfulness'
-        ));
+        manager.updateState(
+            manager.state.copyWith(activeTherapyStyleName: 'mindfulness'));
 
-        expect(manager.getSessionConfigSummary(), 
-               'Mood: stressed, Duration: 45min, Style: mindfulness');
+        expect(manager.getSessionConfigSummary(),
+            'Mood: stressed, Duration: 45min, Style: mindfulness');
       });
     });
 
@@ -213,7 +212,7 @@ void main() {
         );
 
         manager.updateState(newState);
-        
+
         expect(manager.state.selectedMood, Mood.happy);
         expect(manager.state.isProcessingAudio, true);
       });

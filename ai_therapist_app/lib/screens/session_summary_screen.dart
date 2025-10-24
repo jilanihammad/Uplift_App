@@ -36,13 +36,13 @@ class SessionSummaryScreen extends StatefulWidget {
 class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
   late TasksService _tasksService;
   List<UserAnchor> _savedAnchors = const [];
-  
+
   @override
   void initState() {
     super.initState();
     _tasksService = TasksService();
     _tasksService.init();
-    
+
     // Sync session data when summary screen is shown
     _syncProgressData();
 
@@ -50,18 +50,18 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       _loadSavedAnchors();
     }
   }
-  
+
   Future<void> _syncProgressData() async {
     try {
       final progressService = DependencyContainer().progress;
       await progressService.syncSessionData();
-      
+
       // Also log this session with duration
       final now = DateTime.now();
       final sessionDuration = widget.messages.isNotEmpty
           ? now.difference(widget.messages.first.timestamp).inMinutes
           : 0;
-      
+
       if (sessionDuration > 0) {
         await progressService.logSession(sessionDuration);
       }
@@ -77,7 +77,8 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         setState(() {}); // Refresh UI to update button state
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Added to tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            content: Text(
+                'Added to tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
             backgroundColor: Colors.green,
           ),
         );
@@ -101,7 +102,8 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         setState(() {}); // Refresh UI to update button state
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Removed from tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            content: Text(
+                'Removed from tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -151,9 +153,9 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         elevation: 0,
         centerTitle: true,
         titleTextStyle: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colorScheme.primary,
-            ),
+          fontWeight: FontWeight.bold,
+          color: colorScheme.primary,
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -184,16 +186,17 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                   Text(
                     'Great Session!',
                     style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: theme.textTheme.headlineMedium?.color,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: theme.textTheme.headlineMedium?.color,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Duration: ${_formatDuration(sessionDuration)}',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
-                        ),
+                      color:
+                          theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
+                    ),
                   ),
                 ],
               ),
@@ -212,15 +215,18 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
               sessionId: widget.sessionId,
               onAddToTasks: _addToTasks,
               onRemoveFromTasks: _removeFromTasks,
-              isItemAlreadyAdded: (actionItem) => _tasksService.isActionItemAlreadyAdded(widget.sessionId, actionItem),
+              isItemAlreadyAdded: (actionItem) => _tasksService
+                  .isActionItemAlreadyAdded(widget.sessionId, actionItem),
             ),
 
             const SizedBox(height: 40),
 
-            if (FeatureFlags.isMemoryPersistenceEnabled && _savedAnchors.isNotEmpty)
+            if (FeatureFlags.isMemoryPersistenceEnabled &&
+                _savedAnchors.isNotEmpty)
               _buildSavedDetailsCard(context),
 
-            if (FeatureFlags.isMemoryPersistenceEnabled && _savedAnchors.isEmpty)
+            if (FeatureFlags.isMemoryPersistenceEnabled &&
+                _savedAnchors.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 24.0),
                 child: Text(
@@ -300,9 +306,9 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                       child: Text(
                         'Remember, small steps lead to big changes. Take your time with these action items.',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSecondaryContainer,
-                              fontStyle: FontStyle.italic,
-                            ),
+                          color: colorScheme.onSecondaryContainer,
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
                     ),
                   ],
@@ -501,8 +507,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.bookmark_added_outlined,
-                  color: colorScheme.primary),
+              Icon(Icons.bookmark_added_outlined, color: colorScheme.primary),
               const SizedBox(width: 8),
               Text(
                 'Saved Details',

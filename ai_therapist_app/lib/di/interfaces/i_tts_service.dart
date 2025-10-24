@@ -6,8 +6,11 @@ import 'dart:async';
 /// Handles speech generation, streaming, and playback functionality
 abstract class ITTSService {
   // Primary TTS method - simple and clean API
-  Future<void> speak(String text, {String voice = 'sage', String format = 'wav', bool makeBackupFile = true});
-  
+  Future<void> speak(String text,
+      {String voice = 'sage',
+      String format = 'wav',
+      bool makeBackupFile = true});
+
   // TTS generation (legacy)
   Future<String> generateSpeech(String text, {String voice = 'alloy'});
   Future<void> streamAndPlayTTS(
@@ -17,7 +20,7 @@ abstract class ITTSService {
     void Function(double)? onProgress,
     String? sessionId,
   });
-  
+
   // Streaming with intelligent chunking
   Future<void> streamAndPlayTTSChunked(
     Stream<String> textStream, {
@@ -26,34 +29,34 @@ abstract class ITTSService {
     void Function(double)? onProgress,
     String? sessionId,
   });
-  
+
   // Playback controls
   Future<void> playAudio(String audioPath);
   Future<void> stopAudio();
   Future<void> pauseAudio();
   Future<void> resumeAudio();
-  
+
   // Stream management
   Future<void> cancelAllStreams();
-  
+
   // State management
   bool get isPlaying;
   bool get isSpeaking;
   Stream<bool> get playbackStateStream;
   Stream<bool> get speakingStateStream;
-  
+
   // Audio configuration
   void setVoiceSettings(String voice, double speed, double pitch);
   void setAudioFormat(String format);
-  
+
   // State control
   void resetTTSState();
   void setAiSpeaking(bool speaking);
-  
+
   // Initialization and cleanup
   Future<void> initialize();
   void dispose();
-  
+
   // Audio utilities
   Future<String?> downloadAndCacheAudio(String url);
   Future<void> cleanupAudioFiles();

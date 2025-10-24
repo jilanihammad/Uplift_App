@@ -25,10 +25,10 @@ enum VoiceSessionStatus {
 
 /// Unified TTS status enum - single source of truth for TTS state across all components
 enum TtsStatus {
-  idle,      // No TTS activity
+  idle, // No TTS activity
   preparing, // Getting AI response, preparing for TTS (optional UI feedback)
-  streaming, // TTS WebSocket is streaming content  
-  playing,   // Audio is actively playing through speakers
+  streaming, // TTS WebSocket is streaming content
+  playing, // Audio is actively playing through speakers
   cancelled, // TTS operation was cancelled
 }
 
@@ -41,7 +41,8 @@ class VoiceSessionState extends Equatable {
   final bool isRecording; // Specifically if audio is being captured to a file
   final bool
       isProcessingAudio; // True if STT or other audio processing is happening
-  final bool isAiSpeaking; // True if TTS is active (legacy - use ttsStatus instead)
+  final bool
+      isAiSpeaking; // True if TTS is active (legacy - use ttsStatus instead)
   final TtsStatus ttsStatus; // Unified TTS state - single source of truth
   final bool ttsAudible; // True if TTS can be heard (not muted)
   final bool hasError;
@@ -58,7 +59,8 @@ class VoiceSessionState extends Equatable {
   final bool
       isInitialGreetingPlayed; // Tracks if the initial greeting TTS has been played
   final String? activeTherapyStyleName;
-  final TherapistStyle? therapistStyle; // Full therapist style object (Phase 1A.1)
+  final TherapistStyle?
+      therapistStyle; // Full therapist style object (Phase 1A.1)
   final bool isAutoListeningEnabled; // From AutoListeningCoordinator
   final int currentMessageSequence; // Added for message sequencing
   final bool speakerMuted; // Track speaker mute state
@@ -208,7 +210,8 @@ class VoiceSessionState extends Equatable {
           currentMessageSequence ?? this.currentMessageSequence, // Added
       speakerMuted: speakerMuted ?? this.speakerMuted,
       amplitude: amplitude ?? this.amplitude,
-      timerRemainingSeconds: timerRemainingSeconds ?? this.timerRemainingSeconds,
+      timerRemainingSeconds:
+          timerRemainingSeconds ?? this.timerRemainingSeconds,
       autoEndTriggered: autoEndTriggered ?? this.autoEndTriggered,
     );
   }
@@ -252,16 +255,16 @@ class VoiceSessionState extends Equatable {
     if (!isVoiceMode) {
       return !isProcessingAudio;
     }
-    // In voice mode: only disable Send button when TTS is active 
+    // In voice mode: only disable Send button when TTS is active
     // (per engineer feedback: smart disable logic)
-    return !isProcessingAudio && (ttsStatus == TtsStatus.idle || ttsStatus == TtsStatus.cancelled);
+    return !isProcessingAudio &&
+        (ttsStatus == TtsStatus.idle || ttsStatus == TtsStatus.cancelled);
   }
 
   // Add missing getters for UI compatibility
   bool get isInitializing => status == VoiceSessionStatus.loading;
   int get sessionDurationMinutes => selectedDuration?.inMinutes ?? 0;
-  int get sessionTimerSeconds =>
-      timerRemainingSeconds;
+  int get sessionTimerSeconds => timerRemainingSeconds;
   bool get isEndingSession => status == VoiceSessionStatus.ended;
   bool get isProcessing => isProcessingAudio;
   bool get isSpeakerMuted => speakerMuted;

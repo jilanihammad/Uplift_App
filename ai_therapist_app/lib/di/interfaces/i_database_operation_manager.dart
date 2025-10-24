@@ -8,7 +8,7 @@ import '../../data/datasources/remote/api_client.dart';
 /// Provides contract for coordinating database operations and preventing conflicts
 abstract class IDatabaseOperationManager {
   /// Add a database operation to the queue
-  /// 
+  ///
   /// Returns a Future that completes when the operation has been executed
   Future<T> queueOperation<T>(
     Future<T> Function() operation, {

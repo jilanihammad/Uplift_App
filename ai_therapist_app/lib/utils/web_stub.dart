@@ -17,20 +17,20 @@ class Platform {
 // File stub for web
 class File {
   final String path;
-  
+
   File(this.path);
-  
+
   Future<bool> exists() async => false;
-  
+
   bool existsSync() => false;
-  
+
   Future<File> writeAsBytes(List<int> bytes) async {
     if (kDebugMode) {
       print('Web stub: Writing bytes to file at $path');
     }
     return this;
   }
-  
+
   void deleteSync() {
     if (kDebugMode) {
       print('Web stub: Deleting file at $path');
@@ -41,27 +41,27 @@ class File {
 // Directory stub for web
 class Directory {
   final String path;
-  
+
   Directory(this.path);
-  
+
   Future<bool> exists() async => false;
-  
+
   Future<Directory> create({bool recursive = false}) async {
     if (kDebugMode) {
       print('Web stub: Creating directory at $path');
     }
     return this;
   }
-  
+
   String get parent => path;
 }
 
 // Permission handler stubs for web
 class Permission {
   static Permission microphone = Permission._();
-  
+
   Permission._();
-  
+
   Future<PermissionStatus> request() async {
     return PermissionStatus.granted;
   }
@@ -77,7 +77,8 @@ enum PermissionStatus {
 
 // Process stub for web
 class Process {
-  static Future<ProcessResult> run(String command, List<String> arguments) async {
+  static Future<ProcessResult> run(
+      String command, List<String> arguments) async {
     if (kDebugMode) {
       print('Web stub: Running command $command with arguments $arguments');
     }
@@ -90,6 +91,6 @@ class ProcessResult {
   final int exitCode;
   final String stdout;
   final String stderr;
-  
+
   ProcessResult(this.pid, this.exitCode, this.stdout, this.stderr);
 }

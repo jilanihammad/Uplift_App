@@ -9,16 +9,16 @@ abstract class IGroqService {
   String? get conversationMemory;
   String? get sessionId;
   set sessionId(String? value);
-  
+
   // Initialization
   Future<void> init();
-  
+
   // Memory management
   void resetConversationMemory();
-  
+
   // Configuration
   void setAvailable(bool available);
-  
+
   // Text generation
   Future<String> generateChatCompletion({
     required String userMessage,
@@ -27,10 +27,10 @@ abstract class IGroqService {
     double temperature = 0.7,
     int maxTokens = 1000,
   });
-  
+
   // Connection testing
   Future<Map<String, dynamic>> testConnection();
-  
+
   // Streaming chat
   Stream<Map<String, dynamic>> streamChatCompletionViaWebSocket({
     required String message,

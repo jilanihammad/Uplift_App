@@ -21,7 +21,8 @@ class ProgressScreen extends StatefulWidget {
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
 
-class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProviderStateMixin {
+class _ProgressScreenState extends State<ProgressScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late IProgressService _progressService;
   late UserProgress _progress;
@@ -30,7 +31,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
   int _realSessionCount = 0;
   int _currentStreak = 0;
   int _longestStreak = 0;
-  
+
   @override
   void initState() {
     super.initState();
@@ -63,10 +64,10 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
     try {
       final sessionRepository = DependencyContainer().sessionRepository;
       final sessions = await sessionRepository.getSessions();
-      
+
       // Calculate streaks based on session dates
       _calculateStreaks(sessions);
-      
+
       if (mounted) {
         setState(() {
           _realSessionCount = sessions.length;
@@ -103,10 +104,11 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
     _currentStreak = 0;
     final today = DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
-    
+
     for (int i = sessionDays.length - 1; i >= 0; i--) {
       final daysDiff = todayDay.difference(sessionDays[i]).inDays;
-      if (daysDiff == _currentStreak || (daysDiff == _currentStreak + 1 && _currentStreak == 0)) {
+      if (daysDiff == _currentStreak ||
+          (daysDiff == _currentStreak + 1 && _currentStreak == 0)) {
         _currentStreak++;
       } else {
         break;
@@ -116,7 +118,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
     // Calculate longest streak
     _longestStreak = 0;
     int tempStreak = 1;
-    
+
     for (int i = 1; i < sessionDays.length; i++) {
       if (sessionDays[i].difference(sessionDays[i - 1]).inDays == 1) {
         tempStreak++;
@@ -127,7 +129,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
     }
     _longestStreak = math.max(_longestStreak, tempStreak);
   }
-  
+
   void _onProgressChanged() {
     if (mounted) {
       setState(() {
@@ -148,7 +150,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       });
     }
   }
-  
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -180,7 +182,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-  
+
   Widget _buildOverviewTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -196,7 +198,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-  
+
   Widget _buildStreakCard() {
     return Card(
       elevation: 2,
@@ -220,13 +222,13 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildStreakItem(
-                  _currentStreak, 
+                  _currentStreak,
                   'Current',
                   Icons.local_fire_department,
                   Colors.orange,
                 ),
                 _buildStreakItem(
-                  _longestStreak, 
+                  _longestStreak,
                   'Longest',
                   Icons.emoji_events,
                   Colors.amber,
@@ -238,7 +240,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-  
+
   Widget _buildStreakItem(int count, String label, IconData icon, Color color) {
     return Column(
       children: [
@@ -275,7 +277,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ],
     );
   }
-  
+
   Widget _buildStatsCard() {
     return Card(
       elevation: 2,
@@ -295,23 +297,20 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
               ),
             ),
             const SizedBox(height: 16),
-            _buildStatRow('Total Sessions', 
-              _realSessionCount.toString(),
-              Icons.psychology),
+            _buildStatRow('Total Sessions', _realSessionCount.toString(),
+                Icons.psychology),
             const Divider(),
-            _buildStatRow('Mood Entries', 
-              _progress.moodHistory.length.toString(),
-              Icons.mood),
+            _buildStatRow('Mood Entries',
+                _progress.moodHistory.length.toString(), Icons.mood),
             const Divider(),
-            _buildStatRow('Achievements', 
-              _progress.achievements.length.toString(),
-              Icons.emoji_events),
+            _buildStatRow('Achievements',
+                _progress.achievements.length.toString(), Icons.emoji_events),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildStatRow(String label, String value, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -336,13 +335,13 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-  
+
   Widget _buildRecentSessionsCard() {
     final sessionEntries = _progress.sessionHistory.entries.toList()
       ..sort((a, b) => b.key.compareTo(a.key));
-    
+
     final recentSessions = sessionEntries.take(3).toList();
-    
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -381,11 +380,12 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
                   final session = recentSessions[index];
                   final date = session.key;
                   final duration = session.value;
-                  
+
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
-                      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+                      backgroundColor:
+                          Theme.of(context).primaryColor.withOpacity(0.2),
                       child: Icon(
                         Icons.psychology,
                         color: Theme.of(context).primaryColor,
@@ -411,10 +411,10 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-  
+
   Widget _buildMoodTab() {
     final moodData = _progressService.getMoodDataForLastDays(30);
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -464,7 +464,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-  
+
   Widget _buildMoodChart(List<MapEntry<DateTime, int>> moodData) {
     // This is a placeholder for a chart widget
     // In a real app, use a charting library like fl_chart
@@ -472,7 +472,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       child: Text('Mood chart would go here (${moodData.length} data points)'),
     );
   }
-  
+
   Widget _buildMoodInsightsCard() {
     return Card(
       elevation: 2,
@@ -515,7 +515,7 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-  
+
   Widget _buildInsightItem(String text, IconData icon, Color color) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -533,12 +533,12 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ],
     );
   }
-  
+
   Widget _buildTasksTab() {
     // Show pending tasks first, then completed ones
     final pendingTasks = _tasks.where((task) => !task.isCompleted).toList();
     final completedTasks = _tasks.where((task) => task.isCompleted).toList();
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -565,68 +565,67 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
             ],
           ),
           const SizedBox(height: 16),
-          
           _tasks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.task_alt, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No Tasks Yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Add tasks from your therapy session action items',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            )
-          : Column(
-              children: [
-                // Pending tasks
-                if (pendingTasks.isNotEmpty) ...[
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'To Do',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.orange,
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.task_alt, size: 64, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No Tasks Yet',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...pendingTasks.map((task) => _buildTaskCard(task)),
-                  const SizedBox(height: 16),
-                ],
-                
-                // Completed tasks
-                if (completedTasks.isNotEmpty) ...[
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Completed',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.green,
+                      const SizedBox(height: 8),
+                      Text(
+                        'Add tasks from your therapy session action items',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey[600]),
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  ...completedTasks.map((task) => _buildTaskCard(task)),
-                ],
-              ],
-            ),
+                )
+              : Column(
+                  children: [
+                    // Pending tasks
+                    if (pendingTasks.isNotEmpty) ...[
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'To Do',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...pendingTasks.map((task) => _buildTaskCard(task)),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Completed tasks
+                    if (completedTasks.isNotEmpty) ...[
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Completed',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...completedTasks.map((task) => _buildTaskCard(task)),
+                    ],
+                  ],
+                ),
         ],
       ),
     );
@@ -642,10 +641,14 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(
-          backgroundColor: task.isCompleted ? Colors.green.withOpacity(0.2) : Theme.of(context).primaryColor.withOpacity(0.2),
+          backgroundColor: task.isCompleted
+              ? Colors.green.withOpacity(0.2)
+              : Theme.of(context).primaryColor.withOpacity(0.2),
           child: Icon(
             task.isCompleted ? Icons.check_circle : Icons.task_alt,
-            color: task.isCompleted ? Colors.green : Theme.of(context).primaryColor,
+            color: task.isCompleted
+                ? Colors.green
+                : Theme.of(context).primaryColor,
           ),
         ),
         title: Text(
@@ -688,4 +691,4 @@ class _ProgressScreenState extends State<ProgressScreen> with SingleTickerProvid
       ),
     );
   }
-} 
+}

@@ -21,7 +21,8 @@ class LoggerUtil {
       lineLength: 120, // Width of the output
       colors: true, // Colorful log messages
       printEmojis: true, // Print an emoji for each log message
-      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart, // Print time for each log message
+      dateTimeFormat: DateTimeFormat
+          .onlyTimeAndSinceStart, // Print time for each log message
     );
 
     // Configure logger with custom options

@@ -29,12 +29,12 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     Key? key,
     TherapistStyle? therapistStyle,
   }) : this(
-    key: key,
-    therapistStyle: therapistStyle,
-    onEndSession: null,
-    showTimer: false,
-    showEndButton: false,
-  );
+          key: key,
+          therapistStyle: therapistStyle,
+          onEndSession: null,
+          showTimer: false,
+          showEndButton: false,
+        );
 
   @override
   Widget build(BuildContext context) {
@@ -67,16 +67,21 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.primary, 
+                          color: Theme.of(context).colorScheme.primary,
                           width: 1,
                         ),
                       ),
-                      child: BlocSelector<VoiceSessionBloc, VoiceSessionState, int>(
+                      child: BlocSelector<VoiceSessionBloc, VoiceSessionState,
+                          int>(
                         selector: (state) => state.sessionTimerSeconds,
                         builder: (context, seconds) {
                           final minutes = (seconds / 60).floor();

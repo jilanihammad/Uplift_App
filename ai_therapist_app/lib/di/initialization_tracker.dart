@@ -60,7 +60,8 @@ class InitializationTracker {
 
     // Check if initialization is already in progress
     if (_initializationCompleters.containsKey(serviceName)) {
-      logger.debug('$serviceName initialization already in progress, waiting...');
+      logger
+          .debug('$serviceName initialization already in progress, waiting...');
       return await _initializationCompleters[serviceName]!.future;
     }
 
@@ -79,7 +80,7 @@ class InitializationTracker {
 
       logger.debug(
           'Initializing service: $serviceName (attempt: ${_retryCount[serviceName]! + 1})');
-      
+
       await initFunction();
       markInitialized(serviceName);
       completer.complete(true);
@@ -91,7 +92,7 @@ class InitializationTracker {
       if (_retryCount[serviceName]! < maxRetries) {
         // Remove completer before retry
         _initializationCompleters.remove(serviceName);
-        
+
         // Exponential backoff for retries
         final backoffMs = 500 * (1 << _retryCount[serviceName]!);
         logger.debug('Retrying $serviceName initialization in ${backoffMs}ms');

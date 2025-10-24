@@ -13,45 +13,46 @@ import 'session_ending_test.dart' as ending_tests;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  
+
   group('AI Therapist App - Comprehensive Integration Test Suite', () {
     group('Authentication Flow Tests', () {
       auth_tests.main();
     });
-    
+
     group('Voice Session Tests', () {
       voice_tests.main();
     });
-    
+
     group('Text Session Tests', () {
       text_tests.main();
     });
-    
+
     group('Mode Switching Tests', () {
       mode_tests.main();
     });
-    
+
     group('Session Ending Tests', () {
       ending_tests.main();
     });
   });
-  
+
   // Performance monitoring test
   testWidgets('Performance baseline validation', (WidgetTester tester) async {
     final stopwatch = Stopwatch()..start();
-    
+
     // Run a quick session to measure performance
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: Text('Performance Test'))));
+    await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: Text('Performance Test'))));
     await tester.pumpAndSettle();
-    
+
     stopwatch.stop();
-    
+
     // Log performance metrics
     print('UI initialization took: ${stopwatch.elapsedMilliseconds}ms');
-    
+
     // Basic performance assertions
-    expect(stopwatch.elapsedMilliseconds, lessThan(5000), 
-           reason: 'UI initialization should complete within 5 seconds');
+    expect(stopwatch.elapsedMilliseconds, lessThan(5000),
+        reason: 'UI initialization should complete within 5 seconds');
   });
 }
 
@@ -60,11 +61,23 @@ class IntegrationTestConfig {
   static const Duration defaultTimeout = Duration(seconds: 30);
   static const Duration longTimeout = Duration(minutes: 2);
   static const Duration shortTimeout = Duration(seconds: 10);
-  
+
   // Common test data
-  static const List<String> testMoods = ['Happy', 'Sad', 'Anxious', 'Angry', 'Stressed', 'Neutral'];
-  static const List<String> testDurations = ['15 min', '20 min', '30 min', '45 min'];
-  
+  static const List<String> testMoods = [
+    'Happy',
+    'Sad',
+    'Anxious',
+    'Angry',
+    'Stressed',
+    'Neutral'
+  ];
+  static const List<String> testDurations = [
+    '15 min',
+    '20 min',
+    '30 min',
+    '45 min'
+  ];
+
   // Test messages for various scenarios
   static const Map<String, List<String>> testMessages = {
     'happy': [

@@ -4,11 +4,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session as DbSession, sessionmaker
 
 from app.db.base_class import Base
 from app.models.mood_entry import MoodEntry
 from app.models.user import User
+from app.models.session import Session as SessionModel
 from app.services.mood_entry_service import (
     MoodEntryValidationError,
     batch_upsert_mood_entries,
@@ -16,10 +18,25 @@ from app.services.mood_entry_service import (
 )
 
 
-def _init_db() -> Session:
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(bind=engine)
+def _init_db() -> DbSession:
+    engine = create_engine(
+        "sqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     TestingSessionLocal = sessionmaker(bind=engine, future=True)
+    from app.db import session as db_session_module
+    db_session_module.engine = engine
+    db_session_module.SessionLocal = TestingSessionLocal
+    Base.metadata.create_all(
+        bind=db_session_module.engine,
+        tables=[
+            User.__table__,
+            SessionModel.__table__,
+            MoodEntry.__table__,
+        ],
+    )
     session = TestingSessionLocal()
     user = User(id=1, email="test@example.com", password_hash="hash")
     session.add(user)
@@ -36,7 +53,7 @@ def db_session():
         session.close()
 
 
-def test_batch_upsert_creates_and_updates(db_session: Session):
+def test_batch_upsert_creates_and_updates(db_session: DbSession):
     logged_at = datetime.now(timezone.utc) - timedelta(days=1)
 
     result = batch_upsert_mood_entries(
@@ -64,7 +81,7 @@ def test_batch_upsert_creates_and_updates(db_session: Session):
     assert updated_entry.updated_at > first_updated_at
 
 
-def test_batch_upsert_rejects_out_of_window(db_session: Session):
+def test_batch_upsert_rejects_out_of_window(db_session: DbSession):
     old_logged_at = datetime.now(timezone.utc) - timedelta(days=61)
 
     with pytest.raises(MoodEntryValidationError) as exc:
@@ -77,7 +94,7 @@ def test_batch_upsert_rejects_out_of_window(db_session: Session):
     assert "60-day" in str(exc.value)
 
 
-def test_fetch_mood_entries_pagination(db_session: Session):
+def test_fetch_mood_entries_pagination(db_session: DbSession):
     base_time = datetime.now(timezone.utc)
 
     payloads = [
@@ -100,6 +117,6 @@ def test_fetch_mood_entries_pagination(db_session: Session):
     assert final_token is None
 
 
-def test_fetch_invalid_token_raises(db_session: Session):
+def test_fetch_invalid_token_raises(db_session: DbSession):
     with pytest.raises(MoodEntryValidationError):
         fetch_mood_entries(db_session, user_id=1, since=None, limit=10, before="not-a-token")

@@ -391,8 +391,8 @@ class MemoryService {
         if (decoded is List) {
           _pendingAnchorOps
             ..clear()
-            ..addAll(decoded.map((e) =>
-                Map<String, dynamic>.from(e as Map<dynamic, dynamic>)));
+            ..addAll(decoded.map(
+                (e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>)));
         }
       }
 

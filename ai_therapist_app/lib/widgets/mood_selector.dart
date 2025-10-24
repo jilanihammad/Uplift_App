@@ -1,54 +1,65 @@
 import 'package:flutter/material.dart';
 
 // Enum for different mood states
-enum Mood {
-  happy,
-  neutral,
-  sad,
-  anxious,
-  angry,
-  stressed
-}
+enum Mood { happy, neutral, sad, anxious, angry, stressed }
 
 // Extension to get emoji for each mood
 extension MoodExtension on Mood {
   String get emoji {
     switch (this) {
-      case Mood.happy: return '😊';
-      case Mood.neutral: return '😐';
-      case Mood.sad: return '😢';
-      case Mood.anxious: return '😰';
-      case Mood.angry: return '😠';
-      case Mood.stressed: return '😫';
+      case Mood.happy:
+        return '😊';
+      case Mood.neutral:
+        return '😐';
+      case Mood.sad:
+        return '😢';
+      case Mood.anxious:
+        return '😰';
+      case Mood.angry:
+        return '😠';
+      case Mood.stressed:
+        return '😫';
     }
   }
-  
+
   String get label {
     switch (this) {
-      case Mood.happy: return 'Happy';
-      case Mood.neutral: return 'Neutral';
-      case Mood.sad: return 'Sad';
-      case Mood.anxious: return 'Anxious';
-      case Mood.angry: return 'Angry';
-      case Mood.stressed: return 'Stressed';
+      case Mood.happy:
+        return 'Happy';
+      case Mood.neutral:
+        return 'Neutral';
+      case Mood.sad:
+        return 'Sad';
+      case Mood.anxious:
+        return 'Anxious';
+      case Mood.angry:
+        return 'Angry';
+      case Mood.stressed:
+        return 'Stressed';
     }
   }
-  
+
   Color get color {
     switch (this) {
-      case Mood.happy: return Colors.yellow;
-      case Mood.neutral: return Colors.grey;
-      case Mood.sad: return Colors.blue;
-      case Mood.anxious: return Colors.purple;
-      case Mood.angry: return Colors.red;
-      case Mood.stressed: return Colors.orange;
+      case Mood.happy:
+        return Colors.yellow;
+      case Mood.neutral:
+        return Colors.grey;
+      case Mood.sad:
+        return Colors.blue;
+      case Mood.anxious:
+        return Colors.purple;
+      case Mood.angry:
+        return Colors.red;
+      case Mood.stressed:
+        return Colors.orange;
     }
   }
 }
 
 class MoodSelector extends StatelessWidget {
   final Function(Mood) onMoodSelected;
-  
+
   const MoodSelector({super.key, required this.onMoodSelected});
 
   @override
@@ -110,4 +121,4 @@ class MoodSelector extends StatelessWidget {
       ),
     );
   }
-} 
+}

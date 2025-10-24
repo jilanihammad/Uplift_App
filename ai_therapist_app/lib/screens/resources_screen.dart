@@ -34,7 +34,8 @@ class ResourcesScreen extends StatelessWidget {
             resources: [
               Resource(
                 title: 'Understanding Anxiety',
-                description: 'Learn about anxiety symptoms and coping strategies',
+                description:
+                    'Learn about anxiety symptoms and coping strategies',
                 type: ResourceType.article,
               ),
               Resource(

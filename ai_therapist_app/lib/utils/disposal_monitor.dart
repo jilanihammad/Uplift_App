@@ -35,8 +35,9 @@ class DisposalMonitor {
     if (kDebugMode) {
       final status = error != null ? 'FAILED' : 'SUCCESS';
       final asyncLabel = isAsync ? 'ASYNC' : 'SYNC';
-      debugPrint('📊 DisposalMonitor: $serviceName $asyncLabel disposal $status in ${durationMs}ms');
-      
+      debugPrint(
+          '📊 DisposalMonitor: $serviceName $asyncLabel disposal $status in ${durationMs}ms');
+
       if (error != null) {
         debugPrint('📊 DisposalMonitor: Error details: $error');
       }
@@ -54,47 +55,45 @@ class DisposalMonitor {
   /// Get all disposal statistics
   Map<String, DisposalStats> getAllStats() {
     final result = <String, DisposalStats>{};
-    
+
     for (final entry in _metrics.entries) {
       if (entry.value.isNotEmpty) {
         result[entry.key] = DisposalStats.fromMetrics(entry.key, entry.value);
       }
     }
-    
+
     return result;
   }
 
   /// Check for potential MediaCodec issues (long disposal times)
   List<String> getMediaCodecWarnings() {
     final warnings = <String>[];
-    
+
     for (final entry in _metrics.entries) {
       final metrics = entry.value;
       if (metrics.isEmpty) continue;
-      
+
       // Check for consistently slow disposals (>2 seconds)
-      final recentMetrics = metrics.length > 3 
-          ? metrics.sublist(metrics.length - 3)
-          : metrics;
-      
-      final slowDisposals = recentMetrics
-          .where((m) => m.durationMs > 2000)
-          .length;
-      
+      final recentMetrics =
+          metrics.length > 3 ? metrics.sublist(metrics.length - 3) : metrics;
+
+      final slowDisposals =
+          recentMetrics.where((m) => m.durationMs > 2000).length;
+
       if (slowDisposals >= 2) {
-        warnings.add('${entry.key}: Consistently slow disposal ($slowDisposals/3 recent disposals >2s)');
+        warnings.add(
+            '${entry.key}: Consistently slow disposal ($slowDisposals/3 recent disposals >2s)');
       }
-      
+
       // Check for disposal errors
-      final recentErrors = recentMetrics
-          .where((m) => m.error != null)
-          .length;
-      
+      final recentErrors = recentMetrics.where((m) => m.error != null).length;
+
       if (recentErrors > 0) {
-        warnings.add('${entry.key}: $recentErrors disposal errors in recent attempts');
+        warnings.add(
+            '${entry.key}: $recentErrors disposal errors in recent attempts');
       }
     }
-    
+
     return warnings;
   }
 
@@ -148,20 +147,25 @@ class DisposalStats {
     required this.lastDisposal,
   });
 
-  factory DisposalStats.fromMetrics(String serviceName, List<DisposalMetric> metrics) {
+  factory DisposalStats.fromMetrics(
+      String serviceName, List<DisposalMetric> metrics) {
     final asyncCount = metrics.where((m) => m.isAsync).length;
     final errorCount = metrics.where((m) => m.error != null).length;
     final durations = metrics.map((m) => m.durationMs).toList();
-    
+
     return DisposalStats(
       serviceName: serviceName,
       totalDisposals: metrics.length,
       asyncDisposals: asyncCount,
       syncDisposals: metrics.length - asyncCount,
       errors: errorCount,
-      averageDurationMs: durations.isEmpty ? 0 : durations.reduce((a, b) => a + b) ~/ durations.length,
-      maxDurationMs: durations.isEmpty ? 0 : durations.reduce((a, b) => a > b ? a : b),
-      minDurationMs: durations.isEmpty ? 0 : durations.reduce((a, b) => a < b ? a : b),
+      averageDurationMs: durations.isEmpty
+          ? 0
+          : durations.reduce((a, b) => a + b) ~/ durations.length,
+      maxDurationMs:
+          durations.isEmpty ? 0 : durations.reduce((a, b) => a > b ? a : b),
+      minDurationMs:
+          durations.isEmpty ? 0 : durations.reduce((a, b) => a < b ? a : b),
       lastDisposal: metrics.isEmpty ? DateTime.now() : metrics.last.timestamp,
     );
   }
@@ -169,8 +173,8 @@ class DisposalStats {
   @override
   String toString() {
     return 'DisposalStats($serviceName: $totalDisposals total, '
-           '${asyncDisposals}A/${syncDisposals}S, '
-           '$errors errors, avg ${averageDurationMs}ms, '
-           'range $minDurationMs-${maxDurationMs}ms)';
+        '${asyncDisposals}A/${syncDisposals}S, '
+        '$errors errors, avg ${averageDurationMs}ms, '
+        'range $minDurationMs-${maxDurationMs}ms)';
   }
 }

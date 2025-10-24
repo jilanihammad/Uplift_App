@@ -73,6 +73,22 @@ class DatabaseHealthChecker {
         notes TEXT
       )
     ''',
+    'mood_entries': '''
+      CREATE TABLE IF NOT EXISTS mood_entries (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        client_entry_id TEXT NOT NULL,
+        mood INTEGER NOT NULL,
+        notes TEXT,
+        logged_at TEXT NOT NULL,
+        server_id TEXT,
+        updated_at TEXT NOT NULL,
+        is_pending INTEGER NOT NULL DEFAULT 1,
+        last_synced_at TEXT,
+        sync_error TEXT,
+        UNIQUE(user_id, client_entry_id)
+      )
+    ''',
     'conversations': '''
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY,

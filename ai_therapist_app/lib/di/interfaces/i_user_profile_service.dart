@@ -9,10 +9,10 @@ abstract class IUserProfileService {
   // Current profile
   UserProfile? get profile;
   ValueNotifier<UserProfile?> get profileChanged;
-  
+
   // Profile state
   bool get hasCompletedOnboarding;
-  
+
   // Profile management
   Future<void> init();
   Future<void> saveProfile(UserProfile profile);

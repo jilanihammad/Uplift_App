@@ -36,9 +36,10 @@ class LogRepository {
 
       // Save to database
       await _saveLogEntry(entry);
-      
+
       // Clean up old logs periodically
-      if (entry.id.hashCode % 20 == 0) { // Randomly cleanup ~5% of the time
+      if (entry.id.hashCode % 20 == 0) {
+        // Randomly cleanup ~5% of the time
         _cleanupOldLogs();
       }
     } catch (e) {
@@ -63,8 +64,10 @@ class LogRepository {
   Future<void> _cleanupOldLogs() async {
     try {
       final db = await _database.database;
-      final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM logs')) ?? 0;
-      
+      final count = Sqflite.firstIntValue(
+              await db.rawQuery('SELECT COUNT(*) FROM logs')) ??
+          0;
+
       if (count > _maxLogEntries) {
         // Delete oldest logs keeping only _maxLogEntries
         final deleteCount = count - _maxLogEntries;
@@ -92,7 +95,7 @@ class LogRepository {
         orderBy: 'timestamp DESC',
         limit: limit,
       );
-      
+
       return logs.map((log) {
         return LogEntry(
           id: log['id'] as String,
@@ -125,4 +128,4 @@ class LogRepository {
       }
     }
   }
-} 
+}

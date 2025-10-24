@@ -9,10 +9,10 @@ import '../../models/therapist_style.dart';
 abstract class IPreferencesService {
   // Current preferences
   UserPreferences? get preferences;
-  
+
   // Initialization
   Future<void> init();
-  
+
   // Preferences management
   Future<void> updatePreferences(UserPreferences newPreferences);
   Future<void> updateSinglePreference({
@@ -27,12 +27,12 @@ abstract class IPreferencesService {
     bool? useVoiceByDefault,
     TimeOfDay? dailyCheckInTime,
   });
-  
+
   // Therapist style management
   List<TherapistStyle> getAvailableTherapistStyles();
   TherapistStyle getCurrentTherapistStyle();
   Future<void> setTherapistStyle(String styleId);
-  
+
   // Specific preference setters
   Future<void> setUseVoiceByDefault(bool enabled);
   Future<void> setDailyCheckInTime(TimeOfDay? time);

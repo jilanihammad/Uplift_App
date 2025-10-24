@@ -9,7 +9,7 @@ class Session {
   final DateTime createdAt;
   final DateTime lastModified;
   final bool isSynced;
-  
+
   Session({
     required this.id,
     required this.title,
@@ -19,7 +19,7 @@ class Session {
     required this.lastModified,
     this.isSynced = true,
   });
-  
+
   factory Session.fromJson(Map<String, dynamic> json) {
     // Parse action items from JSON - handle both string and list formats
     List<String> actionItems = [];
@@ -49,7 +49,7 @@ class Session {
             .toList();
       }
     }
-    
+
     return Session(
       id: json['id'].toString(),
       title: json['title'],
@@ -59,7 +59,7 @@ class Session {
       lastModified: DateTime.parse(json['last_modified']).toUtc(),
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

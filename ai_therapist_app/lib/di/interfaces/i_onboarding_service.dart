@@ -10,17 +10,17 @@ abstract class IOnboardingService {
   OnboardingStep get currentStep;
   bool get hasCompleted;
   ValueNotifier<OnboardingStep> get stepChanged;
-  
+
   // Initialization
   Future<void> init();
-  
+
   // Step navigation
   Future<void> goToNextStep();
   Future<void> goToStep(OnboardingStep step);
-  
+
   // Onboarding completion
   Future<void> completeOnboarding();
-  
+
   // Reset functionality (for testing)
   Future<void> resetOnboarding();
 }

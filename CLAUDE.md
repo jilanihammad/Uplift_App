@@ -312,3 +312,9 @@ See `LOGGING_IMPROVEMENTS_FOLLOWUP.md` for remaining tasks:
 - ChatScreen pushes session summaries via `/session_summaries:upsert` after local save
 - MemoryService queues profile/anchor updates locally (SharedPreferences) and flushes once network sync succeeds
 - Improved offline resilience of personalization features
+
+### Mood Persistence Rollout
+- Added `user_mood_entries` table with strict constraints (mood range, 64-char client IDs, 60-day retention)
+- FastAPI endpoints `/api/v1/mood_entries` + `/mood_entries:batch_upsert` with Firebase auth, seek-based pagination, and per-user rate limiting
+- Flutter `ProgressService` now stores mood logs in SQLite, syncs across devices when `mood_persistence_enabled` flag is ON, and falls back to local-only when OFF
+- Debounced client sync (500–3000 ms jitter), offline detection, and DB purge keep UX responsive while protecting backend load

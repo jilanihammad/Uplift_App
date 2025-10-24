@@ -67,9 +67,8 @@ class UserProfile {
     this.cbtFamiliarity = CBTFamiliarity.notFamiliar,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) : 
-      createdAt = createdAt ?? DateTime.now(),
-      updatedAt = updatedAt ?? DateTime.now();
+  })  : createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
 
   /// Get the display name for greetings and UI
   /// Priority: firstName -> first word of name -> 'there'
@@ -107,10 +106,12 @@ class UserProfile {
       primaryReason: primaryReason ?? this.primaryReason,
       goals: goals ?? this.goals,
       therapyExperience: therapyExperience ?? this.therapyExperience,
-      helpfulTherapyElements: helpfulTherapyElements ?? this.helpfulTherapyElements,
+      helpfulTherapyElements:
+          helpfulTherapyElements ?? this.helpfulTherapyElements,
       moodDescription: moodDescription ?? this.moodDescription,
       copingStrategy: copingStrategy ?? this.copingStrategy,
-      preferredSupportStyle: preferredSupportStyle ?? this.preferredSupportStyle,
+      preferredSupportStyle:
+          preferredSupportStyle ?? this.preferredSupportStyle,
       energizers: energizers ?? this.energizers,
       cbtFamiliarity: cbtFamiliarity ?? this.cbtFamiliarity,
       createdAt: createdAt,
@@ -162,17 +163,24 @@ class UserProfile {
           : TypicalCopingStrategy.notSure,
       preferredSupportStyle: json['preferredSupportStyle'] != null
           ? SupportStyle.values.firstWhere(
-              (e) => e.toString().split('.').last == json['preferredSupportStyle'],
+              (e) =>
+                  e.toString().split('.').last == json['preferredSupportStyle'],
               orElse: () => SupportStyle.notSure)
           : SupportStyle.notSure,
-      energizers: json['energizers'] != null ? List<String>.from(json['energizers']) : [],
+      energizers: json['energizers'] != null
+          ? List<String>.from(json['energizers'])
+          : [],
       cbtFamiliarity: json['cbtFamiliarity'] != null
           ? CBTFamiliarity.values.firstWhere(
               (e) => e.toString().split('.').last == json['cbtFamiliarity'],
               orElse: () => CBTFamiliarity.notFamiliar)
           : CBTFamiliarity.notFamiliar,
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : DateTime.now(),
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : DateTime.now(),
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'])
+          : DateTime.now(),
     );
   }
-} 
+}

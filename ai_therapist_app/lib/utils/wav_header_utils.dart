@@ -1,36 +1,36 @@
 import 'package:flutter/foundation.dart';
 
 /// Utility for modifying WAV headers to enable true streaming audio playback
-/// 
+///
 /// Standard WAV files specify exact data chunk sizes, causing ExoPlayer to stop
 /// when it reaches that limit. This utility modifies headers to use "unknown length"
 /// placeholders, allowing continuous streaming until the stream closes naturally.
 class WavHeaderUtils {
-  
   /// Placeholder size for unlimited streaming (0x7FFFFFFF)
   /// ExoPlayer treats this as "unknown length" and continues reading until EOF
   static const int streamingPlaceholderSize = 0x7FFFFFFF;
-  
+
   /// Standard WAV header size (44 bytes for PCM format)
   static const int standardWavHeaderSize = 44;
-  
+
   /// RIFF header signature
   static const String riffSignature = 'RIFF';
-  
-  /// WAVE format signature  
+
+  /// WAVE format signature
   static const String waveSignature = 'WAVE';
-  
+
   /// Data chunk signature
   static const String dataSignature = 'data';
 
   /// Extract and validate WAV header information from audio data
-  /// 
+  ///
   /// Returns null if the data doesn't contain a valid WAV header
   /// Returns WavHeaderInfo if valid header is found
   static WavHeaderInfo? parseWavHeader(List<int> audioData) {
     if (audioData.length < standardWavHeaderSize) {
       if (kDebugMode) {
-        print('⚠️ WavHeaderUtils: Data too small for WAV header (${audioData.length} bytes)');
+        print(
+            '⚠️ WavHeaderUtils: Data too small for WAV header (${audioData.length} bytes)');
       }
       return null;
     }
@@ -94,7 +94,7 @@ class WavHeaderUtils {
       while (offset + 8 <= audioData.length) {
         final chunkId = String.fromCharCodes(audioData.skip(offset).take(4));
         final chunkSize = _readUint32LE(audioData, offset + 4);
-        
+
         if (chunkId == dataSignature) {
           dataChunkId = chunkId;
           dataChunkSize = chunkSize;
@@ -107,9 +107,12 @@ class WavHeaderUtils {
       }
 
       // Validate required fields
-      if (fmtChunkId == null || dataChunkId == null || 
-          audioFormat == null || numChannels == null || 
-          sampleRate == null || dataChunkSize == null ||
+      if (fmtChunkId == null ||
+          dataChunkId == null ||
+          audioFormat == null ||
+          numChannels == null ||
+          sampleRate == null ||
+          dataChunkSize == null ||
           dataChunkOffset == null) {
         if (kDebugMode) {
           print('⚠️ WavHeaderUtils: Missing required WAV header fields');
@@ -144,14 +147,15 @@ class WavHeaderUtils {
   }
 
   /// Create streaming-friendly WAV header with placeholder sizes
-  /// 
+  ///
   /// Takes the original header info and generates a new header with:
   /// - RIFF chunk size set to streaming placeholder
   /// - Data chunk size set to streaming placeholder
   /// - All other format parameters preserved
   static Uint8List createStreamingHeader(WavHeaderInfo originalHeader) {
     if (kDebugMode) {
-      print('🔧 WavHeaderUtils: Creating streaming header from: $originalHeader');
+      print(
+          '🔧 WavHeaderUtils: Creating streaming header from: $originalHeader');
     }
 
     final header = ByteData(44); // Standard 44-byte WAV header
@@ -218,19 +222,22 @@ class WavHeaderUtils {
     offset += 4;
 
     if (kDebugMode) {
-      print('✅ WavHeaderUtils: Created streaming header (${header.lengthInBytes} bytes)');
-      print('🔧 Original data size: ${originalHeader.dataChunkSize}, streaming size: $streamingPlaceholderSize');
+      print(
+          '✅ WavHeaderUtils: Created streaming header (${header.lengthInBytes} bytes)');
+      print(
+          '🔧 Original data size: ${originalHeader.dataChunkSize}, streaming size: $streamingPlaceholderSize');
     }
 
     return header.buffer.asUint8List();
   }
 
   /// Extract PCM data from WAV audio buffer (skip header)
-  /// 
+  ///
   /// Returns the raw PCM audio data without any WAV headers
-  static Uint8List extractPcmData(List<int> audioData, WavHeaderInfo headerInfo) {
+  static Uint8List extractPcmData(
+      List<int> audioData, WavHeaderInfo headerInfo) {
     final pcmStartOffset = headerInfo.totalHeaderSize;
-    
+
     if (pcmStartOffset >= audioData.length) {
       if (kDebugMode) {
         print('⚠️ WavHeaderUtils: No PCM data found after header');
@@ -238,9 +245,7 @@ class WavHeaderUtils {
       return Uint8List(0);
     }
 
-    final pcmData = Uint8List.fromList(
-      audioData.skip(pcmStartOffset).toList()
-    );
+    final pcmData = Uint8List.fromList(audioData.skip(pcmStartOffset).toList());
 
     if (kDebugMode) {
       print('📊 WavHeaderUtils: Extracted ${pcmData.length} bytes of PCM data');
@@ -250,15 +255,17 @@ class WavHeaderUtils {
   }
 
   /// Combine streaming header with PCM data
-  /// 
+  ///
   /// Creates a complete audio buffer with streaming-friendly header + PCM data
-  static Uint8List combineHeaderAndPcm(Uint8List streamingHeader, Uint8List pcmData) {
+  static Uint8List combineHeaderAndPcm(
+      Uint8List streamingHeader, Uint8List pcmData) {
     final combined = Uint8List(streamingHeader.length + pcmData.length);
     combined.setRange(0, streamingHeader.length, streamingHeader);
     combined.setRange(streamingHeader.length, combined.length, pcmData);
 
     if (kDebugMode) {
-      print('🔧 WavHeaderUtils: Combined header (${streamingHeader.length}B) + PCM (${pcmData.length}B) = ${combined.length}B total');
+      print(
+          '🔧 WavHeaderUtils: Combined header (${streamingHeader.length}B) + PCM (${pcmData.length}B) = ${combined.length}B total');
     }
 
     return combined;
@@ -266,51 +273,57 @@ class WavHeaderUtils {
 
   /// Helper: Read 32-bit little-endian unsigned integer
   static int _readUint32LE(List<int> data, int offset) {
-    return data[offset] | 
-           (data[offset + 1] << 8) | 
-           (data[offset + 2] << 16) | 
-           (data[offset + 3] << 24);
+    return data[offset] |
+        (data[offset + 1] << 8) |
+        (data[offset + 2] << 16) |
+        (data[offset + 3] << 24);
   }
 
-  /// Helper: Read 16-bit little-endian unsigned integer  
+  /// Helper: Read 16-bit little-endian unsigned integer
   static int _readUint16LE(List<int> data, int offset) {
     return data[offset] | (data[offset + 1] << 8);
   }
 
   /// Check if WAV headers are already streaming-friendly
-  /// 
+  ///
   /// Returns true if the WAV file already has unlimited streaming markers:
   /// - RIFF chunk size = 0xFFFFFFFF (unknown length)
   /// - Data chunk size = 0xFFFFFFFF (unknown length)
-  /// 
+  ///
   /// These markers indicate the backend already sent perfect streaming headers
   /// and no modification is needed.
   static bool isStreamingFriendly(List<int> audioData) {
     final headerInfo = parseWavHeader(audioData);
-    
+
     if (headerInfo == null) {
       if (kDebugMode) {
-        print('⚠️ WavHeaderUtils: Cannot determine if streaming-friendly - invalid header');
+        print(
+            '⚠️ WavHeaderUtils: Cannot determine if streaming-friendly - invalid header');
       }
       return false;
     }
 
     // Check for standard unknown length markers
     const int unknownLengthMarker = 0xFFFFFFFF; // 4294967295
-    
-    final bool riffStreamingFriendly = headerInfo.riffSize == unknownLengthMarker;
-    final bool dataStreamingFriendly = headerInfo.dataChunkSize == unknownLengthMarker;
-    
+
+    final bool riffStreamingFriendly =
+        headerInfo.riffSize == unknownLengthMarker;
+    final bool dataStreamingFriendly =
+        headerInfo.dataChunkSize == unknownLengthMarker;
+
     // Consider streaming-friendly if either RIFF or data chunk has unknown length marker
-    final bool isStreamingFriendly = riffStreamingFriendly || dataStreamingFriendly;
-    
+    final bool isStreamingFriendly =
+        riffStreamingFriendly || dataStreamingFriendly;
+
     if (kDebugMode) {
       print('🔍 WavHeaderUtils: Streaming compatibility check:');
-      print('  RIFF size: ${headerInfo.riffSize} (streaming: $riffStreamingFriendly)');
-      print('  Data size: ${headerInfo.dataChunkSize} (streaming: $dataStreamingFriendly)');
+      print(
+          '  RIFF size: ${headerInfo.riffSize} (streaming: $riffStreamingFriendly)');
+      print(
+          '  Data size: ${headerInfo.dataChunkSize} (streaming: $dataStreamingFriendly)');
       print('  Overall streaming-friendly: $isStreamingFriendly');
     }
-    
+
     return isStreamingFriendly;
   }
 }

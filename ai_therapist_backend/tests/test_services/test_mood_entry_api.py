@@ -7,28 +7,46 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session as DbSession, sessionmaker
 
 from app.api.deps.auth import AuthenticatedUser
 from app.api.endpoints import mood_entries
 from app.db.base_class import Base
 from app.db.session import get_db
+from app.models.mood_entry import MoodEntry
 from app.models.user import User
+from app.models.session import Session as SessionModel
 from app.services.mood_entry_service import LOOKBACK_WINDOW
 from app.api.endpoints.mood_entries import rate_limiter
 
 
 @pytest.fixture()
 def api_client() -> TestClient:
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(bind=engine)
+    engine = create_engine(
+        "sqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     SessionLocal = sessionmaker(bind=engine, future=True)
+    from app.db import session as db_session_module
+    db_session_module.engine = engine
+    db_session_module.SessionLocal = SessionLocal
+    Base.metadata.create_all(
+        bind=db_session_module.engine,
+        tables=[
+            User.__table__,
+            SessionModel.__table__,
+            MoodEntry.__table__,
+        ],
+    )
 
     with SessionLocal() as session:
         session.add(User(id=1, email="api@example.com", password_hash="hash"))
         session.commit()
 
-    async def override_get_db() -> AsyncGenerator[Session, None]:
+    async def override_get_db() -> AsyncGenerator[DbSession, None]:
         db = SessionLocal()
         try:
             yield db

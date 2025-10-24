@@ -14,12 +14,12 @@ class CopingStrategiesScreen extends StatefulWidget {
 class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _userProfileService = DependencyContainer().get<UserProfileService>();
-  
+
   TypicalCopingStrategy _selectedCopingStrategy = TypicalCopingStrategy.notSure;
   List<String> _selectedAuxiliaryStrategies = [];
   final _customStrategyController = TextEditingController();
   bool _isLoading = false;
-  
+
   // Primary coping strategies
   final List<Map<String, dynamic>> _primaryStrategies = [
     {
@@ -38,14 +38,15 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
       'description': 'I try not to think about problems and focus elsewhere',
     },
     {
-      'value': TypicalCopingStrategy.withdraw, 
+      'value': TypicalCopingStrategy.withdraw,
       'name': 'Withdraw from Others',
       'description': 'I tend to isolate myself and process alone',
     },
     {
       'value': TypicalCopingStrategy.relaxationTechniques,
       'name': 'Relaxation Techniques',
-      'description': 'I use meditation, deep breathing, or other mindfulness practices',
+      'description':
+          'I use meditation, deep breathing, or other mindfulness practices',
     },
     {
       'value': TypicalCopingStrategy.unhealthyHabits,
@@ -58,7 +59,7 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
       'description': 'I haven\'t thought about how I typically cope',
     },
   ];
-  
+
   // Additional coping strategies
   final List<Map<String, String>> _auxiliaryStrategies = [
     {
@@ -102,23 +103,24 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
       'description': 'Art, crafts, or other creative outlets',
     },
   ];
-  
+
   @override
   void initState() {
     super.initState();
     // Pre-fill with existing data if available
     if (_userProfileService.profile != null) {
       _selectedCopingStrategy = _userProfileService.profile!.copingStrategy;
-      _selectedAuxiliaryStrategies = List.from(_userProfileService.profile!.energizers);
+      _selectedAuxiliaryStrategies =
+          List.from(_userProfileService.profile!.energizers);
     }
   }
-  
+
   @override
   void dispose() {
     _customStrategyController.dispose();
     super.dispose();
   }
-  
+
   void _toggleAuxiliaryStrategy(String strategyId) {
     setState(() {
       if (_selectedAuxiliaryStrategies.contains(strategyId)) {
@@ -128,7 +130,7 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
       }
     });
   }
-  
+
   void _addCustomStrategy() {
     final customStrategy = _customStrategyController.text.trim();
     if (customStrategy.isNotEmpty) {
@@ -138,12 +140,12 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
       });
     }
   }
-  
+
   Future<void> _saveAndContinue() async {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       await _userProfileService.updateProfile(
         copingStrategy: _selectedCopingStrategy,
@@ -185,8 +187,8 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
               Text(
                 'How do you typically cope?',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -194,7 +196,7 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
-              
+
               // Primary coping strategy selection
               const Text(
                 'My primary coping approach:',
@@ -204,12 +206,12 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              
+
               // Primary strategies
               ...List.generate(_primaryStrategies.length, (index) {
                 final strategy = _primaryStrategies[index];
                 final isSelected = _selectedCopingStrategy == strategy['value'];
-                
+
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
                   child: RadioListTile<TypicalCopingStrategy>(
@@ -246,24 +248,25 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                   ),
                 );
               }),
-              
+
               const SizedBox(height: 32),
-              
+
               // Additional strategies heading
               const Text(
                 'Additional strategies that help me:',
                 style: TextStyle(
-                  fontSize: 18, 
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 12),
-              
+
               // Auxiliary coping strategies list
               ...List.generate(_auxiliaryStrategies.length, (index) {
                 final strategy = _auxiliaryStrategies[index];
-                final isSelected = _selectedAuxiliaryStrategies.contains(strategy['id']);
-                
+                final isSelected =
+                    _selectedAuxiliaryStrategies.contains(strategy['id']);
+
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
                   child: CheckboxListTile(
@@ -293,9 +296,10 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                   ),
                 );
               }),
-              
+
               // Custom strategies from selection
-              if (_selectedAuxiliaryStrategies.any((s) => s.startsWith('custom:'))) ...[
+              if (_selectedAuxiliaryStrategies
+                  .any((s) => s.startsWith('custom:'))) ...[
                 const SizedBox(height: 16),
                 const Text(
                   'Your custom coping strategies:',
@@ -306,20 +310,23 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                 ),
                 const SizedBox(height: 8),
                 ...List.generate(
-                  _selectedAuxiliaryStrategies.where((s) => s.startsWith('custom:')).length,
+                  _selectedAuxiliaryStrategies
+                      .where((s) => s.startsWith('custom:'))
+                      .length,
                   (index) {
                     final customStrategy = _selectedAuxiliaryStrategies
                         .where((s) => s.startsWith('custom:'))
                         .elementAt(index)
                         .replaceFirst('custom:', '');
-                    
+
                     return ListTile(
                       title: Text(customStrategy),
                       trailing: IconButton(
                         icon: const Icon(Icons.close),
                         onPressed: () {
                           setState(() {
-                            _selectedAuxiliaryStrategies.remove('custom:$customStrategy');
+                            _selectedAuxiliaryStrategies
+                                .remove('custom:$customStrategy');
                           });
                         },
                       ),
@@ -327,7 +334,7 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                   },
                 ),
               ],
-              
+
               // Add custom strategy
               const SizedBox(height: 24),
               TextField(
@@ -345,9 +352,9 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                 ),
                 onSubmitted: (_) => _addCustomStrategy(),
               ),
-              
+
               const SizedBox(height: 48),
-              
+
               // Continue Button
               SizedBox(
                 width: double.infinity,
@@ -359,15 +366,15 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isLoading 
-                    ? const CircularProgressIndicator()
-                    : const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text(
+                          'Continue',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                 ),
               ),
             ],
@@ -376,4 +383,4 @@ class _CopingStrategiesScreenState extends State<CopingStrategiesScreen> {
       ),
     );
   }
-} 
+}

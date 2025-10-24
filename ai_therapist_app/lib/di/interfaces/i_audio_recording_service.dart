@@ -11,7 +11,7 @@ abstract class IAudioRecordingService {
   Stream<RecordingState> get recordingStateStream;
   Stream<double> get audioLevelStream;
   bool get isInitialized;
-  
+
   // Recording operations
   Future<void> startRecording();
   Future<String> stopRecording();
@@ -19,19 +19,19 @@ abstract class IAudioRecordingService {
   Future<void> pauseRecording();
   Future<void> resumeRecording();
   Future<void> cancelRecording();
-  
+
   // Permission management
   Future<bool> requestMicrophonePermission();
   Future<bool> hasMicrophonePermission();
-  
+
   // Configuration
   void setAudioQuality(String quality);
   void setRecordingSettings(Map<String, dynamic> settings);
-  
+
   // Initialization and cleanup
   Future<void> initialize();
   void dispose();
-  
+
   // File management
   String? get lastRecordingPath;
   Future<void> cleanupRecordingFiles();

@@ -10,14 +10,15 @@ class ThemeService extends ChangeNotifier implements IThemeService {
   // Constructor with dependency injection
   ThemeService({
     PreferencesService? preferencesService,
-  }) : _preferencesService = preferencesService ?? DependencyContainer().get<PreferencesService>();
+  }) : _preferencesService = preferencesService ??
+            DependencyContainer().get<PreferencesService>();
 
   // Get theme mode
   ThemeMode _themeMode = ThemeMode.light;
 
   @override
   ThemeMode get themeMode => _themeMode;
-  
+
   @override
   bool get isDarkMode => _themeMode == ThemeMode.dark;
 
@@ -26,7 +27,7 @@ class ThemeService extends ChangeNotifier implements IThemeService {
   Future<void> init() async {
     // Ensure PreferencesService is initialized first
     await _preferencesService.init();
-    
+
     // Get dark mode preference from PreferencesService
     final darkModeEnabled =
         _preferencesService.preferences?.darkModeEnabled ?? true;

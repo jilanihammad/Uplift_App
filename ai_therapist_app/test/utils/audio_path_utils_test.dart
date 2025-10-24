@@ -6,12 +6,14 @@ void main() {
     group('ensureExtension', () {
       test('adds extension to filename without extension', () {
         expect(AudioPathUtils.ensureExtension('audio', 'wav'), 'audio.wav');
-        expect(AudioPathUtils.ensureExtension('recording', 'mp3'), 'recording.mp3');
+        expect(AudioPathUtils.ensureExtension('recording', 'mp3'),
+            'recording.mp3');
       });
 
       test('preserves extension when already present', () {
         expect(AudioPathUtils.ensureExtension('audio.wav', 'wav'), 'audio.wav');
-        expect(AudioPathUtils.ensureExtension('recording.mp3', 'mp3'), 'recording.mp3');
+        expect(AudioPathUtils.ensureExtension('recording.mp3', 'mp3'),
+            'recording.mp3');
       });
 
       test('handles case-insensitive extensions', () {
@@ -20,12 +22,15 @@ void main() {
       });
 
       test('works with paths', () {
-        expect(AudioPathUtils.ensureExtension('/path/to/audio', 'wav'), '/path/to/audio.wav');
-        expect(AudioPathUtils.ensureExtension('/path/to/audio.wav', 'wav'), '/path/to/audio.wav');
+        expect(AudioPathUtils.ensureExtension('/path/to/audio', 'wav'),
+            '/path/to/audio.wav');
+        expect(AudioPathUtils.ensureExtension('/path/to/audio.wav', 'wav'),
+            '/path/to/audio.wav');
       });
 
       test('throws error for empty input', () {
-        expect(() => AudioPathUtils.ensureExtension('', 'wav'), throwsArgumentError);
+        expect(() => AudioPathUtils.ensureExtension('', 'wav'),
+            throwsArgumentError);
       });
     });
 
@@ -54,8 +59,10 @@ void main() {
       });
 
       test('rejects basenames with extensions', () {
-        expect(() => AudioPathUtils.validateBasename('audio.wav'), throwsArgumentError);
-        expect(() => AudioPathUtils.validateBasename('file.mp3'), throwsArgumentError);
+        expect(() => AudioPathUtils.validateBasename('audio.wav'),
+            throwsArgumentError);
+        expect(() => AudioPathUtils.validateBasename('file.mp3'),
+            throwsArgumentError);
       });
     });
 
@@ -77,22 +84,22 @@ void main() {
       test('TTS filename generation flow prevents .wav.wav', () {
         // Simulate the original bug scenario
         final fileId = AudioPathUtils.generateTimestampId('tts');
-        
+
         // Ensure ID has no extension
         expect(fileId.contains('.'), false);
-        
+
         // Simulate what PathManager.ttsFile() would do
         const ttsPrefix = 'tts_stream_';
         final ext = 'wav';
         final simulatedPath = '$ttsPrefix$fileId.$ext';
-        
+
         // Verify no double extension
         expect(simulatedPath.endsWith('.wav.wav'), false);
         expect(simulatedPath.endsWith('.wav'), true);
-        
-        // Verify correct pattern  
+
+        // Verify correct pattern
         expect(simulatedPath.startsWith('tts_stream_tts_'), true);
-        
+
         // Count .wav occurrences (should be exactly 1)
         final wavCount = '.wav'.allMatches(simulatedPath).length;
         expect(wavCount, 1);

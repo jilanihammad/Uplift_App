@@ -16,7 +16,7 @@ class UserPreferences {
   final String? focusArea;
   final bool useVoiceByDefault;
   final TimeOfDay? dailyCheckInTime;
-  
+
   // Constructor with default values
   const UserPreferences({
     this.userId,
@@ -34,7 +34,7 @@ class UserPreferences {
     this.useVoiceByDefault = false,
     this.dailyCheckInTime,
   });
-  
+
   // Create a copy with modified fields
   UserPreferences copyWith({
     String? userId,
@@ -69,7 +69,7 @@ class UserPreferences {
       dailyCheckInTime: dailyCheckInTime ?? this.dailyCheckInTime,
     );
   }
-  
+
   // Serialize to JSON
   Map<String, dynamic> toJson() {
     return {
@@ -91,19 +91,20 @@ class UserPreferences {
       'dailyCheckInTimeMinute': dailyCheckInTime?.minute,
     };
   }
-  
+
   // Deserialize from JSON
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
     return UserPreferences(
       userId: json['userId'],
       therapistStyleId: json['therapistStyleId'],
       reminderEnabled: json['reminderEnabled'] ?? true,
-      reminderTime: json['reminderTimeHour'] != null && json['reminderTimeMinute'] != null
-          ? TimeOfDay(
-              hour: json['reminderTimeHour'],
-              minute: json['reminderTimeMinute'],
-            )
-          : null,
+      reminderTime:
+          json['reminderTimeHour'] != null && json['reminderTimeMinute'] != null
+              ? TimeOfDay(
+                  hour: json['reminderTimeHour'],
+                  minute: json['reminderTimeMinute'],
+                )
+              : null,
       darkModeEnabled: json['darkModeEnabled'] ?? false,
       notificationsEnabled: json['notificationsEnabled'] ?? true,
       audioEnabled: json['audioEnabled'] ?? true,
@@ -112,10 +113,12 @@ class UserPreferences {
       lastUpdated: json['lastUpdated'] != null
           ? DateTime.parse(json['lastUpdated'])
           : null,
-      goals: json['goals'] != null ? List<String>.from(json['goals']) : const [],
+      goals:
+          json['goals'] != null ? List<String>.from(json['goals']) : const [],
       focusArea: json['focusArea'],
       useVoiceByDefault: json['useVoiceByDefault'] ?? false,
-      dailyCheckInTime: json['dailyCheckInTimeHour'] != null && json['dailyCheckInTimeMinute'] != null
+      dailyCheckInTime: json['dailyCheckInTimeHour'] != null &&
+              json['dailyCheckInTimeMinute'] != null
           ? TimeOfDay(
               hour: json['dailyCheckInTimeHour'],
               minute: json['dailyCheckInTimeMinute'],
@@ -123,4 +126,4 @@ class UserPreferences {
           : null,
     );
   }
-} 
+}

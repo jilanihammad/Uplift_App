@@ -23,7 +23,7 @@ class _NoiseIndicatorState extends State<NoiseIndicator> {
   void initState() {
     super.initState();
     _updateNoiseInfo();
-    
+
     // Update noise info periodically
     Future.doWhile(() async {
       if (mounted) {

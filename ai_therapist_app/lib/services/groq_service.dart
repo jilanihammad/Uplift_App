@@ -22,8 +22,8 @@ class GroqService implements IGroqService {
   GroqService({
     ConfigService? configService,
     ApiClient? apiClient,
-  }) : _configService = configService ?? DependencyContainer().configService,
-       _apiClient = apiClient ?? DependencyContainer().apiClientConcrete;
+  })  : _configService = configService ?? DependencyContainer().configService,
+        _apiClient = apiClient ?? DependencyContainer().apiClientConcrete;
 
   // API connection details
   late String _llmModelId;

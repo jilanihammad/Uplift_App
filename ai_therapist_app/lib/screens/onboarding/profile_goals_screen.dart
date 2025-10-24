@@ -14,10 +14,10 @@ class ProfileGoalsScreen extends StatefulWidget {
 class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _userProfileService = DependencyContainer().get<UserProfileService>();
-  
+
   final _otherGoalController = TextEditingController();
   bool _isLoading = false;
-  
+
   // Common therapy goals
   final List<String> _commonGoals = [
     'Reduce anxiety',
@@ -31,15 +31,15 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
     'Find purpose/meaning',
     'Work-life balance',
   ];
-  
+
   // Selected goals
   final Set<String> _selectedGoals = {};
-  
+
   @override
   void initState() {
     super.initState();
     // Pre-fill with existing data if available
-    if (_userProfileService.profile != null && 
+    if (_userProfileService.profile != null &&
         _userProfileService.profile!.goals.isNotEmpty) {
       for (final goal in _userProfileService.profile!.goals) {
         if (_commonGoals.contains(goal)) {
@@ -50,13 +50,13 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
       }
     }
   }
-  
+
   @override
   void dispose() {
     _otherGoalController.dispose();
     super.dispose();
   }
-  
+
   void _toggleGoal(String goal) {
     setState(() {
       if (_selectedGoals.contains(goal)) {
@@ -66,7 +66,7 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
       }
     });
   }
-  
+
   Future<void> _saveAndContinue() async {
     if (_selectedGoals.isEmpty && _otherGoalController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -74,30 +74,30 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       final goals = _selectedGoals.toList();
-      
+
       // Add custom goal if provided
       if (_otherGoalController.text.trim().isNotEmpty) {
         goals.add(_otherGoalController.text.trim());
       }
-      
+
       await _userProfileService.updateProfile(
         goals: goals,
       );
-      
+
       // Show a success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Goals saved successfully')),
         );
       }
-      
+
       // Continue to the next step in the onboarding flow
       await _onboardingService.goToNextStep();
     } catch (e) {
@@ -135,8 +135,8 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
               Text(
                 'What are your goals?',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -157,10 +157,10 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
                   ),
                 ),
               const SizedBox(height: 16),
-              
+
               // Goal selection
               ..._buildGoalOptions(),
-              
+
               // Helper note for multiple selection
               Padding(
                 padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
@@ -173,14 +173,14 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
                   ),
                 ),
               ),
-              
+
               // Custom goal entry
               const SizedBox(height: 16),
               Text(
                 'Add a custom goal (optional)',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 8),
               TextFormField(
@@ -195,9 +195,9 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
                 maxLines: 2,
                 textCapitalization: TextCapitalization.sentences,
               ),
-              
+
               const SizedBox(height: 48),
-              
+
               // Continue Button
               SizedBox(
                 width: double.infinity,
@@ -209,15 +209,15 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isLoading 
-                    ? const CircularProgressIndicator()
-                    : const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text(
+                          'Continue',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                 ),
               ),
             ],
@@ -226,11 +226,11 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
       ),
     );
   }
-  
+
   List<Widget> _buildGoalOptions() {
     return _commonGoals.map((goal) {
       final isSelected = _selectedGoals.contains(goal);
-      
+
       return Padding(
         padding: const EdgeInsets.only(bottom: 12.0),
         child: InkWell(
@@ -274,9 +274,8 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
                     goal,
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
                 ),
@@ -287,4 +286,4 @@ class _ProfileGoalsScreenState extends State<ProfileGoalsScreen> {
       );
     }).toList();
   }
-} 
+}

@@ -5,14 +5,14 @@
 abstract class INavigationService {
   // Visibility stream
   Stream<bool> get bottomNavVisibilityStream;
-  
+
   // Current state
   bool get isBottomNavVisible;
-  
+
   // Navigation control
   void showBottomNav();
   void hideBottomNav();
-  
+
   // Resource management
   void dispose();
 }

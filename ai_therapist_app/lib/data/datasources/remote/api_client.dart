@@ -460,7 +460,8 @@ class ApiClient implements IApiClient {
   @override
   void setBaseUrl(String url) {
     // This would require modifying the ConfigService, which is not recommended
-    throw UnimplementedError('Base URL modification not supported - use ConfigService instead');
+    throw UnimplementedError(
+        'Base URL modification not supported - use ConfigService instead');
   }
 
   @override
@@ -483,7 +484,8 @@ class ApiClient implements IApiClient {
   bool get isConnected => true; // Simplified implementation
 
   @override
-  Stream<String> get errorStream => const Stream.empty(); // Simplified implementation
+  Stream<String> get errorStream =>
+      const Stream.empty(); // Simplified implementation
 
   @override
   Future<void> initialize() async {
@@ -783,15 +785,16 @@ class ApiException implements Exception {
 class BackendSchemaException extends ApiException {
   final Map<String, dynamic>? receivedResponse;
   final String expectedField;
-  
+
   BackendSchemaException({
     required String message,
     required this.expectedField,
     this.receivedResponse,
   }) : super(statusCode: 422, message: message);
-  
+
   @override
-  String toString() => 'BackendSchemaException: $message (expected field: $expectedField)';
+  String toString() =>
+      'BackendSchemaException: $message (expected field: $expectedField)';
 }
 
 class TimeoutException extends IOException {

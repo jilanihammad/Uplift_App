@@ -5,7 +5,7 @@ import 'package:logger/logger.dart';
 import 'logger_util.dart';
 
 /// Debug helper specifically for TTS streaming development
-/// 
+///
 /// This provides easy control over streaming log verbosity without affecting
 /// other parts of the app. Useful for debugging the streaming buffer controller
 /// and incremental TTS functionality.

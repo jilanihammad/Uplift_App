@@ -464,10 +464,12 @@ Future<void> setupServiceLocator(
     }
 
     if (!serviceLocator.isRegistered<ProgressService>()) {
-      serviceLocator.registerLazySingleton<ProgressService>(() =>
-          ProgressService(
-              notificationService:
-                  serviceLocator<service_ns.NotificationService>()));
+      serviceLocator
+          .registerLazySingleton<ProgressService>(() => ProgressService(
+                notificationService:
+                    serviceLocator<service_ns.NotificationService>(),
+                databaseProvider: serviceLocator<DatabaseProvider>(),
+              ));
       debugPrint('Registered ProgressService');
     }
 
