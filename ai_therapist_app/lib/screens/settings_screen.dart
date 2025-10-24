@@ -220,7 +220,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.cloud_sync_outlined),
                   title: const Text('Refresh Remote Config'),
-                  subtitle: const Text('Fetch latest feature flags from Firebase'),
+                  subtitle:
+                      const Text('Fetch latest feature flags from Firebase'),
                   trailing: const Icon(Icons.refresh),
                   onTap: _refreshRemoteConfig,
                 ),
@@ -631,7 +632,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _showSnack('Fetching latest remote config...');
       await RemoteConfigService().refresh();
       if (mounted) {
-        _showSnack('Remote config refreshed! Memory persistence: ${FeatureFlags.isMemoryPersistenceEnabled}');
+        _showSnack(
+            'Remote config refreshed! Memory persistence: ${FeatureFlags.isMemoryPersistenceEnabled}');
       }
     } catch (e) {
       if (mounted) {

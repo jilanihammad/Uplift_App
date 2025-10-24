@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'app_config.dart';
 
 /// TTS Streaming Configuration Constants
-/// 
+///
 /// Provides compile-time constants and runtime configuration for TTS streaming feature.
 /// This follows a safety-first approach with feature flags for gradual rollout.
 class TTSStreamingConfig {
@@ -18,15 +18,16 @@ class TTSStreamingConfig {
 
   /// Maximum duration (in seconds) to keep audio in memory before switching to temp file
   /// Prevents memory bloat for long AI responses
-  static int get maxMemoryDurationSeconds => _config.ttsMaxMemoryDurationSeconds;
+  static int get maxMemoryDurationSeconds =>
+      _config.ttsMaxMemoryDurationSeconds;
 
   /// Calculated max memory duration
-  static Duration get maxMemoryDuration => 
+  static Duration get maxMemoryDuration =>
       Duration(seconds: maxMemoryDurationSeconds);
 
   /// Whether to use streaming based on buffer size
   /// Returns false if buffer size is set to effectively disable streaming
-  static bool get shouldUseStreaming => 
+  static bool get shouldUseStreaming =>
       isEnabled && bufferSize < 500000; // 500KB threshold
 
   /// Log current streaming configuration
@@ -35,14 +36,17 @@ class TTSStreamingConfig {
       print('🎯 TTS Streaming Config:');
       print('  Enabled: $isEnabled');
       print('  Should Use Streaming: $shouldUseStreaming');
-      print('  Buffer Size: $bufferSize bytes (${(bufferSize / 1024).toStringAsFixed(1)} KB)');
+      print(
+          '  Buffer Size: $bufferSize bytes (${(bufferSize / 1024).toStringAsFixed(1)} KB)');
       print('  Buffer Description: $bufferSizeDescription');
       print('  Max Memory Duration: $maxMemoryDurationSeconds seconds');
-      
+
       if (shouldUseStreaming) {
-        print('  🚀 STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
+        print(
+            '  🚀 STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
       } else if (isEnabled) {
-        print('  ⚠️  STREAMING ENABLED but buffer too large (${(bufferSize / 1024).toStringAsFixed(1)}KB)');
+        print(
+            '  ⚠️  STREAMING ENABLED but buffer too large (${(bufferSize / 1024).toStringAsFixed(1)}KB)');
       } else {
         print('  🔄 STREAMING DISABLED - Using full-buffer mode');
       }
@@ -50,8 +54,8 @@ class TTSStreamingConfig {
   }
 
   /// WAV format specific buffer constants (optimized for streaming)
-  static const int wavChunkBytes = 8192;     // 8KB read unit for WAV
-  static const int wavPreplayBytes = 24576;  // 24KB before starting playback
+  static const int wavChunkBytes = 8192; // 8KB read unit for WAV
+  static const int wavPreplayBytes = 24576; // 24KB before starting playback
 
   /// Safe buffer sizes for gradual rollout
   static const int bufferSizeDisabled = 999999; // Effectively disabled

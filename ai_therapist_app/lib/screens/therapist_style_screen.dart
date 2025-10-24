@@ -6,7 +6,7 @@ import 'package:ai_therapist_app/services/preferences_service.dart';
 
 class TherapistStyleScreen extends StatefulWidget {
   final ITherapyService? therapyService;
-  
+
   const TherapistStyleScreen({
     Key? key,
     this.therapyService,
@@ -20,28 +20,29 @@ class _TherapistStyleScreenState extends State<TherapistStyleScreen> {
   late PreferencesService _preferencesService;
   late ITherapyService _therapyService;
   String _selectedStyleId = '';
-  
+
   @override
   void initState() {
     super.initState();
     _preferencesService = DependencyContainer().get<PreferencesService>();
     // Use dependency injection with fallback to DependencyContainer
     _therapyService = widget.therapyService ?? DependencyContainer().therapy;
-    _selectedStyleId = _preferencesService.preferences?.therapistStyleId ?? 'cbt';
+    _selectedStyleId =
+        _preferencesService.preferences?.therapistStyleId ?? 'cbt';
   }
-  
+
   Future<void> _selectTherapistStyle(String styleId) async {
     setState(() {
       _selectedStyleId = styleId;
     });
-    
+
     // Update preferences
     await _preferencesService.setTherapistStyle(styleId);
-    
+
     // Update therapy service with the new style
     final style = TherapistStyle.getById(styleId);
     _therapyService.setTherapistStyle(style.systemPrompt);
-    
+
     // Show confirmation
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -85,14 +86,14 @@ class _TherapistStyleScreenState extends State<TherapistStyleScreen> {
                 itemBuilder: (context, index) {
                   final style = TherapistStyle.availableStyles[index];
                   final isSelected = style.id == _selectedStyleId;
-                  
+
                   return Card(
                     elevation: isSelected ? 4 : 1,
                     margin: const EdgeInsets.only(bottom: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: isSelected 
-                          ? BorderSide(color: style.color, width: 2) 
+                      side: isSelected
+                          ? BorderSide(color: style.color, width: 2)
                           : BorderSide.none,
                     ),
                     child: InkWell(
@@ -147,4 +148,4 @@ class _TherapistStyleScreenState extends State<TherapistStyleScreen> {
       ),
     );
   }
-} 
+}

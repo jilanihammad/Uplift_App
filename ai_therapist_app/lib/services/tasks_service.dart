@@ -4,11 +4,11 @@ import '../data/datasources/local/prefs_manager.dart';
 
 class TasksService {
   static const String _tasksKey = 'user_tasks';
-  
+
   final PrefsManager _prefsManager;
   List<UserTask> _tasks = [];
 
-  TasksService({PrefsManager? prefsManager}) 
+  TasksService({PrefsManager? prefsManager})
       : _prefsManager = prefsManager ?? PrefsManager();
 
   // Initialize the service
@@ -21,10 +21,12 @@ class TasksService {
   List<UserTask> get tasks => List.unmodifiable(_tasks);
 
   // Get pending tasks only
-  List<UserTask> get pendingTasks => _tasks.where((task) => !task.isCompleted).toList();
+  List<UserTask> get pendingTasks =>
+      _tasks.where((task) => !task.isCompleted).toList();
 
   // Get completed tasks only
-  List<UserTask> get completedTasks => _tasks.where((task) => task.isCompleted).toList();
+  List<UserTask> get completedTasks =>
+      _tasks.where((task) => task.isCompleted).toList();
 
   // Add a new task
   Future<void> addTask(String text, String sessionId) async {
@@ -34,7 +36,7 @@ class TasksService {
       sessionId: sessionId,
       dateAdded: DateTime.now(),
     );
-    
+
     _tasks.add(task);
     await _saveTasks();
   }
@@ -71,14 +73,15 @@ class TasksService {
 
   // Check if a specific action item from a session is already added as a task
   bool isActionItemAlreadyAdded(String sessionId, String actionItemText) {
-    return _tasks.any((task) => 
-        task.sessionId == sessionId && task.text == actionItemText);
+    return _tasks.any(
+        (task) => task.sessionId == sessionId && task.text == actionItemText);
   }
 
   // Remove a task by action item text and session ID
-  Future<void> removeTaskByActionItem(String sessionId, String actionItemText) async {
-    _tasks.removeWhere((task) => 
-        task.sessionId == sessionId && task.text == actionItemText);
+  Future<void> removeTaskByActionItem(
+      String sessionId, String actionItemText) async {
+    _tasks.removeWhere(
+        (task) => task.sessionId == sessionId && task.text == actionItemText);
     await _saveTasks();
   }
 
@@ -89,7 +92,8 @@ class TasksService {
       if (tasksJson != null) {
         final List<dynamic> tasksList = jsonDecode(tasksJson);
         _tasks = tasksList
-            .map((taskData) => UserTask.fromJson(taskData as Map<String, dynamic>))
+            .map((taskData) =>
+                UserTask.fromJson(taskData as Map<String, dynamic>))
             .toList();
       }
     } catch (e) {
@@ -101,7 +105,8 @@ class TasksService {
   // Save tasks to storage
   Future<void> _saveTasks() async {
     try {
-      final tasksJson = jsonEncode(_tasks.map((task) => task.toJson()).toList());
+      final tasksJson =
+          jsonEncode(_tasks.map((task) => task.toJson()).toList());
       await _prefsManager.setString(_tasksKey, tasksJson);
     } catch (e) {
       print('Error saving tasks: $e');

@@ -13,11 +13,11 @@ class ProfileReasonScreen extends StatefulWidget {
 class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _userProfileService = DependencyContainer().get<UserProfileService>();
-  
+
   String? _selectedReason;
   final _otherReasonController = TextEditingController();
   bool _isLoading = false;
-  
+
   // Common therapy reasons
   final List<String> _commonReasons = [
     'Anxiety',
@@ -30,12 +30,12 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
     'Sleep problems',
     'Other',
   ];
-  
+
   @override
   void initState() {
     super.initState();
     // Pre-fill with existing data if available
-    if (_userProfileService.profile != null && 
+    if (_userProfileService.profile != null &&
         _userProfileService.profile!.primaryReason != null) {
       final reason = _userProfileService.profile!.primaryReason!;
       if (_commonReasons.contains(reason)) {
@@ -46,13 +46,13 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
       }
     }
   }
-  
+
   @override
   void dispose() {
     _otherReasonController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveAndContinue() async {
     if (_selectedReason == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,25 +60,26 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
       );
       return;
     }
-    
-    if (_selectedReason == 'Other' && _otherReasonController.text.trim().isEmpty) {
+
+    if (_selectedReason == 'Other' &&
+        _otherReasonController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter your reason for therapy')),
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       await _userProfileService.updateProfile(
-        primaryReason: _selectedReason == 'Other' 
-            ? _otherReasonController.text.trim() 
+        primaryReason: _selectedReason == 'Other'
+            ? _otherReasonController.text.trim()
             : _selectedReason,
       );
-      
+
       await _onboardingService.goToNextStep();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,8 +116,8 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
               Text(
                 'What brings you here today?',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -124,10 +125,10 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
-              
+
               // Reason selection
               ..._buildReasonOptions(),
-              
+
               // Other reason text field
               if (_selectedReason == 'Other') ...[
                 const SizedBox(height: 16),
@@ -143,9 +144,9 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
                   textCapitalization: TextCapitalization.sentences,
                 ),
               ],
-              
+
               const SizedBox(height: 48),
-              
+
               // Continue Button
               SizedBox(
                 width: double.infinity,
@@ -157,15 +158,15 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isLoading 
-                    ? const CircularProgressIndicator()
-                    : const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text(
+                          'Continue',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                 ),
               ),
             ],
@@ -174,7 +175,7 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
       ),
     );
   }
-  
+
   List<Widget> _buildReasonOptions() {
     return _commonReasons.map((reason) {
       return Padding(
@@ -230,4 +231,4 @@ class _ProfileReasonScreenState extends State<ProfileReasonScreen> {
       );
     }).toList();
   }
-} 
+}

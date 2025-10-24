@@ -20,7 +20,7 @@ class AppDatabase implements IAppDatabase {
   static Database? _database;
 
   // Current database version - increment when schema changes
-  static const int _databaseVersion = 7;
+  static const int _databaseVersion = 8;
 
   // Database file name
   static const String _databaseName = 'app_database.db';
@@ -171,7 +171,7 @@ class AppDatabase implements IAppDatabase {
           )
         ''');
 
-        // Create mood logs table
+        // Create mood logs table (legacy)
         await txn.execute('''
           CREATE TABLE mood_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,6 +180,30 @@ class AppDatabase implements IAppDatabase {
             notes TEXT
           )
         ''');
+
+        // Create mood entries table for persistence + sync
+        await txn.execute('''
+          CREATE TABLE mood_entries (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            client_entry_id TEXT NOT NULL,
+            mood INTEGER NOT NULL,
+            notes TEXT,
+            logged_at TEXT NOT NULL,
+            server_id TEXT,
+            updated_at TEXT NOT NULL,
+            is_pending INTEGER NOT NULL DEFAULT 1,
+            last_synced_at TEXT,
+            sync_error TEXT,
+            UNIQUE(user_id, client_entry_id)
+          )
+        ''');
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_mood_entries_user_logged_at ON mood_entries (user_id, logged_at DESC)',
+        );
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_mood_entries_pending ON mood_entries (is_pending)',
+        );
 
         // Create conversations table (previously in DatabaseHelper)
         await txn.execute('''
@@ -290,6 +314,11 @@ class AppDatabase implements IAppDatabase {
         // Migration to version 7: Extend user_anchors for backend sync metadata
         if (oldVersion < 7) {
           await _migrateToV7(txn);
+        }
+
+        // Migration to version 8: Create mood_entries table for sync persistence
+        if (oldVersion < 8) {
+          await _migrateToV8(txn);
         }
       });
 
@@ -873,5 +902,45 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
     debugPrint('Database configuration complete (or attempted).');
+  }
+
+  /// Migration to version 8: Create mood_entries table for persistent mood tracking
+  Future<void> _migrateToV8(Transaction txn) async {
+    debugPrint('Applying migration to version 8...');
+
+    final tableExists = await txn.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      ['mood_entries'],
+    );
+
+    if (tableExists.isEmpty) {
+      await txn.execute('''
+        CREATE TABLE mood_entries (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          client_entry_id TEXT NOT NULL,
+          mood INTEGER NOT NULL,
+          notes TEXT,
+          logged_at TEXT NOT NULL,
+          server_id TEXT,
+          updated_at TEXT NOT NULL,
+          is_pending INTEGER NOT NULL DEFAULT 1,
+          last_synced_at TEXT,
+          sync_error TEXT,
+          UNIQUE(user_id, client_entry_id)
+        )
+      ''');
+      await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mood_entries_user_logged_at ON mood_entries (user_id, logged_at DESC)',
+      );
+      await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mood_entries_pending ON mood_entries (is_pending)',
+      );
+      debugPrint('Created mood_entries table');
+    } else {
+      debugPrint('mood_entries table already exists, skipping creation');
+    }
+
+    debugPrint('Migration to version 8 completed');
   }
 }

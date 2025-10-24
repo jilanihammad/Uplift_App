@@ -14,12 +14,12 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  
+
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _userProfileService = DependencyContainer().get<UserProfileService>();
-  
+
   bool _isLoading = false;
-  
+
   @override
   void initState() {
     super.initState();
@@ -29,34 +29,34 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
       _emailController.text = _userProfileService.profile!.email ?? '';
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveAndContinue() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       final name = _nameController.text.trim();
       final email = _emailController.text.trim();
-      
+
       // Extract firstName from name for better display in settings
       final firstName = name.isNotEmpty ? name.split(' ').first : '';
-      
+
       await _userProfileService.updateProfile(
         name: name,
         firstName: firstName,
         email: email,
       );
-      
+
       await _onboardingService.goToNextStep();
     } catch (e) {
       if (mounted) {
@@ -97,8 +97,8 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                 Text(
                   'Let\'s get to know you',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -106,13 +106,13 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 40),
-                
+
                 // Name Field
                 Text(
                   'What\'s your name?',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -133,13 +133,13 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   textCapitalization: TextCapitalization.words,
                 ),
                 const SizedBox(height: 32),
-                
+
                 // Email Field (Optional)
                 Text(
                   'What\'s your email? (Optional)',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -156,7 +156,8 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   validator: (value) {
                     if (value != null && value.trim().isNotEmpty) {
                       // Simple email validation
-                      final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                      final emailRegex =
+                          RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
                       if (!emailRegex.hasMatch(value)) {
                         return 'Please enter a valid email';
                       }
@@ -165,7 +166,7 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   },
                 ),
                 const SizedBox(height: 48),
-                
+
                 // Continue Button
                 SizedBox(
                   width: double.infinity,
@@ -177,15 +178,15 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: _isLoading 
-                      ? const CircularProgressIndicator()
-                      : const Text(
-                          'Continue',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                    child: _isLoading
+                        ? const CircularProgressIndicator()
+                        : const Text(
+                            'Continue',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
                   ),
                 ),
               ],
@@ -195,4 +196,4 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
       ),
     );
   }
-} 
+}

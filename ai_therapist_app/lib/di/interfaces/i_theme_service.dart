@@ -9,7 +9,7 @@ abstract class IThemeService extends ChangeNotifier {
   ThemeMode get themeMode;
   bool get isDarkMode;
   ThemeData get theme;
-  
+
   // Theme operations
   Future<void> init();
   Future<void> toggleTheme();

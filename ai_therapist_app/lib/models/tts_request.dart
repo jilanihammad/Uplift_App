@@ -18,9 +18,9 @@ class TtsRequest {
     required this.voice,
     required this.format,
     this.makeBackupFile = true,
-  }) : done = Completer<void>(),
-       createdAt = DateTime.now(),
-       id = DateTime.now().microsecondsSinceEpoch.toString();
+  })  : done = Completer<void>(),
+        createdAt = DateTime.now(),
+        id = DateTime.now().microsecondsSinceEpoch.toString();
 
   /// Get the future that completes when playback is finished
   Future<void> get completion => done.future;
@@ -40,5 +40,6 @@ class TtsRequest {
   }
 
   @override
-  String toString() => 'TtsRequest(id: $id, text: "${text.substring(0, text.length > 30 ? 30 : text.length)}...", voice: $voice)';
+  String toString() =>
+      'TtsRequest(id: $id, text: "${text.substring(0, text.length > 30 ? 30 : text.length)}...", voice: $voice)';
 }

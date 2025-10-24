@@ -40,7 +40,8 @@ class SessionRepository implements ISessionRepository {
             summary: data['summary'] as String,
             actionItems: _parseActionItems(data['action_items']),
             createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
-            lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
+            lastModified:
+                DateTime.parse(data['last_modified'] as String).toUtc(),
             isSynced: (data['is_synced'] as int) == 1,
           );
         }
@@ -116,7 +117,8 @@ class SessionRepository implements ISessionRepository {
       final response = await apiClient.get('/sessions');
       print('Server response for sessions: $response');
 
-      final List<dynamic> sessionsJson = response['data'] ?? response['sessions'] ?? response;
+      final List<dynamic> sessionsJson =
+          response['data'] ?? response['sessions'] ?? response;
 
       final sessions =
           sessionsJson.map((json) => Session.fromJson(json)).toList();
@@ -166,7 +168,8 @@ class SessionRepository implements ISessionRepository {
                 summary: data['summary'] as String,
                 actionItems: _parseActionItems(data['action_items']),
                 createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
-                lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
+                lastModified:
+                    DateTime.parse(data['last_modified'] as String).toUtc(),
                 isSynced: (data['is_synced'] as int) == 1,
               ))
           .toList();
@@ -347,8 +350,10 @@ class SessionRepository implements ISessionRepository {
   }) async {
     final now = DateTime.now();
 
-    print('Saving session $sessionId with title: $title, summary length: ${summary.length}');
-    print('Action items being saved: ${actionItems.length} items: ${actionItems.join(", ")}');
+    print(
+        'Saving session $sessionId with title: $title, summary length: ${summary.length}');
+    print(
+        'Action items being saved: ${actionItems.length} items: ${actionItems.join(", ")}');
 
     try {
       // Save to local DB (transactional)
@@ -366,8 +371,9 @@ class SessionRepository implements ISessionRepository {
           where: 'id = ?',
           whereArgs: [sessionId],
         );
-        
-        print('Updated $updated existing sessions with action items for session $sessionId');
+
+        print(
+            'Updated $updated existing sessions with action items for session $sessionId');
 
         // If no rows were updated, insert the session row
         if (updated == 0) {
@@ -380,7 +386,8 @@ class SessionRepository implements ISessionRepository {
             'last_modified': now.toIso8601String(),
             'is_synced': 0,
           });
-          print('Inserted new session $sessionId with ${actionItems.length} action items');
+          print(
+              'Inserted new session $sessionId with ${actionItems.length} action items');
         }
 
         // Save messages to local DB within the same transaction
@@ -400,7 +407,8 @@ class SessionRepository implements ISessionRepository {
 
       final data = results.first;
       final sessionActionItems = _parseActionItems(data['action_items']);
-      print('Returning saved session $sessionId with ${sessionActionItems.length} action items from local database');
+      print(
+          'Returning saved session $sessionId with ${sessionActionItems.length} action items from local database');
       return Session(
         id: data['id'] as String,
         title: data['title'] as String,
@@ -416,11 +424,10 @@ class SessionRepository implements ISessionRepository {
     }
   }
 
-
   // Helper method to parse action items from database
   List<String> _parseActionItems(dynamic actionItemsData) {
     if (actionItemsData == null) return [];
-    
+
     try {
       if (actionItemsData is String) {
         if (actionItemsData.isEmpty) return [];
@@ -440,7 +447,7 @@ class SessionRepository implements ISessionRepository {
         print('Error parsing action items: $e');
       }
     }
-    
+
     return [];
   }
 

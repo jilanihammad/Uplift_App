@@ -11,8 +11,10 @@ class AudioResourcePool {
 
   final List<AudioPlayer> _availablePlayers = [];
   final List<AudioPlayer> _usedPlayers = [];
-  final Set<String> _playerUsers = <String>{}; // Track which service is using which player
-  final int _maxPoolSize = 3; // Limit concurrent players to avoid resource contention
+  final Set<String> _playerUsers =
+      <String>{}; // Track which service is using which player
+  final int _maxPoolSize =
+      3; // Limit concurrent players to avoid resource contention
   bool _isInitialized = false;
 
   AudioResourcePool._internal();
@@ -30,15 +32,17 @@ class AudioResourcePool {
       final player = AudioPlayer();
       _availablePlayers.add(player);
       _isInitialized = true;
-      
+
       if (kDebugMode) {
-        print('🎵 AudioResourcePool: Successfully initialized with ${_availablePlayers.length} players');
+        print(
+            '🎵 AudioResourcePool: Successfully initialized with ${_availablePlayers.length} players');
       }
     } catch (e) {
       if (kDebugMode) {
         print('🎵 AudioResourcePool: Error during initialization: $e');
       }
-      _isInitialized = true; // Still mark as initialized to avoid infinite retry
+      _isInitialized =
+          true; // Still mark as initialized to avoid infinite retry
     }
   }
 
@@ -61,14 +65,16 @@ class AudioResourcePool {
       // Create new player if under limit
       player = AudioPlayer();
       if (kDebugMode) {
-        print('🎵 AudioResourcePool: Creating new player for $userId (${_usedPlayers.length + 1}/$_maxPoolSize)');
+        print(
+            '🎵 AudioResourcePool: Creating new player for $userId (${_usedPlayers.length + 1}/$_maxPoolSize)');
       }
     } else {
       // Pool is full, force create a new temporary player
       // This should be rare if pool size is tuned correctly
       player = AudioPlayer();
       if (kDebugMode) {
-        print('🎵 AudioResourcePool: WARNING - Creating temporary player for $userId (pool full)');
+        print(
+            '🎵 AudioResourcePool: WARNING - Creating temporary player for $userId (pool full)');
       }
     }
 
@@ -82,10 +88,11 @@ class AudioResourcePool {
   /// Resets player state and makes it available for other services
   Future<void> returnPlayer(AudioPlayer player, String userId) async {
     final playerKey = '$userId-${player.hashCode}';
-    
+
     if (!_playerUsers.contains(playerKey)) {
       if (kDebugMode) {
-        print('🎵 AudioResourcePool: WARNING - Returning untracked player from $userId');
+        print(
+            '🎵 AudioResourcePool: WARNING - Returning untracked player from $userId');
       }
     }
 
@@ -96,12 +103,13 @@ class AudioResourcePool {
       // Reset player state for reuse
       await player.stop();
       await player.seek(Duration.zero);
-      
+
       // Return to available pool if under limit
       if (_availablePlayers.length < _maxPoolSize) {
         _availablePlayers.add(player);
         if (kDebugMode) {
-          print('🎵 AudioResourcePool: Returned player from $userId to pool (${_availablePlayers.length} available)');
+          print(
+              '🎵 AudioResourcePool: Returned player from $userId to pool (${_availablePlayers.length} available)');
         }
       } else {
         // Pool full, dispose the player
@@ -113,13 +121,15 @@ class AudioResourcePool {
     } catch (e) {
       // If reset fails, dispose the player to avoid corrupted state
       if (kDebugMode) {
-        print('🎵 AudioResourcePool: Error resetting player from $userId, disposing: $e');
+        print(
+            '🎵 AudioResourcePool: Error resetting player from $userId, disposing: $e');
       }
       try {
         await player.dispose();
       } catch (disposeError) {
         if (kDebugMode) {
-          print('🎵 AudioResourcePool: Error disposing problematic player: $disposeError');
+          print(
+              '🎵 AudioResourcePool: Error disposing problematic player: $disposeError');
         }
       }
     }
@@ -138,11 +148,11 @@ class AudioResourcePool {
 
   /// Get pool statistics for debugging
   Map<String, int> get stats => {
-    'available': _availablePlayers.length,
-    'used': _usedPlayers.length,
-    'total': _availablePlayers.length + _usedPlayers.length,
-    'users': _playerUsers.length,
-  };
+        'available': _availablePlayers.length,
+        'used': _usedPlayers.length,
+        'total': _availablePlayers.length + _usedPlayers.length,
+        'users': _playerUsers.length,
+      };
 
   /// Dispose all players and clean up the pool
   Future<void> dispose() async {
@@ -166,7 +176,7 @@ class AudioResourcePool {
     }
 
     _isInitialized = false;
-    
+
     if (kDebugMode) {
       print('🎵 AudioResourcePool: Disposed ${allPlayers.length} players');
     }

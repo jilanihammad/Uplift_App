@@ -8,7 +8,7 @@ import 'debug_firebase.dart';
 /// flutter run -t lib/debug_app.dart
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -17,7 +17,7 @@ void main() async {
   } catch (e) {
     print('Error initializing Firebase: $e');
   }
-  
+
   runApp(const FirebaseDebugApp());
 }
 
@@ -35,4 +35,4 @@ class FirebaseDebugApp extends StatelessWidget {
       home: const FirebaseDebugScreen(),
     );
   }
-} 
+}

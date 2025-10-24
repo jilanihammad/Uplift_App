@@ -11,26 +11,26 @@ import 'package:ai_therapist_app/di/events/auth_events.dart';
 class AuthCoordinator implements IAuthEventHandler {
   final IOnboardingService _onboardingService;
   bool _initialized = false;
-  
+
   /// Constructor with dependency injection
   AuthCoordinator({required IOnboardingService onboardingService})
       : _onboardingService = onboardingService;
-  
+
   // Event stream controller for broadcasting auth events
   final _eventController = StreamController<AuthEvent>.broadcast();
-  
+
   /// Stream of authentication events
   Stream<AuthEvent> get authEvents => _eventController.stream;
-  
+
   /// Initialize the coordinator
   Future<void> init() async {
     if (_initialized) return;
-    
+
     try {
       // Initialize the onboarding service
       await _onboardingService.init();
       _initialized = true;
-      
+
       if (kDebugMode) {
         print('AuthCoordinator: Initialized successfully');
       }
@@ -41,21 +41,21 @@ class AuthCoordinator implements IAuthEventHandler {
       rethrow;
     }
   }
-  
+
   /// Emit an authentication event
   void emitEvent(AuthEvent event) {
     if (!_eventController.isClosed) {
       _eventController.add(event);
-      
+
       if (kDebugMode) {
         print('AuthCoordinator: Emitted ${event.runtimeType} event');
       }
-      
+
       // Handle the event internally
       _handleEvent(event);
     }
   }
-  
+
   /// Internal event handler that routes events to appropriate handlers
   Future<void> _handleEvent(AuthEvent event) async {
     if (!_initialized) {
@@ -64,7 +64,7 @@ class AuthCoordinator implements IAuthEventHandler {
       }
       return;
     }
-    
+
     try {
       if (event is UserLoggedInEvent) {
         await handleUserLoggedIn(event);
@@ -85,13 +85,14 @@ class AuthCoordinator implements IAuthEventHandler {
       }
     }
   }
-  
+
   @override
   Future<void> handleUserLoggedIn(UserLoggedInEvent event) async {
     if (kDebugMode) {
-      print('AuthCoordinator: Handling user login - isNewUser: ${event.isNewUser}, method: ${event.authMethod}');
+      print(
+          'AuthCoordinator: Handling user login - isNewUser: ${event.isNewUser}, method: ${event.authMethod}');
     }
-    
+
     if (event.isNewUser) {
       // New user needs onboarding
       await _onboardingService.resetOnboarding();
@@ -102,11 +103,12 @@ class AuthCoordinator implements IAuthEventHandler {
       // Returning user - mark onboarding as complete
       await _onboardingService.completeOnboarding();
       if (kDebugMode) {
-        print('AuthCoordinator: Marked onboarding as complete for returning user');
+        print(
+            'AuthCoordinator: Marked onboarding as complete for returning user');
       }
     }
   }
-  
+
   @override
   Future<void> handleUserLoggedOut(UserLoggedOutEvent event) async {
     if (kDebugMode) {
@@ -114,43 +116,47 @@ class AuthCoordinator implements IAuthEventHandler {
     }
     // No specific onboarding action needed for logout
   }
-  
+
   @override
-  Future<void> handleUserRegistrationCompleted(UserRegistrationCompletedEvent event) async {
+  Future<void> handleUserRegistrationCompleted(
+      UserRegistrationCompletedEvent event) async {
     if (kDebugMode) {
       print('AuthCoordinator: Handling user registration completed');
     }
-    
+
     // New registration always needs onboarding
     await _onboardingService.resetOnboarding();
   }
-  
+
   @override
   Future<void> handleUserSignupCompleted(UserSignupCompletedEvent event) async {
     if (kDebugMode) {
       print('AuthCoordinator: Handling user signup completed');
     }
-    
+
     // When signup is completed, mark onboarding as complete
     await _onboardingService.completeOnboarding();
   }
-  
+
   @override
-  Future<void> handleAuthenticationFailed(AuthenticationFailedEvent event) async {
+  Future<void> handleAuthenticationFailed(
+      AuthenticationFailedEvent event) async {
     if (kDebugMode) {
-      print('AuthCoordinator: Handling authentication failed - method: ${event.authMethod}, reason: ${event.reason}');
+      print(
+          'AuthCoordinator: Handling authentication failed - method: ${event.authMethod}, reason: ${event.reason}');
     }
     // No specific onboarding action needed for failed auth
   }
-  
+
   @override
-  Future<void> handleSessionVerificationRequested(SessionVerificationRequestedEvent event) async {
+  Future<void> handleSessionVerificationRequested(
+      SessionVerificationRequestedEvent event) async {
     if (kDebugMode) {
       print('AuthCoordinator: Handling session verification requested');
     }
     // No specific onboarding action needed for session verification
   }
-  
+
   /// Dispose resources
   void dispose() {
     _eventController.close();

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../../models/user_progress.dart';
+import '../../models/mood_entry_record.dart';
 import '../../widgets/mood_selector.dart';
 
 /// Interface for progress service operations
@@ -10,13 +11,13 @@ abstract class IProgressService {
   // Current progress
   UserProgress get progress;
   ValueNotifier<UserProgress> get progressChanged;
-  
+
   // Mood logging limits
   bool get moodLogLimitReached;
-  
+
   // Initialization
   Future<void> init();
-  
+
   // Progress metrics
   double getConsistencyRate();
   String getConsistencyStatus();
@@ -24,20 +25,23 @@ abstract class IProgressService {
   int getProgressMetric(String metric);
   Future<void> updateProgressMetric(String metric, int value);
   Future<void> incrementProgressMetric(String metric, [int amount = 1]);
-  
+
   // Mood tracking
   Future<bool> logMood(Mood mood, [String? notes]);
-  Map<String, List<Map<String, dynamic>>> getMoodHistory({
-    DateTime? startDate, 
-    DateTime? endDate
-  });
+  Map<String, List<Map<String, dynamic>>> getMoodHistory(
+      {DateTime? startDate, DateTime? endDate});
   List<MapEntry<DateTime, int>> getMoodDataForLastDays(int days);
-  
+
   // Session tracking
   Future<void> logSession(int sessionDuration);
   List<MapEntry<DateTime, int>> getSessionDataForLastDays(int days);
   Future<void> syncSessionData();
-  
+  Future<void> syncMoodEntries({bool force});
+  Future<List<MoodEntryRecord>> getPendingMoodEntries();
+  Future<void> clearMoodSyncErrors();
+  bool consumeLastMoodLogWasLocalOnly();
+  bool consumePendingMoodSyncError();
+
   // Progress management
   Future<void> resetProgress();
 }

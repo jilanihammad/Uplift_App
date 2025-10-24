@@ -8,7 +8,7 @@ class CbtIntroScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onboardingService = DependencyContainer().get<OnboardingService>();
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cognitive Behavioral Therapy'),
@@ -29,8 +29,8 @@ class CbtIntroScreen extends StatelessWidget {
               Text(
                 'Understanding CBT',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -39,38 +39,42 @@ class CbtIntroScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
-              
+
               // CBT explanation cards
               _buildInfoCard(
                 context,
                 title: 'Thoughts → Feelings → Actions',
-                content: 'CBT focuses on the connection between your thoughts, emotions, and behaviors. Changing negative thought patterns can help improve how you feel and act.',
+                content:
+                    'CBT focuses on the connection between your thoughts, emotions, and behaviors. Changing negative thought patterns can help improve how you feel and act.',
                 icon: Icons.psychology,
               ),
-              
+
               _buildInfoCard(
                 context,
                 title: 'Evidence-Based',
-                content: 'CBT has strong scientific support and has been proven effective for many mental health challenges, including anxiety, depression, and stress.',
+                content:
+                    'CBT has strong scientific support and has been proven effective for many mental health challenges, including anxiety, depression, and stress.',
                 icon: Icons.science,
               ),
-              
+
               _buildInfoCard(
                 context,
                 title: 'Practical Skills',
-                content: 'You\'ll learn practical tools and techniques that you can apply immediately to manage difficult emotions and situations.',
+                content:
+                    'You\'ll learn practical tools and techniques that you can apply immediately to manage difficult emotions and situations.',
                 icon: Icons.build,
               ),
-              
+
               _buildInfoCard(
                 context,
                 title: 'Long-Term Benefits',
-                content: 'The skills you learn through CBT become part of your emotional toolkit, helping you navigate challenges long after therapy ends.',
+                content:
+                    'The skills you learn through CBT become part of your emotional toolkit, helping you navigate challenges long after therapy ends.',
                 icon: Icons.trending_up,
               ),
-              
+
               const SizedBox(height: 40),
-              
+
               // Example CBT exercise
               Container(
                 padding: const EdgeInsets.all(16),
@@ -114,9 +118,9 @@ class CbtIntroScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 48),
-              
+
               // Continue Button
               SizedBox(
                 width: double.infinity,
@@ -143,7 +147,7 @@ class CbtIntroScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildInfoCard(
     BuildContext context, {
     required String title,
@@ -196,4 +200,4 @@ class CbtIntroScreen extends StatelessWidget {
       ),
     );
   }
-} 
+}

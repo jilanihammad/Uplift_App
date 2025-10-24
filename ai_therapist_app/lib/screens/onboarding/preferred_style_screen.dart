@@ -14,12 +14,12 @@ class PreferredStyleScreen extends StatefulWidget {
 class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _preferencesService = DependencyContainer().get<PreferencesService>();
-  
+
   String? _selectedStyleId;
   bool _isLoading = false;
-  
+
   List<TherapistStyle> _therapistStyles = [];
-  
+
   @override
   void initState() {
     super.initState();
@@ -27,7 +27,7 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
     _therapistStyles = [cbtStyle];
     _selectedStyleId = cbtStyle.id;
   }
-  
+
   Future<void> _saveAndContinue() async {
     if (_selectedStyleId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -35,11 +35,11 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       await _preferencesService.updateSinglePreference(
         therapistStyleId: _selectedStyleId,
@@ -89,12 +89,12 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
-              
+
               // Style options
               ..._buildStyleOptions(),
-              
+
               const SizedBox(height: 48),
-              
+
               // Continue Button
               SizedBox(
                 width: double.infinity,
@@ -123,11 +123,11 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
       ),
     );
   }
-  
+
   List<Widget> _buildStyleOptions() {
     return _therapistStyles.map((style) {
       final isSelected = _selectedStyleId == style.id;
-      
+
       return Padding(
         padding: const EdgeInsets.only(bottom: 16.0),
         child: InkWell(
@@ -170,9 +170,8 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
                         style.name,
                         style: TextStyle(
                           fontSize: 16,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -200,4 +199,4 @@ class _PreferredStyleScreenState extends State<PreferredStyleScreen> {
       );
     }).toList();
   }
-} 
+}

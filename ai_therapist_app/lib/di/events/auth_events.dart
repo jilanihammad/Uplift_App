@@ -3,7 +3,7 @@
 /// Base class for all authentication-related events
 abstract class AuthEvent {
   final DateTime timestamp;
-  
+
   AuthEvent() : timestamp = DateTime.now();
 }
 
@@ -14,7 +14,7 @@ class UserLoggedInEvent extends AuthEvent {
   final String? phoneNumber;
   final bool isNewUser;
   final AuthMethod authMethod;
-  
+
   UserLoggedInEvent({
     required this.userId,
     this.email,
@@ -27,7 +27,7 @@ class UserLoggedInEvent extends AuthEvent {
 /// Event emitted when a user logs out
 class UserLoggedOutEvent extends AuthEvent {
   final String userId;
-  
+
   UserLoggedOutEvent({required this.userId});
 }
 
@@ -36,7 +36,7 @@ class UserRegistrationCompletedEvent extends AuthEvent {
   final String userId;
   final String? email;
   final String? name;
-  
+
   UserRegistrationCompletedEvent({
     required this.userId,
     this.email,
@@ -47,7 +47,7 @@ class UserRegistrationCompletedEvent extends AuthEvent {
 /// Event emitted when a user completes the signup process
 class UserSignupCompletedEvent extends AuthEvent {
   final String userId;
-  
+
   UserSignupCompletedEvent({required this.userId});
 }
 
@@ -55,7 +55,7 @@ class UserSignupCompletedEvent extends AuthEvent {
 class AuthenticationFailedEvent extends AuthEvent {
   final String reason;
   final AuthMethod authMethod;
-  
+
   AuthenticationFailedEvent({
     required this.reason,
     required this.authMethod,
@@ -65,7 +65,7 @@ class AuthenticationFailedEvent extends AuthEvent {
 /// Event emitted when a session needs verification
 class SessionVerificationRequestedEvent extends AuthEvent {
   final String userId;
-  
+
   SessionVerificationRequestedEvent({required this.userId});
 }
 

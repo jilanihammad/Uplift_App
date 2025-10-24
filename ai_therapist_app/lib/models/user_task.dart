@@ -51,8 +51,8 @@ class UserTask {
       sessionId: json['sessionId'],
       dateAdded: DateTime.parse(json['dateAdded']),
       isCompleted: json['isCompleted'] ?? false,
-      completedDate: json['completedDate'] != null 
-          ? DateTime.parse(json['completedDate']) 
+      completedDate: json['completedDate'] != null
+          ? DateTime.parse(json['completedDate'])
           : null,
     );
   }

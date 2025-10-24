@@ -12,7 +12,7 @@ import '../../services/accessibility_service.dart';
 /// Callback types for voice control actions
 typedef VoiceControlCallback = void Function();
 
-/// Comprehensive voice controls panel widget that includes voice visualization, 
+/// Comprehensive voice controls panel widget that includes voice visualization,
 /// status text, and all voice interaction controls
 class VoiceControlsPanel extends StatefulWidget {
   final VoiceControlCallback onSwitchMode;
@@ -38,7 +38,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     super.initState();
     _loadAccessibilitySettings();
   }
-  
+
   Future<void> _loadAccessibilitySettings() async {
     final settings = await AccessibilityService.getSettings();
     if (mounted) {
@@ -63,8 +63,17 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // Voice visualization container with real-time amplitude visualization
-              BlocSelector<VoiceSessionBloc, VoiceSessionState,
-                  ({bool rec, double amp, bool listening, bool processing, bool speaking, bool voiceMode})>(
+              BlocSelector<
+                  VoiceSessionBloc,
+                  VoiceSessionState,
+                  ({
+                    bool rec,
+                    double amp,
+                    bool listening,
+                    bool processing,
+                    bool speaking,
+                    bool voiceMode
+                  })>(
                 selector: (blocState) => (
                   rec: blocState.isRecording,
                   amp: blocState.amplitude,
@@ -85,7 +94,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                   } else {
                     visualState = VisualizationState.idle;
                   }
-                  
+
                   // Show appropriate visualization based on state and mode
                   if (data.voiceMode) {
                     // In voice mode: use Lottie for listening, AudioVisualizer for others
@@ -131,8 +140,16 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
               ),
               const SizedBox(height: 32),
               // Status text that changes based on interaction state
-              BlocSelector<VoiceSessionBloc, VoiceSessionState, 
-                  ({bool rec, bool listening, bool processing, bool speaking, bool voiceMode})>(
+              BlocSelector<
+                  VoiceSessionBloc,
+                  VoiceSessionState,
+                  ({
+                    bool rec,
+                    bool listening,
+                    bool processing,
+                    bool speaking,
+                    bool voiceMode
+                  })>(
                 selector: (blocState) => (
                   rec: blocState.isRecording,
                   listening: blocState.isListeningForVoice,
@@ -155,7 +172,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                   } else {
                     statusText = "Chat mode active";
                   }
-                  
+
                   return Text(
                     statusText,
                     style: const TextStyle(
@@ -198,7 +215,8 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
               children: [
                 // Mic Mute Toggle Button (replaces Talk)
                 _buildMicMuteButton(
-                  isMicEnabled: context.read<VoiceSessionBloc>().state.isMicEnabled,
+                  isMicEnabled:
+                      context.read<VoiceSessionBloc>().state.isMicEnabled,
                   onTap: () {
                     final bloc = context.read<VoiceSessionBloc>();
                     bloc.add(ToggleMicMute());
@@ -269,9 +287,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: (isMicEnabled
-                ? Theme.of(context).primaryColor
-                : Colors.grey)
+        color: (isMicEnabled ? Theme.of(context).primaryColor : Colors.grey)
             .withOpacity(0.85),
         boxShadow: [
           BoxShadow(

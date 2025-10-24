@@ -1,6 +1,8 @@
 // lib/screens/home_screen.dart
 // import 'package:flutter/material.dart';
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +14,7 @@ import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/models/session_reminder.dart';
+import 'package:ai_therapist_app/utils/feature_flags.dart';
 
 class HomeScreen extends StatefulWidget {
   final IProgressService? progressService;
@@ -53,6 +56,8 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.sessionScheduleService ?? DependencyContainer().sessionSchedule;
     _progress = _progressService.progress;
 
+    unawaited(_progressService.init());
+
     // Listen for progress changes
     _progressService.progressChanged.addListener(_onProgressChanged);
 
@@ -79,6 +84,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadUserData() async {
     try {
       await _progressService.syncSessionData();
+      if (FeatureFlags.isMoodPersistenceEnabled) {
+        await _progressService.syncMoodEntries(force: true);
+      }
     } catch (e) {
       debugPrint('Error syncing session data: $e');
     }
@@ -209,38 +217,43 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        floatingActionButton: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: isLightTheme
-                  ? [
-                      BoxShadow(
-                        color: colorScheme.primary.withOpacity(0.08),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      ),
-                    ]
-                  : [],
-            ),
-            child: OutlinedButton.icon(
-              onPressed: () => context.go('/chat'),
-              icon: Icon(Icons.favorite, color: colorScheme.primary),
-              label: Text(
-                'Talk Now',
-                style: TextStyle(color: colorScheme.primary),
+        floatingActionButton: Visibility(
+          visible: false,
+          maintainAnimation: true,
+          maintainState: true,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: isLightTheme
+                    ? [
+                        BoxShadow(
+                          color: colorScheme.primary.withOpacity(0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ]
+                    : [],
               ),
-              style: OutlinedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+              child: OutlinedButton.icon(
+                onPressed: () => context.go('/chat'),
+                icon: Icon(Icons.favorite, color: colorScheme.primary),
+                label: Text(
+                  'Talk Now',
+                  style: TextStyle(color: colorScheme.primary),
                 ),
-                side: BorderSide(color: colorScheme.primary.withOpacity(0.5)),
-                foregroundColor: colorScheme.primary,
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  side: BorderSide(color: colorScheme.primary.withOpacity(0.5)),
+                  foregroundColor: colorScheme.primary,
+                ),
               ),
             ),
           ),
@@ -412,17 +425,41 @@ class _HomeScreenState extends State<HomeScreen> {
               child: TextButton(
                 onPressed: hasReachedLimit
                     ? () {
-                        // Show limit reached dialog
                         _showMoodLimitDialog();
                       }
-                    : () {
-                        // Log mood and update streak
-                        _progressService.logMood(_currentMood);
+                    : () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final success =
+                            await _progressService.logMood(_currentMood);
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Mood logged successfully')),
-                        );
+                        if (success) {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Mood logged successfully'),
+                            ),
+                          );
+
+                          final showLocalMessage = _progressService
+                                  .consumeLastMoodLogWasLocalOnly() ||
+                              _progressService.consumePendingMoodSyncError();
+                          if (showLocalMessage) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Saved locally; we'll sync when you're online.",
+                                ),
+                                duration: Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        } else {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content:
+                                  Text('Unable to log mood. Please try again.'),
+                            ),
+                          );
+                        }
                       },
                 style: TextButton.styleFrom(
                   padding:

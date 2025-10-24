@@ -96,11 +96,11 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
       selector: (state) => (
         isVoice: state.isVoiceMode,
         isProcessing: state.isProcessing,
-        canSend: !state.isProcessing && 
-                 !state.isInitializing && 
-                 !state.isEndingSession &&
-                 !state.showMoodSelector &&
-                 !state.showDurationSelector,
+        canSend: !state.isProcessing &&
+            !state.isInitializing &&
+            !state.isEndingSession &&
+            !state.showMoodSelector &&
+            !state.showDurationSelector,
       ),
       builder: (context, data) {
         if (data.isVoice) {
@@ -126,8 +126,11 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
           // VAD is off: show idle/off mic
           return IconButton(
             icon: Icon(
-              Icons.mic_off, 
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              Icons.mic_off,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.5),
             ),
             onPressed: null,
           );

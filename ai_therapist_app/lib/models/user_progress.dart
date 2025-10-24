@@ -50,24 +50,25 @@ class UserProgress {
       'totalPoints': totalPoints,
       'currentLevel': currentLevel,
       'achievements': achievements.map((a) => a.toJson()).toList(),
-      'moodHistory': moodHistory.map((key, value) => 
-          MapEntry(key.toIso8601String(), value)),
-      'sessionHistory': sessionHistory.map((key, value) => 
-          MapEntry(key.toIso8601String(), value)),
+      'moodHistory': moodHistory
+          .map((key, value) => MapEntry(key.toIso8601String(), value)),
+      'sessionHistory': sessionHistory
+          .map((key, value) => MapEntry(key.toIso8601String(), value)),
       'moodLogLimitReached': moodLogLimitReached,
     };
   }
 
   factory UserProgress.fromJson(Map<String, dynamic> json) {
     final moodHistoryMap = (json['moodHistory'] as Map<String, dynamic>?) ?? {};
-    final sessionHistoryMap = (json['sessionHistory'] as Map<String, dynamic>?) ?? {};
-    
+    final sessionHistoryMap =
+        (json['sessionHistory'] as Map<String, dynamic>?) ?? {};
+
     // Convert string dates back to DateTime
-    final moodHistory = moodHistoryMap.map((key, value) => 
-        MapEntry(DateTime.parse(key), value as int));
-    final sessionHistory = sessionHistoryMap.map((key, value) => 
-        MapEntry(DateTime.parse(key), value as int));
-    
+    final moodHistory = moodHistoryMap
+        .map((key, value) => MapEntry(DateTime.parse(key), value as int));
+    final sessionHistory = sessionHistoryMap
+        .map((key, value) => MapEntry(DateTime.parse(key), value as int));
+
     return UserProgress(
       currentStreak: json['currentStreak'] ?? 0,
       longestStreak: json['longestStreak'] ?? 0,
@@ -81,88 +82,88 @@ class UserProgress {
       moodLogLimitReached: json['moodLogLimitReached'] ?? false,
     );
   }
-  
+
   // Calculate the points needed for the next level
   int get pointsForNextLevel => currentLevel * 100;
-  
+
   // Calculate progress towards next level (0.0 to 1.0)
   double get levelProgress {
     final pointsInCurrentLevel = totalPoints - ((currentLevel - 1) * 100);
     return pointsInCurrentLevel / pointsForNextLevel;
   }
-  
+
   // Calculate the number of active days in the last week (days with mood logs or sessions)
   int get activeDaysLastWeek {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    final oneWeekAgo = todayStart.subtract(const Duration(days: 6)); // Include today
-    
+    final oneWeekAgo =
+        todayStart.subtract(const Duration(days: 6)); // Include today
+
     // Collect all dates from mood and session history
     final Set<DateTime> activeDays = {};
-    
+
     // Add days with mood logs
     for (final entry in moodHistory.entries) {
       final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
-      if (dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
+      if (dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) &&
           dayStart.isBefore(todayStart.add(const Duration(days: 1)))) {
         activeDays.add(dayStart);
       }
     }
-    
+
     // Add days with sessions
     for (final entry in sessionHistory.entries) {
       final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
-      if (dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
+      if (dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) &&
           dayStart.isBefore(todayStart.add(const Duration(days: 1)))) {
         activeDays.add(dayStart);
       }
     }
-    
+
     return activeDays.length;
   }
-  
+
   // Get the number of therapy sessions in the last week
   int get sessionsThisWeek {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    final oneWeekAgo = todayStart.subtract(const Duration(days: 6)); // Include today
-    
-    return sessionHistory.entries
-      .where((entry) {
-        final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
-        return dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
-               dayStart.isBefore(todayStart.add(const Duration(days: 1)));
-      })
-      .length;
+    final oneWeekAgo =
+        todayStart.subtract(const Duration(days: 6)); // Include today
+
+    return sessionHistory.entries.where((entry) {
+      final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+      return dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) &&
+          dayStart.isBefore(todayStart.add(const Duration(days: 1)));
+    }).length;
   }
-  
+
   // Get the number of mood logs in the last week
   int get moodLogsThisWeek {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    final oneWeekAgo = todayStart.subtract(const Duration(days: 6)); // Include today
-    
-    return moodHistory.entries
-      .where((entry) {
-        final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
-        return dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) && 
-               dayStart.isBefore(todayStart.add(const Duration(days: 1)));
-      })
-      .length;
+    final oneWeekAgo =
+        todayStart.subtract(const Duration(days: 6)); // Include today
+
+    return moodHistory.entries.where((entry) {
+      final dayStart = DateTime(entry.key.year, entry.key.month, entry.key.day);
+      return dayStart.isAfter(oneWeekAgo.subtract(const Duration(days: 1))) &&
+          dayStart.isBefore(todayStart.add(const Duration(days: 1)));
+    }).length;
   }
-  
+
   // Get today's mood logs count
   int getTodayMoodLogsCount() {
     final today = DateTime(
-      DateTime.now().year, 
-      DateTime.now().month, 
+      DateTime.now().year,
+      DateTime.now().month,
       DateTime.now().day,
     );
     final tomorrow = today.add(const Duration(days: 1));
-    
+
     return moodHistory.entries
-      .where((entry) => entry.key.isAfter(today) && entry.key.isBefore(tomorrow))
-      .length;
+        .where(
+            (entry) => entry.key.isAfter(today) && entry.key.isBefore(tomorrow))
+        .length;
   }
 }
 
@@ -200,15 +201,12 @@ class Achievement {
       id: json['id'],
       title: json['title'],
       description: json['description'],
-      icon: IconData(
-        json['iconCodePoint'],
-        fontFamily: json['iconFontFamily'],
-      ),
+      icon: Icons.emoji_events,
       pointValue: json['pointValue'],
       earnedDate: DateTime.parse(json['earnedDate']),
     );
   }
-  
+
   // Predefined achievements
   static Achievement firstSession = Achievement(
     id: 'first_session',
@@ -218,22 +216,22 @@ class Achievement {
     pointValue: 50,
     earnedDate: DateTime.now(),
   );
-  
+
   static Achievement weekStreak = Achievement(
     id: 'week_streak',
     title: 'Consistent Care',
     description: 'Maintained a 7-day streak',
-    icon: Icons.auto_awesome,
+    icon: Icons.emoji_events,
     pointValue: 100,
     earnedDate: DateTime.now(),
   );
-  
+
   static Achievement moodTracker = Achievement(
     id: 'mood_tracker',
     title: 'Self-Aware',
     description: 'Tracked your mood for 5 consecutive days',
-    icon: Icons.insights,
+    icon: Icons.emoji_events,
     pointValue: 75,
     earnedDate: DateTime.now(),
   );
-} 
+}

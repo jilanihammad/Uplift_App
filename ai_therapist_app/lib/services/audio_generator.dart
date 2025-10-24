@@ -27,10 +27,9 @@ class AudioGenerator {
 
   // API client for direct API calls
   final ApiClient _apiClient;
-  
+
   // Callback for TTS state updates (to avoid circular dependencies)
   void Function(bool isSpeaking)? _ttsStateCallback;
-  
 
   // INTELLIGENT CACHE: cache_key -> file_path (PERFORMANCE OPTIMIZED!)
   final Map<String, String> _intelligentCache = {};
@@ -65,7 +64,9 @@ class AudioGenerator {
 
     // Create new instance if first time
     _instance = AudioGenerator._internal(
-        ttsService: ttsService, audioFileManager: audioFileManager, apiClient: apiClient);
+        ttsService: ttsService,
+        audioFileManager: audioFileManager,
+        apiClient: apiClient);
 
     return _instance!;
   }
@@ -325,7 +326,7 @@ class AudioGenerator {
           log.e('TTSService TTS error: $error');
         },
       );
-      
+
       // Since streamAndPlayTTS doesn't return file path, we generate one for caching
       // This is a temporary solution - in future, TTSService could return file path
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -688,29 +689,31 @@ class AudioGenerator {
       await for (String chunk in textStream) {
         // Add chunk to sentence detector
         detector.addChunk(chunk);
-        
+
         // Extract complete sentences
-        List<String> sentences = useTherapeuticProcessing 
-            ? detector.extractTherapeuticSentences() 
+        List<String> sentences = useTherapeuticProcessing
+            ? detector.extractTherapeuticSentences()
             : detector.extractCompleteSentences();
-        
+
         // Generate TTS for each complete sentence
         for (String sentence in sentences) {
-          final audioTask = _generateSentenceTTS(sentence, onAudioReady, onError);
+          final audioTask =
+              _generateSentenceTTS(sentence, onAudioReady, onError);
           audioGenerationTasks.add(audioTask);
         }
       }
-      
+
       // Process any remaining text
       final remaining = detector.flushRemaining();
       if (remaining != null) {
-        final audioTask = _generateSentenceTTS(remaining, onAudioReady, onError);
+        final audioTask =
+            _generateSentenceTTS(remaining, onAudioReady, onError);
         audioGenerationTasks.add(audioTask);
       }
-      
+
       // Wait for all audio generation to complete
       await Future.wait(audioGenerationTasks);
-      
+
       onDone();
     } catch (e) {
       log.e('Error in streaming TTS generation', e);
@@ -733,13 +736,14 @@ class AudioGenerator {
           return;
         }
       }
-      
+
       // Generate new audio
       final audioPath = await generateAudioIntelligent(sentence);
       if (audioPath != null) {
         onAudioReady(audioPath);
       } else {
-        onError('Failed to generate audio for: ${sentence.substring(0, min(30, sentence.length))}...');
+        onError(
+            'Failed to generate audio for: ${sentence.substring(0, min(30, sentence.length))}...');
       }
     } catch (e) {
       log.e('Error generating sentence TTS', e);
@@ -759,18 +763,19 @@ class AudioGenerator {
     final audioQueue = <String>[];
     bool isPlaying = false;
     bool firstAudioStarted = false;
-    
+
     // Handle audio generation
     await generateStreamingTTS(
       textStream: textStream,
       useTherapeuticProcessing: useTherapeuticProcessing,
       onAudioReady: (audioPath) async {
         audioQueue.add(audioPath);
-        
+
         // Start playback queue if not already playing
         if (!isPlaying) {
           isPlaying = true;
-          _playAudioQueue(audioQueue, onFirstAudioStart, onAllAudioComplete, onError, firstAudioStarted);
+          _playAudioQueue(audioQueue, onFirstAudioStart, onAllAudioComplete,
+              onError, firstAudioStarted);
           firstAudioStarted = true;
         }
       },
@@ -791,10 +796,10 @@ class AudioGenerator {
     bool firstAudioStarted,
   ) async {
     bool hasStarted = firstAudioStarted;
-    
+
     while (queue.isNotEmpty) {
       final audioPath = queue.removeAt(0);
-      
+
       try {
         if (!hasStarted) {
           // Notify via callback that TTS is starting
@@ -802,7 +807,7 @@ class AudioGenerator {
           onFirstAudioStart();
           hasStarted = true;
         }
-        
+
         await _ttsService.playAudio(audioPath);
         log.i('Finished playing audio segment: $audioPath');
       } catch (e) {
@@ -810,16 +815,17 @@ class AudioGenerator {
         onError('Playback error: ${e.toString()}');
       }
     }
-    
+
     // Notify via callback that TTS is complete
     _ttsStateCallback?.call(false);
-    
+
     onAllAudioComplete();
   }
 
   /// Create text stream from WebSocket AI response
   /// This converts the WebSocket chunk stream into a text stream for TTS processing
-  Stream<String> createTextStreamFromWebSocket(Stream<Map<String, dynamic>> webSocketStream) async* {
+  Stream<String> createTextStreamFromWebSocket(
+      Stream<Map<String, dynamic>> webSocketStream) async* {
     await for (final event in webSocketStream) {
       if (event['type'] == 'chunk' && event.containsKey('content')) {
         yield event['content'] as String;
@@ -845,7 +851,7 @@ class AudioGenerator {
       final textStream = createTextStreamFromWebSocket(aiResponseStream);
       final completeText = StringBuffer();
       bool hasStarted = false;
-      
+
       // Collect all text from the stream
       await for (final chunk in textStream) {
         completeText.write(chunk);
@@ -857,18 +863,17 @@ class AudioGenerator {
           onTTSStart();
         }
       }
-      
+
       // Notify via callback that TTS is starting
       _ttsStateCallback?.call(true);
-      
+
       // Use new simplified API - single method call!
       // SimpleTTSService will automatically call _ttsStateCallback(false) when done
       await _ttsService.speak(completeText.toString(), makeBackupFile: false);
-      
+
       log.i('🎵 TTS streaming completed with simplified API');
-      
+
       onTTSComplete();
-      
     } catch (e) {
       log.e('Error processing AI response with streaming TTS', e);
       onError('Failed to process AI response: ${e.toString()}');
@@ -878,16 +883,17 @@ class AudioGenerator {
   /// Set callback for TTS state updates (to coordinate with VoiceService)
   void setTTSStateCallback(void Function(bool isSpeaking)? callback) {
     _ttsStateCallback = callback;
-    
+
     // Wire the completion callback to SimpleTTSService if it supports it
     if (_ttsService is SimpleTTSService) {
       final simpleTTSService = _ttsService as SimpleTTSService;
       simpleTTSService.setCompletionCallback(callback);
       if (kDebugMode && callback != null) {
-        log.i('AudioGenerator: TTS completion callback wired to SimpleTTSService');
+        log.i(
+            'AudioGenerator: TTS completion callback wired to SimpleTTSService');
       }
     }
-    
+
     if (kDebugMode && callback != null) {
       log.i('AudioGenerator: TTS state callback registered');
     }
@@ -899,7 +905,8 @@ class AudioGenerator {
     Future<void> Function()? resumeCallback,
   }) {
     if (kDebugMode) {
-      log.i('AudioGenerator: VAD callbacks disabled (legacy workaround removed)');
+      log.i(
+          'AudioGenerator: VAD callbacks disabled (legacy workaround removed)');
     }
     // No-op: VAD pause/resume logic removed with new TTS architecture
   }

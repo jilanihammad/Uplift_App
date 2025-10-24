@@ -24,7 +24,7 @@ class SplashScreen extends StatefulWidget {
   final ApiClient? apiClient;
 
   const SplashScreen({
-    Key? key, 
+    Key? key,
     this.skipFirebaseCheck = false,
     this.authService,
     this.onboardingService,
@@ -115,7 +115,8 @@ class _SplashScreenState extends State<SplashScreen>
       // Now safely get services using dependency injection
       _authService = widget.authService ?? DependencyContainer().authService;
 
-      _onboardingService = widget.onboardingService ?? DependencyContainer().onboarding;
+      _onboardingService =
+          widget.onboardingService ?? DependencyContainer().onboarding;
       await _onboardingService.init();
 
       // Add a check for first app launch to force fresh login experience
@@ -484,7 +485,8 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _resetSignupStatus() async {
     try {
       // Safely get the OnboardingService when needed
-      _onboardingService = widget.onboardingService ?? DependencyContainer().onboarding;
+      _onboardingService =
+          widget.onboardingService ?? DependencyContainer().onboarding;
 
       // Logout first to ensure we're starting from a clean state
       await _authService.logout();
@@ -525,7 +527,8 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _completeSignup() async {
     try {
       // Safely get the OnboardingService when needed
-      _onboardingService = widget.onboardingService ?? DependencyContainer().onboarding;
+      _onboardingService =
+          widget.onboardingService ?? DependencyContainer().onboarding;
 
       await _authService.completeSignup();
       await _onboardingService.completeOnboarding();

@@ -261,7 +261,8 @@ class AppRouter {
           // New Tasks route (aliased to progress)
           GoRoute(
             path: tasks,
-            builder: (context, state) => const ProgressScreen(initialTabIndex: 2), // Pass index 2 for Tasks tab
+            builder: (context, state) => const ProgressScreen(
+                initialTabIndex: 2), // Pass index 2 for Tasks tab
           ),
         ],
       ),
@@ -355,7 +356,8 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
                   BottomNavigationBarItem(
                       icon: Icon(Icons.home), label: 'Home'),
                   BottomNavigationBarItem(
-                      icon: Icon(Icons.task), label: 'Tasks'), // New Tasks button
+                      icon: Icon(Icons.task),
+                      label: 'Tasks'), // New Tasks button
                   BottomNavigationBarItem(
                       icon: Icon(Icons.history), label: 'History'),
                 ],

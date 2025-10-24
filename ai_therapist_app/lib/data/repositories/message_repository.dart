@@ -182,7 +182,8 @@ class MessageRepository implements IMessageRepository {
       // Try to get messages from server
       final response =
           await apiClient.get('/api/v1/sessions/$sessionId/messages');
-      final List<dynamic> messagesJson = response['data'] ?? response['messages'] ?? response;
+      final List<dynamic> messagesJson =
+          response['data'] ?? response['messages'] ?? response;
 
       final messages =
           messagesJson.map((json) => Message.fromJson(json)).toList();

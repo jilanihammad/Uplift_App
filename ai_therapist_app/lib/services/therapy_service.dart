@@ -211,7 +211,7 @@ class TherapyService implements ITherapyService {
       final stopwatch = Stopwatch()..start();
 
       log.d('Processing user message for AI response: "$userMessage"');
-      
+
       // Use streaming approach instead of waiting for complete response
       final result = await _processUserMessageWithRealTimeStreaming(
         userMessage,
@@ -222,13 +222,14 @@ class TherapyService implements ITherapyService {
       );
 
       stopwatch.stop();
-      log.i('Total real-time streaming processing took ${stopwatch.elapsedMilliseconds}ms');
+      log.i(
+          'Total real-time streaming processing took ${stopwatch.elapsedMilliseconds}ms');
 
       return result;
     } catch (e) {
       log.e('Error processing user message with real-time streaming', e);
       log.i('Falling back to traditional TTS processing...');
-      
+
       // Fallback to traditional processing method
       try {
         final fallbackResult = await _processFallbackTTS(
@@ -243,7 +244,8 @@ class TherapyService implements ITherapyService {
         log.e('Fallback processing also failed', fallbackError);
         onTTSError('Error processing message: ${e.toString()}');
         return {
-          'text': "I'm sorry, I'm having trouble processing that right now. Could you try expressing that differently?",
+          'text':
+              "I'm sorry, I'm having trouble processing that right now. Could you try expressing that differently?",
           'audioPath': null,
         };
       }
@@ -262,10 +264,12 @@ class TherapyService implements ITherapyService {
       log.d('Getting memory context for streaming...');
       // Get memory context
       final memoryContext = await _memoryManager.getMemoryContext();
-      
-      log.d('Processing user input through conversation graph for streaming...');
+
+      log.d(
+          'Processing user input through conversation graph for streaming...');
       // Process through conversation graph to get context
-      final graphResult = await _conversationFlowManager.processUserInput(userMessage);
+      final graphResult =
+          await _conversationFlowManager.processUserInput(userMessage);
 
       // Build system prompt with context and personalized anchor guidance
       final anchorGuidance =
@@ -276,7 +280,7 @@ class TherapyService implements ITherapyService {
         graphResult,
         anchorGuidance: anchorGuidance,
       );
-      
+
       // Prepare conversation history for LLM in {role, content} format
       final normalizedHistory = history.map((msg) {
         final rawRole = (msg['role'] ?? msg['isUser'] ?? '').toLowerCase();
@@ -307,7 +311,7 @@ class TherapyService implements ITherapyService {
       log.d('AI response received, now starting TTS...');
       log.d('AI response length: ${aiResponse.length} characters');
       // AI response is complete - NOW start TTS processing
-      
+
       // Split response into sentences for faster TTS start
       final controller = StreamController<Map<String, dynamic>>();
       aiResponse.split(RegExp(r'(?<=[\.!?])\s+')).forEach((sentence) {
@@ -316,23 +320,24 @@ class TherapyService implements ITherapyService {
         }
       });
       controller.add({'type': 'done'});
-      
+
       // DIRECT TTS APPROACH: Use same path as welcome messages to avoid state conflicts
       try {
         log.i('🎵 TTS streaming started - first audio playing!');
-        onTTSStart?.call(aiResponse); // Notify bloc with response text when TTS starts
-        
+        onTTSStart?.call(
+            aiResponse); // Notify bloc with response text when TTS starts
+
         // Use SimpleTTSService directly (same as welcome messages)
         final ttsService = DependencyContainer().ttsService;
         await ttsService.speak(aiResponse, makeBackupFile: false);
-        
+
         log.i('🎵 All TTS streaming completed');
         await onTTSPlaybackComplete();
       } catch (error) {
         log.e('TTS streaming error: $error');
         onTTSError(error.toString());
       }
-      
+
       // Save to memory in background after completion
       if (aiResponse.isNotEmpty) {
         final responseMap = {'response': aiResponse};
@@ -340,7 +345,8 @@ class TherapyService implements ITherapyService {
             userMessage, responseMap, graphResult);
       }
 
-      log.i('Real-time streaming completed. Full response length: ${aiResponse.length} characters');
+      log.i(
+          'Real-time streaming completed. Full response length: ${aiResponse.length} characters');
 
       return {
         'text': aiResponse,
@@ -362,12 +368,12 @@ class TherapyService implements ITherapyService {
     void Function(String)? onTTSStart,
   }) async {
     log.i('Using fallback TTS processing (traditional method)');
-    
+
     try {
       // Get complete text response first (traditional approach)
       final textResponse =
           await processUserMessage(userMessage, history: history);
-      
+
       if (textResponse.trim().isEmpty) {
         log.w('Empty text response from fallback processing');
         onTTSError("AI response was empty.");
@@ -382,7 +388,7 @@ class TherapyService implements ITherapyService {
       try {
         // Notify that TTS is starting
         onTTSStart?.call(textResponse);
-        
+
         audioPath = await _audioGenerator.generateAndStreamAudio(
           textResponse,
           onDone: onTTSPlaybackComplete,
@@ -452,7 +458,7 @@ class TherapyService implements ITherapyService {
       {List<Map<String, String>>? history}) async {
     try {
       log.d('TherapyService.processUserMessage called with: "$userMessage"');
-      
+
       // Check if the message is empty
       if (userMessage.trim().isEmpty) {
         log.w('Empty user message received');
@@ -488,7 +494,8 @@ class TherapyService implements ITherapyService {
           graphResult,
           history: history);
 
-      log.d('AI response received: "${aiResponse.substring(0, aiResponse.length > 50 ? 50 : aiResponse.length)}..."');
+      log.d(
+          'AI response received: "${aiResponse.substring(0, aiResponse.length > 50 ? 50 : aiResponse.length)}..."');
 
       // Process response insights and save to memory in background
       final responseMap = {'response': aiResponse};
@@ -552,16 +559,15 @@ class TherapyService implements ITherapyService {
   // End therapy session and generate a summary
   @override
   Future<Map<String, dynamic>> endSessionWithMessages(
-      List<Map<String, dynamic>> messages, {
-      String? sessionTitle,
-      int? userId,
-    }) async {
+    List<Map<String, dynamic>> messages, {
+    String? sessionTitle,
+    int? userId,
+  }) async {
     try {
       // Use the MessageProcessor to generate the session summary
       return await _messageProcessor.generateSessionSummary(
-          messages, _systemPrompt, 
-          sessionTitle: sessionTitle, 
-          userId: userId);
+          messages, _systemPrompt,
+          sessionTitle: sessionTitle, userId: userId);
     } catch (e) {
       log.e('Error ending session', e);
       return {
@@ -608,7 +614,7 @@ class TherapyService implements ITherapyService {
   }
 
   // ========== ITherapyService interface implementations ==========
-  
+
   @override
   Future<String> startSession({
     required String userId,
@@ -663,7 +669,8 @@ class TherapyService implements ITherapyService {
   }
 
   @override
-  Future<void> updateSessionContext(String sessionId, Map<String, dynamic> context) async {
+  Future<void> updateSessionContext(
+      String sessionId, Map<String, dynamic> context) async {
     // TODO: Implement context management
   }
 
@@ -751,5 +758,6 @@ class TherapyService implements ITherapyService {
   }
 
   @override
-  String? get currentSessionId => null; // TODO: Implement current session tracking
+  String? get currentSessionId =>
+      null; // TODO: Implement current session tracking
 }

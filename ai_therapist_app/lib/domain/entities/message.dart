@@ -6,7 +6,7 @@ class Message {
   final bool isUser;
   final DateTime timestamp;
   final bool isSynced;
-  
+
   Message({
     required this.id,
     required this.sessionId,
@@ -15,7 +15,7 @@ class Message {
     required this.timestamp,
     this.isSynced = true,
   });
-  
+
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
       id: json['id'],
@@ -25,7 +25,7 @@ class Message {
       timestamp: DateTime.parse(json['timestamp']),
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

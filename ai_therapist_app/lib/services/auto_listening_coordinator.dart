@@ -25,28 +25,30 @@ class AutoListeningCoordinator with SessionDisposable {
   final AudioPlayerManager _audioPlayerManager;
   final RecordingManager _recordingManager;
   final VoiceService _voiceService;
-  
+
   // NEW: Combined stream for robust AI audio state tracking
   late Stream<bool> _aiAudioActiveStream;
   StreamSubscription<bool>? _startListeningSub;
-  
+
   // Unified TTS activity stream (set after initialization if available)
   Stream<bool>? _ttsActivityStream;
-  
+
   // VAD configuration - can switch between regular and enhanced VAD
-  static bool _useEnhancedVAD = true; // Configuration flag - ENABLED for RNNoise integration
+  static bool _useEnhancedVAD =
+      true; // Configuration flag - ENABLED for RNNoise integration
   late final dynamic _vadManager; // Can be VADManager or EnhancedVADManager
-  
+
   // Configuration method to enable/disable Enhanced VAD
   static void setEnhancedVAD(bool enabled) {
     _useEnhancedVAD = enabled;
     if (kDebugMode) {
-      AppLogger.d(' AutoListeningCoordinator: Enhanced VAD ${enabled ? 'ENABLED' : 'DISABLED'}');
+      AppLogger.d(
+          ' AutoListeningCoordinator: Enhanced VAD ${enabled ? 'ENABLED' : 'DISABLED'}');
     }
   }
-  
+
   static bool get isEnhancedVADEnabled => _useEnhancedVAD;
-  
+
   /// RACE CONDITION FIX: Public getter to access VAD manager for worker synchronization
   dynamic get vadManager => _vadManager;
 
@@ -82,7 +84,7 @@ class AutoListeningCoordinator with SessionDisposable {
   // NEW: Handle speech events during processing state
   Timer? _pendingSpeechEndTimer;
   bool _hasPendingSpeechEnd = false;
-  
+
   // RACE CONDITION FIX: Monotonic speech sequence counter
   int _speechSeq = 0;
 
@@ -98,11 +100,12 @@ class AutoListeningCoordinator with SessionDisposable {
   static const Duration _baseSpeechTimeout = Duration(milliseconds: 1500);
   static const Duration _secondBurstTimeout = Duration(milliseconds: 1000);
   static const Duration _subsequentBurstTimeout = Duration(milliseconds: 800);
-  
+
   // RACE CONDITION FIX: Configurable ring-down delay for speaker silence and worker thread synchronization
   // Engineer note: Use 150-180ms for Bluetooth SCO/AAudio, 100ms for standard audio
   static const Duration kRingDownDelay = Duration(milliseconds: 100);
-  static const Duration kWorkerSyncDelay = Duration(milliseconds: 50); // Extra safety buffer for worker thread cleanup
+  static const Duration kWorkerSyncDelay = Duration(
+      milliseconds: 50); // Extra safety buffer for worker thread cleanup
 
   // Callback for when speech is detected and recording starts
   Function()? onSpeechDetectedCallback;
@@ -122,18 +125,21 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Transition guard to prevent duplicate calls
   bool _isTransitionInProgress = false;
-  
+
   // Safety guard for _enterAiSpeakingComplete
   bool _awaitingPlaybackEnd = false;
-  
+
   // CRITICAL: Guard flag to prevent multiple VAD restart attempts
   bool _vadRestartScheduled = false;
-  
+
   // VAD retry configuration
   static const int _maxVadRetries = 3;
-  static const List<int> _retryDelays = [100, 200, 400]; // Exponential backoff in milliseconds
+  static const List<int> _retryDelays = [
+    100,
+    200,
+    400
+  ]; // Exponential backoff in milliseconds
 
-  
   // Constructor
   AutoListeningCoordinator({
     required AudioPlayerManager audioPlayerManager,
@@ -155,18 +161,18 @@ class AutoListeningCoordinator with SessionDisposable {
         AppLogger.d(' AutoListeningCoordinator: Using Standard VAD Manager');
       }
     }
-    
+
     // Store the initial TTS activity stream if provided
     _ttsActivityStream = ttsActivityStream;
-    
+
     // NEW: Create combined stream that tracks if AI is making ANY sound
     // This fixes race conditions between TTS generation and audio playback
     _rebuildAiAudioActiveStream();
-    
+
     if (kDebugMode) {
       AppLogger.d(' AutoListeningCoordinator: Set up combined AI audio stream');
     }
-    
+
     _setupListeners();
   }
 
@@ -176,16 +182,20 @@ class AutoListeningCoordinator with SessionDisposable {
     _ttsActivityStream = ttsActivityStream;
     _rebuildAiAudioActiveStream();
     if (kDebugMode) {
-      AppLogger.d(' AutoListeningCoordinator: Updated to use unified TTS activity stream');
+      AppLogger.d(
+          ' AutoListeningCoordinator: Updated to use unified TTS activity stream');
     }
   }
 
   /// Rebuild the combined AI audio stream with current TTS stream
   void _rebuildAiAudioActiveStream() {
     _aiAudioActiveStream = Rx.combineLatest2<bool, bool, bool>(
-      _audioPlayerManager.isPlayingStream,  // true while audio player outputs sound
+      _audioPlayerManager
+          .isPlayingStream, // true while audio player outputs sound
       // Use unified TTS activity stream if available, otherwise fallback to polling VoiceService
-      _ttsActivityStream ?? Stream.periodic(const Duration(milliseconds: 100), (_) => _voiceService.isAiSpeaking).distinct(),
+      _ttsActivityStream ??
+          Stream.periodic(const Duration(milliseconds: 100),
+              (_) => _voiceService.isAiSpeaking).distinct(),
       (playing, speaking) => playing || speaking,
     ).distinct();
   }
@@ -206,7 +216,9 @@ class AutoListeningCoordinator with SessionDisposable {
       }
       return success;
     } catch (e) {
-      if (kDebugMode) print('[AutoListeningCoordinator] CRITICAL: VAD start failed (native crash protection): $e');
+      if (kDebugMode)
+        print(
+            '[AutoListeningCoordinator] CRITICAL: VAD start failed (native crash protection): $e');
       _isVadActive = false; // Ensure state is consistent on failure
       return false;
     }
@@ -216,31 +228,36 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<bool> _startVADWithRetry() async {
     if (_isVadActive) {
       if (kDebugMode)
-        print('[AutoListeningCoordinator] [RETRY] VAD already active, skipping start');
+        print(
+            '[AutoListeningCoordinator] [RETRY] VAD already active, skipping start');
       return true;
     }
 
     for (int attempt = 1; attempt <= _maxVadRetries; attempt++) {
       try {
         if (kDebugMode) {
-          print('[AutoListeningCoordinator] [RETRY] VAD start attempt $attempt/$_maxVadRetries');
+          print(
+              '[AutoListeningCoordinator] [RETRY] VAD start attempt $attempt/$_maxVadRetries');
         }
-        
+
         final success = await _vadManager.startListening();
         if (success) {
           _isVadActive = true;
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [RETRY] VAD started successfully on attempt $attempt');
+            print(
+                '[AutoListeningCoordinator] [RETRY] VAD started successfully on attempt $attempt');
           }
           return true;
         } else {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [RETRY] VAD start returned false on attempt $attempt');
+            print(
+                '[AutoListeningCoordinator] [RETRY] VAD start returned false on attempt $attempt');
           }
         }
       } catch (e) {
         if (kDebugMode) {
-          print('[AutoListeningCoordinator] [RETRY] VAD start failed on attempt $attempt: $e');
+          print(
+              '[AutoListeningCoordinator] [RETRY] VAD start failed on attempt $attempt: $e');
         }
       }
 
@@ -248,7 +265,8 @@ class AutoListeningCoordinator with SessionDisposable {
       if (attempt < _maxVadRetries) {
         final delayMs = _retryDelays[attempt - 1];
         if (kDebugMode) {
-          print('[AutoListeningCoordinator] [RETRY] Waiting ${delayMs}ms before retry ${attempt + 1}');
+          print(
+              '[AutoListeningCoordinator] [RETRY] Waiting ${delayMs}ms before retry ${attempt + 1}');
         }
         await Future.delayed(Duration(milliseconds: delayMs));
       }
@@ -257,13 +275,15 @@ class AutoListeningCoordinator with SessionDisposable {
     // All retries failed
     _isVadActive = false;
     if (kDebugMode) {
-      print('[AutoListeningCoordinator] [RETRY] CRITICAL: All VAD start attempts failed after $_maxVadRetries retries');
+      print(
+          '[AutoListeningCoordinator] [RETRY] CRITICAL: All VAD start attempts failed after $_maxVadRetries retries');
     }
-    
+
     // Emit error and transition to idle state
-    _errorController.add('VAD startup failed after $_maxVadRetries retry attempts');
+    _errorController
+        .add('VAD startup failed after $_maxVadRetries retry attempts');
     _updateState(AutoListeningState.idle);
-    
+
     return false;
   }
 
@@ -279,7 +299,9 @@ class AutoListeningCoordinator with SessionDisposable {
       if (kDebugMode)
         print('[AutoListeningCoordinator] VAD stopped successfully');
     } catch (e) {
-      if (kDebugMode) print('[AutoListeningCoordinator] CRITICAL: VAD stop failed (native crash protection): $e');
+      if (kDebugMode)
+        print(
+            '[AutoListeningCoordinator] CRITICAL: VAD stop failed (native crash protection): $e');
       _isVadActive = false; // Ensure state is consistent even on failure
     }
   }
@@ -375,9 +397,11 @@ class AutoListeningCoordinator with SessionDisposable {
       } else {
         // AI audio stopped - trigger VAD restart with debouncing for speaker ring-down
         if ((_currentState == AutoListeningState.aiSpeaking ||
-            _currentState == AutoListeningState.idle) && !_vadRestartScheduled) {
+                _currentState == AutoListeningState.idle) &&
+            !_vadRestartScheduled) {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [UNIFIED-TTS] AI audio complete - scheduling VAD restart with 100ms debounce');
+            print(
+                '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio complete - scheduling VAD restart with 100ms debounce');
           }
           _vadRestartScheduled = true;
           _enterAiSpeakingCompleteWithDebounce();
@@ -399,60 +423,64 @@ class AutoListeningCoordinator with SessionDisposable {
       if (_autoModeEnabled) {
         // VAD FLAPPING FIX: Only increment sequence for new speech sessions
         final now = DateTime.now();
-        final isNewSession = !_inSpeechSession || 
-            (_lastSpeechStartTime != null && 
-             now.difference(_lastSpeechStartTime!) > _minSpeechGap);
-        
+        final isNewSession = !_inSpeechSession ||
+            (_lastSpeechStartTime != null &&
+                now.difference(_lastSpeechStartTime!) > _minSpeechGap);
+
         if (isNewSession) {
           _speechSeq++;
           _inSpeechSession = true;
           _lastSpeechStartTime = now;
-          
+
           // ADAPTIVE TIMER FIX: Track speech bursts for adaptive timeout
           if (_lastSpeechEndTime != null) {
             final timeSinceLastEnd = now.difference(_lastSpeechEndTime!);
             if (timeSinceLastEnd <= _burstResetThreshold) {
               _speechBurstCount++;
               if (kDebugMode) {
-                print('[AutoListeningCoordinator] [ADAPTIVE-TIMER] Speech burst detected, count: $_speechBurstCount (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
+                print(
+                    '[AutoListeningCoordinator] [ADAPTIVE-TIMER] Speech burst detected, count: $_speechBurstCount (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
               }
             } else {
               _speechBurstCount = 1; // Reset burst count after long pause
               if (kDebugMode) {
-                print('[AutoListeningCoordinator] [ADAPTIVE-TIMER] Long pause detected, resetting burst count to 1 (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
+                print(
+                    '[AutoListeningCoordinator] [ADAPTIVE-TIMER] Long pause detected, resetting burst count to 1 (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
               }
             }
           } else {
             _speechBurstCount = 1; // First speech of session
           }
-          
+
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [VAD-FLAPPING-FIX] New speech session started, sequence: $_speechSeq, burst: $_speechBurstCount');
+            print(
+                '[AutoListeningCoordinator] [VAD-FLAPPING-FIX] New speech session started, sequence: $_speechSeq, burst: $_speechBurstCount');
           }
         } else {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [VAD-FLAPPING-FIX] Continuing speech session $_speechSeq (gap < ${_minSpeechGap.inMilliseconds}ms)');
+            print(
+                '[AutoListeningCoordinator] [VAD-FLAPPING-FIX] Continuing speech session $_speechSeq (gap < ${_minSpeechGap.inMilliseconds}ms)');
           }
         }
-        
+
         if (_currentState == AutoListeningState.listening) {
           if (kDebugMode) {
             print(
                 '[AutoListeningCoordinator] [VAD] VAD detected speech start, cancelling speech end timer and starting recording');
           }
           _cancelSpeechEndTimer();
-          
+
           // CRITICAL FIX: Always transition to userSpeaking, even if recording was already active
           if (!_isRecordingActive) {
             _startRecording();
           } else {
             if (kDebugMode) {
-              print('[AutoListeningCoordinator] [VAD] Recording already active, but transitioning to userSpeaking anyway');
+              print(
+                  '[AutoListeningCoordinator] [VAD] Recording already active, but transitioning to userSpeaking anyway');
             }
           }
           // Always transition to userSpeaking state to prevent endless loop
           _updateState(AutoListeningState.userSpeaking);
-          
         } else if (_currentState == AutoListeningState.processing) {
           // CRITICAL FIX: Cancel pending speech end if user resumes speaking
           if (kDebugMode) {
@@ -490,7 +518,7 @@ class AutoListeningCoordinator with SessionDisposable {
               return; // Ignore this speech end event
             }
           }
-          
+
           if (kDebugMode) {
             print(
                 '[AutoListeningCoordinator][DEBUG] Calling _startSpeechEndTimer() after onSpeechEnd');
@@ -547,51 +575,59 @@ class AutoListeningCoordinator with SessionDisposable {
     // Safety guard to prevent multiple invocations
     if (_awaitingPlaybackEnd) {
       if (kDebugMode) {
-        print('[AutoListeningCoordinator] [DEBOUNCED] Already awaiting playback end, skipping duplicate call');
+        print(
+            '[AutoListeningCoordinator] [DEBOUNCED] Already awaiting playback end, skipping duplicate call');
       }
       return;
     }
     _awaitingPlaybackEnd = true;
-    
+
     try {
       // ENGINEER FEEDBACK: Debounce ~100ms post-playback silence for speaker ring-down
       // ENHANCED: Ensure any previous VAD worker threads have exited
       if (kDebugMode) {
-        print('[AutoListeningCoordinator] [DEBOUNCED] Debouncing VAD restart for 100ms + worker sync (speaker ring-down)');
+        print(
+            '[AutoListeningCoordinator] [DEBOUNCED] Debouncing VAD restart for 100ms + worker sync (speaker ring-down)');
       }
-      
+
       // Wait for ring-down delay (configurable for different audio backends)
       await Future.delayed(kRingDownDelay);
-      
+
       // RACE CONDITION FIX: Ensure previous VAD stop has completed worker thread cleanup
       // Since _safeStopVAD() was called in _stopListeningAndRecording(), the worker should be done,
       // but add a small additional safety buffer for any remaining cleanup
       await Future.delayed(kWorkerSyncDelay);
-      
+
       // Verify we're still in the right state after debounce
-      if (_currentState == AutoListeningState.aiSpeaking && _autoModeEnabled && _vadRestartScheduled) {
+      if (_currentState == AutoListeningState.aiSpeaking &&
+          _autoModeEnabled &&
+          _vadRestartScheduled) {
         if (kDebugMode) {
-          print('[AutoListeningCoordinator] [DEBOUNCED] Debounce complete, starting VAD');
+          print(
+              '[AutoListeningCoordinator] [DEBOUNCED] Debounce complete, starting VAD');
         }
-        
+
         // Start VAD immediately after debounce
         final vadStarted = await _startVADWithRetry();
         if (vadStarted) {
           await _startListeningAfterDelay();
         } else {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [DEBOUNCED] VAD restart failed after retries, transitioning to idle');
+            print(
+                '[AutoListeningCoordinator] [DEBOUNCED] VAD restart failed after retries, transitioning to idle');
           }
           _updateState(AutoListeningState.idle);
         }
       } else {
         if (kDebugMode) {
-          print('[AutoListeningCoordinator] [DEBOUNCED] State changed during debounce, skipping VAD restart');
+          print(
+              '[AutoListeningCoordinator] [DEBOUNCED] State changed during debounce, skipping VAD restart');
         }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[AutoListeningCoordinator] [DEBOUNCED] Error during debounced VAD restart: $e');
+        print(
+            '[AutoListeningCoordinator] [DEBOUNCED] Error during debounced VAD restart: $e');
       }
       _updateState(AutoListeningState.idle);
     } finally {
@@ -605,47 +641,55 @@ class AutoListeningCoordinator with SessionDisposable {
     // Safety guard to prevent multiple invocations
     if (_awaitingPlaybackEnd) {
       if (kDebugMode) {
-        print('[AutoListeningCoordinator] [ROBUST] Already awaiting playback end, skipping duplicate call');
+        print(
+            '[AutoListeningCoordinator] [ROBUST] Already awaiting playback end, skipping duplicate call');
       }
       return;
     }
     _awaitingPlaybackEnd = true;
-    
+
     // Cancel any previous subscription to prevent race conditions
     _startListeningSub?.cancel();
-    
+
     try {
       // Use await with firstWhere - this returns a Future<bool>, not a StreamSubscription
       await _aiAudioActiveStream.firstWhere((busy) => !busy);
-      
-      if (_currentState == AutoListeningState.aiSpeaking && _autoModeEnabled && _vadRestartScheduled) {
+
+      if (_currentState == AutoListeningState.aiSpeaking &&
+          _autoModeEnabled &&
+          _vadRestartScheduled) {
         if (kDebugMode) {
-          print('[AutoListeningCoordinator] [ROBUST] AI audio definitively finished, starting VAD immediately');
+          print(
+              '[AutoListeningCoordinator] [ROBUST] AI audio definitively finished, starting VAD immediately');
         }
-        
+
         // Start VAD immediately without delay
         final vadStarted = await _startVADWithRetry();
         if (vadStarted) {
           await _startListeningAfterDelay();
         } else {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator] [ROBUST] VAD restart failed after retries, transitioning to idle');
+            print(
+                '[AutoListeningCoordinator] [ROBUST] VAD restart failed after retries, transitioning to idle');
           }
           _updateState(AutoListeningState.idle);
         }
       } else if (kDebugMode) {
-        print('[AutoListeningCoordinator] [ROBUST] State changed, auto mode disabled, or restart not scheduled - skipping VAD start');
+        print(
+            '[AutoListeningCoordinator] [ROBUST] State changed, auto mode disabled, or restart not scheduled - skipping VAD start');
       }
     } catch (error) {
       if (kDebugMode) {
-        print('[AutoListeningCoordinator] [ROBUST] CRITICAL: Error waiting for AI audio completion (native crash protection): $error');
+        print(
+            '[AutoListeningCoordinator] [ROBUST] CRITICAL: Error waiting for AI audio completion (native crash protection): $error');
       }
       // Ensure Maya doesn't get stuck by transitioning to idle on error
       _updateState(AutoListeningState.idle);
     } finally {
       // Always reset the safety guards
       _awaitingPlaybackEnd = false;
-      _vadRestartScheduled = false; // Clear restart flag when operation completes
+      _vadRestartScheduled =
+          false; // Clear restart flag when operation completes
     }
   }
 
@@ -751,7 +795,7 @@ class AutoListeningCoordinator with SessionDisposable {
         }
         return;
       }
-      
+
       if (kDebugMode) {
         print(
             '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
@@ -798,7 +842,7 @@ class AutoListeningCoordinator with SessionDisposable {
   // Start listening for voice activity
   Future<void> _startListening() async {
     // Cancel any post-audio delay when starting listening
-    
+
     if (_currentState == AutoListeningState.idle ||
         _currentState == AutoListeningState.processing) {
       try {
@@ -811,7 +855,8 @@ class AutoListeningCoordinator with SessionDisposable {
           }
         } else {
           if (kDebugMode) {
-            print('❌ AutoListening: VAD startup failed after retries, remaining in current state');
+            print(
+                '❌ AutoListening: VAD startup failed after retries, remaining in current state');
           }
         }
       } catch (e) {
@@ -860,10 +905,10 @@ class AutoListeningCoordinator with SessionDisposable {
 
     // RACE CONDITION FIX: Capture current speech sequence
     final int currentSeq = _speechSeq;
-    
+
     // ADAPTIVE TIMER FIX: Calculate timeout based on speech burst count
     final Duration timeout = _getAdaptiveSpeechTimeout();
-    
+
     if (kDebugMode) {
       print(
           '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting ${timeout.inMilliseconds}ms timer (burst: $_speechBurstCount). Current state: $_currentState, sequence: $currentSeq');
@@ -871,7 +916,7 @@ class AutoListeningCoordinator with SessionDisposable {
         print(StackTrace.current);
       }
     }
-    
+
     // Wait for silence to be detected for adaptive duration before stopping recording
     _speechEndDebounceTimer = Timer(timeout, () {
       if (kDebugMode) {
@@ -881,15 +926,16 @@ class AutoListeningCoordinator with SessionDisposable {
           print(StackTrace.current);
         }
       }
-      
+
       // RACE CONDITION FIX: Only execute if sequence matches (no newer speech detected)
-      if (currentSeq == _speechSeq && _currentState == AutoListeningState.userSpeaking) {
+      if (currentSeq == _speechSeq &&
+          _currentState == AutoListeningState.userSpeaking) {
         // VAD FLAPPING FIX: End the speech session when timer fires
         _inSpeechSession = false;
-        
+
         // ADAPTIVE TIMER FIX: Track when speech ends for burst calculation
         _lastSpeechEndTime = DateTime.now();
-        
+
         if (kDebugMode) {
           print(
               '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording() (sequence valid, session ended, burst: $_speechBurstCount)');
@@ -938,23 +984,25 @@ class AutoListeningCoordinator with SessionDisposable {
       print(
           '[AutoListeningCoordinator][DEBUG] _handleSpeechEndDuringProcessing: Setting up 200ms debounce for immediate stop');
     }
-    
+
     // Cancel any existing pending timer
     _cancelPendingSpeechEnd();
-    
+
     // RACE CONDITION FIX: Capture current speech sequence
     final int currentSeq = _speechSeq;
-    
+
     // Set flag and start debounce timer
     _hasPendingSpeechEnd = true;
     _pendingSpeechEndTimer = Timer(const Duration(milliseconds: 200), () {
       // RACE CONDITION FIX: Only execute if sequence matches
-      if (_hasPendingSpeechEnd && currentSeq == _speechSeq && _currentState == AutoListeningState.processing) {
+      if (_hasPendingSpeechEnd &&
+          currentSeq == _speechSeq &&
+          _currentState == AutoListeningState.processing) {
         // ENGINEER'S FIX: Only call _stopRecording if actually recording (reduces log noise)
         if (_isRecordingActive) {
           // ADAPTIVE TIMER FIX: Track when speech ends for burst calculation
           _lastSpeechEndTime = DateTime.now();
-          
+
           if (kDebugMode) {
             print(
                 '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately (sequence: $currentSeq, burst: $_speechBurstCount)');
@@ -1013,11 +1061,12 @@ class AutoListeningCoordinator with SessionDisposable {
           _isVadActive = false; // Update state tracking
         } catch (e) {
           if (kDebugMode) {
-            print('[AutoListeningCoordinator][DEBUG] CRITICAL: VAD stop error during recording stop (native crash protection): $e');
+            print(
+                '[AutoListeningCoordinator][DEBUG] CRITICAL: VAD stop error during recording stop (native crash protection): $e');
           }
           _isVadActive = false; // Ensure consistent state even on failure
         }
-        
+
         if (kDebugMode) {
           print(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
@@ -1031,7 +1080,7 @@ class AutoListeningCoordinator with SessionDisposable {
         if (audioPath != null && audioPath.isNotEmpty) {
           // RACE CONDITION FIX: Mark file as pending transcription to prevent path reuse
           _recordingManager.markFileAsPendingTranscription(audioPath);
-          
+
           // Notify listeners that recording has completed
           if (onRecordingCompleteCallback != null) {
             onRecordingCompleteCallback!(audioPath);
@@ -1076,7 +1125,7 @@ class AutoListeningCoordinator with SessionDisposable {
       if (kDebugMode) {
         print('🛑 AutoListening: VAD stopped and buffers released');
       }
-      
+
       // Wait briefly for proper cleanup
 
       // Now safely stop recording
@@ -1089,8 +1138,7 @@ class AutoListeningCoordinator with SessionDisposable {
       }
 
       if (kDebugMode) {
-        print(
-            '🎤 AutoListening: Complete shutdown sequence finished');
+        print('🎤 AutoListening: Complete shutdown sequence finished');
       }
     } catch (e) {
       _errorController.add('Error stopping listening/recording: $e');
@@ -1103,7 +1151,7 @@ class AutoListeningCoordinator with SessionDisposable {
   // Enable automatic listening mode with explicit audio state from Bloc
   Future<void> enableAutoModeWithAudioState(bool isAudioPlaying) async {
     // Cancel any post-audio delay when manually enabling auto mode
-    
+
     if (!_autoModeEnabled) {
       _autoModeEnabled = true;
       _autoModeEnabledController.add(true);
@@ -1135,7 +1183,8 @@ class AutoListeningCoordinator with SessionDisposable {
     // STATE VALIDATION: Guard against unexpected state
     if (_currentState != AutoListeningState.idle) {
       if (kDebugMode) {
-        AppLogger.w('🚨 [ALS] enableAutoMode called in unexpected state=$_currentState - resetting to idle');
+        AppLogger.w(
+            '🚨 [ALS] enableAutoMode called in unexpected state=$_currentState - resetting to idle');
       }
       _updateState(AutoListeningState.idle);
     }
@@ -1258,12 +1307,14 @@ class AutoListeningCoordinator with SessionDisposable {
     }
     _currentState = newState;
     _stateController.add(_currentState);
-    
+
     // VAD FLAPPING FIX: Reset speech session when transitioning to idle or listening
-    if (newState == AutoListeningState.idle || newState == AutoListeningState.listening) {
+    if (newState == AutoListeningState.idle ||
+        newState == AutoListeningState.listening) {
       _inSpeechSession = false;
       if (kDebugMode && _lastSpeechStartTime != null) {
-        print('[AutoListeningCoordinator][VAD-FLAPPING-FIX] Speech session reset on transition to $newState');
+        print(
+            '[AutoListeningCoordinator][VAD-FLAPPING-FIX] Speech session reset on transition to $newState');
       }
     }
   }
@@ -1281,9 +1332,10 @@ class AutoListeningCoordinator with SessionDisposable {
 
     // Reset speech sequence and timing state
     _speechSeq = 0;
-    
+
     if (kDebugMode) {
-      AppLogger.d('🔄 [ALS] Generation counter reset: $oldSeq -> $_speechSeq (future stray callbacks with seq $oldSeq should be ignored)');
+      AppLogger.d(
+          '🔄 [ALS] Generation counter reset: $oldSeq -> $_speechSeq (future stray callbacks with seq $oldSeq should be ignored)');
     }
     _speechBurstCount = 0;
     _inSpeechSession = false;
@@ -1311,7 +1363,7 @@ class AutoListeningCoordinator with SessionDisposable {
       _isVadActive = false;
       _isRecordingActive = false;
       _autoModeEnabled = false;
-      
+
       // Clean up subscriptions
       _startListeningSub?.cancel();
       _startListeningSub = null;
@@ -1357,7 +1409,7 @@ class AutoListeningCoordinator with SessionDisposable {
   // Explicitly trigger listening to start - can be called from outside
   void triggerListening() {
     // Cancel any post-audio delay when manually triggering listening
-    
+
     if (_autoModeEnabled &&
         _currentState != AutoListeningState.listeningForVoice) {
       if (kDebugMode) {
@@ -1389,7 +1441,7 @@ class AutoListeningCoordinator with SessionDisposable {
     if (kDebugMode) {
       print('[ALC] >>> startListening() called');
     }
-    
+
     // BYPASS FIX: Check voice mode before starting
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
       if (kDebugMode) {
@@ -1397,7 +1449,7 @@ class AutoListeningCoordinator with SessionDisposable {
       }
       return;
     }
-    
+
     if (_autoModeEnabled) {
       triggerListening();
     } else {
@@ -1407,13 +1459,13 @@ class AutoListeningCoordinator with SessionDisposable {
     }
   }
 
-  /// Stop listening directly without affecting autoModeEnabled  
+  /// Stop listening directly without affecting autoModeEnabled
   /// Used for TTS start handling to avoid autoMode toggling
   void stopListening() {
     if (kDebugMode) {
       print('[ALC] <<< stopListening() called');
     }
-    
+
     if (_autoModeEnabled) {
       _updateState(AutoListeningState.aiSpeaking);
       _stopListeningAndRecording();
@@ -1423,7 +1475,6 @@ class AutoListeningCoordinator with SessionDisposable {
       }
     }
   }
-
 }
 
 /// States for the automatic listening coordinator

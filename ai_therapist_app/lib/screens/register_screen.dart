@@ -11,7 +11,7 @@ import 'package:ai_therapist_app/config/routes.dart';
 
 class RegisterScreen extends StatefulWidget {
   final IAuthService? authService;
-  
+
   const RegisterScreen({
     Key? key,
     this.authService,

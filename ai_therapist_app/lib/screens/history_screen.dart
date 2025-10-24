@@ -9,7 +9,7 @@ import '../utils/date_formatter.dart';
 
 class HistoryScreen extends StatefulWidget {
   final ISessionRepository? sessionRepository;
-  
+
   const HistoryScreen({
     Key? key,
     this.sessionRepository,
@@ -34,7 +34,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _sessionRepository = widget.sessionRepository ?? DependencyContainer().sessionRepository;
+    _sessionRepository =
+        widget.sessionRepository ?? DependencyContainer().sessionRepository;
     _selectedDate = DateTime.now();
     _generateWeekDates();
     _loadSessions();

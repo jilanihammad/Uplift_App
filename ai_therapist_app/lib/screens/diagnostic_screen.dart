@@ -17,7 +17,7 @@ class DiagnosticScreen extends StatefulWidget {
   final ApiClient? apiClient;
   final VoiceService? voiceService;
   final AudioGenerator? audioGenerator;
-  
+
   const DiagnosticScreen({
     Key? key,
     this.therapyService,
@@ -54,7 +54,8 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
     // Use dependency injection with fallback to DependencyContainer
     _therapyService = widget.therapyService ?? DependencyContainer().therapy;
     _voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
-    _audioGenerator = widget.audioGenerator ?? DependencyContainer().audioGenerator;
+    _audioGenerator =
+        widget.audioGenerator ?? DependencyContainer().audioGenerator;
     _checkServiceStatus();
   }
 
@@ -167,7 +168,8 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
     });
 
     try {
-      final apiClient = widget.apiClient ?? DependencyContainer().apiClientConcrete;
+      final apiClient =
+          widget.apiClient ?? DependencyContainer().apiClientConcrete;
       debugPrint(
           '[DEBUG] Testing status endpoint directly with raw HTTP request');
 

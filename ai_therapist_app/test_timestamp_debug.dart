@@ -11,13 +11,13 @@ void main() {
 
   print('Test 1: Parsing timestamp without Z');
   testTimestampParsing(timestampWithoutZ);
-  
+
   print('\nTest 2: Parsing timestamp with Z');
   testTimestampParsing(timestampWithZ);
-  
+
   print('\nTest 3: Parsing timestamp with milliseconds');
   testTimestampParsing(timestampWithMillis);
-  
+
   print('\nTest 4: Parsing timestamp with milliseconds and Z');
   testTimestampParsing(timestampWithMillisZ);
 
@@ -27,7 +27,7 @@ void main() {
 
 void testTimestampParsing(String timestamp) {
   print('Input: "$timestamp"');
-  
+
   try {
     // Method 1: Direct DateTime.parse
     final dt1 = DateTime.parse(timestamp);
@@ -42,7 +42,7 @@ void testTimestampParsing(String timestamp) {
 
   try {
     // Method 2: Try parsing as UTC if no Z
-    final dt2 = timestamp.endsWith('Z') 
+    final dt2 = timestamp.endsWith('Z')
         ? DateTime.parse(timestamp)
         : DateTime.parse('${timestamp}Z');
     print('  Parse with Z added: Success');
@@ -83,11 +83,11 @@ void testDateFormatterFunctions() {
   final now = DateTime.now();
   final utcNow = now.toUtc();
   final testTimestamp = "2025-06-29T17:34:37";
-  
+
   print('Testing DateFormatter-like functions:');
   print('Current time: ${now.toIso8601String()}');
   print('Current UTC: ${utcNow.toIso8601String()}');
-  
+
   // Test formatting patterns
   final formats = [
     'yyyy-MM-ddTHH:mm:ss',
@@ -96,14 +96,14 @@ void testDateFormatterFunctions() {
     'HH:mm',
     'MMM dd, yyyy',
   ];
-  
+
   for (final format in formats) {
     try {
       final formatter = DateFormat(format);
       final formatted = formatter.format(now);
       print('\nFormat: "$format"');
       print('  Output: "$formatted"');
-      
+
       // Try parsing back
       try {
         final parsed = formatter.parse(formatted);
@@ -115,19 +115,19 @@ void testDateFormatterFunctions() {
       print('\nFormat: "$format" - FAILED: $e');
     }
   }
-  
+
   // Test specific timestamp parsing
   print('\n\nTesting specific timestamp format from logs:');
   try {
     final logTimestamp = DateTime.parse(testTimestamp);
     print('Parsed log timestamp: ${logTimestamp.toIso8601String()}');
-    
+
     // Test different display formats
     print('Display formats:');
     print('  - Time only: ${DateFormat('HH:mm').format(logTimestamp)}');
     print('  - Date only: ${DateFormat('MMM dd').format(logTimestamp)}');
     print('  - Full: ${DateFormat('MMM dd, yyyy HH:mm').format(logTimestamp)}');
-    
+
     // Test relative time
     final diff = now.difference(logTimestamp);
     print('  - Relative: ${_formatRelativeTime(diff)}');

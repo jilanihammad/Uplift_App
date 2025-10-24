@@ -33,10 +33,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], name='fk_user_mood_entries_user_id'),
         sa.UniqueConstraint('user_id', 'client_entry_id', name='uq_user_mood_entries_user_client'),
     )
-    op.create_index(
-        'ix_user_mood_entries_user_logged_at_id',
-        'user_mood_entries',
-        ['user_id', sa.text('logged_at DESC'), 'id'],
+    op.execute(
+        'CREATE INDEX ix_user_mood_entries_user_logged_at_id '
+        'ON user_mood_entries (user_id, logged_at DESC, id)'
     )
 
 

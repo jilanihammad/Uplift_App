@@ -20,7 +20,7 @@ class AudioQueueItem {
   final String id;
   final Completer<void> completer;
   final DateTime addedAt;
-  
+
   AudioQueueItem({
     required this.audioPath,
     required this.id,
@@ -35,7 +35,7 @@ class AudioQueueItem {
 class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   // Audio player instance
   final AudioPlayer _audioPlayer = AudioPlayer();
-  
+
   // Audio settings for global mute functionality
   final IAudioSettings? _audioSettings;
   double _lastRequestedVolume = 1.0;
@@ -63,17 +63,17 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
   // Track last emitted playing state to prevent duplicate broadcasts
   bool? _lastEmittedPlayingState;
-  
+
   // DEBOUNCE FIX: Prevent rapid-fire identical state changes
   Timer? _stateDebounceTimer;
   bool? _pendingStateChange;
   static const Duration _stateDebounceInterval = Duration(milliseconds: 100);
-  
+
   // Audio queue management
   final List<AudioQueueItem> _audioQueue = [];
   AudioQueueItem? _currentlyPlaying;
   bool _isProcessingQueue = false;
-  
+
   // Queue configuration
   static const int _maxQueueSize = 10;
   static const int _queueWarningThreshold = 5;
@@ -90,41 +90,41 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       _audioPlayer.processingStateStream;
 
   // Constructor
-  AudioPlayerManager({IAudioSettings? audioSettings}) 
-    : _audioSettings = audioSettings {
+  AudioPlayerManager({IAudioSettings? audioSettings})
+      : _audioSettings = audioSettings {
     _initAudioPlayer();
-    
+
     // Listen for mute changes if settings provided
     _audioSettings?.addListener(_onMuteChanged);
-    
+
     // CRITICAL: Apply initial mute state
     _applyEffectiveVolume();
   }
-  
+
   void _onMuteChanged() {
     if (_disposed) return; // Guard against post-dispose callbacks
     _applyEffectiveVolume();
   }
-  
+
   double _getEffectiveVolume(double requestedVolume) {
     // If soft-muted, return 0.0 regardless of other settings
     if (_isSoftMuted) return 0.0;
-    
+
     final multiplier = _audioSettings?.volumeMultiplier ?? 1.0;
     return requestedVolume * multiplier;
   }
-  
+
   void _applyEffectiveVolume() {
     if (_disposed) return; // Guard against post-dispose calls
-    
+
     final effective = _getEffectiveVolume(_lastRequestedVolume);
     try {
       _audioPlayer.setVolume(effective);
       if (kDebugMode) {
         print('🔊 AudioPlayerManager: Volume applied - '
-              'requested=$_lastRequestedVolume, '
-              'muted=${_audioSettings?.isMuted ?? false}, '
-              'effective=$effective');
+            'requested=$_lastRequestedVolume, '
+            'muted=${_audioSettings?.isMuted ?? false}, '
+            'effective=$effective');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -132,9 +132,10 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       }
     }
   }
-  
+
   // Wrapper to ensure volume is applied after source changes
-  Future<void> _setSourceAndApplyVolume(Future<void> Function() setSourceFn) async {
+  Future<void> _setSourceAndApplyVolume(
+      Future<void> Function() setSourceFn) async {
     await setSourceFn();
     // Re-apply volume after source change in case player reset it
     _applyEffectiveVolume();
@@ -144,10 +145,10 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   void _emitPlayingState(bool isPlaying) {
     // DEBOUNCE FIX: Store pending state and debounce rapid changes
     _pendingStateChange = isPlaying;
-    
+
     // Cancel any existing timer
     _stateDebounceTimer?.cancel();
-    
+
     // Set new timer to emit state after debounce interval
     _stateDebounceTimer = Timer(_stateDebounceInterval, () {
       // Only emit if state actually changed from last emitted value
@@ -155,8 +156,9 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         _lastEmittedPlayingState = _pendingStateChange;
         _playingStateController.add(_pendingStateChange!);
         if (kDebugMode) {
-          debugPrintThrottledCustom('AudioPlayerManager: Playing state changed to $_pendingStateChange (debounced)',
-                          key: 'audio_state_debounced');
+          debugPrintThrottledCustom(
+              'AudioPlayerManager: Playing state changed to $_pendingStateChange (debounced)',
+              key: 'audio_state_debounced');
         }
       } else if (kDebugMode) {
         // Reduce noise: only log duplicate state change at verbose level if truly useful
@@ -171,14 +173,15 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     // Cancel any pending debounced emission
     _stateDebounceTimer?.cancel();
     _pendingStateChange = null;
-    
+
     // Emit immediately if state actually changed
     if (_lastEmittedPlayingState != isPlaying) {
       _lastEmittedPlayingState = isPlaying;
       _playingStateController.add(isPlaying);
       if (kDebugMode) {
-        debugPrintThrottledCustom('AudioPlayerManager: Playing state changed to $isPlaying (immediate)',
-                          key: 'audio_state_immediate');
+        debugPrintThrottledCustom(
+            'AudioPlayerManager: Playing state changed to $isPlaying (immediate)',
+            key: 'audio_state_immediate');
       }
     }
   }
@@ -191,7 +194,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       if (kDebugMode) {
         AppLogger.d('AudioPlayerManager: Loop mode explicitly set to OFF');
       }
-      
+
       // Set up audio session
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration(
@@ -220,10 +223,11 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
       _audioPlayer.processingStateStream.listen((state) {
         if (kDebugMode) {
-          debugPrintThrottledCustom('🔄 AudioPlayerManager: ProcessingState changed to $state (playing: ${_audioPlayer.playing})',
-                            key: 'audio_processing_state');
+          debugPrintThrottledCustom(
+              '🔄 AudioPlayerManager: ProcessingState changed to $state (playing: ${_audioPlayer.playing})',
+              key: 'audio_processing_state');
         }
-        
+
         switch (state) {
           case ProcessingState.idle:
             if (kDebugMode) {
@@ -242,12 +246,14 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
             break;
           case ProcessingState.ready:
             if (kDebugMode) {
-              print('🟢 ProcessingState.ready - Ready to play (playing: ${_audioPlayer.playing})');
+              print(
+                  '🟢 ProcessingState.ready - Ready to play (playing: ${_audioPlayer.playing})');
             }
             break;
           case ProcessingState.completed:
             if (kDebugMode) {
-              print('✅ ProcessingState.completed - Audio playback naturally completed');
+              print(
+                  '✅ ProcessingState.completed - Audio playback naturally completed');
             }
             // Ensure we broadcast playback stopped when audio completes
             _emitPlayingState(false);
@@ -257,7 +263,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
               _isSoftMuted = false;
               _muteStateController.add(false);
               if (kDebugMode) {
-                print('🔊 AudioPlayerManager: Auto-cleared soft mute on completion');
+                print(
+                    '🔊 AudioPlayerManager: Auto-cleared soft mute on completion');
               }
             }
 
@@ -270,7 +277,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
                   AppLogger.d('Audio playback completion confirmed');
                 }
               }
-              
+
               // Process next item in queue after current completes
               _processNextInQueue();
             });
@@ -300,10 +307,10 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
     // Generate unique ID for this audio request
     final id = '${DateTime.now().microsecondsSinceEpoch}_${audioPath.hashCode}';
-    
+
     // Create completer for this specific audio playback
     final completer = Completer<void>();
-    
+
     // Create queue item
     final queueItem = AudioQueueItem(
       audioPath: audioPath,
@@ -325,15 +332,17 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     // Add to queue
     _audioQueue.add(queueItem);
     _queueLengthController.add(_audioQueue.length);
-    
+
     if (kDebugMode) {
-      AppLogger.d('AudioPlayerManager: Added to queue: $audioPath (ID: $id, Queue length: ${_audioQueue.length})');
+      AppLogger.d(
+          'AudioPlayerManager: Added to queue: $audioPath (ID: $id, Queue length: ${_audioQueue.length})');
     }
 
     // Emit warning if queue is getting long
     if (_audioQueue.length > _queueWarningThreshold) {
       if (kDebugMode) {
-        print('⚠️ AudioPlayerManager: Queue length (${_audioQueue.length}) exceeds warning threshold ($_queueWarningThreshold)');
+        print(
+            '⚠️ AudioPlayerManager: Queue length (${_audioQueue.length}) exceeds warning threshold ($_queueWarningThreshold)');
       }
     }
 
@@ -360,7 +369,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       _nowPlayingController.add(item.audioPath);
 
       if (kDebugMode) {
-        AppLogger.d('AudioPlayerManager: Processing queue item: ${item.audioPath} (ID: ${item.id}, Remaining in queue: ${_audioQueue.length})');
+        AppLogger.d(
+            'AudioPlayerManager: Processing queue item: ${item.audioPath} (ID: ${item.id}, Remaining in queue: ${_audioQueue.length})');
       }
 
       try {
@@ -380,7 +390,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     }
 
     _isProcessingQueue = false;
-    
+
     if (kDebugMode) {
       AppLogger.d('AudioPlayerManager: Queue processing completed');
     }
@@ -407,8 +417,9 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       if (kDebugMode) {
         final fileSize = await file.length();
         final waitTime = DateTime.now().difference(item.addedAt).inMilliseconds;
-        debugPrintThrottledCustom('Playing audio from: ${item.audioPath} (size: $fileSize bytes, waited: ${waitTime}ms)',
-                          key: 'audio_file_playback');
+        debugPrintThrottledCustom(
+            'Playing audio from: ${item.audioPath} (size: $fileSize bytes, waited: ${waitTime}ms)',
+            key: 'audio_file_playback');
       }
 
       // Stop any current playback
@@ -419,12 +430,11 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
       // Load and play the audio with volume protection
       await _setSourceAndApplyVolume(
-        () => _audioPlayer.setFilePath(item.audioPath)
-      );
-      
+          () => _audioPlayer.setFilePath(item.audioPath));
+
       // Create a completer for playback completion
       final playbackCompleter = Completer<void>();
-      
+
       // Listen for completion
       StreamSubscription? subscription;
       subscription = _audioPlayer.processingStateStream.listen((state) {
@@ -454,23 +464,25 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       if (!_audioPlayer.playing) {
         await _audioPlayer.play();
         if (kDebugMode) {
-          AppLogger.d('AudioPlayerManager: Started playback for ${item.audioPath} (ID: ${item.id})');
+          AppLogger.d(
+              'AudioPlayerManager: Started playback for ${item.audioPath} (ID: ${item.id})');
         }
       }
 
       // Wait for playback to complete
       await playbackCompleter.future;
-      
+
       // Clean up temporary TTS file after playback completion
       _safeDeleteTempFile(item.audioPath);
-      
+
       // Complete the item's completer
       if (!item.completer.isCompleted) {
         item.completer.complete();
       }
-      
+
       if (kDebugMode) {
-        AppLogger.d('AudioPlayerManager: Completed playback for ${item.audioPath} (ID: ${item.id})');
+        AppLogger.d(
+            'AudioPlayerManager: Completed playback for ${item.audioPath} (ID: ${item.id})');
       }
     } catch (e) {
       _errorController.add('Error playing audio: $e');
@@ -510,7 +522,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       _nowPlayingController.add(null);
 
       if (kDebugMode) {
-        AppLogger.d('AudioPlayerManager: Audio playback stopped - isPlaying forced to false, queue cleared: $clearQueue');
+        AppLogger.d(
+            'AudioPlayerManager: Audio playback stopped - isPlaying forced to false, queue cleared: $clearQueue');
       }
     } catch (e) {
       _errorController.add('Error stopping audio: $e');
@@ -530,10 +543,10 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
       // Step 1: Stop current playback and await completion
       await _audioPlayer.stop();
-      
+
       // Step 2: Seek to beginning to reset position
       await _audioPlayer.seek(Duration.zero);
-      
+
       // Step 3: Clear audio source to flush callbacks and prevent old DataSource reuse
       // Note: JustAudio doesn't support setAudioSource(null), but stop() + seek() already flushes callbacks
 
@@ -544,10 +557,11 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       // Complete all pending items with cancellation
       for (final item in _audioQueue) {
         if (!item.completer.isCompleted) {
-          item.completer.completeError(Exception('Audio reset - playback cancelled'));
+          item.completer
+              .completeError(Exception('Audio reset - playback cancelled'));
         }
       }
-      
+
       // Clear queue and reset all state
       _audioQueue.clear();
       _queueLengthController.add(0);
@@ -556,7 +570,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       _nowPlayingController.add(null);
 
       if (kDebugMode) {
-        AppLogger.d('AudioPlayerManager: Lightweight reset completed - audio source cleared, queue reset');
+        AppLogger.d(
+            'AudioPlayerManager: Lightweight reset completed - audio source cleared, queue reset');
       }
     } catch (e) {
       _errorController.add('Error during lightweight reset: $e');
@@ -581,14 +596,16 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     // If we have a force override, use that
     if (_forceIsPlayingState != null) {
       if (kDebugMode) {
-        AppLogger.v('AudioPlayerManager.isPlaying: Using force override = $_forceIsPlayingState');
+        AppLogger.v(
+            'AudioPlayerManager.isPlaying: Using force override = $_forceIsPlayingState');
       }
       return _forceIsPlayingState!;
     }
     // Otherwise use the actual player state
     final actualState = _audioPlayer.playing;
     if (kDebugMode) {
-      AppLogger.v('AudioPlayerManager.isPlaying: Using actual player state = $actualState');
+      AppLogger.v(
+          'AudioPlayerManager.isPlaying: Using actual player state = $actualState');
     }
     return actualState;
   }
@@ -605,32 +622,36 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
   /// Get queue status information
   Map<String, dynamic> get queueStatus => {
-    'queueLength': _audioQueue.length,
-    'isProcessing': _isProcessingQueue,
-    'currentlyPlaying': _currentlyPlaying?.audioPath,
-    'currentId': _currentlyPlaying?.id,
-    'queueItems': _audioQueue.map((item) => {
-      'path': item.audioPath,
-      'id': item.id,
-      'waitTime': DateTime.now().difference(item.addedAt).inMilliseconds,
-    }).toList(),
-  };
+        'queueLength': _audioQueue.length,
+        'isProcessing': _isProcessingQueue,
+        'currentlyPlaying': _currentlyPlaying?.audioPath,
+        'currentId': _currentlyPlaying?.id,
+        'queueItems': _audioQueue
+            .map((item) => {
+                  'path': item.audioPath,
+                  'id': item.id,
+                  'waitTime':
+                      DateTime.now().difference(item.addedAt).inMilliseconds,
+                })
+            .toList(),
+      };
 
   /// Skip current audio and move to next in queue
   Future<void> skipCurrent() async {
     if (_currentlyPlaying != null) {
       if (kDebugMode) {
-        AppLogger.d('AudioPlayerManager: Skipping current audio: ${_currentlyPlaying!.audioPath}');
+        AppLogger.d(
+            'AudioPlayerManager: Skipping current audio: ${_currentlyPlaying!.audioPath}');
       }
-      
+
       // Complete current item with skip error
       if (!_currentlyPlaying!.completer.isCompleted) {
         _currentlyPlaying!.completer.completeError(Exception('Audio skipped'));
       }
-      
+
       // Stop current playback
       await _audioPlayer.stop();
-      
+
       // Process next will be triggered by the stop event
     }
   }
@@ -638,62 +659,64 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   /// Clear the audio queue without stopping current playback
   void clearQueue() {
     if (kDebugMode) {
-      AppLogger.d('AudioPlayerManager: Clearing queue (${_audioQueue.length} items)');
+      AppLogger.d(
+          'AudioPlayerManager: Clearing queue (${_audioQueue.length} items)');
     }
-    
+
     // Complete all pending items with cancellation
     for (final item in _audioQueue) {
       if (!item.completer.isCompleted) {
         item.completer.completeError(Exception('Queue cleared'));
       }
     }
-    
+
     _audioQueue.clear();
     _queueLengthController.add(0);
   }
-  
+
   /// Session end cleanup following exact specification
   /// Call this when therapy session ends or user navigates away
   Future<void> sessionEndCleanup() async {
     if (kDebugMode) {
       print('🧹 AudioPlayerManager: Session end cleanup starting');
     }
-    
+
     final stopwatch = Stopwatch()..start();
-    
+
     try {
       // Step 1: Stop player immediately
       await _audioPlayer.stop();
       if (kDebugMode) {
         print('🧹 Step 1: Player stopped');
       }
-      
+
       // Step 2: Dispose player (frees decoder, closes sockets)
       await _audioPlayer.dispose();
       if (kDebugMode) {
         print('🧹 Step 2: Player disposed');
       }
-      
+
       // Step 3: Signal TTS completion and cancel all watchdogs
       _forceIsPlayingState = false;
       _emitPlayingStateImmediate(false);
-      
+
       // Cancel all timers and subscriptions
       _stateDebounceTimer?.cancel();
       _stateDebounceTimer = null;
-      
+
       stopwatch.stop();
-      
+
       if (kDebugMode) {
-        print('✅ AudioPlayerManager: Session cleanup completed in ${stopwatch.elapsedMilliseconds}ms');
+        print(
+            '✅ AudioPlayerManager: Session cleanup completed in ${stopwatch.elapsedMilliseconds}ms');
       }
-      
     } catch (e) {
       stopwatch.stop();
       if (kDebugMode) {
-        print('❌ AudioPlayerManager: Session cleanup error (${stopwatch.elapsedMilliseconds}ms): $e');
+        print(
+            '❌ AudioPlayerManager: Session cleanup error (${stopwatch.elapsedMilliseconds}ms): $e');
       }
-      
+
       // Force state reset even on error
       _forceIsPlayingState = false;
       _emitPlayingStateImmediate(false);
@@ -704,38 +727,40 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   @override
   Future<void> performAsyncDisposal() async {
     if (kDebugMode) {
-      debugPrint('🧹 AudioPlayerManager: Starting comprehensive async disposal');
+      debugPrint(
+          '🧹 AudioPlayerManager: Starting comprehensive async disposal');
     }
-    
+
     final stopwatch = Stopwatch()..start();
-    
+
     try {
       // Step 1: Stop all playback immediately to prevent MediaCodec race
       if (kDebugMode) {
         debugPrint('🧹 Step 1: Stopping playback and clearing queue');
       }
       await _audioPlayer.stop();
-      
+
       // Step 2: Clear queue and complete all pending items
       clearQueue();
       _isProcessingQueue = false;
       _currentlyPlaying = null;
-      
+
       // Step 3: Cancel all timers to prevent post-disposal callbacks
       if (kDebugMode) {
         debugPrint('🧹 Step 2: Canceling timers and removing listeners');
       }
       _stateDebounceTimer?.cancel();
       _stateDebounceTimer = null;
-      
+
       // Step 4: Remove audio settings listener before disposing
       _audioSettings?.removeListener(_onMuteChanged);
-      
+
       // Step 5: Release player resources - frees decoder, closes sockets
       if (kDebugMode) {
-        debugPrint('🧹 Step 3: Releasing AudioPlayer (frees decoder, closes sockets)');
+        debugPrint(
+            '🧹 Step 3: Releasing AudioPlayer (frees decoder, closes sockets)');
       }
-      
+
       await Future.any([
         Future(() async {
           await _audioPlayer.dispose(); // This calls release() internally
@@ -750,12 +775,12 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
           // Don't throw - just log the timeout
         }),
       ]);
-      
+
       // Step 6: Abandon audio focus to fully release audio session
       if (kDebugMode) {
         debugPrint('🧹 Step 4: Abandoning audio focus');
       }
-      
+
       try {
         final session = await AudioSession.instance;
         await session.setActive(false);
@@ -768,7 +793,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         }
         // Don't rethrow - session cleanup is best effort
       }
-      
+
       // Step 7: Close all stream controllers
       if (kDebugMode) {
         debugPrint('🧹 Step 5: Closing stream controllers');
@@ -779,19 +804,20 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         _queueLengthController.close(),
         _nowPlayingController.close(),
       ]);
-      
+
       stopwatch.stop();
-      
+
       if (kDebugMode) {
-        debugPrint('✅ AudioPlayerManager: Async disposal completed in ${stopwatch.elapsedMilliseconds}ms');
+        debugPrint(
+            '✅ AudioPlayerManager: Async disposal completed in ${stopwatch.elapsedMilliseconds}ms');
       }
-      
     } catch (e) {
       stopwatch.stop();
       if (kDebugMode) {
-        debugPrint('❌ AudioPlayerManager: Error during async disposal (${stopwatch.elapsedMilliseconds}ms): $e');
+        debugPrint(
+            '❌ AudioPlayerManager: Error during async disposal (${stopwatch.elapsedMilliseconds}ms): $e');
       }
-      
+
       // Force cleanup even on error to prevent stuck states
       try {
         _stateDebounceTimer?.cancel();
@@ -799,27 +825,29 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         clearQueue();
       } catch (cleanupError) {
         if (kDebugMode) {
-          debugPrint('⚠️ AudioPlayerManager: Error during force cleanup: $cleanupError');
+          debugPrint(
+              '⚠️ AudioPlayerManager: Error during force cleanup: $cleanupError');
         }
       }
-      
+
       rethrow;
     }
   }
-  
+
   // Legacy sync disposal - still needed for backward compatibility
   @override
   void performDisposal() {
     if (kDebugMode) {
-      debugPrint('⚠️ AudioPlayerManager: Sync disposal called - use disposeAsync() for proper cleanup');
+      debugPrint(
+          '⚠️ AudioPlayerManager: Sync disposal called - use disposeAsync() for proper cleanup');
     }
-    
+
     // Basic cleanup for sync disposal
     _audioSettings?.removeListener(_onMuteChanged);
     clearQueue();
     _stateDebounceTimer?.cancel();
     _muteDebounceTimer?.cancel();
-    
+
     // Note: We don't dispose the player here to avoid MediaCodec issues
     // The async version should be used for proper cleanup
   }
@@ -837,28 +865,30 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     _muteDebounceTimer?.cancel();
     _muteDebounceTimer = Timer(const Duration(milliseconds: 50), () {
       _isSoftMuted = muted;
-      
+
       if (muted) {
         // Store current system volume before muting
         _systemVolume = _lastRequestedVolume;
         _audioPlayer.setVolume(0.0);
         if (kDebugMode) {
-          print('🔇 AudioPlayerManager: Soft-muted (cached volume: $_systemVolume)');
+          print(
+              '🔇 AudioPlayerManager: Soft-muted (cached volume: $_systemVolume)');
         }
       } else {
         // Restore minimum of requested and cached system volume
         final restoreVolume = math.min(_lastRequestedVolume, _systemVolume);
         _applyEffectiveVolume(); // This will use the restored volume
         if (kDebugMode) {
-          print('🔊 AudioPlayerManager: Unmuted (restored volume: $restoreVolume)');
+          print(
+              '🔊 AudioPlayerManager: Unmuted (restored volume: $restoreVolume)');
         }
       }
-      
+
       // Emit mute state for UI components (mute icon, etc.)
       _muteStateController.add(muted);
     });
   }
-  
+
   /// Get current soft mute state
   bool get isSoftMuted => _isSoftMuted;
 
@@ -869,36 +899,38 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     if (kDebugMode) {
       print('🎵 AudioPlayerManager: Waiting for robust completion detection');
     }
-    
+
     try {
       // Step 1: Wait for playback to actually start (playing==true)
       final playbackStarted = _audioPlayer.playingStream
-        .where((playing) => playing)
-        .first
-        .timeout(const Duration(seconds: 10), onTimeout: () {
-          throw TimeoutException('Playback never started', const Duration(seconds: 10));
-        });
-      
+          .where((playing) => playing)
+          .first
+          .timeout(const Duration(seconds: 10), onTimeout: () {
+        throw TimeoutException(
+            'Playback never started', const Duration(seconds: 10));
+      });
+
       await playbackStarted;
-      
+
       if (kDebugMode) {
-        print('🎵 AudioPlayerManager: Playback confirmed started, waiting for completion');
+        print(
+            '🎵 AudioPlayerManager: Playback confirmed started, waiting for completion');
       }
-      
+
       // Step 2: Now wait for true completion
       final playbackCompleted = _audioPlayer.processingStateStream
-        .where((state) => state == ProcessingState.completed)
-        .first
-        .timeout(const Duration(minutes: 2), onTimeout: () {
-          throw TimeoutException('Playback never completed', const Duration(minutes: 2));
-        });
-      
+          .where((state) => state == ProcessingState.completed)
+          .first
+          .timeout(const Duration(minutes: 2), onTimeout: () {
+        throw TimeoutException(
+            'Playback never completed', const Duration(minutes: 2));
+      });
+
       await playbackCompleted;
-      
+
       if (kDebugMode) {
         print('🎵 AudioPlayerManager: True completion detected');
       }
-      
     } catch (e) {
       if (kDebugMode) {
         print('❌ AudioPlayerManager: Robust completion detection failed: $e');
@@ -909,7 +941,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
   /// Enhanced error detection for just_audio streams
   /// Detects idle+not playing+has duration = stream error
-  StreamSubscription<ProcessingState>? _listenForStreamErrors(Completer<void> errorCompleter) {
+  StreamSubscription<ProcessingState>? _listenForStreamErrors(
+      Completer<void> errorCompleter) {
     return _audioPlayer.processingStateStream.listen((state) {
       // Standard completion
       if (state == ProcessingState.completed) {
@@ -918,14 +951,16 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         }
       }
       // Error detection: idle + not playing + has duration = stream error
-      else if (state == ProcessingState.idle && 
-               !_audioPlayer.playing && 
-               _audioPlayer.duration != null) {
+      else if (state == ProcessingState.idle &&
+          !_audioPlayer.playing &&
+          _audioPlayer.duration != null) {
         if (kDebugMode) {
-          print('❌ AudioPlayerManager: Stream error detected - idle with duration but not playing');
+          print(
+              '❌ AudioPlayerManager: Stream error detected - idle with duration but not playing');
         }
-        TTSStreamingMonitor().recordStreamingFailure('Player stream error: idle state with duration');
-        
+        TTSStreamingMonitor().recordStreamingFailure(
+            'Player stream error: idle state with duration');
+
         if (!errorCompleter.isCompleted) {
           errorCompleter.complete(); // Treat as completion to prevent hang
         }
@@ -937,37 +972,40 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   Future<void> _cleanupPreviousSubscriptions() async {
     // Brief delay to ensure any previous subscriptions can cleanup
     await Future.delayed(const Duration(milliseconds: 50));
-    
+
     if (kDebugMode) {
       print('🧹 AudioPlayerManager: Cleaned up previous subscriptions');
     }
   }
 
   /// Play live TTS audio stream (TRUE STREAMING implementation)
-  /// 
+  ///
   /// This uses a custom LiveTtsAudioSource for true progressive streaming
   /// where audio starts quickly and continues as chunks arrive.
-  /// 
+  ///
   /// CRITICAL: This method maintains the same completion semantics as playAudioBytes()
   /// with robust completion detection that waits for playing==true first
-  /// 
+  ///
   /// NOTE: Now accepts either a stream or a pre-created LiveTtsAudioSource for better lifecycle management
   Future<void> playLiveTtsStream(
     dynamic audioSourceOrStream, {
     String? debugName,
     String contentType = 'audio/wav',
-    VoidCallback? onNaturalCompletion, // Callback for natural ExoPlayer completion
+    VoidCallback?
+        onNaturalCompletion, // Callback for natural ExoPlayer completion
   }) async {
     final displayName = debugName ?? 'live-tts-audio';
-    final id = '${DateTime.now().microsecondsSinceEpoch}_live_${audioSourceOrStream.hashCode}';
+    final id =
+        '${DateTime.now().microsecondsSinceEpoch}_live_${audioSourceOrStream.hashCode}';
     final startTime = DateTime.now();
-    
+
     // Start monitoring
     TTSStreamingMonitor().recordStreamingStart();
     MemoryMonitor.setBaseline();
-    
+
     if (kDebugMode) {
-      AppLogger.d('AudioPlayerManager: Starting live TTS stream: $displayName (ID: $id)');
+      AppLogger.d(
+          'AudioPlayerManager: Starting live TTS stream: $displayName (ID: $id)');
       AppLogger.d('Content-Type: $contentType');
     }
 
@@ -975,25 +1013,27 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       // OVERLAP PREVENTION: Never let two TTS clips overlap
       if (_audioPlayer.playing) {
         if (kDebugMode) {
-          debugPrintThrottledCustom('🔄 AudioPlayerManager: Stopping previous TTS clip to prevent overlap',
-                            key: 'tts_overlap_prevention');
+          debugPrintThrottledCustom(
+              '🔄 AudioPlayerManager: Stopping previous TTS clip to prevent overlap',
+              key: 'tts_overlap_prevention');
         }
         await _audioPlayer.stop(); // Kill the old clip first
       }
-      
+
       // Clean up any previous subscriptions
       await _cleanupPreviousSubscriptions();
-      
+
       // Clear force override when starting new playback
       _forceIsPlayingState = null;
-      
+
       // Determine if we have a stream or an existing LiveTtsAudioSource
       final LiveTtsAudioSource liveSource;
       if (audioSourceOrStream is LiveTtsAudioSource) {
         // Use existing LiveTtsAudioSource (preferred for proper lifecycle management)
         liveSource = audioSourceOrStream;
         if (kDebugMode) {
-          print('🎯 AudioPlayerManager: Using existing LiveTtsAudioSource for $displayName');
+          print(
+              '🎯 AudioPlayerManager: Using existing LiveTtsAudioSource for $displayName');
         }
       } else if (audioSourceOrStream is Stream<Uint8List>) {
         // Create new LiveTtsAudioSource from stream (legacy compatibility)
@@ -1003,92 +1043,103 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
           debugName: displayName,
         );
         if (kDebugMode) {
-          print('🎯 AudioPlayerManager: Created new LiveTtsAudioSource for $displayName');
+          print(
+              '🎯 AudioPlayerManager: Created new LiveTtsAudioSource for $displayName');
         }
       } else {
-        throw ArgumentError('audioSourceOrStream must be either Stream<Uint8List> or LiveTtsAudioSource');
+        throw ArgumentError(
+            'audioSourceOrStream must be either Stream<Uint8List> or LiveTtsAudioSource');
       }
-      
+
       // Set up the live audio source with error recovery
       try {
         await _setSourceAndApplyVolume(
-          () => _audioPlayer.setAudioSource(liveSource, preload: false)
-        );
-        
+            () => _audioPlayer.setAudioSource(liveSource, preload: false));
+
         // Start playback immediately
         await _audioPlayer.play();
-        
+
         if (kDebugMode) {
-          print('🚀 AudioPlayerManager: Started live TTS playback for $displayName');
+          print(
+              '🚀 AudioPlayerManager: Started live TTS playback for $displayName');
         }
       } catch (sourceError) {
         // CRITICAL: Clean up on source error to prevent VAD/recording pipeline hanging
         if (kDebugMode) {
-          print('❌ AudioPlayerManager: Live TTS source error - cleaning up: $sourceError');
+          print(
+              '❌ AudioPlayerManager: Live TTS source error - cleaning up: $sourceError');
         }
-        
+
         // Reset player state
         try {
           await _audioPlayer.stop();
         } catch (stopError) {
           if (kDebugMode) {
-            print('⚠️ AudioPlayerManager: Error stopping player during cleanup: $stopError');
+            print(
+                '⚠️ AudioPlayerManager: Error stopping player during cleanup: $stopError');
           }
         }
-        
+
         // Force playing state to false so VAD can restart
         _forceIsPlayingState = false;
         _emitPlayingStateImmediate(false);
-        
+
         // Record failure for monitoring
-        TTSStreamingMonitor().recordStreamingFailure('Source setup error: $sourceError');
-        
+        TTSStreamingMonitor()
+            .recordStreamingFailure('Source setup error: $sourceError');
+
         // Re-throw after cleanup
         rethrow;
       }
-      
+
       // Create completion tracking
       final playbackCompleter = Completer<void>();
-      
+
       // Listen for completion using natural ExoPlayer events
       StreamSubscription? subscription;
-      
+
       subscription = _audioPlayer.processingStateStream.listen((state) {
         if (kDebugMode) {
-          debugPrintThrottledCustom('🔄 Live TTS ProcessingState: $state for $displayName (playing: ${_audioPlayer.playing})',
-                            key: 'live_tts_processing_state');
+          debugPrintThrottledCustom(
+              '🔄 Live TTS ProcessingState: $state for $displayName (playing: ${_audioPlayer.playing})',
+              key: 'live_tts_processing_state');
         }
-        
+
         if (state == ProcessingState.completed) {
           subscription?.cancel();
-          
+
           if (kDebugMode) {
-            print('✅ Live TTS audio playback completed naturally: $displayName');
-            print('🎯 Natural ExoPlayer completion - triggering VAD state transition');
-            print('🕰️ Natural completion time: ${DateTime.now().difference(startTime).inMilliseconds}ms after start');
+            print(
+                '✅ Live TTS audio playback completed naturally: $displayName');
+            print(
+                '🎯 Natural ExoPlayer completion - triggering VAD state transition');
+            print(
+                '🕰️ Natural completion time: ${DateTime.now().difference(startTime).inMilliseconds}ms after start');
           }
-          
+
           // CRITICAL: Clear the source to prevent any possibility of replay
           _audioPlayer.stop().catchError((e) {
             if (kDebugMode) {
-              print('⚠️ AudioPlayerManager: Error stopping player after completion: $e');
+              print(
+                  '⚠️ AudioPlayerManager: Error stopping player after completion: $e');
             }
           });
-          
+
           // Record successful streaming
           final latency = DateTime.now().difference(startTime).inMilliseconds;
           TTSStreamingMonitor().recordStreamingSuccess(latencyMs: latency);
-          
+
           // Force playing state to false when completed
           _forceIsPlayingState = false;
           _emitPlayingState(false);
-          
+
           // Notify callback that natural completion occurred
           if (kDebugMode) {
-            print('🎯 Calling onNaturalCompletion callback for immediate VAD transition');
+            print(
+                '🎯 Calling onNaturalCompletion callback for immediate VAD transition');
           }
           onNaturalCompletion?.call();
-          
+
           if (!playbackCompleter.isCompleted) {
             playbackCompleter.complete();
           }
@@ -1105,26 +1156,26 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         (_) {},
         onError: (error) {
           // Record playback failure
-          TTSStreamingMonitor().recordStreamingFailure('Live playback error: $error');
-          
+          TTSStreamingMonitor()
+              .recordStreamingFailure('Live playback error: $error');
+
           if (!playbackCompleter.isCompleted) {
             playbackCompleter.completeError(error);
           }
           errorSubscription?.cancel();
         },
       );
-      
+
       // Wait for playback to complete
       await playbackCompleter.future;
-      
+
       if (kDebugMode) {
         print('✅ Live TTS audio playback finished: $displayName');
       }
-      
     } catch (e) {
       // Record streaming failure
       TTSStreamingMonitor().recordStreamingFailure('Live TTS exception: $e');
-      
+
       if (kDebugMode) {
         print('❌ Error playing live TTS audio: $e');
       }
@@ -1132,7 +1183,6 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       rethrow;
     }
   }
-
 
   /// Play audio directly from memory bytes (eliminates file I/O)
   /// This is the optimized path for TTS that avoids unnecessary disk writes
@@ -1142,38 +1192,40 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       throw ArgumentError('Empty audio bytes provided for playback');
     }
 
-    // Generate unique ID for this audio request  
-    final id = '${DateTime.now().microsecondsSinceEpoch}_memory_${audioBytes.hashCode}';
+    // Generate unique ID for this audio request
+    final id =
+        '${DateTime.now().microsecondsSinceEpoch}_memory_${audioBytes.hashCode}';
     final displayName = debugName ?? 'in-memory-audio';
-    
+
     if (kDebugMode) {
-      AppLogger.d('AudioPlayerManager: Playing ${audioBytes.length} bytes in-memory: $displayName (ID: $id)');
+      AppLogger.d(
+          'AudioPlayerManager: Playing ${audioBytes.length} bytes in-memory: $displayName (ID: $id)');
     }
 
     try {
-      // OVERLAP PREVENTION: Never let two TTS clips overlap  
+      // OVERLAP PREVENTION: Never let two TTS clips overlap
       if (_audioPlayer.playing) {
         if (kDebugMode) {
-          debugPrintThrottledCustom('🔄 AudioPlayerManager: Stopping previous TTS clip to prevent overlap',
-                            key: 'tts_overlap_prevention');
+          debugPrintThrottledCustom(
+              '🔄 AudioPlayerManager: Stopping previous TTS clip to prevent overlap',
+              key: 'tts_overlap_prevention');
         }
         await _audioPlayer.stop(); // Kill the old clip first
       }
-      
+
       // Clear force override when starting new playback
       _forceIsPlayingState = null;
-      
+
       // Load audio from memory bytes - this is the key optimization!
       // Create a data URI from bytes for just_audio
       final base64Audio = base64Encode(audioBytes);
       final dataUri = 'data:audio/wav;base64,$base64Audio';
-      await _setSourceAndApplyVolume(
-        () => _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(dataUri)))
-      );
-      
+      await _setSourceAndApplyVolume(() =>
+          _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(dataUri))));
+
       // Create a completer for playback completion
       final playbackCompleter = Completer<void>();
-      
+
       // Listen for completion
       StreamSubscription? subscription;
       subscription = _audioPlayer.processingStateStream.listen((state) {
@@ -1181,38 +1233,38 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
             state == ProcessingState.idle ||
             (state == ProcessingState.ready && !_audioPlayer.playing)) {
           subscription?.cancel();
-          
+
           if (kDebugMode) {
             AppLogger.d('In-memory audio playback completed: $displayName');
           }
-          
+
           // CRITICAL: Clear the source to prevent any possibility of replay
           _audioPlayer.stop().catchError((e) {
             if (kDebugMode) {
-              print('⚠️ AudioPlayerManager: Error stopping player after completion: $e');
+              print(
+                  '⚠️ AudioPlayerManager: Error stopping player after completion: $e');
             }
           });
-          
+
           // Force playing state to false when completed
           _forceIsPlayingState = false;
           _emitPlayingState(false);
-          
+
           if (!playbackCompleter.isCompleted) {
             playbackCompleter.complete();
           }
         }
       });
-      
+
       // Start playback
       await _audioPlayer.play();
-      
+
       // Wait for playback to complete
       await playbackCompleter.future;
-      
+
       if (kDebugMode) {
         print('✅ In-memory audio playback finished: $displayName');
       }
-      
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error playing in-memory audio: $e');
@@ -1224,14 +1276,16 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
   /// Check if a file path is a temporary TTS file that should be auto-cleaned
   bool _isTempTTSFile(String path) {
-    return path.contains('/tts_') && 
-           (path.endsWith('.wav') || path.endsWith('.mp3') || path.endsWith('.ogg'));
+    return path.contains('/tts_') &&
+        (path.endsWith('.wav') ||
+            path.endsWith('.mp3') ||
+            path.endsWith('.ogg'));
   }
 
   /// Safely delete temporary TTS files after playback
   void _safeDeleteTempFile(String path) {
     if (!_isTempTTSFile(path)) return;
-    
+
     try {
       final file = File(path);
       if (file.existsSync()) {
@@ -1287,7 +1341,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         }
       } catch (sessionError) {
         if (kDebugMode) {
-          debugPrint('⚠️ AudioPlayerManager: AudioSession cleanup error: $sessionError');
+          debugPrint(
+              '⚠️ AudioPlayerManager: AudioSession cleanup error: $sessionError');
         }
       }
 

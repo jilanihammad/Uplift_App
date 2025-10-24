@@ -17,10 +17,10 @@ import 'auto_listening_coordinator.dart';
 
 /// Coordinates voice session workflow by orchestrating focused audio services
 /// Acts as a facade implementing IVoiceService while delegating to specialized services
-/// 
+///
 /// Phase 6 Enhancement: Extended IVoiceService implementation
 /// - Added stopAudio(), resetTTSState(), isTtsActuallySpeaking stream
-/// - Added processRecordedAudioFile(), setSpeakerMuted()  
+/// - Added processRecordedAudioFile(), setSpeakerMuted()
 /// - Added enableAutoMode(), disableAutoMode()
 /// - Smart delegation to legacy VoiceService for unimplemented features
 class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
@@ -28,7 +28,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   final ITTSService _ttsService;
   final IWebSocketAudioManager _wsManager;
   final IAudioFileManager _fileManager;
-  
+
   // Future enhancement: Direct AutoListeningCoordinator integration
   // late final AutoListeningCoordinator _autoListening;
   // late final VADManager _vadManager;
@@ -37,7 +37,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   String? _currentSessionId;
 
   // Stream controllers for coordination
-  final StreamController<double> _audioLevelController = 
+  final StreamController<double> _audioLevelController =
       StreamController<double>.broadcast();
 
   VoiceSessionCoordinator({
@@ -45,10 +45,10 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     required ITTSService ttsService,
     required IWebSocketAudioManager wsManager,
     required IAudioFileManager fileManager,
-  }) : _recordingService = recordingService,
-       _ttsService = ttsService,
-       _wsManager = wsManager,
-       _fileManager = fileManager {
+  })  : _recordingService = recordingService,
+        _ttsService = ttsService,
+        _wsManager = wsManager,
+        _fileManager = fileManager {
     _initializeCoordinator();
   }
 
@@ -92,7 +92,8 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   @override
   Future<String?> tryStopRecording() async {
     if (kDebugMode) {
-      print('[VoiceSessionCoordinator] Trying to stop recording (idempotent)...');
+      print(
+          '[VoiceSessionCoordinator] Trying to stop recording (idempotent)...');
     }
     return await _recordingService.tryStopRecording();
   }
@@ -171,7 +172,8 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   @override
   Future<String> processRecordedAudioFile(String audioPath) async {
     if (kDebugMode) {
-      print('[VoiceSessionCoordinator] Processing recorded audio file: $audioPath');
+      print(
+          '[VoiceSessionCoordinator] Processing recorded audio file: $audioPath');
     }
     // For now, delegate to legacy VoiceService until we implement transcription
     try {
@@ -182,11 +184,13 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] Error delegating to legacy service: $e');
+        print(
+            '[VoiceSessionCoordinator] Error delegating to legacy service: $e');
       }
     }
-    
-    throw UnimplementedError('Audio transcription not yet implemented in VoiceSessionCoordinator');
+
+    throw UnimplementedError(
+        'Audio transcription not yet implemented in VoiceSessionCoordinator');
   }
 
   @override
@@ -204,7 +208,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
         print('[VoiceSessionCoordinator] Error delegating setSpeakerMuted: $e');
       }
     }
-    
+
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Speaker muting not yet implemented');
     }
@@ -266,14 +270,14 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     final voice = settings['voice'] as String? ?? 'alloy';
     final speed = settings['speed'] as double? ?? 1.0;
     final pitch = settings['pitch'] as double? ?? 1.0;
-    
+
     _ttsService.setVoiceSettings(voice, speed, pitch);
   }
 
   @override
   void updateTTSSpeakingState(bool isSpeaking) {
     // Phase 2.2.5: Removed duplicate TTS logging - VoiceSessionBloc logs this
-    
+
     // For now, try to coordinate with legacy VoiceService AutoListeningCoordinator if available
     // Future enhancement: Integrate direct AutoListeningCoordinator
     try {
@@ -281,20 +285,22 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
         final legacyVoiceService = serviceLocator<VoiceService>();
-        
+
         // CRITICAL FIX: Update legacy TTS state so streams stay consistent
         legacyVoiceService.updateTTSSpeakingState(isSpeaking);
-        
-        // Use the legacy coordination logic for TTS-VAD timing  
+
+        // Use the legacy coordination logic for TTS-VAD timing
         // Phase 2.2.5: Removed verbose VAD coordination logging
       } else {
         if (kDebugMode) {
-          print('VoiceSessionCoordinator: Legacy VoiceService not available, VAD coordination skipped');
+          print(
+              'VoiceSessionCoordinator: Legacy VoiceService not available, VAD coordination skipped');
         }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('VoiceSessionCoordinator: Error coordinating with legacy AutoListeningCoordinator: $e');
+        print(
+            'VoiceSessionCoordinator: Error coordinating with legacy AutoListeningCoordinator: $e');
       }
     }
   }
@@ -324,7 +330,8 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
       _isInitialized = true;
 
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] All services initialized successfully');
+        print(
+            '[VoiceSessionCoordinator] All services initialized successfully');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -371,7 +378,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] All services disposed');
     }
-    
+
     // Call parent dispose
     super.dispose();
   }
@@ -413,17 +420,19 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     void Function(double)? onProgress,
   }) async {
     if (kDebugMode) {
-      print('[VoiceSessionCoordinator] TTS with timing coordination (simplified API)');
+      print(
+          '[VoiceSessionCoordinator] TTS with timing coordination (simplified API)');
     }
 
     try {
       // Use new simplified API
       await _ttsService.speak(text, makeBackupFile: false);
-      
+
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] TTS completed, coordinating with auto-listening');
+        print(
+            '[VoiceSessionCoordinator] TTS completed, coordinating with auto-listening');
       }
-      
+
       if (onDone != null) onDone();
     } catch (e) {
       if (onError != null) onError(e.toString());
@@ -448,7 +457,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
         print('[VoiceSessionCoordinator] Error delegating enableAutoMode: $e');
       }
     }
-    
+
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Auto-listening not yet implemented');
     }
@@ -472,14 +481,15 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
         print('[VoiceSessionCoordinator] Error delegating disableAutoMode: $e');
       }
     }
-    
+
     if (kDebugMode) {
       print('[VoiceSessionCoordinator] Auto-listening not yet implemented');
     }
   }
 
   /// Get recording state stream from recording service
-  Stream<RecordingState> get recordingStateStream => _recordingService.recordingStateStream;
+  Stream<RecordingState> get recordingStateStream =>
+      _recordingService.recordingStateStream;
 
   /// Get TTS speaking state stream
   @override
@@ -505,10 +515,12 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[VoiceSessionCoordinator] Error accessing autoListeningCoordinator: $e');
+        print(
+            '[VoiceSessionCoordinator] Error accessing autoListeningCoordinator: $e');
       }
     }
-    
-    throw UnsupportedError('AutoListeningCoordinator not available - legacy VoiceService not registered');
+
+    throw UnsupportedError(
+        'AutoListeningCoordinator not available - legacy VoiceService not registered');
   }
 }

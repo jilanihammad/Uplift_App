@@ -175,14 +175,19 @@ def fetch_mood_entries(
             )
         )
 
-    query = query.order_by(MoodEntry.logged_at.desc(), MoodEntry.id.desc()).limit(limit + 1)
+    entries = (
+        query.order_by(MoodEntry.logged_at.desc(), MoodEntry.id.desc())
+        .limit(limit + 1)
+        .all()
+    )
 
-    entries: List[MoodEntry] = query.all()
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
 
     next_before: Optional[str] = None
-    if len(entries) > limit:
-        last_entry = entries[limit]
+    if has_more and entries:
+        last_entry = entries[-1]
         next_before = _encode_pagination_token(last_entry.logged_at, last_entry.id)
-        entries = entries[:limit]
 
     return entries, next_before

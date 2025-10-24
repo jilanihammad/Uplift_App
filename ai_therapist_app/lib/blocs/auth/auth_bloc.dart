@@ -13,7 +13,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
   AuthBloc({
     IAuthService? authService,
-  }) : _authService = authService ?? DependencyContainer().authService,
+  })  : _authService = authService ?? DependencyContainer().authService,
         super(AuthInitial()) {
     on<CheckAuthStatusEvent>(_checkAuthStatus);
     on<LoginEvent>(_login);

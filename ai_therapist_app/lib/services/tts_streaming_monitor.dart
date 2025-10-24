@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 /// TTS Streaming Monitor
-/// 
+///
 /// Provides comprehensive monitoring and telemetry for TTS streaming performance.
 /// Critical for safe production rollout with instant rollback capability.
 class TTSStreamingMonitor {
@@ -17,7 +17,7 @@ class TTSStreamingMonitor {
   int _bufferUnderruns = 0;
   int _fallbacksToFullBuffer = 0;
   int _memoryWarnings = 0;
-  
+
   // OPUS-specific metrics
   int _opusStreamingAttempts = 0;
   int _opusSuccessfulStreams = 0;
@@ -25,256 +25,273 @@ class TTSStreamingMonitor {
   int _opusEofBeforeOpusTags = 0;
   int _opusHeaderBufferTimeouts = 0;
   int _opusToWavFallbacks = 0;
-  
+
   // Performance tracking
   final List<int> _latencyMeasurements = [];
   final List<int> _heapSizeMeasurements = [];
   int _maxHeapSize = 0;
-  
+
   // Error tracking
   final Map<String, int> _errorCounts = {};
   final List<String> _recentErrors = [];
-  
+
   // Timing
   DateTime? _lastStreamStart;
   DateTime? _lastSuccessfulStream;
-  
+
   // Configuration
   static const int _maxRecentErrors = 50;
   static const int _maxLatencyMeasurements = 100;
   static const int _maxHeapMeasurements = 100;
-  
+
   /// Record the start of a TTS streaming attempt
   void recordStreamingStart() {
     _totalStreamingAttempts++;
     _lastStreamStart = DateTime.now();
-    
+
     if (kDebugMode) {
-      print('🎯 TTSStreamingMonitor: Stream attempt #$_totalStreamingAttempts started');
+      print(
+          '🎯 TTSStreamingMonitor: Stream attempt #$_totalStreamingAttempts started');
     }
   }
-  
+
   /// Record a successful TTS streaming completion
   void recordStreamingSuccess({required int latencyMs}) {
     _successfulStreams++;
     _lastSuccessfulStream = DateTime.now();
-    
+
     // Track latency
     _latencyMeasurements.add(latencyMs);
     if (_latencyMeasurements.length > _maxLatencyMeasurements) {
       _latencyMeasurements.removeAt(0);
     }
-    
+
     if (kDebugMode) {
-      print('✅ TTSStreamingMonitor: Successful stream (latency: ${latencyMs}ms)');
+      print(
+          '✅ TTSStreamingMonitor: Successful stream (latency: ${latencyMs}ms)');
       print('📊 Success rate: ${(successRate * 100).toStringAsFixed(1)}%');
     }
   }
-  
+
   /// Record a failed TTS streaming attempt
   void recordStreamingFailure(String error) {
     _failedStreams++;
-    
+
     // Track error types
     _errorCounts[error] = (_errorCounts[error] ?? 0) + 1;
-    
+
     // Track recent errors
     _recentErrors.add('${DateTime.now().toIso8601String()}: $error');
     if (_recentErrors.length > _maxRecentErrors) {
       _recentErrors.removeAt(0);
     }
-    
+
     if (kDebugMode) {
       print('❌ TTSStreamingMonitor: Stream failed - $error');
       print('📊 Failure rate: ${(failureRate * 100).toStringAsFixed(1)}%');
     }
   }
-  
+
   /// Record a buffer underrun event
   void recordBufferUnderrun() {
     _bufferUnderruns++;
-    
+
     if (kDebugMode) {
-      print('⚠️ TTSStreamingMonitor: Buffer underrun detected (#$_bufferUnderruns)');
+      print(
+          '⚠️ TTSStreamingMonitor: Buffer underrun detected (#$_bufferUnderruns)');
     }
   }
-  
+
   /// Record fallback to full buffer mode
   void recordFallbackToFullBuffer(String reason) {
     _fallbacksToFullBuffer++;
-    
+
     if (kDebugMode) {
       print('🔄 TTSStreamingMonitor: Fallback to full buffer - $reason');
     }
   }
-  
+
   /// Record memory usage measurement
   void recordHeapSize(int heapSizeBytes) {
     _heapSizeMeasurements.add(heapSizeBytes);
     if (_heapSizeMeasurements.length > _maxHeapMeasurements) {
       _heapSizeMeasurements.removeAt(0);
     }
-    
+
     if (heapSizeBytes > _maxHeapSize) {
       _maxHeapSize = heapSizeBytes;
     }
-    
+
     // Check for memory warning threshold (>50MB growth)
     if (heapSizeBytes > 50 * 1024 * 1024) {
       _memoryWarnings++;
       if (kDebugMode) {
-        print('⚠️ TTSStreamingMonitor: Memory warning - heap size: ${(heapSizeBytes / 1024 / 1024).toStringAsFixed(1)} MB');
+        print(
+            '⚠️ TTSStreamingMonitor: Memory warning - heap size: ${(heapSizeBytes / 1024 / 1024).toStringAsFixed(1)} MB');
       }
     }
   }
-  
+
   // ====== OPUS-Specific Monitoring Methods ======
-  
+
   /// Record the start of an OPUS TTS streaming attempt
   void recordOpusStreamingStart() {
     _opusStreamingAttempts++;
     recordStreamingStart(); // Also record general streaming start
-    
+
     if (kDebugMode) {
-      print('🎵 TTSStreamingMonitor: OPUS stream attempt #$_opusStreamingAttempts started');
+      print(
+          '🎵 TTSStreamingMonitor: OPUS stream attempt #$_opusStreamingAttempts started');
     }
   }
-  
+
   /// Record a successful OPUS streaming completion
   void recordOpusStreamingSuccess({required int latencyMs}) {
     _opusSuccessfulStreams++;
     recordStreamingSuccess(latencyMs: latencyMs); // Also record general success
-    
+
     if (kDebugMode) {
-      print('✅ TTSStreamingMonitor: OPUS stream successful (latency: ${latencyMs}ms)');
-      print('📊 OPUS success rate: ${(opusSuccessRate * 100).toStringAsFixed(1)}%');
+      print(
+          '✅ TTSStreamingMonitor: OPUS stream successful (latency: ${latencyMs}ms)');
+      print(
+          '📊 OPUS success rate: ${(opusSuccessRate * 100).toStringAsFixed(1)}%');
     }
   }
-  
+
   /// Record a failed OPUS streaming attempt
   void recordOpusStreamingFailure(String error) {
     _opusFailedStreams++;
     recordStreamingFailure('OPUS: $error'); // Also record general failure
-    
+
     if (kDebugMode) {
       print('❌ TTSStreamingMonitor: OPUS stream failed - $error');
-      print('📊 OPUS failure rate: ${(opusFailureRate * 100).toStringAsFixed(1)}%');
+      print(
+          '📊 OPUS failure rate: ${(opusFailureRate * 100).toStringAsFixed(1)}%');
     }
   }
-  
+
   /// Record OPUS stream ending before OpusTags header received
   void recordOpusEofBeforeOpusTags() {
     _opusEofBeforeOpusTags++;
-    
+
     if (kDebugMode) {
-      print('⚠️ TTSStreamingMonitor: OPUS EOF before OpusTags header (#$_opusEofBeforeOpusTags)');
+      print(
+          '⚠️ TTSStreamingMonitor: OPUS EOF before OpusTags header (#$_opusEofBeforeOpusTags)');
     }
   }
-  
+
   /// Record OPUS header buffer timeout
   void recordOpusHeaderTimeout() {
     _opusHeaderBufferTimeouts++;
-    
+
     if (kDebugMode) {
-      print('⏰ TTSStreamingMonitor: OPUS header buffer timeout (#$_opusHeaderBufferTimeouts)');
+      print(
+          '⏰ TTSStreamingMonitor: OPUS header buffer timeout (#$_opusHeaderBufferTimeouts)');
     }
   }
-  
+
   /// Record fallback from OPUS to WAV format
   void recordOpusToWavFallback(String reason) {
     _opusToWavFallbacks++;
-    
+
     if (kDebugMode) {
-      print('🔄 TTSStreamingMonitor: OPUS→WAV fallback - $reason (#$_opusToWavFallbacks)');
+      print(
+          '🔄 TTSStreamingMonitor: OPUS→WAV fallback - $reason (#$_opusToWavFallbacks)');
     }
   }
-  
+
   /// Get success rate (0.0 to 1.0)
   double get successRate {
     if (_totalStreamingAttempts == 0) return 1.0;
     return _successfulStreams / _totalStreamingAttempts;
   }
-  
+
   /// Get failure rate (0.0 to 1.0)
   double get failureRate {
     if (_totalStreamingAttempts == 0) return 0.0;
     return _failedStreams / _totalStreamingAttempts;
   }
-  
+
   /// Get buffer underrun rate (0.0 to 1.0)
   double get bufferUnderrunRate {
     if (_totalStreamingAttempts == 0) return 0.0;
     return _bufferUnderruns / _totalStreamingAttempts;
   }
-  
+
   /// Get average latency in milliseconds
   double get averageLatencyMs {
     if (_latencyMeasurements.isEmpty) return 0.0;
-    return _latencyMeasurements.reduce((a, b) => a + b) / _latencyMeasurements.length;
+    return _latencyMeasurements.reduce((a, b) => a + b) /
+        _latencyMeasurements.length;
   }
-  
+
   /// Get current heap size in bytes
   int get currentHeapSize {
     return _heapSizeMeasurements.isNotEmpty ? _heapSizeMeasurements.last : 0;
   }
-  
+
   /// Get maximum recorded heap size in bytes
   int get maxHeapSize => _maxHeapSize;
-  
+
   // ====== OPUS-Specific Getters ======
-  
+
   /// Get OPUS success rate (0.0 to 1.0)
   double get opusSuccessRate {
     if (_opusStreamingAttempts == 0) return 1.0;
     return _opusSuccessfulStreams / _opusStreamingAttempts;
   }
-  
+
   /// Get OPUS failure rate (0.0 to 1.0)
   double get opusFailureRate {
     if (_opusStreamingAttempts == 0) return 0.0;
     return _opusFailedStreams / _opusStreamingAttempts;
   }
-  
+
   /// Get OPUS EOF before OpusTags rate (0.0 to 1.0)
   double get opusEofBeforeOpusTagsRate {
     if (_opusStreamingAttempts == 0) return 0.0;
     return _opusEofBeforeOpusTags / _opusStreamingAttempts;
   }
-  
+
   /// Get OPUS header timeout rate (0.0 to 1.0)
   double get opusHeaderTimeoutRate {
     if (_opusStreamingAttempts == 0) return 0.0;
     return _opusHeaderBufferTimeouts / _opusStreamingAttempts;
   }
-  
+
   /// Get OPUS to WAV fallback rate (0.0 to 1.0)
   double get opusToWavFallbackRate {
     if (_opusStreamingAttempts == 0) return 0.0;
     return _opusToWavFallbacks / _opusStreamingAttempts;
   }
-  
+
   /// Check if streaming health is good for production
   bool get isHealthy {
     // Health criteria based on engineer's requirements
     final bool successRateOk = successRate >= 0.999; // >99.9%
     final bool underrunRateOk = bufferUnderrunRate <= 0.001; // <0.1%
-    final bool memoryUsageOk = _memoryWarnings == 0 || (_memoryWarnings / _totalStreamingAttempts) <= 0.01; // <1%
-    
+    final bool memoryUsageOk = _memoryWarnings == 0 ||
+        (_memoryWarnings / _totalStreamingAttempts) <= 0.01; // <1%
+
     return successRateOk && underrunRateOk && memoryUsageOk;
   }
-  
+
   /// Check if immediate rollback is needed
   bool get needsRollback {
     // Immediate rollback triggers
     final bool highFailureRate = failureRate > 0.01; // >1% failure rate
-    final bool highUnderrunRate = bufferUnderrunRate > 0.05; // >5% underrun rate
-    final bool recentErrors = _recentErrors.length > 10 && 
-        _recentErrors.skip(_recentErrors.length - 10).any((error) => 
-            DateTime.now().difference(DateTime.parse(error.split(':')[0])).inMinutes < 5);
-    
+    final bool highUnderrunRate =
+        bufferUnderrunRate > 0.05; // >5% underrun rate
+    final bool recentErrors = _recentErrors.length > 10 &&
+        _recentErrors.skip(_recentErrors.length - 10).any((error) =>
+            DateTime.now()
+                .difference(DateTime.parse(error.split(':')[0]))
+                .inMinutes <
+            5);
+
     return highFailureRate || highUnderrunRate || recentErrors;
   }
-  
+
   /// Get comprehensive monitoring report
   Map<String, dynamic> getMonitoringReport() {
     return {
@@ -295,7 +312,7 @@ class TTSStreamingMonitor {
       'needs_rollback': needsRollback,
       'error_counts': Map.from(_errorCounts),
       'recent_errors': List.from(_recentErrors.take(10)), // Last 10 errors
-      
+
       // OPUS-specific metrics
       'opus_streaming_attempts': _opusStreamingAttempts,
       'opus_successful_streams': _opusSuccessfulStreams,
@@ -310,23 +327,25 @@ class TTSStreamingMonitor {
       'opus_to_wav_fallback_rate': opusToWavFallbackRate,
     };
   }
-  
+
   /// Log current monitoring status
   void logStatus() {
     if (kDebugMode) {
       print('📊 TTS Streaming Monitor Status:');
       print('  Attempts: $_totalStreamingAttempts');
       print('  Success Rate: ${(successRate * 100).toStringAsFixed(1)}%');
-      print('  Buffer Underruns: $_bufferUnderruns (${(bufferUnderrunRate * 100).toStringAsFixed(1)}%)');
+      print(
+          '  Buffer Underruns: $_bufferUnderruns (${(bufferUnderrunRate * 100).toStringAsFixed(1)}%)');
       print('  Avg Latency: ${averageLatencyMs.toStringAsFixed(0)}ms');
-      print('  Heap Usage: ${(currentHeapSize / 1024 / 1024).toStringAsFixed(1)} MB');
+      print(
+          '  Heap Usage: ${(currentHeapSize / 1024 / 1024).toStringAsFixed(1)} MB');
       print('  Health Status: ${isHealthy ? "HEALTHY" : "NEEDS ATTENTION"}');
       if (needsRollback) {
         print('  🚨 ROLLBACK RECOMMENDED 🚨');
       }
     }
   }
-  
+
   /// Reset all monitoring data (for testing)
   void reset() {
     _totalStreamingAttempts = 0;
@@ -335,7 +354,7 @@ class TTSStreamingMonitor {
     _bufferUnderruns = 0;
     _fallbacksToFullBuffer = 0;
     _memoryWarnings = 0;
-    
+
     // Reset OPUS-specific metrics
     _opusStreamingAttempts = 0;
     _opusSuccessfulStreams = 0;
@@ -343,7 +362,7 @@ class TTSStreamingMonitor {
     _opusEofBeforeOpusTags = 0;
     _opusHeaderBufferTimeouts = 0;
     _opusToWavFallbacks = 0;
-    
+
     _latencyMeasurements.clear();
     _heapSizeMeasurements.clear();
     _maxHeapSize = 0;
@@ -351,9 +370,10 @@ class TTSStreamingMonitor {
     _recentErrors.clear();
     _lastStreamStart = null;
     _lastSuccessfulStream = null;
-    
+
     if (kDebugMode) {
-      print('🔄 TTSStreamingMonitor: Monitor data reset (including OPUS metrics)');
+      print(
+          '🔄 TTSStreamingMonitor: Monitor data reset (including OPUS metrics)');
     }
   }
 }

@@ -8,7 +8,7 @@ class ActionItemsCard extends StatelessWidget {
   final bool Function(String actionItem)? isItemAlreadyAdded;
 
   const ActionItemsCard({
-    Key? key, 
+    Key? key,
     required this.actionItems,
     this.sessionId,
     this.onAddToTasks,
@@ -65,9 +65,9 @@ class ActionItemsCard extends StatelessWidget {
                   child: Text(
                     'Your Action Plan',
                     style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSecondaryContainer,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSecondaryContainer,
+                    ),
                   ),
                 ),
                 Container(
@@ -151,10 +151,10 @@ class ActionItemsCard extends StatelessWidget {
                 Text(
                   item,
                   style: theme.textTheme.bodyLarge?.copyWith(
-                        height: 1.5,
-                        color: theme.textTheme.bodyLarge?.color,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    height: 1.5,
+                    color: theme.textTheme.bodyLarge?.color,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -169,7 +169,8 @@ class ActionItemsCard extends StatelessWidget {
                       'Personalized for you',
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 12,
-                        color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                        color:
+                            theme.textTheme.bodySmall?.color?.withOpacity(0.7),
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -216,15 +217,15 @@ class ActionItemsCard extends StatelessWidget {
           Text(
             'No action items available',
             style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.textTheme.titleMedium?.color?.withOpacity(0.7),
-                ),
+              color: theme.textTheme.titleMedium?.color?.withOpacity(0.7),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Action items will appear here based on your conversation.',
             style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.6),
-                ),
+              color: theme.textTheme.bodyMedium?.color?.withOpacity(0.6),
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -236,7 +237,7 @@ class ActionItemsCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isAlreadyAdded = isItemAlreadyAdded?.call(item) ?? false;
-    
+
     return Column(
       children: [
         IconButton(

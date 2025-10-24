@@ -12,7 +12,7 @@ import '../interfaces/i_voice_service.dart';
 import '../interfaces/i_audio_settings.dart';
 import '../../data/datasources/remote/api_client.dart';
 
-// Service implementations  
+// Service implementations
 import '../../services/audio_recording_service.dart';
 import '../../services/simple_tts_service.dart';
 import '../../services/websocket_audio_manager.dart';
@@ -25,7 +25,7 @@ import '../../services/recording_manager.dart';
 /// Replaces the monolithic VoiceService with focused, single-responsibility services
 class AudioServicesModule {
   static bool _firstRun = true;
-  
+
   /// Register all audio services with dependency injection
   static void registerServices(GetIt locator) {
     // Phase 2.2.5: Guard verbose DI logging to prevent spam during rebuilds
@@ -53,7 +53,8 @@ class AudioServicesModule {
     // Register AudioRecordingService with singleton RecordingManager
     if (!locator.isRegistered<IAudioRecordingService>()) {
       locator.registerLazySingleton<IAudioRecordingService>(() {
-        return AudioRecordingService(recordingManager: locator<RecordingManager>());
+        return AudioRecordingService(
+            recordingManager: locator<RecordingManager>());
       });
     }
 
@@ -126,7 +127,8 @@ class AudioServicesModule {
           }
         } catch (e) {
           if (kDebugMode) {
-            print('[AudioServicesModule] Failed to unregister $serviceType: $e');
+            print(
+                '[AudioServicesModule] Failed to unregister $serviceType: $e');
           }
         }
       }
@@ -176,7 +178,8 @@ class AudioServicesModule {
       await voiceService.initialize();
 
       if (kDebugMode) {
-        print('[AudioServicesModule] All audio services initialized successfully');
+        print(
+            '[AudioServicesModule] All audio services initialized successfully');
       }
     } catch (e) {
       if (kDebugMode) {

@@ -50,9 +50,9 @@ class SessionSummaryCard extends StatelessWidget {
                   child: Text(
                     'Session Summary',
                     style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.primary,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                    ),
                   ),
                 ),
               ],
@@ -76,9 +76,9 @@ class SessionSummaryCard extends StatelessWidget {
                     ? summary
                     : 'No summary available for this session.',
                 style: theme.textTheme.bodyLarge?.copyWith(
-                      height: 1.6,
-                      color: theme.textTheme.bodyLarge?.color,
-                    ),
+                  height: 1.6,
+                  color: theme.textTheme.bodyLarge?.color,
+                ),
               ),
             ),
           ],

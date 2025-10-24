@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../utils/logger_util.dart';
 
 /// Side-car buffer controller for TTS streaming optimization.
-/// 
+///
 /// This controller isolates all streaming logic from the existing VoiceSessionBloc,
 /// following the Golden Rules:
 /// 1. No edits inside VoiceSessionBloc
@@ -14,12 +14,12 @@ import '../utils/logger_util.dart';
 class StreamingBufferController {
   // onFlush pushes text to AudioGenerator
   final void Function(String) onFlush;
-  
+
   // ----- tuning knobs -----
   final Duration maxStall;
-  final int minBufferChars;          // ~250 ms speech
+  final int minBufferChars; // ~250 ms speech
   final Duration watchdogTimeout;
-  
+
   // ----- internals -----
   final StringBuffer _buf = StringBuffer();
   bool _firstAudioPlayed = false;
@@ -32,9 +32,9 @@ class StreamingBufferController {
     @visibleForTesting Duration? maxStall,
     @visibleForTesting int? minBufferChars,
     @visibleForTesting Duration? watchdogTimeout,
-  }) : maxStall = maxStall ?? const Duration(milliseconds: 150),
-       minBufferChars = minBufferChars ?? 180,
-       watchdogTimeout = watchdogTimeout ?? const Duration(seconds: 2) {
+  })  : maxStall = maxStall ?? const Duration(milliseconds: 150),
+        minBufferChars = minBufferChars ?? 180,
+        watchdogTimeout = watchdogTimeout ?? const Duration(seconds: 2) {
     _watchdog = Timer(this.watchdogTimeout, _fallbackToLegacy);
     log.d('StreamingBufferController initialized: '
         'minBufferChars=$minBufferChars, maxStall=${this.maxStall.inMilliseconds}ms, '
@@ -47,9 +47,10 @@ class StreamingBufferController {
       log.d('StreamingBuffer: Ignoring chunk - cancelled');
       return;
     }
-    
+
     _buf.write(text);
-    log.d('StreamingBuffer: Added chunk ${text.length} chars, buffer now ${_buf.length} chars');
+    log.d(
+        'StreamingBuffer: Added chunk ${text.length} chars, buffer now ${_buf.length} chars');
 
     if (_buf.length >= minBufferChars) {
       log.d('StreamingBuffer: Buffer reached minimum chars, flushing');
@@ -78,25 +79,27 @@ class StreamingBufferController {
       log.d('StreamingBuffer: Buffer empty, nothing to flush');
       return;
     }
-    
+
     final text = _buf.toString();
     final preview = text.length > 50 ? '${text.substring(0, 50)}...' : text;
     log.d('StreamingBuffer: Flushing ${text.length} chars: "$preview"');
-    
+
     onFlush(text);
     _buf.clear();
     _firstAudioPlayed = true;
-    _watchdog.cancel();            // success - disable watchdog
+    _watchdog.cancel(); // success - disable watchdog
   }
 
   void _fallbackToLegacy() {
     if (_firstAudioPlayed || _cancelled) {
-      log.d('StreamingBuffer: Watchdog fired but first audio already played or cancelled');
+      log.d(
+          'StreamingBuffer: Watchdog fired but first audio already played or cancelled');
       return;
     }
-    
-    log.w('StreamingBuffer WATCHDOG: No audio played within ${watchdogTimeout.inSeconds}s, falling back to legacy');
-    cancel();                      // drop side-car
+
+    log.w(
+        'StreamingBuffer WATCHDOG: No audio played within ${watchdogTimeout.inSeconds}s, falling back to legacy');
+    cancel(); // drop side-car
     // legacy full-buffer path keeps handling the stream
   }
 }

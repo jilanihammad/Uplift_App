@@ -8,13 +8,16 @@ class FeatureFlags {
   // Feature flag keys
   static const String useRefactoredVoicePipeline = 'useRefactoredVoicePipeline';
   static const String memoryPersistenceEnabled = 'memoryPersistenceEnabled';
+  static const String moodPersistenceEnabled = 'moodPersistenceEnabled';
 
   // Default values
   static const Map<String, bool> _defaults = {
     useRefactoredVoicePipeline:
         true, // Enable new pipeline to test Maya self-detection fix
     memoryPersistenceEnabled:
-        false, // Backend persistence rollout guarded by remote flag
+        true, // Always keep memory persistence enabled by default
+    moodPersistenceEnabled:
+        false, // Mood logging sync rollout guarded by remote flag
   };
 
   static SharedPreferences? _prefs;
@@ -55,6 +58,9 @@ class FeatureFlags {
   /// Check if personalization persistence sync is enabled
   static bool get isMemoryPersistenceEnabled =>
       isEnabled(memoryPersistenceEnabled);
+
+  /// Check if mood persistence sync is enabled
+  static bool get isMoodPersistenceEnabled => isEnabled(moodPersistenceEnabled);
 
   /// Toggle the refactored voice pipeline flag
   static Future<void> toggleRefactoredVoicePipeline() async {

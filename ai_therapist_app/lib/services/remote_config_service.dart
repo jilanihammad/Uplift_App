@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
+import '../utils/feature_flags.dart';
 
 /// Handles runtime configuration overlays sourced from Firebase Remote Config.
 /// Provides a kill switch for TTS streaming and related tuning knobs with
@@ -49,7 +50,7 @@ class RemoteConfigService {
       _ttsStreamingKey: AppConfig().ttsStreamingEnabled,
       _ttsBufferKey: AppConfig().ttsStreamingBufferSize,
       _ttsMaxMemoryKey: AppConfig().ttsMaxMemoryDurationSeconds,
-      _memoryPersistenceKey: FeatureFlags.isMemoryPersistenceEnabled,
+      _memoryPersistenceKey: true,
     });
 
     try {
@@ -113,9 +114,10 @@ class RemoteConfigService {
         ? prefs.getInt(_cacheMaxMemoryKey)
         : null;
 
-    final bool? cachedMemoryPersistence = prefs.containsKey(_cacheMemoryPersistenceKey)
-        ? prefs.getBool(_cacheMemoryPersistenceKey)
-        : null;
+    final bool? cachedMemoryPersistence =
+        prefs.containsKey(_cacheMemoryPersistenceKey)
+            ? prefs.getBool(_cacheMemoryPersistenceKey)
+            : null;
 
     if (cachedTts != null ||
         cachedBuffer != null ||
@@ -127,8 +129,8 @@ class RemoteConfigService {
         ttsMaxMemoryDurationSeconds: cachedMaxMemory,
       );
       if (cachedMemoryPersistence != null) {
-      FeatureFlags.setEnabled(
-          FeatureFlags.memoryPersistenceEnabled, cachedMemoryPersistence);
+        FeatureFlags.setEnabled(
+            FeatureFlags.memoryPersistenceEnabled, cachedMemoryPersistence);
       }
     }
   }

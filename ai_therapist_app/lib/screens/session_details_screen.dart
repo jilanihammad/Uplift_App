@@ -40,7 +40,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _sessionRepository = widget.sessionRepository ?? DependencyContainer().sessionRepository;
+    _sessionRepository =
+        widget.sessionRepository ?? DependencyContainer().sessionRepository;
     _database = widget.database ?? DependencyContainer().database;
     _tasksService = TasksService();
     _tasksService.init();
@@ -54,7 +55,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         setState(() {}); // Refresh UI to update button state
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Added to tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            content: Text(
+                'Added to tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
             backgroundColor: Colors.green,
           ),
         );
@@ -78,7 +80,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         setState(() {}); // Refresh UI to update button state
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Removed from tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
+            content: Text(
+                'Removed from tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -208,7 +211,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     if (session == null) {
       return const SizedBox.shrink();
     }
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -255,7 +258,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     if (session == null) {
       return const SizedBox.shrink();
     }
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -304,7 +307,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       sessionId: widget.sessionId,
       onAddToTasks: _addToTasks,
       onRemoveFromTasks: _removeFromTasks,
-      isItemAlreadyAdded: (actionItem) => _tasksService.isActionItemAlreadyAdded(widget.sessionId, actionItem),
+      isItemAlreadyAdded: (actionItem) =>
+          _tasksService.isActionItemAlreadyAdded(widget.sessionId, actionItem),
     );
   }
 
@@ -317,19 +321,22 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
 
     // First priority: Use stored action items from database
     if (session.actionItems.isNotEmpty) {
-      debugPrint('Using stored action items from database: ${session.actionItems.length} items');
+      debugPrint(
+          'Using stored action items from database: ${session.actionItems.length} items');
       debugPrint('Stored action items: ${session.actionItems.join(", ")}');
       return session.actionItems;
     }
 
-    debugPrint('No stored action items found for session ${session.id}, falling back to summary extraction');
+    debugPrint(
+        'No stored action items found for session ${session.id}, falling back to summary extraction');
 
     // Fallback: Extract from summary text (for legacy sessions)
     if (session.summary.isEmpty) {
       return [];
     }
-    
-    debugPrint('No stored action items found, attempting to extract from summary text (legacy mode)');
+
+    debugPrint(
+        'No stored action items found, attempting to extract from summary text (legacy mode)');
     final summary = session.summary;
     List<String> actionItems = [];
 
@@ -342,7 +349,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
             final items = summaryJson['action_items'];
             if (items is List) {
               actionItems = items.map((item) => item.toString()).toList();
-              debugPrint('Successfully extracted ${actionItems.length} action items from JSON summary');
+              debugPrint(
+                  'Successfully extracted ${actionItems.length} action items from JSON summary');
             }
           }
         } on FormatException catch (e) {
@@ -353,7 +361,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
           // Continue to text-based extraction
         }
       } else {
-        debugPrint('Summary format detected as plain text, using text-based action item extraction');
+        debugPrint(
+            'Summary format detected as plain text, using text-based action item extraction');
       }
 
       // Second attempt: Look for action items in the text
@@ -414,17 +423,17 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   /// Enhanced JSON format validation to reduce false positives
   bool _isValidJsonFormat(String text) {
     final trimmed = text.trim();
-    
+
     // Basic structure check - must start with { and end with }
     if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
       return false;
     }
-    
+
     // Must contain at least one colon (key-value pairs)
     if (!trimmed.contains(':')) {
       return false;
     }
-    
+
     // Should have matching braces
     int braceCount = 0;
     for (int i = 0; i < trimmed.length; i++) {
@@ -432,15 +441,16 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       if (trimmed[i] == '}') braceCount--;
       if (braceCount < 0) return false; // More closing than opening braces
     }
-    
+
     // Final brace count should be zero
     if (braceCount != 0) return false;
-    
+
     // Quick validation for common JSON patterns
-    if (trimmed.contains('"') && (trimmed.contains('":') || trimmed.contains('" :'))) {
+    if (trimmed.contains('"') &&
+        (trimmed.contains('":') || trimmed.contains('" :'))) {
       return true;
     }
-    
+
     // If it looks like JSON but doesn't have quotes, it might be malformed
     // In this case, we'll let jsonDecode handle it and catch the FormatException
     return true;

@@ -34,7 +34,7 @@ class _DebugDrawerState extends State<DebugDrawer> {
     final currentValue = _flags[flagKey] ?? false;
     await FeatureFlags.setEnabled(flagKey, !currentValue);
     _loadFlags();
-    
+
     // Show confirmation
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -53,11 +53,12 @@ class _DebugDrawerState extends State<DebugDrawer> {
   Future<void> _resetAllFlags() async {
     await FeatureFlags.resetToDefaults();
     _loadFlags();
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('All flags reset to defaults\n⚠️ Restart app to apply changes'),
+          content: Text(
+              'All flags reset to defaults\n⚠️ Restart app to apply changes'),
           backgroundColor: Colors.blue,
           duration: Duration(seconds: 3),
         ),
@@ -97,7 +98,7 @@ class _DebugDrawerState extends State<DebugDrawer> {
                 ],
               ),
             ),
-            
+
             // Feature Flags Section
             Expanded(
               child: _loading
@@ -113,26 +114,31 @@ class _DebugDrawerState extends State<DebugDrawer> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        
+
                         // Voice Pipeline Flag
                         Card(
                           child: ListTile(
                             title: const Text('Refactored Voice Pipeline'),
                             subtitle: Text(
-                              _flags[FeatureFlags.useRefactoredVoicePipeline] == true
+                              _flags[FeatureFlags.useRefactoredVoicePipeline] ==
+                                      true
                                   ? '✅ Using NEW voice services'
                                   : '🔄 Using LEGACY VoiceService',
                             ),
                             trailing: Switch(
-                              value: _flags[FeatureFlags.useRefactoredVoicePipeline] ?? false,
-                              onChanged: (_) => _toggleFlag(FeatureFlags.useRefactoredVoicePipeline),
+                              value: _flags[FeatureFlags
+                                      .useRefactoredVoicePipeline] ??
+                                  false,
+                              onChanged: (_) => _toggleFlag(
+                                  FeatureFlags.useRefactoredVoicePipeline),
                             ),
-                            onTap: () => _toggleFlag(FeatureFlags.useRefactoredVoicePipeline),
+                            onTap: () => _toggleFlag(
+                                FeatureFlags.useRefactoredVoicePipeline),
                           ),
                         ),
-                        
+
                         const SizedBox(height: 16),
-                        
+
                         // Reset Button
                         ElevatedButton.icon(
                           onPressed: _resetAllFlags,
@@ -143,9 +149,9 @@ class _DebugDrawerState extends State<DebugDrawer> {
                             foregroundColor: Colors.white,
                           ),
                         ),
-                        
+
                         const SizedBox(height: 16),
-                        
+
                         // Warning
                         Container(
                           padding: const EdgeInsets.all(12),
@@ -173,7 +179,7 @@ class _DebugDrawerState extends State<DebugDrawer> {
                             ],
                           ),
                         ),
-                        
+
                         if (kDebugMode) ...[
                           const SizedBox(height: 16),
                           const Divider(),
@@ -193,16 +199,17 @@ class _DebugDrawerState extends State<DebugDrawer> {
                                 children: [
                                   const Text(
                                     'Current Flag Values:',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                   const SizedBox(height: 4),
                                   ..._flags.entries.map((entry) => Text(
-                                    '${entry.key}: ${entry.value}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  )),
+                                        '${entry.key}: ${entry.value}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      )),
                                 ],
                               ),
                             ),
