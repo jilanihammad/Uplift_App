@@ -964,11 +964,6 @@ class LLMManager:
         if not api_key:
             raise ValueError("GOOGLE_API_KEY is not configured")
 
-        if not hasattr(types, "AudioConfig"):
-            raise RuntimeError(
-                "Google TTS requires google-genai >= 1.35.0. Upgrade dependencies before enabling Gemini TTS."
-            )
-
         if response_format != "wav":
             raise ValueError("Google TTS helper only supports WAV output")
 
@@ -1017,17 +1012,30 @@ class LLMManager:
             "audio_encoding": audio_encoding,
             "sample_rate_hertz": sample_rate,
         }
-        if hasattr(types.AudioConfig, "channel_count"):
+        audio_config_cls = getattr(types, "AudioConfig", None)
+        if audio_config_cls and hasattr(audio_config_cls, "__annotations__") and "channel_count" in audio_config_cls.__annotations__:
             audio_config_kwargs["channel_count"] = channels
 
-        audio_config = types.AudioConfig(**audio_config_kwargs)
+        if audio_config_cls:
+            audio_config: Any = audio_config_cls(**audio_config_kwargs)
+        else:
+            audio_config = audio_config_kwargs  # Fallback to dict for older SDKs
 
         # Build speech configuration
-        speech_config = types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
+        voice_config_cls = getattr(types, "VoiceConfig", None)
+        prebuilt_voice_config_cls = getattr(types, "PrebuiltVoiceConfig", None)
+        if voice_config_cls and prebuilt_voice_config_cls:
+            speech_config = types.SpeechConfig(
+                voice_config=voice_config_cls(
+                    prebuilt_voice_config=prebuilt_voice_config_cls(voice_name=voice_name)
+                )
             )
-        )
+        else:
+            speech_config = {
+                "voice_config": {
+                    "prebuilt_voice_config": {"voice_name": voice_name}
+                }
+            }
 
         generation_config = types.GenerateContentConfig(
             response_modalities=[types.Modality.AUDIO],
