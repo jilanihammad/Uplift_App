@@ -994,37 +994,6 @@ class LLMManager:
             )
 
         # Resolve audio encoding enum (default LINEAR16)
-        encoding_name = (
-            kwargs.pop("audio_encoding", None)
-            or default_params.get("audio_encoding")
-            or "LINEAR16"
-        )
-
-        audio_encoding_enum = getattr(types, "AudioEncoding", None)
-        if audio_encoding_enum is not None:
-            try:
-                audio_encoding = getattr(audio_encoding_enum, encoding_name.upper())
-            except AttributeError:
-                logger.warning(
-                    "Unknown Google audio encoding '%s'; defaulting to LINEAR16",
-                    encoding_name,
-                )
-                audio_encoding = getattr(audio_encoding_enum, "LINEAR16", "LINEAR16")
-        else:
-            audio_encoding = encoding_name.upper()
-
-        audio_config_kwargs: Dict[str, Any] = {
-            "audio_encoding": audio_encoding,
-            "sample_rate_hertz": sample_rate,
-        }
-        audio_config_cls = getattr(types, "AudioConfig", None)
-        if audio_config_cls and hasattr(audio_config_cls, "__annotations__") and "channel_count" in audio_config_cls.__annotations__:
-            audio_config_kwargs["channel_count"] = channels
-
-        audio_config: Any = None
-        if audio_config_cls:
-            audio_config = audio_config_cls(**audio_config_kwargs)
-
         # Build speech configuration
         voice_config_cls = getattr(types, "VoiceConfig", None)
         prebuilt_voice_config_cls = getattr(types, "PrebuiltVoiceConfig", None)
@@ -1043,16 +1012,10 @@ class LLMManager:
 
         modality_audio = getattr(types.Modality, "AUDIO", "AUDIO")
 
-        generation_config_kwargs: Dict[str, Any] = {
-            "response_modalities": [modality_audio],
-            "speech_config": speech_config,
-        }
-        if audio_config is not None:
-            generation_config_kwargs["audio_config"] = audio_config
-        else:
-            generation_config_kwargs["response_mime_type"] = "audio/wav"
-
-        generation_config = types.GenerateContentConfig(**generation_config_kwargs)
+        generation_config = types.GenerateContentConfig(
+            response_modalities=[modality_audio],
+            speech_config=speech_config,
+        )
 
         contents = [
             types.Content(
