@@ -1021,10 +1021,9 @@ class LLMManager:
         if audio_config_cls and hasattr(audio_config_cls, "__annotations__") and "channel_count" in audio_config_cls.__annotations__:
             audio_config_kwargs["channel_count"] = channels
 
+        audio_config: Any = None
         if audio_config_cls:
-            audio_config: Any = audio_config_cls(**audio_config_kwargs)
-        else:
-            audio_config = audio_config_kwargs  # Fallback to dict for older SDKs
+            audio_config = audio_config_cls(**audio_config_kwargs)
 
         # Build speech configuration
         voice_config_cls = getattr(types, "VoiceConfig", None)
@@ -1042,11 +1041,18 @@ class LLMManager:
                 }
             }
 
-        generation_config = types.GenerateContentConfig(
-            response_modalities=[types.Modality.AUDIO],
-            audio_config=audio_config,
-            speech_config=speech_config,
-        )
+        modality_audio = getattr(types.Modality, "AUDIO", "AUDIO")
+
+        generation_config_kwargs: Dict[str, Any] = {
+            "response_modalities": [modality_audio],
+            "speech_config": speech_config,
+        }
+        if audio_config is not None:
+            generation_config_kwargs["audio_config"] = audio_config
+        else:
+            generation_config_kwargs["response_mime_type"] = "audio/wav"
+
+        generation_config = types.GenerateContentConfig(**generation_config_kwargs)
 
         contents = [
             types.Content(
