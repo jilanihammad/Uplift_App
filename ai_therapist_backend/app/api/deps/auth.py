@@ -1,6 +1,7 @@
 """Authentication dependencies for FastAPI endpoints."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from dataclasses import dataclass
@@ -151,9 +152,22 @@ def _verify_token(token: str) -> Optional[Dict[str, Any]]:
 
 
 def _normalize_email(provider: str, uid: str, email: Optional[str]) -> str:
+    """Generate a stable, unique email alias for a given identity."""
+
+    normalized_provider = (provider or _DEFAULT_PROVIDER).replace("@", "_").replace(":", "_")
+    digest_source = f"{normalized_provider}:{uid}"
+    digest = hashlib.sha256(digest_source.encode("utf-8")).hexdigest()[:16]
+
     if email:
-        return email.lower()
-    return f"{uid}@{provider}.local"
+        sanitized = email.strip().lower()
+        if "@" in sanitized:
+            local_part, domain = sanitized.split("@", 1)
+            # Preserve original domain while making the local part unique per identity.
+            return f"{local_part}+{normalized_provider}-{digest}@{domain}"
+        return f"{sanitized}+{normalized_provider}-{digest}"
+
+    # Fall back to a synthetic address when email is unavailable (e.g., phone auth).
+    return f"{normalized_provider}-{digest}@auth.local"
 
 
 def _get_or_create_user(
@@ -174,13 +188,11 @@ def _get_or_create_user(
 
     normalized_email = _normalize_email(provider, uid, email)
 
-    user = crud_user.get_by_email(db, normalized_email)
-    if not user:
-        user = crud_user.create(
-            db,
-            email=normalized_email,
-            name=name,
-        )
+    user = crud_user.create(
+        db,
+        email=normalized_email,
+        name=name,
+    )
     identity = crud_user_identity.create(
         db,
         user_id=user.id,
@@ -189,10 +201,10 @@ def _get_or_create_user(
         email=email,
     )
     logger.info(
-        "Linked identity provider=%s uid=%s to user_id=%s",
+        "Created new isolated user_id=%s for provider=%s uid=%s",
+        user.id,
         provider,
         uid,
-        user.id,
     )
     return identity.user
 

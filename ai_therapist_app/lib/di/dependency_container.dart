@@ -11,6 +11,7 @@ import '../utils/database_helper.dart';
 import '../services/memory_manager.dart';
 import '../services/config_service.dart';
 import '../services/recording_manager.dart';
+import '../services/user_context_service.dart';
 
 /// New dependency injection container to replace service locator pattern
 /// This provides a clean interface for dependency injection with proper lifecycle management
@@ -103,6 +104,7 @@ class DependencyContainer {
   IOnboardingService get onboarding => get<IOnboardingService>();
   ITherapyService get therapy => get<ITherapyService>();
   ISessionScheduleService get sessionSchedule => get<ISessionScheduleService>();
+  UserContextService get userContextService => get<UserContextService>();
 
   // Audio services
   IVoiceService get voiceService => get<IVoiceService>();

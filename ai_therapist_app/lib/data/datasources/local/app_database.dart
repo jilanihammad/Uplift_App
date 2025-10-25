@@ -20,7 +20,7 @@ class AppDatabase implements IAppDatabase {
   static Database? _database;
 
   // Current database version - increment when schema changes
-  static const int _databaseVersion = 8;
+  static const int _databaseVersion = 9;
 
   // Database file name
   static const String _databaseName = 'app_database.db';
@@ -137,6 +137,7 @@ class AppDatabase implements IAppDatabase {
         await txn.execute('''
           CREATE TABLE sessions (
             id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
             title TEXT,
             summary TEXT,
             action_items TEXT,
@@ -145,12 +146,15 @@ class AppDatabase implements IAppDatabase {
             is_synced INTEGER
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
 
         // Create messages table
         await txn.execute('''
           CREATE TABLE messages (
             id TEXT PRIMARY KEY,
             session_id TEXT,
+            user_id TEXT NOT NULL,
             content TEXT,
             is_user INTEGER,
             timestamp TEXT,
@@ -158,11 +162,14 @@ class AppDatabase implements IAppDatabase {
             FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id)');
 
         // Create user progress table
         await txn.execute('''
           CREATE TABLE user_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
             current_streak INTEGER,
             longest_streak INTEGER,
             total_points INTEGER,
@@ -170,16 +177,21 @@ class AppDatabase implements IAppDatabase {
             last_activity_date TEXT
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_user_progress_user_id ON user_progress(user_id)');
 
         // Create mood logs table (legacy)
         await txn.execute('''
           CREATE TABLE mood_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
             mood TEXT,
             timestamp TEXT,
             notes TEXT
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_mood_logs_user_id ON mood_logs(user_id)');
 
         // Create mood entries table for persistence + sync
         await txn.execute('''
@@ -209,33 +221,42 @@ class AppDatabase implements IAppDatabase {
         await txn.execute('''
           CREATE TABLE conversations (
             id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
             user_message TEXT NOT NULL,
             ai_response TEXT NOT NULL,
             metadata TEXT,
             timestamp TEXT NOT NULL
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)');
 
         // Create insights table (previously in DatabaseHelper)
         await txn.execute('''
           CREATE TABLE insights (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
             insight TEXT NOT NULL,
             source TEXT NOT NULL,
             timestamp TEXT NOT NULL
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_insights_user_id ON insights(user_id)');
 
         // Create emotional_states table (previously in DatabaseHelper)
         await txn.execute('''
           CREATE TABLE emotional_states (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
             emotion TEXT NOT NULL,
             intensity REAL NOT NULL,
             trigger TEXT,
             timestamp TEXT NOT NULL
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_emotional_states_user_id ON emotional_states(user_id)');
 
         // Create user_preferences table (previously in DatabaseHelper)
         await txn.execute('''
@@ -249,6 +270,7 @@ class AppDatabase implements IAppDatabase {
         await txn.execute('''
           CREATE TABLE user_anchors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
             anchor_text TEXT NOT NULL,
             normalized_text TEXT NOT NULL,
             anchor_type TEXT,
@@ -263,10 +285,27 @@ class AppDatabase implements IAppDatabase {
             client_anchor_id TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             is_deleted INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(normalized_text),
-            UNIQUE(client_anchor_id)
+            UNIQUE(user_id, normalized_text),
+            UNIQUE(user_id, client_anchor_id)
           )
         ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_user_anchors_user_id ON user_anchors(user_id)');
+
+        // Create logs table for diagnostics
+        await txn.execute('''
+          CREATE TABLE logs (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            level TEXT NOT NULL,
+            message TEXT NOT NULL,
+            source TEXT NOT NULL,
+            data TEXT
+          )
+        ''');
+        await txn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id)');
       });
 
       debugPrint('Database schema created successfully');
@@ -319,6 +358,11 @@ class AppDatabase implements IAppDatabase {
         // Migration to version 8: Create mood_entries table for sync persistence
         if (oldVersion < 8) {
           await _migrateToV8(txn);
+        }
+
+        // Migration to version 9: Add user_id columns and reset local data
+        if (oldVersion < 9) {
+          await _migrateToV9(txn);
         }
       });
 
@@ -942,5 +986,192 @@ class AppDatabase implements IAppDatabase {
     }
 
     debugPrint('Migration to version 8 completed');
+  }
+
+  /// Migration to version 9: add user_id scoping and reset local caches
+  Future<void> _migrateToV9(Transaction txn) async {
+    debugPrint('Applying migration to version 9 (user data isolation)...');
+
+    const tableDefinitions = <String, String>{
+      'sessions': '''
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          title TEXT,
+          summary TEXT,
+          action_items TEXT,
+          created_at TEXT,
+          last_modified TEXT,
+          is_synced INTEGER
+        )
+      ''',
+      'messages': '''
+        CREATE TABLE messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT,
+          user_id TEXT NOT NULL,
+          content TEXT,
+          is_user INTEGER,
+          timestamp TEXT,
+          audio_url TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+        )
+      ''',
+      'mood_logs': '''
+        CREATE TABLE mood_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          mood TEXT,
+          timestamp TEXT,
+          notes TEXT
+        )
+      ''',
+      'mood_entries': '''
+        CREATE TABLE mood_entries (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          client_entry_id TEXT NOT NULL,
+          mood INTEGER NOT NULL,
+          notes TEXT,
+          logged_at TEXT NOT NULL,
+          server_id TEXT,
+          updated_at TEXT NOT NULL,
+          is_pending INTEGER NOT NULL DEFAULT 1,
+          last_synced_at TEXT,
+          sync_error TEXT,
+          UNIQUE(user_id, client_entry_id)
+        )
+      ''',
+      'conversation_memories': '''
+        CREATE TABLE conversation_memories (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          user_message TEXT NOT NULL,
+          ai_response TEXT NOT NULL,
+          metadata TEXT,
+          timestamp TEXT NOT NULL
+        )
+      ''',
+      'conversations': '''
+        CREATE TABLE conversations (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          user_message TEXT NOT NULL,
+          ai_response TEXT NOT NULL,
+          metadata TEXT,
+          timestamp TEXT NOT NULL
+        )
+      ''',
+      'therapy_insights': '''
+        CREATE TABLE therapy_insights (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          insight TEXT NOT NULL,
+          source TEXT NOT NULL,
+          timestamp TEXT NOT NULL
+        )
+      ''',
+      'insights': '''
+        CREATE TABLE insights (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          insight TEXT NOT NULL,
+          source TEXT NOT NULL,
+          timestamp TEXT NOT NULL
+        )
+      ''',
+      'emotional_states': '''
+        CREATE TABLE emotional_states (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          emotion TEXT NOT NULL,
+          intensity REAL NOT NULL,
+          trigger TEXT,
+          timestamp TEXT NOT NULL
+        )
+      ''',
+      'user_progress': '''
+        CREATE TABLE user_progress (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          current_streak INTEGER,
+          longest_streak INTEGER,
+          total_points INTEGER,
+          current_level INTEGER,
+          last_activity_date TEXT
+        )
+      ''',
+      'user_anchors': '''
+        CREATE TABLE user_anchors (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          anchor_text TEXT NOT NULL,
+          normalized_text TEXT NOT NULL,
+          anchor_type TEXT,
+          confidence REAL DEFAULT 0.0,
+          mention_count INTEGER NOT NULL DEFAULT 1,
+          first_seen_at TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL,
+          first_session_index INTEGER NOT NULL DEFAULT 0,
+          last_session_index INTEGER NOT NULL DEFAULT 0,
+          last_prompted_session INTEGER NOT NULL DEFAULT -1,
+          server_id TEXT,
+          client_anchor_id TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(user_id, normalized_text),
+          UNIQUE(user_id, client_anchor_id)
+        )
+      ''',
+      'logs': '''
+        CREATE TABLE logs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          level TEXT NOT NULL,
+          message TEXT NOT NULL,
+          source TEXT NOT NULL,
+          data TEXT
+        )
+      ''',
+    };
+
+    for (final tableName in tableDefinitions.keys) {
+      await txn.execute('DROP TABLE IF EXISTS ' + tableName);
+    }
+
+    for (final entry in tableDefinitions.entries) {
+      await txn.execute(entry.value);
+    }
+
+    // Recreate indexes for user-scoped lookups
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mood_logs_user_id ON mood_logs(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mood_entries_user_logged_at ON mood_entries (user_id, logged_at DESC)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mood_entries_pending ON mood_entries (is_pending)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_conversation_memories_user_id ON conversation_memories(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_therapy_insights_user_id ON therapy_insights(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_insights_user_id ON insights(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_emotional_states_user_id ON emotional_states(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_user_progress_user_id ON user_progress(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_user_anchors_user_id ON user_anchors(user_id)');
+    await txn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id)');
+
+    debugPrint('Migration to version 9 completed; local caches were reset.');
   }
 }

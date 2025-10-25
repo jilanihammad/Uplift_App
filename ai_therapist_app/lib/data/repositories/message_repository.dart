@@ -5,10 +5,12 @@ import '../../di/interfaces/i_message_repository.dart';
 import '../../di/interfaces/i_api_client.dart';
 import '../../di/interfaces/i_app_database.dart';
 import 'dart:collection';
+import '../../services/user_context_service.dart';
 
 class MessageRepository implements IMessageRepository {
   final IApiClient apiClient;
   final IAppDatabase appDatabase;
+  final UserContextService userContextService;
 
   // Queue to hold unsent messages for batching
   final Queue<Map<String, dynamic>> _messageQueue =
@@ -17,11 +19,21 @@ class MessageRepository implements IMessageRepository {
   MessageRepository({
     required this.apiClient,
     required this.appDatabase,
+    required this.userContextService,
   });
+
+  Future<String> _requireUserId() async {
+    final userId = await userContextService.getActiveUserId();
+    if (userId.isEmpty) {
+      throw Exception('No authenticated user - cannot scope message data');
+    }
+    return userId;
+  }
 
   // Send a message
   @override
   Future<Message> sendMessage(String sessionId, String content) async {
+    final userId = await _requireUserId();
     final now = DateTime.now();
     final String localId = 'local_${now.millisecondsSinceEpoch}';
 
@@ -29,6 +41,7 @@ class MessageRepository implements IMessageRepository {
     await appDatabase.insert('messages', {
       'id': localId,
       'session_id': sessionId,
+      'user_id': userId,
       'content': content,
       'is_user': 1,
       'timestamp': now.toIso8601String(),
@@ -42,6 +55,7 @@ class MessageRepository implements IMessageRepository {
         'is_user': true,
         'timestamp': now.toIso8601String(),
         'local_id': localId,
+        'user_id': userId,
       };
 
       // Add to message queue for batch sending
@@ -73,6 +87,7 @@ class MessageRepository implements IMessageRepository {
   // Send all queued messages in a batch
   @override
   Future<bool> sendQueuedMessages(String sessionId) async {
+    final userId = await _requireUserId();
     if (_messageQueue.isEmpty) {
       logger.debug('No messages queued for batch sending');
       return true;
@@ -107,8 +122,8 @@ class MessageRepository implements IMessageRepository {
               'id': serverId,
               'is_synced': 1,
             },
-            where: 'id = ?',
-            whereArgs: [localId],
+            where: 'id = ? AND user_id = ?',
+            whereArgs: [localId, userId],
           );
         }
       }
@@ -125,6 +140,7 @@ class MessageRepository implements IMessageRepository {
   // Get response from AI
   @override
   Future<Message> getAiResponse(String sessionId, String userMessage) async {
+    final userId = await _requireUserId();
     try {
       // Get AI response from server
       final response = await apiClient.post(
@@ -140,6 +156,7 @@ class MessageRepository implements IMessageRepository {
       await appDatabase.insert('messages', {
         'id': message.id,
         'session_id': sessionId,
+        'user_id': userId,
         'content': message.content,
         'is_user': 0,
         'timestamp': message.timestamp.toIso8601String(),
@@ -158,6 +175,7 @@ class MessageRepository implements IMessageRepository {
       await appDatabase.insert('messages', {
         'id': localId,
         'session_id': sessionId,
+        'user_id': userId,
         'content': fallbackResponse,
         'is_user': 0,
         'timestamp': now.toIso8601String(),
@@ -178,6 +196,7 @@ class MessageRepository implements IMessageRepository {
   // Get messages for a session
   @override
   Future<List<Message>> getSessionMessages(String sessionId) async {
+    final userId = await _requireUserId();
     try {
       // Try to get messages from server
       final response =
@@ -193,6 +212,7 @@ class MessageRepository implements IMessageRepository {
         await appDatabase.insert('messages', {
           'id': message.id,
           'session_id': message.sessionId,
+          'user_id': userId,
           'content': message.content,
           'is_user': message.isUser ? 1 : 0,
           'timestamp': message.timestamp.toIso8601String(),
@@ -205,8 +225,8 @@ class MessageRepository implements IMessageRepository {
       // Get messages from local database if API call fails
       final results = await appDatabase.query(
         'messages',
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
+        where: 'session_id = ? AND user_id = ?',
+        whereArgs: [sessionId, userId],
         orderBy: 'timestamp ASC',
       );
 

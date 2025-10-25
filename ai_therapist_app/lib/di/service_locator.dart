@@ -34,6 +34,7 @@ import '../services/backend_service.dart';
 import '../services/theme_service.dart';
 import '../services/navigation_service.dart';
 import '../services/session_schedule_service.dart';
+import '../services/user_context_service.dart';
 
 import '../utils/connectivity_checker.dart';
 import 'interfaces/i_api_client.dart';
@@ -235,6 +236,13 @@ Future<void> setupServiceLocator(
       debugPrint('Registered AppDatabase');
     }
 
+    if (!serviceLocator.isRegistered<UserContextService>()) {
+      serviceLocator.registerLazySingleton<UserContextService>(
+        () => UserContextService(),
+      );
+      debugPrint('Registered UserContextService');
+    }
+
     // Register interface mapping for AppDatabase
     if (!serviceLocator.isRegistered<IAppDatabase>()) {
       serviceLocator.registerLazySingleton<IAppDatabase>(
@@ -279,8 +287,9 @@ Future<void> setupServiceLocator(
 
     // Register DatabaseProvider that uses AppDatabase
     if (!serviceLocator.isRegistered<DatabaseProvider>()) {
-      serviceLocator
-          .registerLazySingleton<DatabaseProvider>(() => DatabaseProvider());
+      serviceLocator.registerLazySingleton<DatabaseProvider>(
+        () => DatabaseProvider(),
+      );
       debugPrint('Registered DatabaseProvider');
     }
 
@@ -648,6 +657,7 @@ Future<void> registerApiDependentServices(
           .registerLazySingleton<SessionRepository>(() => SessionRepository(
                 apiClient: serviceLocator<IApiClient>(),
                 appDatabase: serviceLocator<IAppDatabase>(),
+                userContextService: serviceLocator<UserContextService>(),
               ));
       debugPrint('Registered SessionRepository with interfaces');
     }
@@ -657,6 +667,7 @@ Future<void> registerApiDependentServices(
           .registerLazySingleton<MessageRepository>(() => MessageRepository(
                 apiClient: serviceLocator<IApiClient>(),
                 appDatabase: serviceLocator<IAppDatabase>(),
+                userContextService: serviceLocator<UserContextService>(),
               ));
       debugPrint('Registered MessageRepository with interfaces');
     }

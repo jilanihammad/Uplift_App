@@ -2,17 +2,35 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
+import 'package:ai_therapist_app/services/user_context_service.dart';
 import 'package:ai_therapist_app/utils/database_health_checker.dart';
 
 /// DatabaseProvider abstracts database access and adds an additional layer
 /// for potential mocking in tests and better dependency management
 class DatabaseProvider {
   final AppDatabase _database;
+  final UserContextService _userContext;
+
+  static const Set<String> _userScopedTables = {
+    'sessions',
+    'messages',
+    'mood_logs',
+    'mood_entries',
+    'conversation_memories',
+    'conversations',
+    'therapy_insights',
+    'insights',
+    'emotional_states',
+    'user_progress',
+    'user_anchors',
+    'logs',
+  };
 
   /// Create a new DatabaseProvider with the given database
   /// or use the dependency container if not provided
-  DatabaseProvider({AppDatabase? database})
-      : _database = database ?? DependencyContainer().appDatabaseConcrete;
+  DatabaseProvider({AppDatabase? database, UserContextService? userContext})
+      : _database = database ?? DependencyContainer().appDatabaseConcrete,
+        _userContext = userContext ?? DependencyContainer().userContextService;
 
   /// Initialize the database
   Future<void> init() async {
@@ -36,7 +54,12 @@ class DatabaseProvider {
   /// Insert a record with error handling and retry
   Future<int> insert(String table, Map<String, dynamic> data) async {
     try {
-      return await _database.insert(table, data);
+      final scopedData = Map<String, dynamic>.from(data);
+      if (_userScopedTables.contains(table)) {
+        final userId = await _userContext.getActiveUserId();
+        scopedData.putIfAbsent('user_id', () => userId);
+      }
+      return await _database.insert(table, scopedData);
     } catch (e) {
       if (_isNoSuchTableError(e) &&
           DatabaseHealthChecker.requiredTables.containsKey(table)) {
@@ -60,10 +83,11 @@ class DatabaseProvider {
     int? offset,
   }) async {
     try {
+      final scope = await _applyUserScope(table, where, whereArgs);
       return await _database.query(
         table,
-        where: where,
-        whereArgs: whereArgs,
+        where: scope.where,
+        whereArgs: scope.whereArgs,
         orderBy: orderBy,
         limit: limit,
         offset: offset,
@@ -96,11 +120,18 @@ class DatabaseProvider {
     List<dynamic>? whereArgs,
   }) async {
     try {
+      final scopedData = Map<String, dynamic>.from(data);
+      if (_userScopedTables.contains(table)) {
+        final userId = await _userContext.getActiveUserId();
+        scopedData.putIfAbsent('user_id', () => userId);
+      }
+
+      final scope = await _applyUserScope(table, where, whereArgs);
       return await _database.update(
         table,
-        data,
-        where: where,
-        whereArgs: whereArgs,
+        scopedData,
+        where: scope.where,
+        whereArgs: scope.whereArgs,
       );
     } catch (e) {
       if (_isNoSuchTableError(e) &&
@@ -127,10 +158,11 @@ class DatabaseProvider {
     List<dynamic>? whereArgs,
   }) async {
     try {
+      final scope = await _applyUserScope(table, where, whereArgs);
       return await _database.delete(
         table,
-        where: where,
-        whereArgs: whereArgs,
+        where: scope.where,
+        whereArgs: scope.whereArgs,
       );
     } catch (e) {
       if (_isNoSuchTableError(e) &&
@@ -191,4 +223,32 @@ class DatabaseProvider {
   bool _isNoSuchTableError(Object e) {
     return e is DatabaseException && e.toString().contains('no such table');
   }
+
+  Future<_ScopedWhere> _applyUserScope(
+    String table,
+    String? where,
+    List<dynamic>? whereArgs,
+  ) async {
+    if (!_userScopedTables.contains(table)) {
+      return _ScopedWhere(where: where, whereArgs: whereArgs);
+    }
+
+    final userId = await _userContext.getActiveUserId();
+    if (where != null && where.contains('user_id')) {
+      return _ScopedWhere(where: where, whereArgs: whereArgs);
+    }
+
+    final scopedWhere =
+        where == null ? 'user_id = ?' : '($where) AND user_id = ?';
+    final scopedArgs = List<dynamic>.from(whereArgs ?? <dynamic>[])
+      ..add(userId);
+    return _ScopedWhere(where: scopedWhere, whereArgs: scopedArgs);
+  }
+}
+
+class _ScopedWhere {
+  const _ScopedWhere({this.where, this.whereArgs});
+
+  final String? where;
+  final List<dynamic>? whereArgs;
 }
