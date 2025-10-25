@@ -2,6 +2,7 @@
 // Example usage of WebSocketAudioManager - for documentation purposes
 
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/i_websocket_audio_manager.dart';
 
@@ -35,17 +36,17 @@ class WebSocketAudioExample {
 
       // Listen to connection state changes
       _wsManager.connectionStateStream.listen((isConnected) {
-        print('Connection state changed: $isConnected');
+        debugPrint('Connection state changed: $isConnected');
       });
 
       // Listen to incoming messages
       _wsManager.messageStream.listen((message) {
-        print('Received message: ${message['type']}');
+        debugPrint('Received message: ${message['type']}');
       });
 
       // Listen to errors
       _wsManager.errorStream.listen((error) {
-        print('Error: $error');
+        debugPrint('Error: $error');
       });
 
       // Simulate audio streaming
@@ -57,7 +58,7 @@ class WebSocketAudioExample {
       // Disconnect
       await _wsManager.disconnectFromBackend();
     } catch (e) {
-      print('Example error: $e');
+      debugPrint('Example error: $e');
     } finally {
       _wsManager.dispose();
     }
@@ -92,7 +93,7 @@ class WebSocketAudioExample {
       await _wsManager.endSession();
       await _wsManager.disconnectFromBackend();
     } catch (e) {
-      print('Chunked streaming error: $e');
+      debugPrint('Chunked streaming error: $e');
     } finally {
       _wsManager.dispose();
     }
@@ -106,12 +107,12 @@ class WebSocketAudioExample {
       // Set up connection state monitoring
       _wsManager.connectionStateStream.listen((isConnected) async {
         if (!isConnected) {
-          print('Connection lost, attempting reconnection...');
+          debugPrint('Connection lost, attempting reconnection...');
           try {
             await _wsManager.reconnect();
-            print('Reconnected successfully');
+            debugPrint('Reconnected successfully');
           } catch (e) {
-            print('Reconnection failed: $e');
+            debugPrint('Reconnection failed: $e');
           }
         }
       });
@@ -129,7 +130,7 @@ class WebSocketAudioExample {
 
       await _wsManager.disconnectFromBackend();
     } catch (e) {
-      print('Connection management error: $e');
+      debugPrint('Connection management error: $e');
     } finally {
       _wsManager.dispose();
     }
@@ -169,13 +170,13 @@ class WebSocketAudioExample {
       _wsManager.messageStream.listen((message) {
         switch (message['type']) {
           case 'processing_started':
-            print('Backend started processing');
+            debugPrint('Backend started processing');
             break;
           case 'processing_complete':
-            print('Backend completed processing');
+            debugPrint('Backend completed processing');
             break;
           case 'error':
-            print('Backend error: ${message['detail']}');
+            debugPrint('Backend error: ${message['detail']}');
             break;
         }
       });
@@ -185,7 +186,7 @@ class WebSocketAudioExample {
       await _wsManager.endSession();
       await _wsManager.disconnectFromBackend();
     } catch (e) {
-      print('Custom message error: $e');
+      debugPrint('Custom message error: $e');
     } finally {
       _wsManager.dispose();
     }

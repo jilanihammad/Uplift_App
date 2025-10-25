@@ -40,7 +40,7 @@ class TranscriptionService {
 
     try {
       if (kDebugMode) {
-        print('🎤 Transcribing audio from: $audioFilePath');
+        debugPrint('🎤 Transcribing audio from: $audioFilePath');
       }
 
       // Create a multipart request
@@ -72,7 +72,7 @@ class TranscriptionService {
         final String transcription = jsonResponse['text'] ?? '';
 
         if (kDebugMode) {
-          print('🔤 Transcription result: $transcription');
+          debugPrint('🔤 Transcription result: $transcription');
         }
 
         return transcription;
@@ -84,7 +84,7 @@ class TranscriptionService {
     } catch (e) {
       _errorController.add('Error during transcription: $e');
       if (kDebugMode) {
-        print('❌ Transcription error: $e');
+        debugPrint('❌ Transcription error: $e');
       }
       return '';
     }

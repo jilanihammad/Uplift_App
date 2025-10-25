@@ -30,7 +30,7 @@ class AudioServicesModule {
   static void registerServices(GetIt locator) {
     // Phase 2.2.5: Guard verbose DI logging to prevent spam during rebuilds
     if (kDebugMode && _firstRun) {
-      print('[AudioServicesModule] Registering refactored audio services...');
+      debugPrint('[AudioServicesModule] Registering refactored audio services...');
       _firstRun = false;
     }
 
@@ -106,7 +106,7 @@ class AudioServicesModule {
   /// Unregister all audio services (for testing or cleanup)
   static void unregisterServices(GetIt locator) {
     if (kDebugMode) {
-      print('[AudioServicesModule] Unregistering audio services...');
+      debugPrint('[AudioServicesModule] Unregistering audio services...');
     }
 
     final servicesToUnregister = [
@@ -123,11 +123,11 @@ class AudioServicesModule {
         try {
           locator.unregister(instance: serviceType);
           if (kDebugMode) {
-            print('[AudioServicesModule] Unregistered $serviceType');
+            debugPrint('[AudioServicesModule] Unregistered $serviceType');
           }
         } catch (e) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AudioServicesModule] Failed to unregister $serviceType: $e');
           }
         }
@@ -135,7 +135,7 @@ class AudioServicesModule {
     }
 
     if (kDebugMode) {
-      print('[AudioServicesModule] Audio services unregistered');
+      debugPrint('[AudioServicesModule] Audio services unregistered');
     }
   }
 
@@ -153,14 +153,14 @@ class AudioServicesModule {
     for (final serviceType in requiredServices) {
       if (!locator.isRegistered(instance: serviceType)) {
         if (kDebugMode) {
-          print('[AudioServicesModule] Service not registered: $serviceType');
+          debugPrint('[AudioServicesModule] Service not registered: $serviceType');
         }
         return false;
       }
     }
 
     if (kDebugMode) {
-      print('[AudioServicesModule] All required audio services are registered');
+      debugPrint('[AudioServicesModule] All required audio services are registered');
     }
     return true;
   }
@@ -168,7 +168,7 @@ class AudioServicesModule {
   /// Initialize all audio services
   static Future<void> initializeServices(GetIt locator) async {
     if (kDebugMode) {
-      print('[AudioServicesModule] Initializing audio services...');
+      debugPrint('[AudioServicesModule] Initializing audio services...');
     }
 
     try {
@@ -178,12 +178,12 @@ class AudioServicesModule {
       await voiceService.initialize();
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AudioServicesModule] All audio services initialized successfully');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[AudioServicesModule] Failed to initialize audio services: $e');
+        debugPrint('[AudioServicesModule] Failed to initialize audio services: $e');
       }
       rethrow;
     }

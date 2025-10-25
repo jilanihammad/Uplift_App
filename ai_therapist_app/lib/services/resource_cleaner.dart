@@ -46,7 +46,7 @@ class ResourceCleaner {
               filesDeleted++;
 
               if (kDebugMode) {
-                print('🧹 Deleted temp file: ${entity.path}');
+                debugPrint('🧹 Deleted temp file: ${entity.path}');
               }
             }
           }
@@ -54,14 +54,14 @@ class ResourceCleaner {
       }
 
       if (kDebugMode && filesDeleted > 0) {
-        print('🧹 Cleanup complete. Deleted $filesDeleted temporary files.');
+        debugPrint('🧹 Cleanup complete. Deleted $filesDeleted temporary files.');
       }
 
       return filesDeleted;
     } catch (e) {
       _errorController.add('Error cleaning up temporary files: $e');
       if (kDebugMode) {
-        print('❌ Cleanup error: $e');
+        debugPrint('❌ Cleanup error: $e');
       }
       return 0;
     }
@@ -75,7 +75,7 @@ class ResourceCleaner {
         await file.delete();
 
         if (kDebugMode) {
-          print('🧹 Deleted file: $filePath');
+          debugPrint('🧹 Deleted file: $filePath');
         }
 
         return true;
@@ -85,7 +85,7 @@ class ResourceCleaner {
     } catch (e) {
       _errorController.add('Error deleting file: $e');
       if (kDebugMode) {
-        print('❌ File deletion error: $e');
+        debugPrint('❌ File deletion error: $e');
       }
       return false;
     }

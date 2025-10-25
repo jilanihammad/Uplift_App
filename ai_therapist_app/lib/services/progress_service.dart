@@ -88,7 +88,7 @@ class ProgressService implements IProgressService {
     _progressChangedController.value = _currentProgress;
 
     if (kDebugMode) {
-      print('Progress service initialized with real data and mood cache');
+      debugPrint('Progress service initialized with real data and mood cache');
     }
   }
 
@@ -771,13 +771,13 @@ class ProgressService implements IProgressService {
       _scheduleMoodSync();
 
       if (kDebugMode) {
-        print('Mood logged: $mood, Notes: $notes');
+        debugPrint('Mood logged: $mood, Notes: $notes');
       }
 
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('Error logging mood: $e');
+        debugPrint('Error logging mood: $e');
       }
       return false;
     }

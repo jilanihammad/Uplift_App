@@ -84,7 +84,7 @@ class _SplashScreenState extends State<SplashScreen>
         await setupServiceLocator();
       } catch (e) {
         if (kDebugMode) {
-          print("SplashScreen: Service locator setup had issues: $e");
+          debugPrint("SplashScreen: Service locator setup had issues: $e");
         }
       }
 
@@ -93,22 +93,22 @@ class _SplashScreenState extends State<SplashScreen>
         final configService = DependencyContainer().configService;
         await configService.init();
         if (kDebugMode) {
-          print("SplashScreen: ConfigService initialized successfully");
+          debugPrint("SplashScreen: ConfigService initialized successfully");
         }
       } else {
         if (kDebugMode) {
-          print("SplashScreen: Warning - ConfigService not registered");
+          debugPrint("SplashScreen: Warning - ConfigService not registered");
         }
       }
 
       // Ensure ApiClient is ready
       if (DependencyContainer().isRegistered<ApiClient>()) {
         if (kDebugMode) {
-          print("SplashScreen: ApiClient is registered");
+          debugPrint("SplashScreen: ApiClient is registered");
         }
       } else {
         if (kDebugMode) {
-          print("SplashScreen: Warning - ApiClient not registered");
+          debugPrint("SplashScreen: Warning - ApiClient not registered");
         }
       }
 
@@ -125,7 +125,7 @@ class _SplashScreenState extends State<SplashScreen>
           !(prefs.getBool('app_launched_before') ?? false);
 
       if (isFirstLaunch) {
-        print(
+        debugPrint(
             "SplashScreen: First app launch detected, clearing any cached auth sessions");
 
         // Clear any potentially cached Firebase auth session
@@ -139,7 +139,7 @@ class _SplashScreenState extends State<SplashScreen>
           // Record that app has been launched
           await prefs.setBool('app_launched_before', true);
 
-          print(
+          debugPrint(
               "SplashScreen: Successfully cleared auth state for first launch");
 
           // After a short delay to show splash screen, navigate to login
@@ -149,7 +149,7 @@ class _SplashScreenState extends State<SplashScreen>
           }
           return; // Exit early to avoid further processing
         } catch (e) {
-          print("SplashScreen: Error clearing auth state: $e");
+          debugPrint("SplashScreen: Error clearing auth state: $e");
           // Continue processing
         }
       }
@@ -175,7 +175,7 @@ class _SplashScreenState extends State<SplashScreen>
             .isBackendAvailable()
             .timeout(const Duration(seconds: 4));
       } catch (e) {
-        print("SplashScreen: Backend check failed or timed out: $e");
+        debugPrint("SplashScreen: Backend check failed or timed out: $e");
         backendAvailable = false;
       }
       _backendAvailable = backendAvailable;
@@ -190,7 +190,7 @@ class _SplashScreenState extends State<SplashScreen>
       });
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             "SplashScreen: User isLoggedIn=$isLoggedIn, hasCompletedSignup=$hasCompletedSignup, backendAvailable=$_backendAvailable");
       }
 
@@ -202,7 +202,7 @@ class _SplashScreenState extends State<SplashScreen>
       // Navigate to appropriate screen - if backend is unavailable but user is logged in, still go to home
       _navigateBasedOnAuth(isLoggedIn, hasCompletedSignup);
     } catch (e, stack) {
-      print("SplashScreen: Initialization error: $e\n$stack");
+      debugPrint("SplashScreen: Initialization error: $e\n$stack");
       if (mounted) {
         context.go(AppRouter.login); // Fallback to login
       }
@@ -220,23 +220,23 @@ class _SplashScreenState extends State<SplashScreen>
       // If backend is unavailable but we have a valid Firebase user,
       // we can still proceed without backend (in offline mode)
       if (kDebugMode) {
-        print(
+        debugPrint(
             "SplashScreen: Backend unavailable but Firebase user valid, proceeding to appropriate screen");
       }
     }
 
     // Log the navigation decision making for debugging
     if (kDebugMode) {
-      print(
+      debugPrint(
           "SplashScreen: Navigation decision - canProceedToHome=$canProceedToHome, needsOnboarding=$needsOnboarding");
-      print(
+      debugPrint(
           "SplashScreen: Auth state details - isLoggedIn=$isLoggedIn, hasCompletedSignup=$hasCompletedSignup, backendAvailable=$_backendAvailable");
     }
 
     // Final navigation decision
     if (!canProceedToHome && !needsOnboarding || forceLoginFlow) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             "SplashScreen: Navigating to login screen (isLoggedIn=$isLoggedIn)");
       }
       if (mounted) {
@@ -244,14 +244,14 @@ class _SplashScreenState extends State<SplashScreen>
       }
     } else if (needsOnboarding) {
       if (kDebugMode) {
-        print("SplashScreen: Navigating to onboarding");
+        debugPrint("SplashScreen: Navigating to onboarding");
       }
       if (mounted) {
         context.go(AppRouter.onboarding);
       }
     } else {
       if (kDebugMode) {
-        print("SplashScreen: Navigating to home screen");
+        debugPrint("SplashScreen: Navigating to home screen");
       }
       if (mounted) {
         context.go(AppRouter.home);
@@ -278,7 +278,7 @@ class _SplashScreenState extends State<SplashScreen>
     // Skip backend check if requested
     if (widget.skipFirebaseCheck) {
       if (kDebugMode) {
-        print("SplashScreen: Skipping backend check as requested");
+        debugPrint("SplashScreen: Skipping backend check as requested");
       }
 
       setState(() {
@@ -293,7 +293,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (!DependencyContainer().isRegistered<ConfigService>() ||
         !DependencyContainer().isRegistered<ApiClient>()) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             "SplashScreen: Cannot check backend - required services not registered");
       }
 
@@ -309,11 +309,11 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       await _backendService.init();
       if (kDebugMode) {
-        print("SplashScreen: BackendService initialized successfully");
+        debugPrint("SplashScreen: BackendService initialized successfully");
       }
     } catch (e) {
       if (kDebugMode) {
-        print("SplashScreen: Error initializing BackendService: $e");
+        debugPrint("SplashScreen: Error initializing BackendService: $e");
       }
 
       setState(() {
@@ -334,7 +334,7 @@ class _SplashScreenState extends State<SplashScreen>
       try {
         // More verbose logging for connection attempt
         if (kDebugMode) {
-          print(
+          debugPrint(
               "SplashScreen: Checking backend connection via BackendService... (Attempt ${retryCount + 1})");
         }
 
@@ -349,14 +349,14 @@ class _SplashScreenState extends State<SplashScreen>
             _loadingProgress = 0.6;
           });
           if (kDebugMode) {
-            print("SplashScreen: Backend connection successful");
+            debugPrint("SplashScreen: Backend connection successful");
           }
           break; // Exit the retry loop on success
         } else {
           retryCount++;
           if (retryCount < maxRetries) {
             if (kDebugMode) {
-              print("SplashScreen: Backend connection failed, retrying...");
+              debugPrint("SplashScreen: Backend connection failed, retrying...");
             }
             // Wait briefly before retrying
             await Future.delayed(const Duration(milliseconds: 500));
@@ -365,9 +365,9 @@ class _SplashScreenState extends State<SplashScreen>
       } catch (e) {
         retryCount++;
         if (kDebugMode) {
-          print("SplashScreen: Backend connection error: $e");
+          debugPrint("SplashScreen: Backend connection error: $e");
           if (retryCount < maxRetries) {
-            print("SplashScreen: Retrying connection...");
+            debugPrint("SplashScreen: Retrying connection...");
           }
         }
 
@@ -387,9 +387,9 @@ class _SplashScreenState extends State<SplashScreen>
       });
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             "SplashScreen: Backend connection failed after $retryCount attempts");
-        print("SplashScreen: Will proceed with app flow in offline mode");
+        debugPrint("SplashScreen: Will proceed with app flow in offline mode");
       }
 
       // Show alert dialog but allow user to continue without waiting for response
@@ -415,7 +415,7 @@ class _SplashScreenState extends State<SplashScreen>
           ).then((_) {
             // Dialog was dismissed or button pressed
             if (kDebugMode) {
-              print("SplashScreen: User acknowledged backend issue dialog");
+              debugPrint("SplashScreen: User acknowledged backend issue dialog");
             }
           });
         });
@@ -430,10 +430,10 @@ class _SplashScreenState extends State<SplashScreen>
     } catch (e) {
       // More specific error handling
       if (e.toString().contains('NotInitializedError')) {
-        print(
+        debugPrint(
             "SplashScreen: Backend check failed due to NotInitializedError - a required service dependency was not ready");
       } else {
-        print("SplashScreen: Backend check failed with error: $e");
+        debugPrint("SplashScreen: Backend check failed with error: $e");
       }
       return false;
     }
@@ -449,7 +449,7 @@ class _SplashScreenState extends State<SplashScreen>
       });
     } catch (e) {
       if (kDebugMode) {
-        print("Error checking auth status: $e");
+        debugPrint("Error checking auth status: $e");
       }
     }
   }
@@ -515,7 +515,7 @@ class _SplashScreenState extends State<SplashScreen>
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error resetting signup status: $e');
+        debugPrint('Error resetting signup status: $e');
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error resetting signup status: $e')),
@@ -538,7 +538,7 @@ class _SplashScreenState extends State<SplashScreen>
       );
     } catch (e) {
       if (kDebugMode) {
-        print('Error completing signup: $e');
+        debugPrint('Error completing signup: $e');
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error completing signup: $e')),
@@ -573,7 +573,7 @@ class _SplashScreenState extends State<SplashScreen>
     // FIRST TIMEOUT: Extremely short timeout to avoid black screen
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted) {
-        print("SplashScreen: Quick sanity check at 1s, continuing startup");
+        debugPrint("SplashScreen: Quick sanity check at 1s, continuing startup");
         _loadingProgress = 0.2;
       }
     });
@@ -583,7 +583,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted &&
           (_statusMessage.contains("Checking connection") ||
               _statusMessage.contains("connection..."))) {
-        print(
+        debugPrint(
             "SplashScreen: Connectivity check timeout reached (3s), forcing navigation");
         // Force backend to be considered unavailable to prevent waiting for it
         _backendAvailable = false;
@@ -597,7 +597,7 @@ class _SplashScreenState extends State<SplashScreen>
     // THIRD TIMEOUT: For any other initialization issues
     Future.delayed(const Duration(seconds: 5), () {
       if (mounted && _statusMessage != "Done") {
-        print("SplashScreen: General timeout reached (5s), forcing navigation");
+        debugPrint("SplashScreen: General timeout reached (5s), forcing navigation");
         _loadingProgress = 0.9;
         _forceNavigateBasedOnFirebaseUser();
       }
@@ -606,14 +606,14 @@ class _SplashScreenState extends State<SplashScreen>
     // FINAL TIMEOUT: Maximum failsafe - no matter what
     Future.delayed(const Duration(seconds: 8), () {
       if (mounted) {
-        print(
+        debugPrint(
             "SplashScreen: Maximum time reached (8s), forcing navigation to login screen");
         _isAnimating = false;
         _loadingProgress = 1.0;
 
         // Just go to login screen, most reliable option
         if (mounted) {
-          print("SplashScreen: EMERGENCY navigation to login screen");
+          debugPrint("SplashScreen: EMERGENCY navigation to login screen");
           context.go(AppRouter.login);
         }
       }
@@ -625,14 +625,14 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
       final isLoggedIn = firebaseUser != null;
-      print("SplashScreen: Force navigation with isLoggedIn=$isLoggedIn");
+      debugPrint("SplashScreen: Force navigation with isLoggedIn=$isLoggedIn");
       if (!isLoggedIn) {
         if (mounted) context.go(AppRouter.login);
       } else {
         if (mounted) context.go(AppRouter.home);
       }
     } catch (e) {
-      print("SplashScreen: Error during force navigation: $e");
+      debugPrint("SplashScreen: Error during force navigation: $e");
       // If all else fails, go to login
       if (mounted) {
         context.go(AppRouter.login);

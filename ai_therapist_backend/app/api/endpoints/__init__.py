@@ -1,6 +1,6 @@
 """FastAPI endpoint routers."""
 
-from . import ai, anchors, mood_entries, profile, session_summaries, voice
+from . import ai, anchors, mood_entries, profile, session_summaries, voice, system
 
 __all__ = [
     "ai",
@@ -9,4 +9,5 @@ __all__ = [
     "anchors",
     "session_summaries",
     "mood_entries",
+    "system",
 ]

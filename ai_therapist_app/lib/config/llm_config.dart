@@ -65,14 +65,29 @@ class LLMConfig {
   /// Active LLM Model ID for the selected provider
   static const String _activeLLMModelId = 'llama-4-scout-17b-16e-instruct';
 
-  /// Active TTS Provider (if different from LLM provider)
-  static const LLMProvider _activeTTSProvider = LLMProvider.openai;
+  /// Default TTS Provider (if different from LLM provider)
+  static const LLMProvider _defaultTTSProvider = LLMProvider.openai;
 
-  /// Active TTS Model ID
-  static const String _activeTTSModelId = 'gpt-4o-mini-tts';
+  /// Default TTS Model ID
+  static const String _defaultTTSModelId = 'gpt-4o-mini-tts';
 
-  /// Active TTS Voice
-  static const String _activeTTSVoice = 'sage';
+  /// Default TTS Voice
+  static const String _defaultTTSVoice = 'kore';
+
+  /// Default audio characteristics used when backend doesn't supply overrides
+  static const int _defaultTTSSampleRate = 24000;
+  static const String _defaultTTSAudioEncoding = 'LINEAR16';
+  static const String _defaultTTSResponseFormat = 'wav';
+  static const bool _defaultTTSSupportsStreaming = true;
+
+  /// Runtime overrides supplied by backend configuration
+  static LLMProvider? _overrideTTSProvider;
+  static String? _overrideTTSModelId;
+  static String? _overrideTTSVoice;
+  static int? _overrideTTSSampleRate;
+  static String? _overrideTTSAudioEncoding;
+  static String? _overrideTTSResponseFormat;
+  static bool? _overrideTTSSupportsStreaming;
 
   // =================================================================
   // PROVIDER CONFIGURATIONS - Add new providers here
@@ -248,6 +263,24 @@ class LLMConfig {
     ),
   };
 
+  static const Map<String, TTSModelConfig> _googleTTSModels = {
+    'gemini-2.5-flash-preview-tts': TTSModelConfig(
+      modelId: 'gemini-2.5-flash-preview-tts',
+      endpoint:
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      defaultParams: {
+        'audio_encoding': 'LINEAR16',
+        'response_format': 'wav',
+        'sample_rate_hz': 24000,
+      },
+      apiKeyEnvVar: 'GOOGLE_API_KEY',
+      voice: 'kore',
+    ),
+  };
+
   // =================================================================
   // PUBLIC API - Use these methods to get current configurations
   // =================================================================
@@ -264,7 +297,8 @@ class LLMConfig {
     }
 
     if (kDebugMode) {
-      print('[LLMConfig] Using LLM: $_activeLLMProvider - $_activeLLMModelId');
+      debugPrint(
+          '[LLMConfig] Using LLM: $_activeLLMProvider - $_activeLLMModelId');
     }
 
     return config;
@@ -272,28 +306,116 @@ class LLMConfig {
 
   /// Get the current active TTS configuration
   static TTSModelConfig get currentTTSConfig {
-    final models = _getTTSModelsForProvider(_activeTTSProvider);
-    final config = models[_activeTTSModelId];
+    final provider = activeTTSProvider;
+    final modelId = activeTTSModelId;
+    final models = _getTTSModelsForProvider(provider);
+    final baseConfig = models[modelId];
 
-    if (config == null) {
-      throw Exception(
-          'TTS Model $_activeTTSModelId not found for provider $_activeTTSProvider. '
+    if (baseConfig == null) {
+      throw Exception('TTS Model $modelId not found for provider $provider. '
           'Available models: ${models.keys.join(', ')}');
     }
 
     if (kDebugMode) {
-      print('[LLMConfig] Using TTS: $_activeTTSProvider - $_activeTTSModelId');
+      debugPrint('[LLMConfig] Using TTS: $provider - $modelId');
     }
 
-    return config;
+    final mergedParams = Map<String, dynamic>.from(baseConfig.defaultParams);
+    mergedParams['voice'] = activeTTSVoice;
+    mergedParams['sample_rate_hz'] = activeTTSSampleRate;
+    mergedParams['audio_encoding'] = activeTTSAudioEncoding;
+    mergedParams['response_format'] = activeTTSResponseFormat;
+
+    return TTSModelConfig(
+      modelId: modelId,
+      endpoint: baseConfig.endpoint,
+      headers: baseConfig.headers,
+      defaultParams: mergedParams,
+      apiKeyEnvVar: baseConfig.apiKeyEnvVar,
+      voice: activeTTSVoice,
+    );
   }
 
   /// Get active provider information
   static LLMProvider get activeLLMProvider => _activeLLMProvider;
-  static LLMProvider get activeTTSProvider => _activeTTSProvider;
+  static LLMProvider get activeTTSProvider =>
+      _overrideTTSProvider ?? _defaultTTSProvider;
   static String get activeLLMModelId => _activeLLMModelId;
-  static String get activeTTSModelId => _activeTTSModelId;
-  static String get activeTTSVoice => _activeTTSVoice;
+  static String get activeTTSModelId =>
+      _overrideTTSModelId ?? _defaultTTSModelId;
+  static String get activeTTSVoice => _overrideTTSVoice ?? _defaultTTSVoice;
+  static int get activeTTSSampleRate =>
+      _overrideTTSSampleRate ?? _defaultTTSSampleRate;
+  static String get activeTTSAudioEncoding =>
+      _overrideTTSAudioEncoding ?? _defaultTTSAudioEncoding;
+  static String get activeTTSResponseFormat =>
+      _overrideTTSResponseFormat ?? _defaultTTSResponseFormat;
+  static bool get activeTTSSupportsStreaming =>
+      _overrideTTSSupportsStreaming ?? _defaultTTSSupportsStreaming;
+
+  /// Allow runtime overrides provided by the backend configuration endpoint.
+  static void applyRemoteTtsConfig({
+    required String provider,
+    String? model,
+    String? voice,
+    int? sampleRateHz,
+    String? audioEncoding,
+    String? responseFormat,
+    bool? supportsStreaming,
+  }) {
+    final normalizedProvider = _providerFromString(provider);
+    if (normalizedProvider != null) {
+      _overrideTTSProvider = normalizedProvider;
+    }
+
+    if (model != null && model.isNotEmpty) {
+      _overrideTTSModelId = model;
+    }
+
+    if (voice != null && voice.isNotEmpty) {
+      _overrideTTSVoice = voice;
+    }
+
+    if (sampleRateHz != null && sampleRateHz > 0) {
+      _overrideTTSSampleRate = sampleRateHz;
+    }
+
+    if (audioEncoding != null && audioEncoding.isNotEmpty) {
+      _overrideTTSAudioEncoding = audioEncoding;
+    }
+
+    if (responseFormat != null && responseFormat.isNotEmpty) {
+      _overrideTTSResponseFormat = responseFormat;
+    }
+
+    if (supportsStreaming != null) {
+      _overrideTTSSupportsStreaming = supportsStreaming;
+    }
+
+    if (kDebugMode) {
+      debugPrint('[LLMConfig] Applied remote TTS config override: '
+          'provider=${activeTTSProvider.name}, '
+          'model=${activeTTSModelId}, '
+          'voice=${activeTTSVoice}, '
+          'sampleRate=${activeTTSSampleRate}, '
+          'encoding=${activeTTSAudioEncoding}, '
+          'format=${activeTTSResponseFormat}');
+    }
+  }
+
+  static LLMProvider? _providerFromString(String? value) {
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+
+    final normalized = value.toLowerCase();
+    for (final provider in LLMProvider.values) {
+      if (provider.name.toLowerCase() == normalized) {
+        return provider;
+      }
+    }
+    return null;
+  }
 
   /// Get all available models for a provider
   static Map<String, LLMModelConfig> getAvailableModelsForProvider(
@@ -332,8 +454,9 @@ class LLMConfig {
     switch (provider) {
       case LLMProvider.openai:
         return _openaiTTSModels;
-      case LLMProvider.anthropic:
       case LLMProvider.google:
+        return _googleTTSModels;
+      case LLMProvider.anthropic:
       case LLMProvider.groq:
       case LLMProvider.custom:
         return {}; // These providers don't have TTS models configured yet
@@ -347,15 +470,15 @@ class LLMConfig {
       final ttsConfig = currentTTSConfig;
 
       if (kDebugMode) {
-        print('[LLMConfig] Configuration validation passed');
-        print('  LLM: ${llmConfig.modelId} (${llmConfig.endpoint})');
-        print('  TTS: ${ttsConfig.modelId} (${ttsConfig.endpoint})');
+        debugPrint('[LLMConfig] Configuration validation passed');
+        debugPrint('  LLM: ${llmConfig.modelId} (${llmConfig.endpoint})');
+        debugPrint('  TTS: ${ttsConfig.modelId} (${ttsConfig.endpoint})');
       }
 
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('[LLMConfig] Configuration validation failed: $e');
+        debugPrint('[LLMConfig] Configuration validation failed: $e');
       }
       return false;
     }

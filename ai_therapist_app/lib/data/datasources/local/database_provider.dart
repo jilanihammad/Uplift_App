@@ -55,8 +55,14 @@ class DatabaseProvider {
   Future<int> insert(String table, Map<String, dynamic> data) async {
     try {
       final scopedData = Map<String, dynamic>.from(data);
+      String? userId;
       if (_userScopedTables.contains(table)) {
-        final userId = await _userContext.getActiveUserId();
+        userId = _userContext.getSignedInUserId(
+          operation: 'DatabaseProvider.insert.$table',
+        );
+        if (userId == null) {
+          return 0;
+        }
         scopedData.putIfAbsent('user_id', () => userId);
       }
       return await _database.insert(table, scopedData);
@@ -67,7 +73,17 @@ class DatabaseProvider {
             '[DB Provider] Table $table missing on insert, creating and retrying...');
         await rawExecute(DatabaseHealthChecker.requiredTables[table]!);
         // Retry once
-        return await _database.insert(table, data);
+        final retryData = Map<String, dynamic>.from(data);
+        if (_userScopedTables.contains(table)) {
+          final userId = _userContext.getSignedInUserId(
+            operation: 'DatabaseProvider.insert.$table.retry',
+          );
+          if (userId == null) {
+            return 0;
+          }
+          retryData.putIfAbsent('user_id', () => userId);
+        }
+        return await _database.insert(table, retryData);
       }
       rethrow;
     }
@@ -83,7 +99,15 @@ class DatabaseProvider {
     int? offset,
   }) async {
     try {
-      final scope = await _applyUserScope(table, where, whereArgs);
+      final scope = await _applyUserScope(
+        table,
+        where,
+        whereArgs,
+        operation: 'DatabaseProvider.query.$table',
+      );
+      if (scope == null) {
+        return const <Map<String, dynamic>>[];
+      }
       return await _database.query(
         table,
         where: scope.where,
@@ -99,10 +123,19 @@ class DatabaseProvider {
             '[DB Provider] Table $table missing on query, creating and retrying...');
         await rawExecute(DatabaseHealthChecker.requiredTables[table]!);
         // Retry once
+        final scope = await _applyUserScope(
+          table,
+          where,
+          whereArgs,
+          operation: 'DatabaseProvider.query.$table.retry',
+        );
+        if (scope == null) {
+          return const <Map<String, dynamic>>[];
+        }
         return await _database.query(
           table,
-          where: where,
-          whereArgs: whereArgs,
+          where: scope.where,
+          whereArgs: scope.whereArgs,
           orderBy: orderBy,
           limit: limit,
           offset: offset,
@@ -121,12 +154,27 @@ class DatabaseProvider {
   }) async {
     try {
       final scopedData = Map<String, dynamic>.from(data);
+      String? userId;
       if (_userScopedTables.contains(table)) {
-        final userId = await _userContext.getActiveUserId();
+        userId = _userContext.getSignedInUserId(
+          operation: 'DatabaseProvider.update.$table',
+        );
+        if (userId == null) {
+          return 0;
+        }
         scopedData.putIfAbsent('user_id', () => userId);
       }
 
-      final scope = await _applyUserScope(table, where, whereArgs);
+      final scope = await _applyUserScope(
+        table,
+        where,
+        whereArgs,
+        operation: 'DatabaseProvider.update.$table',
+        knownUserId: userId,
+      );
+      if (scope == null) {
+        return 0;
+      }
       return await _database.update(
         table,
         scopedData,
@@ -140,11 +188,32 @@ class DatabaseProvider {
             '[DB Provider] Table $table missing on update, creating and retrying...');
         await rawExecute(DatabaseHealthChecker.requiredTables[table]!);
         // Retry once
+        final retryData = Map<String, dynamic>.from(data);
+        String? userId;
+        if (_userScopedTables.contains(table)) {
+          userId = _userContext.getSignedInUserId(
+            operation: 'DatabaseProvider.update.$table.retry',
+          );
+          if (userId == null) {
+            return 0;
+          }
+          retryData.putIfAbsent('user_id', () => userId);
+        }
+        final scope = await _applyUserScope(
+          table,
+          where,
+          whereArgs,
+          operation: 'DatabaseProvider.update.$table.retry',
+          knownUserId: userId,
+        );
+        if (scope == null) {
+          return 0;
+        }
         return await _database.update(
           table,
-          data,
-          where: where,
-          whereArgs: whereArgs,
+          retryData,
+          where: scope.where,
+          whereArgs: scope.whereArgs,
         );
       }
       rethrow;
@@ -158,7 +227,15 @@ class DatabaseProvider {
     List<dynamic>? whereArgs,
   }) async {
     try {
-      final scope = await _applyUserScope(table, where, whereArgs);
+      final scope = await _applyUserScope(
+        table,
+        where,
+        whereArgs,
+        operation: 'DatabaseProvider.delete.$table',
+      );
+      if (scope == null) {
+        return 0;
+      }
       return await _database.delete(
         table,
         where: scope.where,
@@ -171,10 +248,19 @@ class DatabaseProvider {
             '[DB Provider] Table $table missing on delete, creating and retrying...');
         await rawExecute(DatabaseHealthChecker.requiredTables[table]!);
         // Retry once
+        final scope = await _applyUserScope(
+          table,
+          where,
+          whereArgs,
+          operation: 'DatabaseProvider.delete.$table.retry',
+        );
+        if (scope == null) {
+          return 0;
+        }
         return await _database.delete(
           table,
-          where: where,
-          whereArgs: whereArgs,
+          where: scope.where,
+          whereArgs: scope.whereArgs,
         );
       }
       rethrow;
@@ -224,16 +310,23 @@ class DatabaseProvider {
     return e is DatabaseException && e.toString().contains('no such table');
   }
 
-  Future<_ScopedWhere> _applyUserScope(
+  Future<_ScopedWhere?> _applyUserScope(
     String table,
     String? where,
-    List<dynamic>? whereArgs,
-  ) async {
+    List<dynamic>? whereArgs, {
+    required String operation,
+    String? knownUserId,
+  }) async {
     if (!_userScopedTables.contains(table)) {
       return _ScopedWhere(where: where, whereArgs: whereArgs);
     }
 
-    final userId = await _userContext.getActiveUserId();
+    final userId = knownUserId ??
+        _userContext.getSignedInUserId(operation: '$operation.resolved');
+    if (userId == null || userId.isEmpty) {
+      return null;
+    }
+
     if (where != null && where.contains('user_id')) {
       return _ScopedWhere(where: where, whereArgs: whereArgs);
     }

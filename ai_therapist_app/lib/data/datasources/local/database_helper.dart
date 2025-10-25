@@ -18,7 +18,7 @@ class DatabaseHelper {
   DatabaseHelper._internal() {
     _databaseProvider = DependencyContainer().get<DatabaseProvider>();
     if (kDebugMode) {
-      print(
+      debugPrint(
           'Warning: DatabaseHelper is deprecated. Use DatabaseProvider instead.');
     }
   }

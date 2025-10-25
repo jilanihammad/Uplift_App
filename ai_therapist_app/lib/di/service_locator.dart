@@ -38,6 +38,8 @@ import '../services/user_context_service.dart';
 
 import '../utils/connectivity_checker.dart';
 import 'interfaces/i_api_client.dart';
+import '../config/llm_config.dart';
+import '../models/tts_config.dart';
 import 'interfaces/i_app_database.dart';
 import 'interfaces/i_database.dart';
 import 'interfaces/i_database_operation_manager.dart';
@@ -627,6 +629,23 @@ Future<void> registerApiDependentServices(
     if (!serviceLocator.isRegistered<ApiClient>()) {
       serviceLocator.registerSingleton<ApiClient>(apiClient);
       debugPrint('Registered ApiClient');
+    }
+
+    try {
+      final TtsConfigDto remoteTtsConfig = await apiClient.fetchTtsConfig();
+      if (remoteTtsConfig.provider.isNotEmpty) {
+        LLMConfig.applyRemoteTtsConfig(
+          provider: remoteTtsConfig.provider,
+          model: remoteTtsConfig.model,
+          voice: remoteTtsConfig.voice,
+          sampleRateHz: remoteTtsConfig.sampleRateHz,
+          audioEncoding: remoteTtsConfig.audioEncoding,
+          responseFormat: remoteTtsConfig.responseFormat,
+          supportsStreaming: remoteTtsConfig.supportsStreaming,
+        );
+      }
+    } catch (e) {
+      debugPrint('Warning: Failed to fetch remote TTS config: $e');
     }
 
     // Register interface mapping for ApiClient

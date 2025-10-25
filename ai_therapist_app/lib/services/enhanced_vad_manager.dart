@@ -123,7 +123,7 @@ class EnhancedVADManager {
         _errorController
             .add('Microphone permission not granted for Enhanced VAD');
         if (kDebugMode) {
-          print(
+          debugPrint(
               '❌ Enhanced VAD ($_vadInstanceId): Microphone permission denied');
         }
         return;
@@ -139,14 +139,14 @@ class EnhancedVADManager {
           }
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '⚠️ Enhanced VAD ($_vadInstanceId): RNNoise initialization failed, using amplitude fallback');
           }
           _useRNNoise = false;
         }
       } catch (e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): RNNoise initialization error: $e, using amplitude fallback');
         }
         _useRNNoise = false;
@@ -164,7 +164,7 @@ class EnhancedVADManager {
       _clearOperationTimeout();
       _errorController.add('Error initializing Enhanced VAD: $e');
       if (kDebugMode) {
-        print('❌ Enhanced VAD ($_vadInstanceId) initialization error: $e');
+        debugPrint('❌ Enhanced VAD ($_vadInstanceId) initialization error: $e');
       }
     }
   }
@@ -174,7 +174,7 @@ class EnhancedVADManager {
     // Enhanced double-stop protection
     if (_isDisposing) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🛑 Enhanced VAD ($_vadInstanceId): Cannot start - instance is disposing');
       }
       return false;
@@ -220,7 +220,7 @@ class EnhancedVADManager {
     } catch (e) {
       _clearOperationTimeout();
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ Enhanced VAD ($_vadInstanceId): Failed to start listening: $e');
       }
       _errorController.add('Failed to start VAD: $e');
@@ -234,7 +234,7 @@ class EnhancedVADManager {
       // Enhanced state validation
       if (_isDisposing) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🛑 Enhanced VAD ($_vadInstanceId): Cannot start RNNoise - disposing');
         }
         return false;
@@ -243,14 +243,14 @@ class EnhancedVADManager {
       // RACE CONDITION FIX: Wait for any ongoing shutdown to complete
       if (_isShuttingDown) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🔄 Enhanced VAD ($_vadInstanceId): Shutdown in progress, waiting for completion before restart');
         }
 
         final shutdownCompleted = await _waitForShutdownCompletion();
         if (!shutdownCompleted) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '❌ Enhanced VAD ($_vadInstanceId): Failed to wait for shutdown completion');
           }
           return false;
@@ -265,7 +265,7 @@ class EnhancedVADManager {
         await _rnnoiseService.reset();
       } catch (e) {
         if (kDebugMode) {
-          print('⚠️ Enhanced VAD ($_vadInstanceId): RNNoise reset failed: $e');
+          debugPrint('⚠️ Enhanced VAD ($_vadInstanceId): RNNoise reset failed: $e');
         }
         // Continue without reset - not critical
       }
@@ -281,7 +281,7 @@ class EnhancedVADManager {
         }
       } catch (e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '❌ Enhanced VAD ($_vadInstanceId): Failed to configure audio streamer: $e');
         }
         return await _fallbackToAmplitudeVAD();
@@ -293,7 +293,7 @@ class EnhancedVADManager {
           _processRNNoiseAudioChunk,
           onError: (error) {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '❌ Enhanced VAD ($_vadInstanceId): RNNoise VAD stream error: $error');
             }
             _isStreamActive = false; // Mark stream as inactive on error
@@ -302,7 +302,7 @@ class EnhancedVADManager {
           },
           onDone: () {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '🔚 Enhanced VAD ($_vadInstanceId): RNNoise stream completed');
             }
             _isStreamActive = false;
@@ -311,7 +311,7 @@ class EnhancedVADManager {
         );
       } catch (e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '❌ Enhanced VAD ($_vadInstanceId): Failed to subscribe to audio stream: $e');
         }
         return await _fallbackToAmplitudeVAD();
@@ -329,7 +329,7 @@ class EnhancedVADManager {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ Enhanced VAD ($_vadInstanceId): Failed to start RNNoise VAD: $e');
       }
       return await _fallbackToAmplitudeVAD();
@@ -342,7 +342,7 @@ class EnhancedVADManager {
       // Enhanced state validation
       if (_isDisposing || _isShuttingDown) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🛑 Enhanced VAD ($_vadInstanceId): Cannot start amplitude VAD - disposing or shutting down');
         }
         return false;
@@ -353,7 +353,7 @@ class EnhancedVADManager {
         AudioStreamer().sampleRate = 16000;
       } catch (e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '❌ Enhanced VAD ($_vadInstanceId): Failed to set amplitude VAD sample rate: $e');
         }
         _errorController.add('Failed to configure audio for amplitude VAD: $e');
@@ -366,7 +366,7 @@ class EnhancedVADManager {
           _processAmplitudeChunk,
           onError: (error) {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '❌ Enhanced VAD ($_vadInstanceId): Amplitude VAD stream error: $error');
             }
             _completeWorkerIfNeeded('Amplitude stream onError');
@@ -374,7 +374,7 @@ class EnhancedVADManager {
           },
           onDone: () {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '🔚 Enhanced VAD ($_vadInstanceId): Amplitude stream completed');
             }
             _isStreamActive = false;
@@ -383,7 +383,7 @@ class EnhancedVADManager {
         );
       } catch (e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '❌ Enhanced VAD ($_vadInstanceId): Failed to subscribe to amplitude stream: $e');
         }
         _errorController.add('Failed to start amplitude VAD stream: $e');
@@ -402,7 +402,7 @@ class EnhancedVADManager {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ Enhanced VAD ($_vadInstanceId): Failed to start amplitude VAD: $e');
       }
       _errorController.add('Failed to start VAD: $e');
@@ -419,7 +419,7 @@ class EnhancedVADManager {
         !_isListening ||
         _isDisposing) {
       if (kDebugMode && (_isShuttingDown || _isDisposing)) {
-        print(
+        debugPrint(
             '🛑 Enhanced VAD ($_vadInstanceId): Ignoring amplitude chunk during shutdown to prevent buffer race');
       }
       return; // Exit early to prevent buffer race conditions
@@ -458,7 +458,7 @@ class EnhancedVADManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Enhanced VAD: Amplitude processing error: $e');
+        debugPrint('❌ Enhanced VAD: Amplitude processing error: $e');
       }
     }
   }
@@ -472,7 +472,7 @@ class EnhancedVADManager {
         !_isListening ||
         _isDisposing) {
       if (kDebugMode && (_isShuttingDown || _isDisposing)) {
-        print(
+        debugPrint(
             '🛑 Enhanced VAD ($_vadInstanceId): Ignoring audio chunk during shutdown to prevent buffer race');
       }
       return; // Exit early to prevent buffer race conditions
@@ -504,7 +504,7 @@ class EnhancedVADManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ Enhanced VAD ($_vadInstanceId): RNNoise audio processing error: $e');
       }
       // Don't let processing errors crash the stream
@@ -587,7 +587,7 @@ class EnhancedVADManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Enhanced VAD: RNNoise frame processing error: $e');
+        debugPrint('❌ Enhanced VAD: RNNoise frame processing error: $e');
       }
     }
   }
@@ -640,7 +640,7 @@ class EnhancedVADManager {
     _speechStartController.add(null);
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🗣️ Enhanced VAD: Speech started (${_useRNNoise ? 'RNNoise' : 'Amplitude'})');
     }
   }
@@ -653,7 +653,7 @@ class EnhancedVADManager {
     _speechEndController.add(null);
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🤐 Enhanced VAD: Speech ended (${_useRNNoise ? 'RNNoise' : 'Amplitude'})');
     }
   }
@@ -661,7 +661,7 @@ class EnhancedVADManager {
   /// Fallback to amplitude-based VAD
   Future<bool> _fallbackToAmplitudeVAD() async {
     if (kDebugMode) {
-      print('🔄 Enhanced VAD: Falling back to amplitude-based detection');
+      debugPrint('🔄 Enhanced VAD: Falling back to amplitude-based detection');
     }
 
     await _stopRNNoiseVAD();
@@ -700,7 +700,7 @@ class EnhancedVADManager {
     // Enhanced double-stop protection
     if (!_isListening || _isShuttingDown) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🛑 Enhanced VAD ($_vadInstanceId): Already stopped or shutting down, ignoring duplicate stop');
       }
       return;
@@ -708,7 +708,7 @@ class EnhancedVADManager {
 
     if (_isDisposing) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🛑 Enhanced VAD ($_vadInstanceId): Cannot stop - instance is disposing');
       }
       return;
@@ -722,7 +722,7 @@ class EnhancedVADManager {
     _isStreamActive = false;
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🛑 Enhanced VAD ($_vadInstanceId): Beginning shutdown sequence to prevent buffer race');
     }
 
@@ -736,7 +736,7 @@ class EnhancedVADManager {
           await _audioSubscription!.cancel();
         } catch (e) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '⚠️ Enhanced VAD ($_vadInstanceId): Error canceling subscription: $e');
           }
           // Continue with cleanup even if cancellation fails
@@ -747,19 +747,19 @@ class EnhancedVADManager {
         // RACE CONDITION FIX: Wait for worker thread to complete before proceeding
         if (_workerDone != null && !_workerDone!.isCompleted) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '⏳ Enhanced VAD ($_vadInstanceId): Waiting for worker thread to exit AudioRecord.read()...');
           }
           try {
             await _workerDone!.future
                 .timeout(const Duration(milliseconds: 500));
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '✅ Enhanced VAD ($_vadInstanceId): Worker thread confirmed exited');
             }
           } catch (e) {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '⚠️ Enhanced VAD ($_vadInstanceId): Worker completion timeout, proceeding anyway: $e');
             }
             // Complete manually to prevent future deadlocks
@@ -797,7 +797,7 @@ class EnhancedVADManager {
     } catch (e) {
       _clearOperationTimeout();
       if (kDebugMode) {
-        print('❌ Enhanced VAD ($_vadInstanceId): Error during stop: $e');
+        debugPrint('❌ Enhanced VAD ($_vadInstanceId): Error during stop: $e');
       }
       // Ensure state is reset even on error
       _isListening = false;
@@ -830,7 +830,7 @@ class EnhancedVADManager {
     }
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '⏳ Enhanced VAD ($_vadInstanceId): Waiting for shutdown completion to prevent race condition');
     }
 
@@ -841,7 +841,7 @@ class EnhancedVADManager {
           const Duration(seconds: 2),
           onTimeout: () {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '⚠️ Enhanced VAD ($_vadInstanceId): Shutdown completion timeout - forcing reset');
             }
             // Force reset shutdown state on timeout
@@ -854,7 +854,7 @@ class EnhancedVADManager {
       // Double-check shutdown state after wait
       if (_isShuttingDown) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Shutdown still in progress after wait - forcing reset');
         }
         _isShuttingDown = false;
@@ -862,14 +862,14 @@ class EnhancedVADManager {
       }
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '✅ Enhanced VAD ($_vadInstanceId): Shutdown completion confirmed - safe to restart');
       }
 
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ Enhanced VAD ($_vadInstanceId): Error waiting for shutdown completion: $e');
       }
       // Force reset on any error
@@ -906,7 +906,7 @@ class EnhancedVADManager {
     // Prevent new operations during disposal
     if (_isDisposing) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🛑 Enhanced VAD ($_vadInstanceId): Already disposing, ignoring duplicate dispose');
       }
       return;
@@ -915,7 +915,7 @@ class EnhancedVADManager {
     _isDisposing = true;
 
     if (kDebugMode) {
-      print('🗑️ Enhanced VAD ($_vadInstanceId): Starting disposal process');
+      debugPrint('🗑️ Enhanced VAD ($_vadInstanceId): Starting disposal process');
     }
 
     try {
@@ -934,7 +934,7 @@ class EnhancedVADManager {
           await _rnnoiseService.dispose();
         } catch (e) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '⚠️ Enhanced VAD ($_vadInstanceId): Error disposing RNNoise service: $e');
           }
           // Continue with disposal even if RNNoise disposal fails
@@ -947,7 +947,7 @@ class EnhancedVADManager {
         await _speechStartController.close();
       } catch (e) {
         if (kDebugMode)
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing speech start controller: $e');
       }
 
@@ -955,7 +955,7 @@ class EnhancedVADManager {
         await _speechEndController.close();
       } catch (e) {
         if (kDebugMode)
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing speech end controller: $e');
       }
 
@@ -963,7 +963,7 @@ class EnhancedVADManager {
         await _errorController.close();
       } catch (e) {
         if (kDebugMode)
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing error controller: $e');
       }
 
@@ -971,7 +971,7 @@ class EnhancedVADManager {
         await _amplitudeController.close();
       } catch (e) {
         if (kDebugMode)
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing amplitude controller: $e');
       }
 
@@ -991,11 +991,11 @@ class EnhancedVADManager {
       _shutdownCompleter = null;
 
       if (kDebugMode) {
-        print('🗑️ Enhanced VAD ($_vadInstanceId): Disposed successfully');
+        debugPrint('🗑️ Enhanced VAD ($_vadInstanceId): Disposed successfully');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Enhanced VAD ($_vadInstanceId): Error during disposal: $e');
+        debugPrint('❌ Enhanced VAD ($_vadInstanceId): Error during disposal: $e');
       }
       // Ensure disposal flag remains set even on error
     }
@@ -1008,7 +1008,7 @@ class EnhancedVADManager {
       try {
         await _workerDone!.future.timeout(const Duration(milliseconds: 500));
         if (kDebugMode) {
-          print(
+          debugPrint(
               '✅ Enhanced VAD ($_vadInstanceId): Worker thread confirmed exited');
         }
       } catch (e) {
@@ -1017,17 +1017,17 @@ class EnhancedVADManager {
           final callSite = StackTrace.current.toString().split('\n').length > 1
               ? StackTrace.current.toString().split('\n')[1]
               : 'unknown';
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Worker exit timeout from: $callSite');
-          print(
+          debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Current state - listening: $_isListening, streamActive: $_isStreamActive, shuttingDown: $_isShuttingDown');
-          print('⚠️ Enhanced VAD ($_vadInstanceId): Timeout error: $e');
+          debugPrint('⚠️ Enhanced VAD ($_vadInstanceId): Timeout error: $e');
         }
         // Complete manually to prevent future deadlocks
         _completeWorkerIfNeeded('waitForWorkerExit timeout');
       }
     } else if (kDebugMode) {
-      print(
+      debugPrint(
           '✅ Enhanced VAD ($_vadInstanceId): Worker already exited or not started');
     }
   }
@@ -1040,11 +1040,11 @@ class EnhancedVADManager {
       _workerCompletionTracked = true;
       _workerDone!.complete();
       if (kDebugMode) {
-        print(
+        debugPrint(
             '✅ Enhanced VAD ($_vadInstanceId): Worker completion tracked from $context');
       }
     } else if (kDebugMode && _workerCompletionTracked) {
-      print(
+      debugPrint(
           '🔄 Enhanced VAD ($_vadInstanceId): Worker already completed, ignoring completion from $context (hot-reload safe)');
     }
   }
@@ -1055,9 +1055,9 @@ class EnhancedVADManager {
     if (kDebugMode) {
       // Assert: Worker future should exist when we're actively listening
       if (_isListening && _isStreamActive && _workerDone == null) {
-        print(
+        debugPrint(
             '🚨 ASSERT FAILED: $_vadInstanceId $operation called with active stream but no worker tracker!');
-        print(
+        debugPrint(
             '🚨 State: listening=$_isListening, streamActive=$_isStreamActive, workerDone=$_workerDone');
         assert(false, 'Worker tracker missing during active operation');
       }
@@ -1066,9 +1066,9 @@ class EnhancedVADManager {
       if (_workerDone != null &&
           _workerDone!.isCompleted &&
           !_workerCompletionTracked) {
-        print(
+        debugPrint(
             '🚨 ASSERT FAILED: $_vadInstanceId $operation found completed worker but tracking flag not set!');
-        print(
+        debugPrint(
             '🚨 State: workerCompleted=${_workerDone!.isCompleted}, tracked=$_workerCompletionTracked');
         assert(false, 'Worker completion tracking inconsistent');
       }
@@ -1080,7 +1080,7 @@ class EnhancedVADManager {
     _clearOperationTimeout();
     _operationTimeoutTimer = Timer(_operationTimeout, () {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '⏰ Enhanced VAD ($_vadInstanceId): Operation timeout for $operation');
       }
       _handleOperationTimeout(operation);
@@ -1096,7 +1096,7 @@ class EnhancedVADManager {
   /// Handle operation timeout
   void _handleOperationTimeout(String operation) {
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🚨 Enhanced VAD ($_vadInstanceId): Timeout during $operation - forcing cleanup');
     }
 
@@ -1124,7 +1124,7 @@ class EnhancedVADManager {
   /// Handle stream errors with fallback protection
   void _handleStreamError(dynamic error) {
     if (kDebugMode) {
-      print('🚨 Enhanced VAD ($_vadInstanceId): Stream error: $error');
+      debugPrint('🚨 Enhanced VAD ($_vadInstanceId): Stream error: $error');
     }
 
     // Mark stream as inactive
@@ -1133,7 +1133,7 @@ class EnhancedVADManager {
     // Check if this is a platform exception (native crash)
     if (error is PlatformException) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🚨 Enhanced VAD ($_vadInstanceId): Native platform error detected: ${error.code} - ${error.message}');
       }
 
@@ -1156,7 +1156,7 @@ class EnhancedVADManager {
     // Try to fallback to amplitude VAD if using RNNoise
     if (_useRNNoise) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🔄 Enhanced VAD ($_vadInstanceId): Attempting fallback to amplitude VAD due to stream error');
       }
       _fallbackToAmplitudeVAD();
@@ -1166,7 +1166,7 @@ class EnhancedVADManager {
   /// Handle processing errors without crashing the stream
   void _handleProcessingError(dynamic error) {
     if (kDebugMode) {
-      print(
+      debugPrint(
           '⚠️ Enhanced VAD ($_vadInstanceId): Processing error (continuing): $error');
     }
 

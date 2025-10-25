@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../models/user_task.dart';
 import '../data/datasources/local/prefs_manager.dart';
 
@@ -97,7 +98,7 @@ class TasksService {
             .toList();
       }
     } catch (e) {
-      print('Error loading tasks: $e');
+      debugPrint('Error loading tasks: $e');
       _tasks = [];
     }
   }
@@ -109,7 +110,7 @@ class TasksService {
           jsonEncode(_tasks.map((task) => task.toJson()).toList());
       await _prefsManager.setString(_tasksKey, tasksJson);
     } catch (e) {
-      print('Error saving tasks: $e');
+      debugPrint('Error saving tasks: $e');
     }
   }
 }

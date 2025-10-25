@@ -7,12 +7,10 @@ import 'dart:async';
 abstract class ITTSService {
   // Primary TTS method - simple and clean API
   Future<void> speak(String text,
-      {String voice = 'sage',
-      String format = 'wav',
-      bool makeBackupFile = true});
+      {String? voice, String format = 'auto', bool makeBackupFile = true});
 
   // TTS generation (legacy)
-  Future<String> generateSpeech(String text, {String voice = 'alloy'});
+  Future<String> generateSpeech(String text, {String? voice});
   Future<void> streamAndPlayTTS(
     String text, {
     void Function()? onDone,

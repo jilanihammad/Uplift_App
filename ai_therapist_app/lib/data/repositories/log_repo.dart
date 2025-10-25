@@ -18,12 +18,8 @@ class LogRepository {
   })  : _database = database,
         _userContextService = userContextService ?? UserContextService();
 
-  Future<String> _requireUserId() async {
-    final userId = await _userContextService.getActiveUserId();
-    if (userId.isEmpty) {
-      throw Exception('No user ID available for log persistence');
-    }
-    return userId;
+  String? _guardUser(String operation) {
+    return _userContextService.getSignedInUserId(operation: operation);
   }
 
   Future<void> log({
@@ -33,6 +29,11 @@ class LogRepository {
     Map<String, dynamic>? data,
   }) async {
     try {
+      final userId = _guardUser('LogRepository.log');
+      if (userId == null) {
+        return;
+      }
+
       // In debug mode, print to console
       if (kDebugMode) {
         debugPrint(
@@ -50,7 +51,7 @@ class LogRepository {
       );
 
       // Save to database
-      await _saveLogEntry(entry);
+      await _saveLogEntry(entry, userId);
 
       // Clean up old logs periodically
       if (entry.id.hashCode % 20 == 0) {
@@ -64,9 +65,8 @@ class LogRepository {
     }
   }
 
-  Future<void> _saveLogEntry(LogEntry entry) async {
+  Future<void> _saveLogEntry(LogEntry entry, String userId) async {
     final db = await _database.database;
-    final userId = await _requireUserId();
     await db.insert('logs', {
       'id': entry.id,
       'user_id': userId,
@@ -81,7 +81,10 @@ class LogRepository {
   Future<void> _cleanupOldLogs() async {
     try {
       final db = await _database.database;
-      final userId = await _requireUserId();
+      final userId = _guardUser('LogRepository.cleanup');
+      if (userId == null) {
+        return;
+      }
       final count = Sqflite.firstIntValue(await db.rawQuery(
             'SELECT COUNT(*) FROM logs WHERE user_id = ?',
             [userId],
@@ -111,7 +114,10 @@ class LogRepository {
   Future<List<LogEntry>> getRecentLogs({int limit = 100}) async {
     try {
       final db = await _database.database;
-      final userId = await _requireUserId();
+      final userId = _guardUser('LogRepository.getRecentLogs');
+      if (userId == null) {
+        return [];
+      }
       final logs = await db.query(
         'logs',
         where: 'user_id = ?',
@@ -145,7 +151,10 @@ class LogRepository {
   Future<void> clearLogs() async {
     try {
       final db = await _database.database;
-      final userId = await _requireUserId();
+      final userId = _guardUser('LogRepository.clearLogs');
+      if (userId == null) {
+        return;
+      }
       await db.delete('logs', where: 'user_id = ?', whereArgs: [userId]);
     } catch (e) {
       if (kDebugMode) {

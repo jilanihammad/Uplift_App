@@ -84,9 +84,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   // Safe logging since we can't use our LoggingService in this isolate
   try {
-    print('Handling a background message: ${message.messageId}');
+    debugPrint('Handling a background message: ${message.messageId}');
   } catch (e) {
-    print('Error in background message handler: $e');
+    debugPrint('Error in background message handler: $e');
   }
 }
 
@@ -95,8 +95,8 @@ class SimpleBlocObserver extends BlocObserver {
   @override
   void onError(BlocBase bloc, Object error, StackTrace stackTrace) {
     if (kDebugMode) {
-      print('Bloc error: $error');
-      print('Stack trace: $stackTrace');
+      debugPrint('Bloc error: $error');
+      debugPrint('Stack trace: $stackTrace');
     }
     super.onError(bloc, error, stackTrace);
   }
@@ -311,7 +311,7 @@ Future<void> main() async {
     logger.error('[Main] Uncaught error in runZonedGuarded');
     _handleGlobalError(error, stack);
   });
-  if (kDebugMode) print('[Main] App initialization complete. Running app...');
+  if (kDebugMode) debugPrint('[Main] App initialization complete. Running app...');
 }
 
 // Initialize the logging service

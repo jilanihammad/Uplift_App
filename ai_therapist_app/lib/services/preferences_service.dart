@@ -45,13 +45,13 @@ class PreferencesService implements IPreferencesService {
           _preferences = _preferences!.copyWith(therapistStyleId: 'cbt');
           await _savePreferences();
           if (kDebugMode) {
-            print(
+            debugPrint(
                 'Legacy therapist style detected. Resetting to CBT for consistency');
           }
         }
 
         if (kDebugMode) {
-          print('Preferences loaded from storage');
+          debugPrint('Preferences loaded from storage');
         }
       } else {
         // Create default preferences if none exist
@@ -72,12 +72,12 @@ class PreferencesService implements IPreferencesService {
         await _savePreferences();
 
         if (kDebugMode) {
-          print('Default preferences created and saved');
+          debugPrint('Default preferences created and saved');
         }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error initializing preferences: $e');
+        debugPrint('Error initializing preferences: $e');
       }
       // Fallback to default preferences
       _preferences = const UserPreferences();
@@ -90,11 +90,11 @@ class PreferencesService implements IPreferencesService {
       try {
         await _prefsManager.setJson(_preferencesKey, _preferences!.toJson());
         if (kDebugMode) {
-          print('Preferences saved to storage');
+          debugPrint('Preferences saved to storage');
         }
       } catch (e) {
         if (kDebugMode) {
-          print('Error saving preferences: $e');
+          debugPrint('Error saving preferences: $e');
         }
       }
     }
@@ -112,7 +112,7 @@ class PreferencesService implements IPreferencesService {
     await _savePreferences();
 
     if (kDebugMode) {
-      print('Preferences updated: ${newPreferences.therapistStyleId}');
+      debugPrint('Preferences updated: ${newPreferences.therapistStyleId}');
     }
   }
 
@@ -154,7 +154,7 @@ class PreferencesService implements IPreferencesService {
     await _savePreferences();
 
     if (kDebugMode) {
-      print('Single preference updated and saved');
+      debugPrint('Single preference updated and saved');
     }
   }
 
@@ -177,7 +177,7 @@ class PreferencesService implements IPreferencesService {
     await updateSinglePreference(therapistStyleId: 'cbt');
 
     if (kDebugMode) {
-      print('Therapist style forcibly set to CBT (requested: $styleId)');
+      debugPrint('Therapist style forcibly set to CBT (requested: $styleId)');
     }
   }
 
@@ -187,7 +187,7 @@ class PreferencesService implements IPreferencesService {
     await updateSinglePreference(useVoiceByDefault: enabled);
 
     if (kDebugMode) {
-      print('Use voice by default set to: $enabled');
+      debugPrint('Use voice by default set to: $enabled');
     }
   }
 
@@ -197,7 +197,7 @@ class PreferencesService implements IPreferencesService {
     await updateSinglePreference(dailyCheckInTime: time);
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           'Daily check-in time set to: ${time != null ? '${time.hour}:${time.minute}' : 'null'}');
     }
   }

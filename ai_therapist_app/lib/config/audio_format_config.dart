@@ -98,7 +98,7 @@ class AudioFormatConfig {
     _emergencyWavFallback = true;
 
     if (kDebugMode) {
-      print('🚨 AudioFormatConfig: Emergency WAV fallback enabled - $reason');
+      debugPrint('🚨 AudioFormatConfig: Emergency WAV fallback enabled - $reason');
       logCurrentConfiguration();
     }
   }
@@ -108,7 +108,7 @@ class AudioFormatConfig {
     _emergencyWavFallback = false;
 
     if (kDebugMode) {
-      print('✅ AudioFormatConfig: Emergency WAV fallback disabled');
+      debugPrint('✅ AudioFormatConfig: Emergency WAV fallback disabled');
       logCurrentConfiguration();
     }
   }
@@ -137,10 +137,10 @@ class AudioFormatConfig {
   /// Log current configuration for debugging
   static void logCurrentConfiguration() {
     if (kDebugMode) {
-      print('🎵 AudioFormatConfig: Current configuration:');
+      debugPrint('🎵 AudioFormatConfig: Current configuration:');
       final config = getCurrentConfiguration();
       config.forEach((key, value) {
-        print('  $key: $value');
+        debugPrint('  $key: $value');
       });
     }
   }
@@ -172,9 +172,9 @@ class AudioFormatConfig {
     }
 
     if (kDebugMode && warnings.isNotEmpty) {
-      print('⚠️ AudioFormatConfig: Configuration warnings:');
+      debugPrint('⚠️ AudioFormatConfig: Configuration warnings:');
       for (final warning in warnings) {
-        print('  - $warning');
+        debugPrint('  - $warning');
       }
     }
 

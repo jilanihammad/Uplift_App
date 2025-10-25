@@ -98,7 +98,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _filterSessionsByDate();
       });
     } catch (e) {
-      print('Error loading sessions: $e');
+      debugPrint('Error loading sessions: $e');
 
       if (!mounted || _isDisposed) return; // Check mounted state
 

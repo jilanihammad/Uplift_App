@@ -406,7 +406,7 @@ class WavHeaderUtils {
       return;
     }
     // ignore: avoid_print
-    print(message);
+    debugPrint(message);
   }
 
   /// Check if WAV headers are already streaming-friendly

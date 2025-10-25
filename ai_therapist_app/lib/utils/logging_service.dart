@@ -18,7 +18,7 @@ class LoggingService {
   LoggingService._internal();
 
   // Configurable log level
-  LogLevel _logLevel = LogLevel.info;
+  LogLevel _logLevel = kDebugMode ? LogLevel.debug : LogLevel.warning;
 
   // Flag to enable additional analytics logging
   bool _enableAnalyticsLogging = false;
@@ -70,7 +70,7 @@ class LoggingService {
       if (_isDebugBuild) {
         _printLog('WARNING', tag, message);
         if (error != null) {
-          print('Warning details: $error');
+          debugPrint('Warning details: $error');
         }
       } else {
         developer.log(message, name: tag ?? 'WARNING');
@@ -92,10 +92,10 @@ class LoggingService {
       if (_isDebugBuild) {
         _printLog('ERROR', tag, message);
         if (error != null) {
-          print('Error details: $error');
+          debugPrint('Error details: $error');
         }
         if (stackTrace != null) {
-          print('Stack trace: $stackTrace');
+          debugPrint('Stack trace: $stackTrace');
         }
       } else {
         developer.log(message,
@@ -134,7 +134,7 @@ class LoggingService {
   void _printLog(String level, String? tag, String message) {
     final timestamp = DateTime.now().toIso8601String();
     final tagStr = tag != null ? '[$tag] ' : '';
-    print('$timestamp | $level | ${tagStr}$message');
+    debugPrint('$timestamp | $level | ${tagStr}$message');
   }
 
   /// Helper to log to Firebase Crashlytics

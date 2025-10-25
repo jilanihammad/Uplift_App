@@ -29,7 +29,7 @@ class SharedRecorderManager {
     _isInitialized = true;
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🎙️ SharedRecorderManager: Initialized single AudioRecorder instance');
     }
   }
@@ -44,7 +44,7 @@ class SharedRecorderManager {
     if (_currentUser != null && _currentUser != userId) {
       if (await _recorder.isRecording()) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🎙️ SharedRecorderManager: Recorder busy with $_currentUser, denying $userId');
         }
         return false;
@@ -52,7 +52,7 @@ class SharedRecorderManager {
         // Previous user finished, allow new user
         _currentUser = userId;
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🎙️ SharedRecorderManager: Previous session ended, granting access to $userId');
         }
         return true;
@@ -81,7 +81,7 @@ class SharedRecorderManager {
   AudioRecorder? getRecorder(String userId) {
     if (_currentUser != userId) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🎙️ SharedRecorderManager: Access denied to $userId, current user: $_currentUser');
       }
       return null;
@@ -201,7 +201,7 @@ class RecordingManager {
     final isRecording = await recorder.isRecording();
     if (isRecording) {
       if (kDebugMode) {
-        print('Already recording, ignoring startRecording call');
+        debugPrint('Already recording, ignoring startRecording call');
       }
       return;
     }
@@ -212,7 +212,7 @@ class RecordingManager {
       final String filePath = PathManager.instance.recordingFile(uuid);
 
       // 🚨 CORRUPTION DIAGNOSTIC - Verify path is still clean after PathManager
-      print('🛡️ RecordingManager.startRecording() received path: $filePath');
+      debugPrint('🛡️ RecordingManager.startRecording() received path: $filePath');
 
       // Configure recording: prefer mono 48 kHz to align with RNNoise
       // Fallback to 44.1 kHz on devices that don't support 48 kHz
@@ -232,7 +232,7 @@ class RecordingManager {
         }
       } on Exception catch (primaryError) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ RecordingManager: 48 kHz start failed ($primaryError), retrying at 44.1 kHz');
         }
         // Retry with 44.1 kHz (widely supported)
@@ -254,20 +254,20 @@ class RecordingManager {
       _lastRecordedPath = filePath;
 
       // 🚨 CORRUPTION DIAGNOSTIC - Check if path corrupted after storing
-      print(
+      debugPrint(
           '🛡️ RecordingManager._lastRecordedPath stored as: $_lastRecordedPath');
 
       _recordingStartTime = DateTime.now(); // Track start time
       _updateState(RecordingState.recording);
 
       if (kDebugMode) {
-        print('⏺️ Recording started at path: $filePath');
+        debugPrint('⏺️ Recording started at path: $filePath');
       }
     } catch (e) {
       _errorController.add('Error starting recording: $e');
       _updateState(RecordingState.error);
       if (kDebugMode) {
-        print('Error starting recording: $e');
+        debugPrint('Error starting recording: $e');
       }
     }
   }
@@ -281,7 +281,7 @@ class RecordingManager {
     // Double-stop guard: Early return if already stopping
     if (_isStopping) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🛡️ RecordingManager: Already stopping, ignoring duplicate stopRecording call');
       }
       return null;
@@ -300,7 +300,7 @@ class RecordingManager {
       if (!isRecording) {
         _errorController.add('Recorder is not recording');
         if (kDebugMode) {
-          print('⚠️ Stop recording called but recorder was not recording');
+          debugPrint('⚠️ Stop recording called but recorder was not recording');
         }
         // Release access and throw error
         SharedRecorderManager.instance.releaseAccess(_userId);
@@ -319,7 +319,7 @@ class RecordingManager {
       _updateState(RecordingState.processing);
 
       // 🚨 CORRUPTION DIAGNOSTIC - Check path before stopping
-      print(
+      debugPrint(
           '🛡️ RecordingManager.stopRecording() _lastRecordedPath BEFORE stop: $_lastRecordedPath');
 
       // Stop recording - but don't trust the returned path as it may be corrupted
@@ -329,7 +329,7 @@ class RecordingManager {
       SharedRecorderManager.instance.releaseAccess(_userId);
 
       // 🚨 CORRUPTION DIAGNOSTIC - Check path after stopping
-      print(
+      debugPrint(
           '🛡️ RecordingManager.stopRecording() _lastRecordedPath AFTER stop: $_lastRecordedPath');
 
       // Use our stored clean path from PathManager instead of the returned path
@@ -341,7 +341,7 @@ class RecordingManager {
       _recordingStartTime = null; // Reset start time
 
       if (kDebugMode) {
-        print('⏹️ Recording stopped, file saved at: $_lastRecordedPath');
+        debugPrint('⏹️ Recording stopped, file saved at: $_lastRecordedPath');
       }
 
       return _lastRecordedPath!;
@@ -349,7 +349,7 @@ class RecordingManager {
       _errorController.add('Error stopping recording: $e');
       _updateState(RecordingState.error);
       if (kDebugMode) {
-        print('❌ Error stopping recording: $e');
+        debugPrint('❌ Error stopping recording: $e');
       }
       return null;
     }
@@ -361,7 +361,7 @@ class RecordingManager {
     // Quick fast path - already stopping or nothing to stop
     if (_isStopping) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🔄 RecordingManager.tryStopRecording(): Operation already in flight');
       }
       return null;
@@ -369,7 +369,7 @@ class RecordingManager {
 
     if (_lastRecordedPath == null) {
       if (kDebugMode) {
-        print('✅ RecordingManager.tryStopRecording(): Already stopped');
+        debugPrint('✅ RecordingManager.tryStopRecording(): Already stopped');
       }
       return null;
     }
@@ -381,7 +381,7 @@ class RecordingManager {
       final recorder = _recorder;
       if (recorder == null) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ RecordingManager.tryStopRecording(): Recorder not available');
         }
         return null;
@@ -390,7 +390,7 @@ class RecordingManager {
       final isRecording = await recorder.isRecording();
       if (!isRecording) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ RecordingManager.tryStopRecording(): Recorder not recording');
         }
         // Still clean up and return null
@@ -404,7 +404,7 @@ class RecordingManager {
       _updateState(RecordingState.processing);
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🛡️ RecordingManager.tryStopRecording() completedFile BEFORE stop: $completedFile');
       }
 
@@ -415,14 +415,14 @@ class RecordingManager {
       SharedRecorderManager.instance.releaseAccess(_userId);
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🛡️ RecordingManager.tryStopRecording() completedFile AFTER stop: $completedFile');
       }
 
       // Handle MPEG4Writer short-circuit case
       if (completedFile != null && !io.File(completedFile).existsSync()) {
         if (kDebugMode) {
-          print('⚠️ MPEG4Writer short-circuited - no file created');
+          debugPrint('⚠️ MPEG4Writer short-circuited - no file created');
         }
         _lastRecordedPath = null;
         _updateState(RecordingState.stopped);
@@ -436,7 +436,7 @@ class RecordingManager {
       _recordingStartTime = null;
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '⏹️ Recording stopped successfully, file saved at: $completedFile');
       }
 
@@ -445,7 +445,7 @@ class RecordingManager {
       _errorController.add('Error stopping recording: $e');
       _updateState(RecordingState.error);
       if (kDebugMode) {
-        print('❌ Error in tryStopRecording: $e');
+        debugPrint('❌ Error in tryStopRecording: $e');
       }
       // Don't clear path on error - may need for retry
       return null;
@@ -475,7 +475,7 @@ class RecordingManager {
       _lastRecordedPath = null;
     }
     if (kDebugMode) {
-      print('🛡️ RecordingManager: Marked $filePath as pending transcription');
+      debugPrint('🛡️ RecordingManager: Marked $filePath as pending transcription');
     }
   }
 
@@ -483,7 +483,7 @@ class RecordingManager {
   void markTranscriptionComplete(String filePath) {
     _pendingTranscriptionPaths.remove(filePath);
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🛡️ RecordingManager: Transcription complete for $filePath, can be cleaned up');
     }
   }
@@ -504,7 +504,7 @@ class RecordingManager {
       return await recorder.getAmplitude();
     } catch (e) {
       if (kDebugMode) {
-        print('RecordingManager: Error getting amplitude: $e');
+        debugPrint('RecordingManager: Error getting amplitude: $e');
       }
       return null;
     }

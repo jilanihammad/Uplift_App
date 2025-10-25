@@ -26,14 +26,14 @@ class File {
 
   Future<File> writeAsBytes(List<int> bytes) async {
     if (kDebugMode) {
-      print('Web stub: Writing bytes to file at $path');
+      debugPrint('Web stub: Writing bytes to file at $path');
     }
     return this;
   }
 
   void deleteSync() {
     if (kDebugMode) {
-      print('Web stub: Deleting file at $path');
+      debugPrint('Web stub: Deleting file at $path');
     }
   }
 }
@@ -48,7 +48,7 @@ class Directory {
 
   Future<Directory> create({bool recursive = false}) async {
     if (kDebugMode) {
-      print('Web stub: Creating directory at $path');
+      debugPrint('Web stub: Creating directory at $path');
     }
     return this;
   }
@@ -80,7 +80,7 @@ class Process {
   static Future<ProcessResult> run(
       String command, List<String> arguments) async {
     if (kDebugMode) {
-      print('Web stub: Running command $command with arguments $arguments');
+      debugPrint('Web stub: Running command $command with arguments $arguments');
     }
     return ProcessResult(0, 0, 'Web stub output', '');
   }

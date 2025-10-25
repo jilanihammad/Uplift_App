@@ -32,7 +32,7 @@ class ConnectivityChecker {
         return result != ConnectivityResult.none;
       }
     } catch (e) {
-      print('Error checking connectivity: $e');
+      debugPrint('Error checking connectivity: $e');
       // Default to assuming no connection on error
       return false;
     }
@@ -62,7 +62,7 @@ class ConnectivityChecker {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('Error checking connection to $host: $e');
+        debugPrint('Error checking connection to $host: $e');
       }
       return false;
     }

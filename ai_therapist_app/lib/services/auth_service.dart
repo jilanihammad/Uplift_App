@@ -116,7 +116,7 @@ class AuthService implements IAuthService {
       return token;
     } catch (e) {
       if (kDebugMode) {
-        print('AuthService: Failed to refresh Firebase token: $e');
+        debugPrint('AuthService: Failed to refresh Firebase token: $e');
       }
       return null;
     }
@@ -145,10 +145,10 @@ class AuthService implements IAuthService {
         // Force token refresh to ensure it's valid and cache it
         final token = await firebaseUser.getIdToken(true);
         await _persistAuthToken(token);
-        print("AuthService: User has valid Firebase token");
+        debugPrint("AuthService: User has valid Firebase token");
         return true;
       } catch (e) {
-        print("AuthService: Error refreshing token, signing out user: $e");
+        debugPrint("AuthService: Error refreshing token, signing out user: $e");
         await logout();
         return false;
       }
@@ -176,14 +176,14 @@ class AuthService implements IAuthService {
       final hasCompleted = _prefs.getBool(HAS_COMPLETED_SIGNUP_KEY) ?? false;
 
       if (kDebugMode) {
-        print(
+        debugPrint(
           "AuthService: Syncing with AuthCoordinator - hasCompletedSignup = $hasCompleted",
         );
       }
 
       if (hasCompleted) {
         if (kDebugMode) {
-          print(
+          debugPrint(
             "AuthService: User has completed signup, emitting signup completed event",
           );
         }
@@ -195,7 +195,7 @@ class AuthService implements IAuthService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print("AuthService: Error syncing with AuthCoordinator: $e");
+        debugPrint("AuthService: Error syncing with AuthCoordinator: $e");
       }
       // Continue without syncing
     }
@@ -221,7 +221,7 @@ class AuthService implements IAuthService {
     required Function(String) onCodeAutoRetrievalTimeout,
   }) async {
     try {
-      print("AuthService: Starting phone verification for: $phoneNumber");
+      debugPrint("AuthService: Starting phone verification for: $phoneNumber");
 
       // Make sure Firebase App Check is initialized
       try {
@@ -231,10 +231,10 @@ class AuthService implements IAuthService {
               ? AndroidProvider.debug
               : AndroidProvider.playIntegrity,
         );
-        print("AuthService: Pre-checked Firebase App Check for phone auth");
+        debugPrint("AuthService: Pre-checked Firebase App Check for phone auth");
       } catch (appCheckError) {
         // Log but continue - we have fallbacks in place
-        print("AuthService: AppCheck warning for phone auth: $appCheckError");
+        debugPrint("AuthService: AppCheck warning for phone auth: $appCheckError");
       }
 
       // Validate and format phone number
@@ -242,7 +242,7 @@ class AuthService implements IAuthService {
 
       // Add country code if missing
       if (!formattedPhoneNumber.startsWith('+')) {
-        print("AuthService: Phone number missing country code, adding +1");
+        debugPrint("AuthService: Phone number missing country code, adding +1");
         formattedPhoneNumber =
             '+1${formattedPhoneNumber.replaceAll(RegExp(r'[^0-9]'), '')}';
       } else {
@@ -251,11 +251,11 @@ class AuthService implements IAuthService {
             '+${formattedPhoneNumber.substring(1).replaceAll(RegExp(r'[^0-9]'), '')}';
       }
 
-      print("AuthService: Formatted phone number: $formattedPhoneNumber");
+      debugPrint("AuthService: Formatted phone number: $formattedPhoneNumber");
 
       // Check for rate limiting before making the request
       if (_isPhoneNumberRateLimited(formattedPhoneNumber)) {
-        print(
+        debugPrint(
           "AuthService: Phone number is rate limited, suggesting alternative auth method",
         );
         return {
@@ -276,19 +276,19 @@ class AuthService implements IAuthService {
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: formattedPhoneNumber,
         verificationCompleted: (PhoneAuthCredential credential) {
-          print("AuthService: Phone auth automatically verified");
+          debugPrint("AuthService: Phone auth automatically verified");
           onVerificationCompleted(credential);
         },
         verificationFailed: (FirebaseAuthException error) {
-          print(
+          debugPrint(
             "AuthService: Phone verification failed: ${error.code}: ${error.message}",
           );
           // Log detailed error for debugging
-          print("AuthService: Full error details: ${error.toString()}");
+          debugPrint("AuthService: Full error details: ${error.toString()}");
 
           // Special handling for rate limiting errors
           if (error.code == 'too-many-requests') {
-            print(
+            debugPrint(
               "AuthService: Detected rate limiting, adding to rate limited list",
             );
             _addRateLimitedNumber(formattedPhoneNumber);
@@ -296,25 +296,25 @@ class AuthService implements IAuthService {
 
           // Special handling for missing client identifier
           if (error.code == 'missing-client-identifier') {
-            print(
+            debugPrint(
               "AuthService: Missing client identifier error - this is usually due to Firebase App Check issues",
             );
             // Try to force App Check token refresh
             try {
               FirebaseAppCheck.instance.getToken(true).then((_) {
-                print("AuthService: Successfully refreshed App Check token");
+                debugPrint("AuthService: Successfully refreshed App Check token");
               }).catchError((e) {
-                print("AuthService: Failed to refresh App Check token: $e");
+                debugPrint("AuthService: Failed to refresh App Check token: $e");
               });
             } catch (e) {
-              print("AuthService: Error refreshing App Check token: $e");
+              debugPrint("AuthService: Error refreshing App Check token: $e");
             }
           }
 
           onVerificationFailed(error);
         },
         codeSent: (String verificationId, int? resendToken) {
-          print(
+          debugPrint(
             "AuthService: SMS verification code sent to $formattedPhoneNumber",
           );
           _verificationId = verificationId; // Store for later use
@@ -323,7 +323,7 @@ class AuthService implements IAuthService {
           onCodeSent(verificationId, resendToken);
         },
         codeAutoRetrievalTimeout: (String verificationId) {
-          print("AuthService: SMS auto-retrieval timeout");
+          debugPrint("AuthService: SMS auto-retrieval timeout");
           onCodeAutoRetrievalTimeout(verificationId);
         },
         timeout: timeout,
@@ -335,7 +335,7 @@ class AuthService implements IAuthService {
         'phoneNumber': formattedPhoneNumber,
       };
     } catch (e) {
-      print('Phone verification general error: $e');
+      debugPrint('Phone verification general error: $e');
       return {
         'success': false,
         'error': 'general_error',
@@ -377,7 +377,7 @@ class AuthService implements IAuthService {
     try {
       await _ensureInitialized();
 
-      print("AuthService: Attempting to sign in with phone verification code");
+      debugPrint("AuthService: Attempting to sign in with phone verification code");
 
       // Create the phone auth credential
       final PhoneAuthCredential credential = PhoneAuthProvider.credential(
@@ -393,11 +393,11 @@ class AuthService implements IAuthService {
         final user = userCredential.user;
 
         if (user == null) {
-          print("AuthService: Firebase returned null user after phone auth");
+          debugPrint("AuthService: Firebase returned null user after phone auth");
           return false;
         }
 
-        print(
+        debugPrint(
           "AuthService: Successfully signed in with phone: ${user.phoneNumber}",
         );
 
@@ -406,7 +406,7 @@ class AuthService implements IAuthService {
 
         // Check if this is first login
         final hasCompleted = await hasCompletedSignup;
-        print(
+        debugPrint(
           "AuthService: signInWithPhone - hasCompletedSignup = $hasCompleted",
         );
 
@@ -418,7 +418,7 @@ class AuthService implements IAuthService {
             isNewUser: false,
             authMethod: AuthMethod.phone,
           ));
-          print(
+          debugPrint(
             "AuthService: signInWithPhone - Emitted login event for returning user",
           );
         } else {
@@ -432,7 +432,7 @@ class AuthService implements IAuthService {
             isNewUser: true,
             authMethod: AuthMethod.phone,
           ));
-          print(
+          debugPrint(
             "AuthService: signInWithPhone - Emitted login event for new user",
           );
         }
@@ -441,17 +441,17 @@ class AuthService implements IAuthService {
 
         return true;
       } catch (credentialError) {
-        print(
+        debugPrint(
           "AuthService: Error signing in with phone credential: $credentialError",
         );
 
         if (credentialError.toString().contains("invalid-verification-code")) {
-          print("AuthService: Invalid verification code entered");
+          debugPrint("AuthService: Invalid verification code entered");
         }
         return false;
       }
     } catch (e) {
-      print('Phone sign-in general error: $e');
+      debugPrint('Phone sign-in general error: $e');
       return false;
     }
   }
@@ -477,7 +477,7 @@ class AuthService implements IAuthService {
 
       // Check if this is first login
       final hasCompleted = await hasCompletedSignup;
-      print(
+      debugPrint(
         "AuthService: signInWithCredential - hasCompletedSignup = $hasCompleted",
       );
 
@@ -489,7 +489,7 @@ class AuthService implements IAuthService {
           isNewUser: false,
           authMethod: AuthMethod.phone,
         ));
-        print(
+        debugPrint(
           "AuthService: signInWithCredential - Emitted login event for returning user",
         );
       } else {
@@ -503,7 +503,7 @@ class AuthService implements IAuthService {
           isNewUser: true,
           authMethod: AuthMethod.phone,
         ));
-        print(
+        debugPrint(
           "AuthService: signInWithCredential - Emitted login event for new user",
         );
       }
@@ -512,7 +512,7 @@ class AuthService implements IAuthService {
 
       return true;
     } catch (e) {
-      print('Auto-retrieval sign-in error: $e');
+      debugPrint('Auto-retrieval sign-in error: $e');
       return false;
     }
   }
@@ -540,7 +540,7 @@ class AuthService implements IAuthService {
 
       // Check if the user has completed signup
       final hasCompleted = await hasCompletedSignup;
-      print("AuthService: login - hasCompletedSignup = $hasCompleted");
+      debugPrint("AuthService: login - hasCompletedSignup = $hasCompleted");
 
       // If user has already completed signup, skip onboarding
       if (hasCompleted) {
@@ -551,7 +551,7 @@ class AuthService implements IAuthService {
           isNewUser: false,
           authMethod: AuthMethod.email,
         ));
-        print(
+        debugPrint(
           "AuthService: login - Emitted login event for returning user",
         );
       } else {
@@ -569,7 +569,7 @@ class AuthService implements IAuthService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('Login error: $e');
+        debugPrint('Login error: $e');
       }
       return false;
     }
@@ -616,7 +616,7 @@ class AuthService implements IAuthService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('Registration error: $e');
+        debugPrint('Registration error: $e');
       }
       return false;
     }
@@ -634,7 +634,7 @@ class AuthService implements IAuthService {
       userId: userId,
     ));
     if (kDebugMode) {
-      print('AuthService: Emitted signup completed event');
+      debugPrint('AuthService: Emitted signup completed event');
     }
   }
 
@@ -644,7 +644,7 @@ class AuthService implements IAuthService {
     try {
       await _ensureInitialized();
 
-      print("AuthService: Starting Google SignIn flow");
+      debugPrint("AuthService: Starting Google SignIn flow");
 
       // SKIP Firebase App Check - causing too many problems
       // Just attempt Google Sign-In directly
@@ -659,9 +659,9 @@ class AuthService implements IAuthService {
             '385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com',
       );
 
-      print(
+      debugPrint(
           "AuthService: GoogleSignIn configured with scopes: ['email', 'profile', 'openid']");
-      print(
+      debugPrint(
           "AuthService: GoogleSignIn client ID: 385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com");
 
       // First check if user is already signed in with Google
@@ -670,32 +670,32 @@ class AuthService implements IAuthService {
       try {
         // Always try to sign out first to ensure a fresh start
         await googleSignIn.signOut();
-        print("AuthService: Signed out from any previous Google sessions");
+        debugPrint("AuthService: Signed out from any previous Google sessions");
 
         // Direct to interactive sign-in
-        print("AuthService: Triggering Google sign-in dialog");
+        debugPrint("AuthService: Triggering Google sign-in dialog");
         googleUser = await googleSignIn.signIn();
 
         if (googleUser == null) {
-          print("AuthService: User cancelled Google Sign-In");
+          debugPrint("AuthService: User cancelled Google Sign-In");
           return false;
         }
-        print(
+        debugPrint(
             "AuthService: Interactive Google signin successful: ${googleUser.email}");
       } catch (e) {
-        print("AuthService: Interactive Google signin error: $e");
-        print("AuthService: Error details: ${e.runtimeType}");
+        debugPrint("AuthService: Interactive Google signin error: $e");
+        debugPrint("AuthService: Error details: ${e.runtimeType}");
 
         // Special handling for error code 10 (DEVELOPER_ERROR)
         if (e.toString().contains("ApiException: 10:")) {
-          print(
+          debugPrint(
             "AuthService: Detected configuration error in Google Sign-In (error 10)",
           );
-          print(
+          debugPrint(
             "AuthService: This typically means the SHA-1 certificate fingerprint is not configured in Firebase console",
           );
           // OAuth client ID info is useful for debugging
-          print(
+          debugPrint(
             "AuthService: Using OAuth Client ID: 385290373302-leq56ddeh0h2kqlg611v25bptdajttof.apps.googleusercontent.com",
           );
           // Return false since this requires developer intervention
@@ -708,13 +708,13 @@ class AuthService implements IAuthService {
 
       try {
         // Get authentication details
-        print("AuthService: Getting auth tokens for: ${googleUser.email}");
+        debugPrint("AuthService: Getting auth tokens for: ${googleUser.email}");
         final GoogleSignInAuthentication googleAuth =
             await googleUser.authentication;
 
         // Validate tokens before proceeding
         if (googleAuth.accessToken == null || googleAuth.idToken == null) {
-          print("AuthService: Failed to get valid Google auth tokens");
+          debugPrint("AuthService: Failed to get valid Google auth tokens");
           return false;
         }
 
@@ -724,7 +724,7 @@ class AuthService implements IAuthService {
           idToken: googleAuth.idToken,
         );
 
-        print("AuthService: Got Google auth tokens, signing in with Firebase");
+        debugPrint("AuthService: Got Google auth tokens, signing in with Firebase");
 
         // Sign in with Firebase
         final userCredential = await FirebaseAuth.instance.signInWithCredential(
@@ -733,18 +733,18 @@ class AuthService implements IAuthService {
         final user = userCredential.user;
 
         if (user == null) {
-          print("AuthService: Firebase returned null user after Google auth");
+          debugPrint("AuthService: Firebase returned null user after Google auth");
           return false;
         }
 
-        print("AuthService: Successfully signed in with Google: ${user.email}");
+        debugPrint("AuthService: Successfully signed in with Google: ${user.email}");
 
         // Store relevant user info
         await _prefs.setString(EMAIL_KEY, user.email ?? '');
 
         // Check if this is first login
         final hasCompleted = await hasCompletedSignup;
-        print(
+        debugPrint(
           "AuthService: signInWithGoogle - hasCompletedSignup = $hasCompleted",
         );
 
@@ -756,7 +756,7 @@ class AuthService implements IAuthService {
             isNewUser: false,
             authMethod: AuthMethod.google,
           ));
-          print(
+          debugPrint(
             "AuthService: signInWithGoogle - Emitted login event for returning user",
           );
         } else {
@@ -770,7 +770,7 @@ class AuthService implements IAuthService {
             isNewUser: true,
             authMethod: AuthMethod.google,
           ));
-          print(
+          debugPrint(
             "AuthService: signInWithGoogle - Emitted login event for new user",
           );
         }
@@ -779,22 +779,22 @@ class AuthService implements IAuthService {
 
         return true;
       } catch (authError) {
-        print(
+        debugPrint(
           "AuthService: Error during Firebase authentication with Google: $authError",
         );
 
         // Aggressive error recovery - try to sign out from Google to reset state
         try {
           await googleSignIn.signOut();
-          print("AuthService: Signed out of Google to reset state after error");
+          debugPrint("AuthService: Signed out of Google to reset state after error");
         } catch (e) {
-          print("AuthService: Error during Google signout: $e");
+          debugPrint("AuthService: Error during Google signout: $e");
         }
 
         return false;
       }
     } catch (e) {
-      print('Google sign-in error: $e');
+      debugPrint('Google sign-in error: $e');
       return false;
     }
   }
@@ -839,13 +839,13 @@ class AuthService implements IAuthService {
         userId: userId,
       ));
       if (kDebugMode) {
-        print('AuthService: Emitted logout event');
+        debugPrint('AuthService: Emitted logout event');
       }
 
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('Logout error: $e');
+        debugPrint('Logout error: $e');
       }
       return false;
     }
@@ -859,7 +859,7 @@ class AuthService implements IAuthService {
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
       if (firebaseUser == null) {
-        print(
+        debugPrint(
           "AuthService: No Firebase user found during session verification",
         );
         return false;
@@ -871,12 +871,12 @@ class AuthService implements IAuthService {
         await _persistAuthToken(token);
         return true;
       } catch (e) {
-        print("AuthService: Error refreshing token during verification: $e");
+        debugPrint("AuthService: Error refreshing token during verification: $e");
         await logout();
         return false;
       }
     } catch (e) {
-      print("AuthService: Error during session verification: $e");
+      debugPrint("AuthService: Error during session verification: $e");
       return false;
     }
   }

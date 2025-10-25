@@ -91,7 +91,7 @@ class AudioRecordingService implements IAudioRecordingService {
   Future<void> initialize() async {
     if (_isInitialized) {
       if (kDebugMode) {
-        print('AudioRecordingService already initialized');
+        debugPrint('AudioRecordingService already initialized');
       }
       return;
     }
@@ -115,11 +115,11 @@ class AudioRecordingService implements IAudioRecordingService {
       _isInitialized = true;
 
       if (kDebugMode) {
-        print('AudioRecordingService initialized successfully');
+        debugPrint('AudioRecordingService initialized successfully');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error initializing AudioRecordingService: $e');
+        debugPrint('Error initializing AudioRecordingService: $e');
       }
       rethrow;
     }
@@ -164,7 +164,7 @@ class AudioRecordingService implements IAudioRecordingService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ AudioRecordingService: Error starting recording: $e');
+        debugPrint('❌ AudioRecordingService: Error starting recording: $e');
       }
       rethrow;
     } finally {
@@ -206,7 +206,7 @@ class AudioRecordingService implements IAudioRecordingService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ AudioRecordingService: Error stopping recording: $e');
+        debugPrint('❌ AudioRecordingService: Error stopping recording: $e');
       }
       rethrow;
     } finally {
@@ -218,7 +218,7 @@ class AudioRecordingService implements IAudioRecordingService {
   Future<String?> tryStopRecording() async {
     if (_disposed) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '⚠️ AudioRecordingService: tryStopRecording called on disposed service');
       }
       return null;
@@ -226,7 +226,7 @@ class AudioRecordingService implements IAudioRecordingService {
 
     if (_recordingLock.isLocked) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🔄 AudioRecordingService: tryStopRecording - recording operation in progress');
       }
       return null;
@@ -263,7 +263,7 @@ class AudioRecordingService implements IAudioRecordingService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ AudioRecordingService: Error in tryStopRecording: $e');
+        debugPrint('❌ AudioRecordingService: Error in tryStopRecording: $e');
       }
       return null; // Never throw
     } finally {
@@ -328,7 +328,7 @@ class AudioRecordingService implements IAudioRecordingService {
           }
         } catch (e) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '⚠️ AudioRecordingService: Could not delete canceled recording: $e');
           }
         }
@@ -337,7 +337,7 @@ class AudioRecordingService implements IAudioRecordingService {
       _lastRecordingPath = null;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ AudioRecordingService: Error canceling recording: $e');
+        debugPrint('❌ AudioRecordingService: Error canceling recording: $e');
       }
       rethrow;
     } finally {
@@ -358,7 +358,7 @@ class AudioRecordingService implements IAudioRecordingService {
       return hasPermission;
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ AudioRecordingService: Error requesting microphone permission: $e');
       }
       return false;
@@ -372,7 +372,7 @@ class AudioRecordingService implements IAudioRecordingService {
       return status == PermissionStatus.granted;
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ AudioRecordingService: Error checking microphone permission: $e');
       }
       return false;
@@ -400,7 +400,7 @@ class AudioRecordingService implements IAudioRecordingService {
         break;
       default:
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ AudioRecordingService: Unknown audio quality: $quality, using medium');
         }
         _audioQuality = 'medium';
@@ -447,7 +447,7 @@ class AudioRecordingService implements IAudioRecordingService {
             deletedCount++;
           } catch (e) {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '⚠️ AudioRecordingService: Could not delete ${file.path}: $e');
             }
           }
@@ -460,7 +460,7 @@ class AudioRecordingService implements IAudioRecordingService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ AudioRecordingService: Error cleaning up recording files: $e');
+        debugPrint('❌ AudioRecordingService: Error cleaning up recording files: $e');
       }
     }
   }
@@ -541,7 +541,7 @@ class AudioRecordingService implements IAudioRecordingService {
       if (kDebugMode) {
         // Only log occasionally to avoid spam
         if (DateTime.now().millisecondsSinceEpoch % 1000 < 100) {
-          print(
+          debugPrint(
               'AudioRecordingService: Error getting amplitude: $e, falling back to silence');
         }
       }
@@ -564,7 +564,7 @@ class AudioRecordingService implements IAudioRecordingService {
       // Use a fire-and-forget approach for disposal to avoid blocking
       cancelRecording().catchError((e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ AudioRecordingService: Error during disposal recording cancel: $e');
         }
       });
@@ -579,7 +579,7 @@ class AudioRecordingService implements IAudioRecordingService {
     // Dispose recording manager
     _recordingManager.dispose().catchError((e) {
       if (kDebugMode) {
-        print('⚠️ AudioRecordingService: Error disposing RecordingManager: $e');
+        debugPrint('⚠️ AudioRecordingService: Error disposing RecordingManager: $e');
       }
     });
 

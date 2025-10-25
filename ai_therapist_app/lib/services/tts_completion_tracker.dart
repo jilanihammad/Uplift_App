@@ -39,13 +39,13 @@ class TwoPhaseCompletion {
         .where((state) => state == ProcessingState.completed)
         .listen((_) {
       if (kDebugMode) {
-        print('🎵 [TTS] ExoPlayer natural completion detected');
+        debugPrint('🎵 [TTS] ExoPlayer natural completion detected');
       }
       _onPlayerCompletedNaturally();
     });
 
     if (kDebugMode) {
-      print('🎧 [TTS] Event-driven completion tracking initialized');
+      debugPrint('🎧 [TTS] Event-driven completion tracking initialized');
     }
   }
 
@@ -56,7 +56,7 @@ class TwoPhaseCompletion {
     _safetyWatchdog = null;
 
     if (kDebugMode) {
-      print('✅ [TTS] Natural playback completion - cleaning up properly');
+      debugPrint('✅ [TTS] Natural playback completion - cleaning up properly');
     }
 
     // Proper cleanup sequence as specified
@@ -68,7 +68,7 @@ class TwoPhaseCompletion {
       Future.delayed(const Duration(milliseconds: 150), () {
         if (!_disposed) {
           if (kDebugMode) {
-            print('🎤 [TTS] Safe to restart VAD after 150ms buffer');
+            debugPrint('🎤 [TTS] Safe to restart VAD after 150ms buffer');
           }
 
           // Signal TTS completion and restart VAD
@@ -78,7 +78,7 @@ class TwoPhaseCompletion {
       });
     } catch (e) {
       if (kDebugMode) {
-        print('⚠️ [TTS] Error during natural completion cleanup: $e');
+        debugPrint('⚠️ [TTS] Error during natural completion cleanup: $e');
       }
     }
 
@@ -97,7 +97,7 @@ class TwoPhaseCompletion {
 
     _safetyWatchdog = Timer(Duration(milliseconds: safetyMs), () {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '⚠️ [TTS] Safety watchdog triggered after ${safetyMs}ms - forcing stop');
       }
 
@@ -107,7 +107,7 @@ class TwoPhaseCompletion {
     });
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '⏲️ [TTS] Safety watchdog set: ${safetyMs}ms (2x estimated ${estMs}ms)');
     }
   }
@@ -127,7 +127,7 @@ class TwoPhaseCompletion {
   /// Force stop for safety watchdog or emergency situations
   Future<void> _forceStop() async {
     if (kDebugMode) {
-      print('🛑 [TTS] Force stopping due to safety watchdog');
+      debugPrint('🛑 [TTS] Force stopping due to safety watchdog');
     }
 
     try {
@@ -140,7 +140,7 @@ class TwoPhaseCompletion {
       markPlayerDone();
     } catch (e) {
       if (kDebugMode) {
-        print('⚠️ [TTS] Error during force stop: $e');
+        debugPrint('⚠️ [TTS] Error during force stop: $e');
       }
     }
   }
@@ -169,7 +169,7 @@ class TwoPhaseCompletion {
     _checkBothDone();
 
     if (kDebugMode) {
-      print('🌐 [TTS] WebSocket phase complete');
+      debugPrint('🌐 [TTS] WebSocket phase complete');
     }
   }
 
@@ -182,7 +182,7 @@ class TwoPhaseCompletion {
     _checkBothDone();
 
     if (kDebugMode) {
-      print('🎵 [TTS] Audio player phase complete');
+      debugPrint('🎵 [TTS] Audio player phase complete');
     }
   }
 
@@ -195,7 +195,7 @@ class TwoPhaseCompletion {
       _bothDoneCompleter.complete();
 
       if (kDebugMode) {
-        print('✅ [TTS] Both WebSocket and player phases completed');
+        debugPrint('✅ [TTS] Both WebSocket and player phases completed');
       }
     }
   }
@@ -227,7 +227,7 @@ class TwoPhaseCompletion {
     }
 
     if (kDebugMode) {
-      print('🧹 [TTS] TwoPhaseCompletion disposed');
+      debugPrint('🧹 [TTS] TwoPhaseCompletion disposed');
     }
   }
 }

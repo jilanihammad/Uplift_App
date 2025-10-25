@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../../../services/config_service.dart'; // Corrected import path
 import 'package:ai_therapist_app/config/app_config.dart'; // Import AppConfig
 import 'package:ai_therapist_app/config/llm_config.dart'; // Import LLM Configuration
+import 'package:ai_therapist_app/models/tts_config.dart';
 import '../../../di/interfaces/i_api_client.dart';
 
 class ApiClient implements IApiClient {
@@ -48,7 +49,7 @@ class ApiClient implements IApiClient {
     await _initPrefs();
     await _prefs.setString('auth_token', token);
     if (kDebugMode) {
-      print('ApiClient: Updated auth token');
+      debugPrint('ApiClient: Updated auth token');
     }
   }
 
@@ -65,7 +66,7 @@ class ApiClient implements IApiClient {
         attempts++;
         if (attempts >= _maxRetries) {
           if (kDebugMode) {
-            print('Request failed after $_maxRetries attempts: $e');
+            debugPrint('Request failed after $_maxRetries attempts: $e');
           }
           rethrow;
         }
@@ -80,7 +81,7 @@ class ApiClient implements IApiClient {
         }
 
         if (kDebugMode) {
-          print(
+          debugPrint(
               'Request failed (attempt $attempts): $e. Retrying in ${backoff.inMilliseconds}ms...');
         }
 
@@ -126,7 +127,7 @@ class ApiClient implements IApiClient {
 
     try {
       if (kDebugMode) {
-        print('Making GET request to: $uriWithParams');
+        debugPrint('Making GET request to: $uriWithParams');
       }
 
       final response = await _retryRequest(() => httpClient.get(
@@ -137,7 +138,7 @@ class ApiClient implements IApiClient {
       return _handleResponse(response);
     } catch (e) {
       if (kDebugMode) {
-        print('GET request failed: $e');
+        debugPrint('GET request failed: $e');
       }
 
       if (e is SocketException) {
@@ -155,6 +156,14 @@ class ApiClient implements IApiClient {
 
       rethrow;
     }
+  }
+
+  Future<TtsConfigDto> fetchTtsConfig() async {
+    final response = await get('/system/tts-config');
+    if (response.isEmpty) {
+      throw Exception('Empty response from /system/tts-config');
+    }
+    return TtsConfigDto.fromJson(response);
   }
 
   /// POST request to the API
@@ -198,7 +207,7 @@ class ApiClient implements IApiClient {
 
     try {
       if (kDebugMode) {
-        print('Making POST request to: $urlString');
+        debugPrint('Making POST request to: $urlString');
       }
 
       final response = await _retryRequest(() => httpClient.post(
@@ -210,7 +219,7 @@ class ApiClient implements IApiClient {
       return _handleResponse(response);
     } catch (e) {
       if (kDebugMode) {
-        print('POST request failed: $e');
+        debugPrint('POST request failed: $e');
       }
 
       if (e is SocketException) {
@@ -258,7 +267,7 @@ class ApiClient implements IApiClient {
       return _handleResponse(response);
     } catch (e) {
       if (kDebugMode) {
-        print('PUT request failed: $e');
+        debugPrint('PUT request failed: $e');
       }
 
       if (e is SocketException) {
@@ -304,7 +313,7 @@ class ApiClient implements IApiClient {
 
     try {
       if (kDebugMode) {
-        print('Making PATCH request to: $uri');
+        debugPrint('Making PATCH request to: $uri');
       }
 
       final response = await _retryRequest(() => httpClient.patch(
@@ -316,7 +325,7 @@ class ApiClient implements IApiClient {
       return _handleResponse(response);
     } catch (e) {
       if (kDebugMode) {
-        print('PATCH request failed: $e');
+        debugPrint('PATCH request failed: $e');
       }
 
       if (e is SocketException) {
@@ -361,7 +370,7 @@ class ApiClient implements IApiClient {
       return _handleResponse(response);
     } catch (e) {
       if (kDebugMode) {
-        print('DELETE request failed: $e');
+        debugPrint('DELETE request failed: $e');
       }
 
       if (e is SocketException) {
@@ -514,7 +523,8 @@ class ApiClient implements IApiClient {
       final llmConfig = LLMConfig.currentLLMConfig;
 
       if (kDebugMode) {
-        print('[ApiClient] Making direct LLM call to ${llmConfig.modelId}');
+        debugPrint(
+            '[ApiClient] Making direct LLM call to ${llmConfig.modelId}');
       }
 
       // Get API key from environment variable
@@ -540,8 +550,8 @@ class ApiClient implements IApiClient {
       );
 
       if (kDebugMode) {
-        print('[ApiClient] LLM Request to: ${llmConfig.endpoint}');
-        print('[ApiClient] LLM Model: ${llmConfig.modelId}');
+        debugPrint('[ApiClient] LLM Request to: ${llmConfig.endpoint}');
+        debugPrint('[ApiClient] LLM Model: ${llmConfig.modelId}');
       }
 
       // Make the request
@@ -557,7 +567,7 @@ class ApiClient implements IApiClient {
       return _extractLLMResponse(responseData, LLMConfig.activeLLMProvider);
     } catch (e) {
       if (kDebugMode) {
-        print('[ApiClient] Direct LLM call failed: $e');
+        debugPrint('[ApiClient] Direct LLM call failed: $e');
       }
       rethrow;
     }

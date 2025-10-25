@@ -204,7 +204,7 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<bool> _safeStartVAD() async {
     if (_isVadActive) {
       if (kDebugMode)
-        print('[AutoListeningCoordinator] VAD already active, skipping start');
+        debugPrint('[AutoListeningCoordinator] VAD already active, skipping start');
       return true;
     }
     try {
@@ -212,12 +212,12 @@ class AutoListeningCoordinator with SessionDisposable {
       if (success) {
         _isVadActive = true;
         if (kDebugMode)
-          print('[AutoListeningCoordinator] VAD started successfully');
+          debugPrint('[AutoListeningCoordinator] VAD started successfully');
       }
       return success;
     } catch (e) {
       if (kDebugMode)
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] CRITICAL: VAD start failed (native crash protection): $e');
       _isVadActive = false; // Ensure state is consistent on failure
       return false;
@@ -228,7 +228,7 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<bool> _startVADWithRetry() async {
     if (_isVadActive) {
       if (kDebugMode)
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [RETRY] VAD already active, skipping start');
       return true;
     }
@@ -236,7 +236,7 @@ class AutoListeningCoordinator with SessionDisposable {
     for (int attempt = 1; attempt <= _maxVadRetries; attempt++) {
       try {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [RETRY] VAD start attempt $attempt/$_maxVadRetries');
         }
 
@@ -244,19 +244,19 @@ class AutoListeningCoordinator with SessionDisposable {
         if (success) {
           _isVadActive = true;
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [RETRY] VAD started successfully on attempt $attempt');
           }
           return true;
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [RETRY] VAD start returned false on attempt $attempt');
           }
         }
       } catch (e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [RETRY] VAD start failed on attempt $attempt: $e');
         }
       }
@@ -265,7 +265,7 @@ class AutoListeningCoordinator with SessionDisposable {
       if (attempt < _maxVadRetries) {
         final delayMs = _retryDelays[attempt - 1];
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [RETRY] Waiting ${delayMs}ms before retry ${attempt + 1}');
         }
         await Future.delayed(Duration(milliseconds: delayMs));
@@ -275,7 +275,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // All retries failed
     _isVadActive = false;
     if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator] [RETRY] CRITICAL: All VAD start attempts failed after $_maxVadRetries retries');
     }
 
@@ -290,17 +290,17 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<void> _safeStopVAD() async {
     if (!_isVadActive) {
       if (kDebugMode)
-        print('[AutoListeningCoordinator] VAD not active, skipping stop');
+        debugPrint('[AutoListeningCoordinator] VAD not active, skipping stop');
       return;
     }
     try {
       await _vadManager.stopListening();
       _isVadActive = false;
       if (kDebugMode)
-        print('[AutoListeningCoordinator] VAD stopped successfully');
+        debugPrint('[AutoListeningCoordinator] VAD stopped successfully');
     } catch (e) {
       if (kDebugMode)
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] CRITICAL: VAD stop failed (native crash protection): $e');
       _isVadActive = false; // Ensure state is consistent even on failure
     }
@@ -310,7 +310,7 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<void> _safeStartRecording() async {
     if (_isRecordingActive) {
       if (kDebugMode)
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] Recording already active, skipping start');
       return;
     }
@@ -318,27 +318,27 @@ class AutoListeningCoordinator with SessionDisposable {
       await _recordingManager.startRecording();
       _isRecordingActive = true;
       if (kDebugMode)
-        print('[AutoListeningCoordinator] Recording started successfully');
+        debugPrint('[AutoListeningCoordinator] Recording started successfully');
     } catch (e) {
       if (kDebugMode)
-        print('[AutoListeningCoordinator] Recording start failed: $e');
+        debugPrint('[AutoListeningCoordinator] Recording start failed: $e');
     }
   }
 
   Future<void> _safeStopRecording() async {
     if (!_isRecordingActive) {
       if (kDebugMode)
-        print('[AutoListeningCoordinator] Recording not active, skipping stop');
+        debugPrint('[AutoListeningCoordinator] Recording not active, skipping stop');
       return;
     }
     try {
       await _recordingManager.tryStopRecording();
       _isRecordingActive = false;
       if (kDebugMode)
-        print('[AutoListeningCoordinator] Recording stopped successfully');
+        debugPrint('[AutoListeningCoordinator] Recording stopped successfully');
     } catch (e) {
       if (kDebugMode)
-        print('[AutoListeningCoordinator] Recording stop failed: $e');
+        debugPrint('[AutoListeningCoordinator] Recording stop failed: $e');
     }
   }
 
@@ -347,27 +347,27 @@ class AutoListeningCoordinator with SessionDisposable {
     // Listen for audio playback state changes (UI updates only - NO VAD restarts)
     _audioPlayerManager.isPlayingStream.listen((isPlaying) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [AUDIO] isPlayingStream emitted: $isPlaying | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (_autoModeEnabled) {
         if (!isPlaying) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [AUDIO] Playback ended - UI update only (VAD restart handled by TTS completion)');
           }
           // REMOVED: VAD restart logic from audio playback events to prevent race conditions
           // Only update UI state - TTS completion will handle VAD restart
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [AUDIO] Audio playing, stopping listening/recording and cancelling post-audio delay');
           }
           _stopListeningAndRecording();
           _updateState(AutoListeningState.aiSpeaking);
         }
       } else if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [AUDIO] Ignored isPlayingStream event because autoMode is disabled');
       }
     });
@@ -376,7 +376,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // Subscribe to the combined AI audio stream (includes both TTS and audio playback)
     _startListeningSub = _aiAudioActiveStream.listen((aiAudioActive) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active: $aiAudioActive | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (!_autoModeEnabled) {
@@ -388,7 +388,7 @@ class AutoListeningCoordinator with SessionDisposable {
         // AI is making sound (TTS streaming or audio playing) - clear any scheduled VAD restart
         _vadRestartScheduled = false;
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active, stopping listening/recording');
         }
         // Force state to aiSpeaking every time AI audio starts
@@ -400,14 +400,14 @@ class AutoListeningCoordinator with SessionDisposable {
                 _currentState == AutoListeningState.idle) &&
             !_vadRestartScheduled) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio complete - scheduling VAD restart with 100ms debounce');
           }
           _vadRestartScheduled = true;
           _enterAiSpeakingCompleteWithDebounce();
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio stopped but restart already scheduled or inappropriate state ($_currentState)');
           }
         }
@@ -417,7 +417,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // Listen for VAD speech start events
     _vadManager.onSpeechStart.listen((_) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [VAD] onSpeechStart emitted | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (_autoModeEnabled) {
@@ -438,13 +438,13 @@ class AutoListeningCoordinator with SessionDisposable {
             if (timeSinceLastEnd <= _burstResetThreshold) {
               _speechBurstCount++;
               if (kDebugMode) {
-                print(
+                debugPrint(
                     '[AutoListeningCoordinator] [ADAPTIVE-TIMER] Speech burst detected, count: $_speechBurstCount (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
               }
             } else {
               _speechBurstCount = 1; // Reset burst count after long pause
               if (kDebugMode) {
-                print(
+                debugPrint(
                     '[AutoListeningCoordinator] [ADAPTIVE-TIMER] Long pause detected, resetting burst count to 1 (gap: ${timeSinceLastEnd.inMilliseconds}ms)');
               }
             }
@@ -453,19 +453,19 @@ class AutoListeningCoordinator with SessionDisposable {
           }
 
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [VAD-FLAPPING-FIX] New speech session started, sequence: $_speechSeq, burst: $_speechBurstCount');
           }
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [VAD-FLAPPING-FIX] Continuing speech session $_speechSeq (gap < ${_minSpeechGap.inMilliseconds}ms)');
           }
         }
 
         if (_currentState == AutoListeningState.listening) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [VAD] VAD detected speech start, cancelling speech end timer and starting recording');
           }
           _cancelSpeechEndTimer();
@@ -475,7 +475,7 @@ class AutoListeningCoordinator with SessionDisposable {
             _startRecording();
           } else {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '[AutoListeningCoordinator] [VAD] Recording already active, but transitioning to userSpeaking anyway');
             }
           }
@@ -484,12 +484,12 @@ class AutoListeningCoordinator with SessionDisposable {
         } else if (_currentState == AutoListeningState.processing) {
           // CRITICAL FIX: Cancel pending speech end if user resumes speaking
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator][DEBUG] Speech started during processing - cancelling pending stop');
           }
           _cancelPendingSpeechEnd();
         } else if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [VAD] Ignored onSpeechStart event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
         }
       }
@@ -498,10 +498,10 @@ class AutoListeningCoordinator with SessionDisposable {
     // Listen for VAD speech end events
     _vadManager.onSpeechEnd.listen((_) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] onSpeechEnd event received | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
         if (loggingConfig.isVerboseDebugEnabled) {
-          print(StackTrace.current);
+          debugPrint(StackTrace.current.toString());
         }
       }
       if (_autoModeEnabled) {
@@ -512,7 +512,7 @@ class AutoListeningCoordinator with SessionDisposable {
             final timeSinceSpeechStart = now.difference(_lastSpeechStartTime!);
             if (timeSinceSpeechStart < const Duration(milliseconds: 200)) {
               if (kDebugMode) {
-                print(
+                debugPrint(
                     '[AutoListeningCoordinator][VAD-FLAPPING-FIX] Ignoring speech end - too soon after start (${timeSinceSpeechStart.inMilliseconds}ms < 200ms)');
               }
               return; // Ignore this speech end event
@@ -520,14 +520,14 @@ class AutoListeningCoordinator with SessionDisposable {
           }
 
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator][DEBUG] Calling _startSpeechEndTimer() after onSpeechEnd');
           }
           _startSpeechEndTimer();
         } else if (_currentState == AutoListeningState.processing) {
           // CRITICAL FIX: Handle speech end during processing with debounce
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator][DEBUG] Speech end during processing - scheduling immediate stop with 200ms debounce');
           }
           _handleSpeechEndDuringProcessing();
@@ -535,13 +535,13 @@ class AutoListeningCoordinator with SessionDisposable {
           // CRITICAL FIX: Handle stray recording when stuck in listening state
           if (_isRecordingActive) {
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '[AutoListeningCoordinator][DEBUG] Speech ended while in listening state but recording is active - cleaning up stray recording');
             }
             _stopRecording();
           }
         } else if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] Ignored onSpeechEnd event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
         }
       }
@@ -550,7 +550,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // Listen for recording state changes
     _recordingManager.recordingStateStream.listen((state) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [RECORDING] recordingStateStream emitted: $state | currentState=$_currentState');
       }
       if (state == base_voice.RecordingState.recording) {
@@ -565,7 +565,7 @@ class AutoListeningCoordinator with SessionDisposable {
     _vadManager.onError.listen((error) {
       _errorController.add('VAD error: $error');
       if (kDebugMode) {
-        print('[AutoListeningCoordinator] [VAD] ERROR: $error');
+        debugPrint('[AutoListeningCoordinator] [VAD] ERROR: $error');
       }
     });
   }
@@ -575,7 +575,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // Safety guard to prevent multiple invocations
     if (_awaitingPlaybackEnd) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [DEBOUNCED] Already awaiting playback end, skipping duplicate call');
       }
       return;
@@ -586,7 +586,7 @@ class AutoListeningCoordinator with SessionDisposable {
       // ENGINEER FEEDBACK: Debounce ~100ms post-playback silence for speaker ring-down
       // ENHANCED: Ensure any previous VAD worker threads have exited
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [DEBOUNCED] Debouncing VAD restart for 100ms + worker sync (speaker ring-down)');
       }
 
@@ -603,7 +603,7 @@ class AutoListeningCoordinator with SessionDisposable {
           _autoModeEnabled &&
           _vadRestartScheduled) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [DEBOUNCED] Debounce complete, starting VAD');
         }
 
@@ -613,20 +613,20 @@ class AutoListeningCoordinator with SessionDisposable {
           await _startListeningAfterDelay();
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [DEBOUNCED] VAD restart failed after retries, transitioning to idle');
           }
           _updateState(AutoListeningState.idle);
         }
       } else {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [DEBOUNCED] State changed during debounce, skipping VAD restart');
         }
       }
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [DEBOUNCED] Error during debounced VAD restart: $e');
       }
       _updateState(AutoListeningState.idle);
@@ -641,7 +641,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // Safety guard to prevent multiple invocations
     if (_awaitingPlaybackEnd) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [ROBUST] Already awaiting playback end, skipping duplicate call');
       }
       return;
@@ -659,7 +659,7 @@ class AutoListeningCoordinator with SessionDisposable {
           _autoModeEnabled &&
           _vadRestartScheduled) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [ROBUST] AI audio definitively finished, starting VAD immediately');
         }
 
@@ -669,18 +669,18 @@ class AutoListeningCoordinator with SessionDisposable {
           await _startListeningAfterDelay();
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [ROBUST] VAD restart failed after retries, transitioning to idle');
           }
           _updateState(AutoListeningState.idle);
         }
       } else if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [ROBUST] State changed, auto mode disabled, or restart not scheduled - skipping VAD start');
       }
     } catch (error) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [ROBUST] CRITICAL: Error waiting for AI audio completion (native crash protection): $error');
       }
       // Ensure Maya doesn't get stuck by transitioning to idle on error
@@ -696,7 +696,7 @@ class AutoListeningCoordinator with SessionDisposable {
   // Start VAD listening after a short delay
   Future<void> _startListeningAfterDelay() async {
     if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay called | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
     }
 
@@ -706,7 +706,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // Guard against duplicate calls
     if (_isTransitionInProgress) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [VAD] Transition already in progress, ignoring duplicate call');
       }
       return;
@@ -716,7 +716,7 @@ class AutoListeningCoordinator with SessionDisposable {
     if (!(_currentState == AutoListeningState.idle ||
         _currentState == AutoListeningState.aiSpeaking)) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay ignored - already in state: $_currentState');
       }
       return;
@@ -745,7 +745,7 @@ class AutoListeningCoordinator with SessionDisposable {
       _stuckStateTimer = Timer(const Duration(seconds: 1), () {
         if (_currentState == AutoListeningState.listeningForVoice) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator] [VAD] Stuck in listeningForVoice state, resetting to idle');
           }
           _updateState(AutoListeningState.idle);
@@ -757,7 +757,7 @@ class AutoListeningCoordinator with SessionDisposable {
       // Execute VAD start logic immediately (no Future.delayed)
       if (!_autoModeEnabled) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [VAD] Auto mode disabled, not starting listening');
         }
         _stuckStateTimer?.cancel();
@@ -775,7 +775,7 @@ class AutoListeningCoordinator with SessionDisposable {
   // New method to handle the actual listening start
   Future<void> _executeListeningStart() async {
     if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator] [VAD] Starting listening (VAD should be active) | currentState=$_currentState');
     }
 
@@ -790,26 +790,26 @@ class AutoListeningCoordinator with SessionDisposable {
       final vadStarted = await _startVADWithRetry();
       if (!vadStarted) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [VAD] VAD startup failed with retries, aborting listening start');
         }
         return;
       }
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [VAD] VAD listening has started (mic unmuted after TTS)');
       }
 
       // VAD should be ready to start recording immediately
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [VAD] VAD settled, now starting recording pipeline');
       }
 
       // Start the actual recording pipeline as well
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [RECORDING] Calling voiceService.startRecording() after VAD start');
       }
 
@@ -820,12 +820,12 @@ class AutoListeningCoordinator with SessionDisposable {
         // Cancel the stuck state timer since we successfully started
         _stuckStateTimer?.cancel();
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [VAD] Transitioned to listening state');
         }
       } catch (e) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [RECORDING] CRITICAL: Error starting recording (native crash protection): $e');
         }
         // Clean up VAD on recording failure to prevent resource leak
@@ -833,7 +833,7 @@ class AutoListeningCoordinator with SessionDisposable {
       }
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [VAD] CRITICAL: Error in VAD startup sequence (native crash protection): $e');
       }
     }
@@ -851,18 +851,18 @@ class AutoListeningCoordinator with SessionDisposable {
         if (success) {
           _updateState(AutoListeningState.listening);
           if (kDebugMode) {
-            print('🎤 AutoListening: Started listening for voice activity');
+            debugPrint('🎤 AutoListening: Started listening for voice activity');
           }
         } else {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '❌ AutoListening: VAD startup failed after retries, remaining in current state');
           }
         }
       } catch (e) {
         _errorController.add('Failed to start VAD listening: $e');
         if (kDebugMode) {
-          print('❌ AutoListening error: $e');
+          debugPrint('❌ AutoListening error: $e');
         }
       }
     }
@@ -873,7 +873,7 @@ class AutoListeningCoordinator with SessionDisposable {
     // PHASE 3: Safety gate - check if we're still in voice mode
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
       if (kDebugMode) {
-        print('⚠️ [ALC] Rejecting VAD start - not in voice mode');
+        debugPrint('⚠️ [ALC] Rejecting VAD start - not in voice mode');
       }
       return;
     }
@@ -888,12 +888,12 @@ class AutoListeningCoordinator with SessionDisposable {
         }
 
         if (kDebugMode) {
-          print('🎤 AutoListening: Started recording due to voice activity');
+          debugPrint('🎤 AutoListening: Started recording due to voice activity');
         }
       } catch (e) {
         _errorController.add('Failed to start recording: $e');
         if (kDebugMode) {
-          print('❌ AutoListening recording error: $e');
+          debugPrint('❌ AutoListening recording error: $e');
         }
       }
     }
@@ -910,20 +910,20 @@ class AutoListeningCoordinator with SessionDisposable {
     final Duration timeout = _getAdaptiveSpeechTimeout();
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting ${timeout.inMilliseconds}ms timer (burst: $_speechBurstCount). Current state: $_currentState, sequence: $currentSeq');
       if (loggingConfig.isVerboseDebugEnabled) {
-        print(StackTrace.current);
+        debugPrint(StackTrace.current.toString());
       }
     }
 
     // Wait for silence to be detected for adaptive duration before stopping recording
     _speechEndDebounceTimer = Timer(timeout, () {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired. Current state: $_currentState, timer seq: $currentSeq, current seq: $_speechSeq');
         if (loggingConfig.isVerboseDebugEnabled) {
-          print(StackTrace.current);
+          debugPrint(StackTrace.current.toString());
         }
       }
 
@@ -937,13 +937,13 @@ class AutoListeningCoordinator with SessionDisposable {
         _lastSpeechEndTime = DateTime.now();
 
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer firing _stopRecording() (sequence valid, session ended, burst: $_speechBurstCount)');
         }
         _stopRecording();
       } else {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired but sequence mismatch or invalid state - ignoring (sequence: $currentSeq vs $_speechSeq, state: $_currentState)');
         }
       }
@@ -954,10 +954,10 @@ class AutoListeningCoordinator with SessionDisposable {
   void _cancelSpeechEndTimer({String reason = 'unknown'}) {
     if (_speechEndDebounceTimer != null && _speechEndDebounceTimer!.isActive) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] _cancelSpeechEndTimer: Cancelling timer. Reason: $reason | Current state: $_currentState');
         if (loggingConfig.isVerboseDebugEnabled) {
-          print(StackTrace.current);
+          debugPrint(StackTrace.current.toString());
         }
       }
       _speechEndDebounceTimer?.cancel();
@@ -981,7 +981,7 @@ class AutoListeningCoordinator with SessionDisposable {
   // CRITICAL FIX: Handle speech end during processing with immediate response and debounce
   void _handleSpeechEndDuringProcessing() {
     if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator][DEBUG] _handleSpeechEndDuringProcessing: Setting up 200ms debounce for immediate stop');
     }
 
@@ -1004,18 +1004,18 @@ class AutoListeningCoordinator with SessionDisposable {
           _lastSpeechEndTime = DateTime.now();
 
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed - stopping recording immediately (sequence: $currentSeq, burst: $_speechBurstCount)');
           }
           // Call stopRecording directly - this bypasses the 1.5s timer
           _stopRecording();
         } else if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed but recording not active - skipping no-op _stopRecording()');
         }
         _hasPendingSpeechEnd = false;
       } else if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] Pending speech end timer fired but conditions not met - ignoring (sequence: $currentSeq vs $_speechSeq, state: $_currentState, hasPending: $_hasPendingSpeechEnd)');
       }
     });
@@ -1025,7 +1025,7 @@ class AutoListeningCoordinator with SessionDisposable {
   void _cancelPendingSpeechEnd() {
     if (_pendingSpeechEndTimer != null && _pendingSpeechEndTimer!.isActive) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] _cancelPendingSpeechEnd: User resumed speaking, cancelling pending stop');
       }
       _pendingSpeechEndTimer?.cancel();
@@ -1037,44 +1037,44 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<void> _stopRecording() async {
     if (_isStoppingRecording) {
       if (kDebugMode)
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] _stopRecording ignored: already stopping');
       return;
     }
     _isStoppingRecording = true;
     try {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] _stopRecording called. Current state: $_currentState, _isStoppingRecording=$_isStoppingRecording');
         if (loggingConfig.isVerboseDebugEnabled) {
-          print(StackTrace.current);
+          debugPrint(StackTrace.current.toString());
         }
       }
       if (_currentState == AutoListeningState.userSpeaking) {
         // CRITICAL FIX: Stop VAD before stopping recording to prevent buffer race (with crash protection)
         try {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator][DEBUG] _stopRecording: Stopping VAD first to prevent buffer race');
           }
           await _vadManager.stopListening();
           _isVadActive = false; // Update state tracking
         } catch (e) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '[AutoListeningCoordinator][DEBUG] CRITICAL: VAD stop error during recording stop (native crash protection): $e');
           }
           _isVadActive = false; // Ensure consistent state even on failure
         }
 
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _recordingManager.stopRecording()');
         }
         final audioPath = await _recordingManager.tryStopRecording();
 
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: stopRecording() returned path: $audioPath');
         }
         if (audioPath != null && audioPath.isNotEmpty) {
@@ -1087,20 +1087,20 @@ class AutoListeningCoordinator with SessionDisposable {
           }
 
           if (kDebugMode) {
-            print('🎤 AutoListening: Stopped recording, file at: $audioPath');
+            debugPrint('🎤 AutoListening: Stopped recording, file at: $audioPath');
           }
         }
         // Cancel backup timer since recording stopped successfully
         _cancelSpeechEndTimer(reason: 'Recording stopped successfully');
 
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] _stopRecording: About to call _updateState(processing)');
         }
         _updateState(AutoListeningState.processing);
       } else {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AutoListeningCoordinator][DEBUG] _stopRecording called but not in userSpeaking state or already stopping, skipping.');
         }
       }
@@ -1109,7 +1109,7 @@ class AutoListeningCoordinator with SessionDisposable {
       _isRecordingActive = false;
       _isStoppingRecording = false;
       if (kDebugMode)
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][DEBUG] _isStoppingRecording and _isRecordingActive reset to false');
     }
   }
@@ -1123,7 +1123,7 @@ class AutoListeningCoordinator with SessionDisposable {
       // CRITICAL FIX: Stop VAD stream FIRST and wait for complete shutdown
       await _safeStopVAD();
       if (kDebugMode) {
-        print('🛑 AutoListening: VAD stopped and buffers released');
+        debugPrint('🛑 AutoListening: VAD stopped and buffers released');
       }
 
       // Wait briefly for proper cleanup
@@ -1132,18 +1132,18 @@ class AutoListeningCoordinator with SessionDisposable {
       if (_currentState == AutoListeningState.userSpeaking) {
         await _stopRecording();
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🎤 AutoListening: Recording stopped safely after VAD shutdown');
         }
       }
 
       if (kDebugMode) {
-        print('🎤 AutoListening: Complete shutdown sequence finished');
+        debugPrint('🎤 AutoListening: Complete shutdown sequence finished');
       }
     } catch (e) {
       _errorController.add('Error stopping listening/recording: $e');
       if (kDebugMode) {
-        print('❌ AutoListening stop error: $e');
+        debugPrint('❌ AutoListening stop error: $e');
       }
     }
   }
@@ -1156,24 +1156,24 @@ class AutoListeningCoordinator with SessionDisposable {
       _autoModeEnabled = true;
       _autoModeEnabledController.add(true);
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [MODE] enableAutoModeWithAudioState called with isAudioPlaying=$isAudioPlaying, autoModeEnabled set to true');
       }
 
       // Use the audio state provided by the Bloc instead of checking AudioPlayerManager
       if (!isAudioPlaying) {
         if (kDebugMode)
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [MODE] Bloc says audio not playing, calling _startListening()');
         await _startListening();
       } else {
         if (kDebugMode)
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [MODE] Bloc says audio is playing, setting state to aiSpeaking');
         _updateState(AutoListeningState.aiSpeaking);
       }
     } else if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator] [MODE] enableAutoModeWithAudioState called, but autoModeEnabled already true');
     }
   }
@@ -1201,33 +1201,33 @@ class AutoListeningCoordinator with SessionDisposable {
       _autoModeEnabled = true;
       _autoModeEnabledController.add(true);
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [MODE] enableAutoMode called, autoModeEnabled set to true');
       }
 
       // Check audio playing state with detailed logging
       final isAudioPlaying = _audioPlayerManager.isPlaying;
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [MODE] Audio playing state check: isPlaying=$isAudioPlaying');
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [MODE] AudioPlayerManager internal state check...');
       }
 
       // If AI is not currently speaking, start listening
       if (!isAudioPlaying) {
         if (kDebugMode)
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [MODE] Not playing audio, calling _startListening()');
         await _startListening();
       } else {
         if (kDebugMode)
-          print(
+          debugPrint(
               '[AutoListeningCoordinator] [MODE] Audio is playing, setting state to aiSpeaking');
         _updateState(AutoListeningState.aiSpeaking);
       }
     } else if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator] [MODE] enableAutoMode called, but autoModeEnabled already true');
     }
   }
@@ -1238,14 +1238,14 @@ class AutoListeningCoordinator with SessionDisposable {
       _autoModeEnabled = false;
       _autoModeEnabledController.add(false);
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] [MODE] disableAutoMode called, autoModeEnabled set to false');
       }
       // Stop listening and recording
       await _stopListeningAndRecording();
       _updateState(AutoListeningState.idle);
     } else if (kDebugMode) {
-      print(
+      debugPrint(
           '[AutoListeningCoordinator] [MODE] disableAutoMode called, but autoModeEnabled already false');
     }
   }
@@ -1293,7 +1293,7 @@ class AutoListeningCoordinator with SessionDisposable {
     if (newState != _currentState &&
         !_isValidTransition(_currentState, newState)) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '❌ [AutoListeningCoordinator] INVALID TRANSITION: $_currentState → $newState (BLOCKED)');
       }
       return; // Prevent invalid transitions
@@ -1301,7 +1301,7 @@ class AutoListeningCoordinator with SessionDisposable {
 
     if (kDebugMode) {
       if (newState != _currentState) {
-        print(
+        debugPrint(
             '✅ [AutoListeningCoordinator] VALID TRANSITION: $_currentState → $newState');
       }
     }
@@ -1313,7 +1313,7 @@ class AutoListeningCoordinator with SessionDisposable {
         newState == AutoListeningState.listening) {
       _inSpeechSession = false;
       if (kDebugMode && _lastSpeechStartTime != null) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator][VAD-FLAPPING-FIX] Speech session reset on transition to $newState');
       }
     }
@@ -1397,11 +1397,11 @@ class AutoListeningCoordinator with SessionDisposable {
       _autoModeEnabledController.add(false);
 
       if (kDebugMode) {
-        print('🤖 Auto listening coordinator initialized (auto mode OFF)');
+        debugPrint('🤖 Auto listening coordinator initialized (auto mode OFF)');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('🤖 Auto listening coordinator initialization error: $e');
+        debugPrint('🤖 Auto listening coordinator initialization error: $e');
       }
     }
   }
@@ -1413,11 +1413,11 @@ class AutoListeningCoordinator with SessionDisposable {
     if (_autoModeEnabled &&
         _currentState != AutoListeningState.listeningForVoice) {
       if (kDebugMode) {
-        print('🤖 Auto mode: External trigger to start listening');
+        debugPrint('🤖 Auto mode: External trigger to start listening');
       }
       _startListeningAfterDelay();
     } else if (kDebugMode) {
-      print(
+      debugPrint(
           '🤖 Auto mode: External trigger ignored - already listening or auto mode disabled');
     }
   }
@@ -1426,7 +1426,7 @@ class AutoListeningCoordinator with SessionDisposable {
   void onProcessingComplete() {
     if (_autoModeEnabled && _currentState == AutoListeningState.processing) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AutoListeningCoordinator] Processing complete, resuming listening');
       }
       // Transition back to listening state
@@ -1439,13 +1439,13 @@ class AutoListeningCoordinator with SessionDisposable {
   /// Used for TTS completion handling to avoid autoMode toggling
   void startListening() {
     if (kDebugMode) {
-      print('[ALC] >>> startListening() called');
+      debugPrint('[ALC] >>> startListening() called');
     }
 
     // BYPASS FIX: Check voice mode before starting
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
       if (kDebugMode) {
-        print('[ALC] startListening() rejected – not in voice mode');
+        debugPrint('[ALC] startListening() rejected – not in voice mode');
       }
       return;
     }
@@ -1454,7 +1454,7 @@ class AutoListeningCoordinator with SessionDisposable {
       triggerListening();
     } else {
       if (kDebugMode) {
-        print('[ALC] >>> startListening() ignored - autoMode disabled');
+        debugPrint('[ALC] >>> startListening() ignored - autoMode disabled');
       }
     }
   }
@@ -1463,7 +1463,7 @@ class AutoListeningCoordinator with SessionDisposable {
   /// Used for TTS start handling to avoid autoMode toggling
   void stopListening() {
     if (kDebugMode) {
-      print('[ALC] <<< stopListening() called');
+      debugPrint('[ALC] <<< stopListening() called');
     }
 
     if (_autoModeEnabled) {
@@ -1471,7 +1471,7 @@ class AutoListeningCoordinator with SessionDisposable {
       _stopListeningAndRecording();
     } else {
       if (kDebugMode) {
-        print('[ALC] <<< stopListening() ignored - autoMode disabled');
+        debugPrint('[ALC] <<< stopListening() ignored - autoMode disabled');
       }
     }
   }

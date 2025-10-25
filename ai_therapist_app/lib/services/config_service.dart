@@ -88,7 +88,7 @@ class ConfigService implements IConfigService {
       // This might be _llmModelEndpoint or a more specific one from LLMConfig if you use that elsewhere.
       // For now, let's assume _llmModelEndpoint is the one for direct calls.
       if (kDebugMode) {
-        print(
+        debugPrint(
             "[ConfigService] Direct LLM Mode: Using direct endpoint: $_llmModelEndpoint");
       }
       return _llmModelEndpoint; // Or construct it from LLMConfig.currentLLMConfig.endpoint
@@ -96,7 +96,7 @@ class ConfigService implements IConfigService {
       // In backend mode, use the general backend endpoint that proxies to the LLM
       // Your existing _llmApiEndpoint field was likely intended for this.
       if (kDebugMode) {
-        print(
+        debugPrint(
             "[ConfigService] Backend Mode: Using backend proxy endpoint: $_llmApiEndpoint (original private field)");
       }
       return this
@@ -157,18 +157,18 @@ class ConfigService implements IConfigService {
       await _loadDirectLLMModePreference();
 
       if (kDebugMode) {
-        print('ConfigService initialized successfully');
-        print(
+        debugPrint('ConfigService initialized successfully');
+        debugPrint(
             'Effective LLM API Endpoint (used by ApiClient): $llmApiEndpoint'); // Use the getter
-        print(
+        debugPrint(
             'Backend Proxy LLM API Endpoint (private field): $_llmApiEndpoint');
-        print('Direct LLM Model Endpoint (private field): $_llmModelEndpoint');
-        print('Direct LLM Mode Enabled: $_directLLMMode');
+        debugPrint('Direct LLM Model Endpoint (private field): $_llmModelEndpoint');
+        debugPrint('Direct LLM Mode Enabled: $_directLLMMode');
         // ... other prints ...
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error initializing ConfigService: $e');
+        debugPrint('Error initializing ConfigService: $e');
       }
     }
   }
@@ -398,7 +398,7 @@ class ConfigService implements IConfigService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error loading API keys: $e');
+        debugPrint('Error loading API keys: $e');
       }
     }
   }
@@ -425,7 +425,7 @@ class ConfigService implements IConfigService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error saving API key: $e');
+        debugPrint('Error saving API key: $e');
       }
     }
   }
@@ -437,7 +437,7 @@ class ConfigService implements IConfigService {
       _appVersion = packageInfo.version;
     } catch (e) {
       if (kDebugMode) {
-        print('Error loading app info: $e');
+        debugPrint('Error loading app info: $e');
       }
     }
   }
@@ -452,12 +452,12 @@ class ConfigService implements IConfigService {
           _safeGetEnv('DIRECT_LLM_MODE_ENABLED') == 'true' ??
           false;
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[ConfigService] Direct LLM Mode loaded from prefs/env: $_directLLMMode');
       }
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[ConfigService] Error loading directLLMModeEnabled preference: $e. Defaulting to false.');
       }
       _directLLMMode = false; // Fallback
@@ -470,11 +470,11 @@ class ConfigService implements IConfigService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('directLLMModeEnabled', enabled);
       if (kDebugMode) {
-        print('[ConfigService] Direct LLM Mode preference saved: $enabled');
+        debugPrint('[ConfigService] Direct LLM Mode preference saved: $enabled');
       }
     } catch (e) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[ConfigService] Error saving directLLMModeEnabled preference: $e');
       }
     }

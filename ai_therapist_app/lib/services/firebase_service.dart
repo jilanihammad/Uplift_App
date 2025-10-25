@@ -357,7 +357,7 @@ class FirebaseService {
       return _firestore?.collection('users').doc(userId);
     } catch (e) {
       if (kDebugMode) {
-        print('Error getting user document: $e');
+        debugPrint('Error getting user document: $e');
       }
       return null;
     }
@@ -371,7 +371,7 @@ class FirebaseService {
       return _storage?.ref();
     } catch (e) {
       if (kDebugMode) {
-        print('Error getting storage reference: $e');
+        debugPrint('Error getting storage reference: $e');
       }
       return null;
     }
@@ -390,7 +390,7 @@ class FirebaseService {
       return url;
     } catch (e) {
       if (kDebugMode) {
-        print('Error uploading file: $e');
+        debugPrint('Error uploading file: $e');
       }
       return null;
     }

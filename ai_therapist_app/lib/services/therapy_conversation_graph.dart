@@ -1,5 +1,6 @@
 // lib/services/therapy_conversation_graph.dart
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'therapy_graph_service.dart';
 
 /// Enum for therapeutic approaches
@@ -154,7 +155,7 @@ class TherapyConversationGraph {
         };
       }
     } catch (e) {
-      print('Error processing user input through graph: $e');
+      debugPrint('Error processing user input through graph: $e');
       return {
         'prompt': "I'm here to listen and support you.",
         'state': 'supportive',

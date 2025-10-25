@@ -976,7 +976,7 @@ class LLMManager:
         # Gemini returns mono 16-bit PCM when LINEAR16 encoding is requested
         channels = int(default_params.get("channels", 1))
 
-        voice_name = voice or default_params.get("voice", "charlie")
+        voice_name = voice or default_params.get("voice") or LLMConfig.DEFAULT_TTS_VOICE
 
         speaking_rate = kwargs.pop("speaking_rate", None)
         pitch = kwargs.pop("pitch", None)

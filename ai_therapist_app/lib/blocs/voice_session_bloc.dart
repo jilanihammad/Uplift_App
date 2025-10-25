@@ -1470,7 +1470,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onSessionStarted(
       SessionStarted event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      print('[VoiceSessionBloc] Session started with ID: ${event.sessionId}');
+      debugPrint('[VoiceSessionBloc] Session started with ID: ${event.sessionId}');
     }
 
     // Phase 1.1.4: Use SessionStateManager for session started
@@ -1481,7 +1481,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   /// Handles mood selection - moves logic from ChatScreen._handleMoodSelection
   void _onMoodSelected(MoodSelected event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      print('[VoiceSessionBloc] Mood selected: ${event.mood}');
+      debugPrint('[VoiceSessionBloc] Mood selected: ${event.mood}');
     }
 
     // Phase 1.1.4: Use SessionStateManager for mood selection
@@ -1505,7 +1505,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     // If in voice mode, generate TTS for welcome message
     if (newState.isVoiceMode) {
       if (kDebugMode) {
-        print('[VoiceSessionBloc] Starting welcome TTS for voice mode');
+        debugPrint('[VoiceSessionBloc] Starting welcome TTS for voice mode');
       }
       add(PlayWelcomeMessage(welcomeMessage.content));
     }
@@ -1515,7 +1515,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onDurationSelected(
       DurationSelected event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      print(
+      debugPrint(
           '[VoiceSessionBloc] Duration selected: ${event.duration.inMinutes} minutes');
     }
 
@@ -1530,7 +1530,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onTextMessageSent(
       TextMessageSent event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      print('[VoiceSessionBloc] Text message sent: "${event.message}"');
+      debugPrint('[VoiceSessionBloc] Text message sent: "${event.message}"');
     }
 
     // Delegate to existing ProcessTextMessage handler
@@ -1541,7 +1541,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onEndSessionRequested(
       EndSessionRequested event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      print('[VoiceSessionBloc] Session end requested');
+      debugPrint('[VoiceSessionBloc] Session end requested');
     }
 
     // Phase 1.1.4: Use SessionStateManager for session ending
