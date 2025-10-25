@@ -11,8 +11,10 @@ class DatabaseHealthChecker {
     'sessions': '''
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
         title TEXT,
         summary TEXT,
+        action_items TEXT,
         created_at TEXT,
         last_modified TEXT,
         is_synced INTEGER
@@ -22,6 +24,7 @@ class DatabaseHealthChecker {
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
         session_id TEXT,
+        user_id TEXT NOT NULL,
         content TEXT,
         is_user INTEGER,
         timestamp TEXT,
@@ -32,6 +35,7 @@ class DatabaseHealthChecker {
     'conversation_memories': '''
       CREATE TABLE IF NOT EXISTS conversation_memories (
         id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
         user_message TEXT NOT NULL,
         ai_response TEXT NOT NULL,
         metadata TEXT,
@@ -41,6 +45,7 @@ class DatabaseHealthChecker {
     'therapy_insights': '''
       CREATE TABLE IF NOT EXISTS therapy_insights (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
         insight TEXT NOT NULL,
         source TEXT NOT NULL,
         timestamp TEXT NOT NULL
@@ -49,6 +54,7 @@ class DatabaseHealthChecker {
     'emotional_states': '''
       CREATE TABLE IF NOT EXISTS emotional_states (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
         emotion TEXT NOT NULL,
         intensity REAL NOT NULL,
         trigger TEXT,
@@ -58,6 +64,7 @@ class DatabaseHealthChecker {
     'user_progress': '''
       CREATE TABLE IF NOT EXISTS user_progress (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
         current_streak INTEGER,
         longest_streak INTEGER,
         total_points INTEGER,
@@ -68,6 +75,7 @@ class DatabaseHealthChecker {
     'mood_logs': '''
       CREATE TABLE IF NOT EXISTS mood_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
         mood TEXT,
         timestamp TEXT,
         notes TEXT
@@ -92,6 +100,7 @@ class DatabaseHealthChecker {
     'conversations': '''
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
         user_message TEXT NOT NULL,
         ai_response TEXT NOT NULL,
         metadata TEXT,
@@ -101,6 +110,7 @@ class DatabaseHealthChecker {
     'insights': '''
       CREATE TABLE IF NOT EXISTS insights (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
         insight TEXT NOT NULL,
         source TEXT NOT NULL,
         timestamp TEXT NOT NULL
@@ -115,6 +125,7 @@ class DatabaseHealthChecker {
     'user_anchors': '''
       CREATE TABLE IF NOT EXISTS user_anchors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
         anchor_text TEXT NOT NULL,
         normalized_text TEXT NOT NULL,
         anchor_type TEXT,
@@ -129,8 +140,19 @@ class DatabaseHealthChecker {
         client_anchor_id TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         is_deleted INTEGER NOT NULL DEFAULT 0,
-        UNIQUE(normalized_text),
-        UNIQUE(client_anchor_id)
+        UNIQUE(user_id, normalized_text),
+        UNIQUE(user_id, client_anchor_id)
+      )
+    ''',
+    'logs': '''
+      CREATE TABLE IF NOT EXISTS logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        level TEXT NOT NULL,
+        message TEXT NOT NULL,
+        source TEXT NOT NULL,
+        data TEXT
       )
     ''',
   };

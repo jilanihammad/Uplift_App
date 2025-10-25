@@ -1,9 +1,9 @@
 // test_wav_header_fix.dart
 // Test script to validate WAV header validation and fixing functionality
 
-import 'dart:io';
-import 'dart:typed_data';
-import 'lib/utils/wav_header_utils.dart';
+// ignore_for_file: avoid_print
+
+import 'package:ai_therapist_app/utils/wav_header_utils.dart';
 
 void main() async {
   print('🧪 Testing WAV Header Validation and Fixing\n');

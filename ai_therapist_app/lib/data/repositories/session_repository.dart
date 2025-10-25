@@ -5,31 +5,44 @@ import '../../di/interfaces/i_session_repository.dart';
 import '../../di/interfaces/i_api_client.dart';
 import '../../di/interfaces/i_app_database.dart';
 import 'package:flutter/foundation.dart';
+import '../../services/user_context_service.dart';
 
 class SessionRepository implements ISessionRepository {
   final IApiClient apiClient;
   final IAppDatabase appDatabase;
+  final UserContextService userContextService;
 
   SessionRepository({
     required this.apiClient,
     required this.appDatabase,
+    required this.userContextService,
   });
+
+  Future<String> _requireUserId() async {
+    final userId = await userContextService.getActiveUserId();
+    if (userId.isEmpty) {
+      throw Exception('No authenticated user - cannot scope session data');
+    }
+    return userId;
+  }
 
   // Create a new session
   @override
   Future<Session> createSession(String title, {String? id}) async {
+    final userId = await _requireUserId();
+
     // Check if session with this ID already exists locally
     if (id != null) {
       try {
         final results = await appDatabase.query(
           'sessions',
-          where: 'id = ?',
-          whereArgs: [id],
+          where: 'id = ? AND user_id = ?',
+          whereArgs: [id, userId],
         );
 
         if (results.isNotEmpty) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 'Session with ID $id already exists, returning existing session');
           }
 
@@ -47,7 +60,7 @@ class SessionRepository implements ISessionRepository {
         }
       } catch (e) {
         if (kDebugMode) {
-          print('Error checking for existing session: $e');
+          debugPrint('Error checking for existing session: $e');
         }
         // Continue to create session
       }
@@ -69,6 +82,7 @@ class SessionRepository implements ISessionRepository {
       await appDatabase.insert('sessions', {
         'id': id ??
             session.id, // Use the provided ID or the one from the response
+        'user_id': userId,
         'title': session.title,
         'summary': session.summary,
         'action_items': jsonEncode(session.actionItems),
@@ -79,7 +93,7 @@ class SessionRepository implements ISessionRepository {
 
       return session;
     } catch (e) {
-      print('Error creating session on server: $e');
+      debugPrint('Error creating session on server: $e');
 
       // Create local session if API call fails
       final String localId =
@@ -88,6 +102,7 @@ class SessionRepository implements ISessionRepository {
 
       await appDatabase.insert('sessions', {
         'id': localId,
+        'user_id': userId,
         'title': title,
         'summary': '',
         'action_items': jsonEncode([]),
@@ -111,11 +126,12 @@ class SessionRepository implements ISessionRepository {
   // Get all sessions
   @override
   Future<List<Session>> getSessions() async {
+    final userId = await _requireUserId();
     try {
       // Try to get sessions from the server
-      print('Fetching sessions from server');
+      debugPrint('Fetching sessions from server');
       final response = await apiClient.get('/sessions');
-      print('Server response for sessions: $response');
+      debugPrint('Server response for sessions: $response');
 
       final List<dynamic> sessionsJson =
           response['data'] ?? response['sessions'] ?? response;
@@ -129,6 +145,7 @@ class SessionRepository implements ISessionRepository {
           try {
             await txn.insert('sessions', {
               'id': session.id,
+              'user_id': userId,
               'title': session.title,
               'summary': session.summary,
               'action_items': jsonEncode(session.actionItems),
@@ -147,8 +164,8 @@ class SessionRepository implements ISessionRepository {
                 'last_modified': session.lastModified.toUtc().toIso8601String(),
                 'is_synced': 1,
               },
-              where: 'id = ?',
-              whereArgs: [session.id],
+              where: 'id = ? AND user_id = ?',
+              whereArgs: [session.id, userId],
             );
           }
         }
@@ -156,10 +173,14 @@ class SessionRepository implements ISessionRepository {
 
       return sessions;
     } catch (e) {
-      print('Error fetching sessions from server: $e');
+      debugPrint('Error fetching sessions from server: $e');
 
       // Get sessions from local database if API call fails
-      final results = await appDatabase.query('sessions');
+      final results = await appDatabase.query(
+        'sessions',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
 
       return results
           .map((data) => Session(
@@ -179,11 +200,12 @@ class SessionRepository implements ISessionRepository {
   // Get a specific session
   @override
   Future<Session> getSession(String sessionId) async {
+    final userId = await _requireUserId();
     try {
       // Try to get session from the server first
-      print('Fetching session $sessionId from server');
+      debugPrint('Fetching session $sessionId from server');
       final response = await apiClient.get('/sessions/$sessionId');
-      print('Server response for session $sessionId: $response');
+      debugPrint('Server response for session $sessionId: $response');
 
       final session = Session.fromJson(response);
 
@@ -191,6 +213,7 @@ class SessionRepository implements ISessionRepository {
       try {
         await appDatabase.insert('sessions', {
           'id': session.id,
+          'user_id': userId,
           'title': session.title,
           'summary': session.summary,
           'action_items': jsonEncode(session.actionItems),
@@ -209,20 +232,20 @@ class SessionRepository implements ISessionRepository {
             'last_modified': session.lastModified.toUtc().toIso8601String(),
             'is_synced': 1,
           },
-          where: 'id = ?',
-          whereArgs: [session.id],
+          where: 'id = ? AND user_id = ?',
+          whereArgs: [session.id, userId],
         );
       }
 
       return session;
     } catch (e) {
-      print('Error fetching session $sessionId from server: $e');
+      debugPrint('Error fetching session $sessionId from server: $e');
 
       // Get session from local database if API call fails
       final results = await appDatabase.query(
         'sessions',
-        where: 'id = ?',
-        whereArgs: [sessionId],
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [sessionId, userId],
       );
 
       if (results.isEmpty) {
@@ -249,6 +272,7 @@ class SessionRepository implements ISessionRepository {
     String? title,
     bool sync = true,
   }) async {
+    final userId = await _requireUserId();
     final now = DateTime.now();
 
     try {
@@ -256,12 +280,12 @@ class SessionRepository implements ISessionRepository {
       final body = <String, dynamic>{};
       if (title != null) body['title'] = title;
 
-      print('Updating session $sessionId on server with: $body');
+      debugPrint('Updating session $sessionId on server with: $body');
       final response = await apiClient.put(
         '/sessions/$sessionId',
         body,
       );
-      print('Server response for updating session $sessionId: $response');
+      debugPrint('Server response for updating session $sessionId: $response');
 
       final session = Session.fromJson(response);
 
@@ -274,13 +298,13 @@ class SessionRepository implements ISessionRepository {
           'last_modified': session.lastModified.toIso8601String(),
           'is_synced': 1,
         },
-        where: 'id = ?',
-        whereArgs: [sessionId],
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [sessionId, userId],
       );
 
       return session;
     } catch (e) {
-      print('Error updating session $sessionId on server: $e');
+      debugPrint('Error updating session $sessionId on server: $e');
 
       // Update locally if API call fails
       final updateData = <String, dynamic>{
@@ -293,15 +317,15 @@ class SessionRepository implements ISessionRepository {
       await appDatabase.update(
         'sessions',
         updateData,
-        where: 'id = ?',
-        whereArgs: [sessionId],
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [sessionId, userId],
       );
 
       // Get updated session from local database
       final results = await appDatabase.query(
         'sessions',
-        where: 'id = ?',
-        whereArgs: [sessionId],
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [sessionId, userId],
       );
 
       final data = results.first;
@@ -320,20 +344,21 @@ class SessionRepository implements ISessionRepository {
   // Delete a session
   @override
   Future<void> deleteSession(String sessionId) async {
+    final userId = await _requireUserId();
     try {
       // Try to delete on server
-      print('Deleting session $sessionId from server');
+      debugPrint('Deleting session $sessionId from server');
       await apiClient.delete('/sessions/$sessionId');
-      print('Successfully deleted session $sessionId from server');
+      debugPrint('Successfully deleted session $sessionId from server');
     } catch (e) {
-      print('Error deleting session $sessionId from server: $e');
+      debugPrint('Error deleting session $sessionId from server: $e');
       // Ignore API errors
     } finally {
       // Always delete from local database
       await appDatabase.delete(
         'sessions',
-        where: 'id = ?',
-        whereArgs: [sessionId],
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [sessionId, userId],
       );
     }
   }
@@ -348,11 +373,12 @@ class SessionRepository implements ISessionRepository {
     required List<Map<String, dynamic>> messages,
     bool sync = true,
   }) async {
+    final userId = await _requireUserId();
     final now = DateTime.now();
 
-    print(
+    debugPrint(
         'Saving session $sessionId with title: $title, summary length: ${summary.length}');
-    print(
+    debugPrint(
         'Action items being saved: ${actionItems.length} items: ${actionItems.join(", ")}');
 
     try {
@@ -368,17 +394,18 @@ class SessionRepository implements ISessionRepository {
             'last_modified': now.toIso8601String(),
             'is_synced': sync ? 0 : 0, // Mark as not synced for now
           },
-          where: 'id = ?',
-          whereArgs: [sessionId],
+          where: 'id = ? AND user_id = ?',
+          whereArgs: [sessionId, userId],
         );
 
-        print(
+        debugPrint(
             'Updated $updated existing sessions with action items for session $sessionId');
 
         // If no rows were updated, insert the session row
         if (updated == 0) {
           await txn.insert('sessions', {
             'id': sessionId,
+            'user_id': userId,
             'title': title,
             'summary': summary,
             'action_items': jsonEncode(actionItems),
@@ -386,19 +413,19 @@ class SessionRepository implements ISessionRepository {
             'last_modified': now.toIso8601String(),
             'is_synced': 0,
           });
-          print(
+          debugPrint(
               'Inserted new session $sessionId with ${actionItems.length} action items');
         }
 
         // Save messages to local DB within the same transaction
-        await _saveMessagesToLocalDBTxn(txn, sessionId, messages, now);
+        await _saveMessagesToLocalDBTxn(txn, sessionId, userId, messages, now);
       });
 
       // Get updated session from local database
       final results = await appDatabase.query(
         'sessions',
-        where: 'id = ?',
-        whereArgs: [sessionId],
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [sessionId, userId],
       );
 
       if (results.isEmpty) {
@@ -407,7 +434,7 @@ class SessionRepository implements ISessionRepository {
 
       final data = results.first;
       final sessionActionItems = _parseActionItems(data['action_items']);
-      print(
+      debugPrint(
           'Returning saved session $sessionId with ${sessionActionItems.length} action items from local database');
       return Session(
         id: data['id'] as String,
@@ -419,7 +446,7 @@ class SessionRepository implements ISessionRepository {
         isSynced: (data['is_synced'] as int) == 1,
       );
     } catch (e) {
-      print('Error in saveSession: $e');
+      debugPrint('Error in saveSession: $e');
       rethrow;
     }
   }
@@ -444,7 +471,7 @@ class SessionRepository implements ISessionRepository {
     } catch (e) {
       // If parsing fails, return empty list
       if (kDebugMode) {
-        print('Error parsing action items: $e');
+        debugPrint('Error parsing action items: $e');
       }
     }
 
@@ -453,7 +480,7 @@ class SessionRepository implements ISessionRepository {
 
   // Helper method to save messages to local DB using a transaction
   Future<void> _saveMessagesToLocalDBTxn(dynamic txn, String sessionId,
-      List<dynamic> messages, DateTime timestamp) async {
+      String userId, List<dynamic> messages, DateTime timestamp) async {
     for (final message in messages) {
       try {
         if (message is Map<String, dynamic>) {
@@ -461,6 +488,7 @@ class SessionRepository implements ISessionRepository {
             'id': message['id'] ??
                 'msg_${timestamp.millisecondsSinceEpoch}_${messages.indexOf(message)}',
             'session_id': sessionId,
+            'user_id': userId,
             'content': message['content'] ?? '',
             'is_user': message['isUser'] == true ? 1 : 0,
             'timestamp': message['timestamp'] ?? timestamp.toIso8601String(),
@@ -468,7 +496,7 @@ class SessionRepository implements ISessionRepository {
           });
         }
       } catch (e) {
-        print('Error saving message to local DB in transaction: $e');
+        debugPrint('Error saving message to local DB in transaction: $e');
         rethrow; // Fail the transaction if any message insert fails
       }
     }

@@ -28,10 +28,8 @@ class WavHeaderUtils {
   /// Returns WavHeaderInfo if valid header is found
   static WavHeaderInfo? parseWavHeader(List<int> audioData) {
     if (audioData.length < standardWavHeaderSize) {
-      if (kDebugMode) {
-        print(
-            '⚠️ WavHeaderUtils: Data too small for WAV header (${audioData.length} bytes)');
-      }
+      _debugLog(
+          '⚠️ WavHeaderUtils: Data too small for WAV header (${audioData.length} bytes)');
       return null;
     }
 
@@ -39,9 +37,7 @@ class WavHeaderUtils {
       // Check RIFF signature (bytes 0-3)
       final riffHeader = String.fromCharCodes(audioData.take(4));
       if (riffHeader != riffSignature) {
-        if (kDebugMode) {
-          print('⚠️ WavHeaderUtils: Invalid RIFF signature: $riffHeader');
-        }
+        _debugLog('⚠️ WavHeaderUtils: Invalid RIFF signature: $riffHeader');
         return null;
       }
 
@@ -51,9 +47,7 @@ class WavHeaderUtils {
       // Check WAVE signature (bytes 8-11)
       final waveHeader = String.fromCharCodes(audioData.skip(8).take(4));
       if (waveHeader != waveSignature) {
-        if (kDebugMode) {
-          print('⚠️ WavHeaderUtils: Invalid WAVE signature: $waveHeader');
-        }
+        _debugLog('⚠️ WavHeaderUtils: Invalid WAVE signature: $waveHeader');
         return null;
       }
 
@@ -114,9 +108,7 @@ class WavHeaderUtils {
           sampleRate == null ||
           dataChunkSize == null ||
           dataChunkOffset == null) {
-        if (kDebugMode) {
-          print('⚠️ WavHeaderUtils: Missing required WAV header fields');
-        }
+        _debugLog('⚠️ WavHeaderUtils: Missing required WAV header fields');
         return null;
       }
 
@@ -133,15 +125,11 @@ class WavHeaderUtils {
         totalHeaderSize: dataChunkOffset + 8, // Include data chunk header
       );
 
-      if (kDebugMode) {
-        print('✅ WavHeaderUtils: Parsed WAV header: $headerInfo');
-      }
+      _debugLog('✅ WavHeaderUtils: Parsed WAV header: $headerInfo');
 
       return headerInfo;
     } catch (e) {
-      if (kDebugMode) {
-        print('❌ WavHeaderUtils: Error parsing WAV header: $e');
-      }
+      _debugLog('❌ WavHeaderUtils: Error parsing WAV header: $e');
       return null;
     }
   }
@@ -153,10 +141,8 @@ class WavHeaderUtils {
   /// - Data chunk size set to streaming placeholder
   /// - All other format parameters preserved
   static Uint8List createStreamingHeader(WavHeaderInfo originalHeader) {
-    if (kDebugMode) {
-      print(
-          '🔧 WavHeaderUtils: Creating streaming header from: $originalHeader');
-    }
+    _debugLog(
+        '🔧 WavHeaderUtils: Creating streaming header from: $originalHeader');
 
     final header = ByteData(44); // Standard 44-byte WAV header
     var offset = 0;
@@ -221,12 +207,10 @@ class WavHeaderUtils {
     header.setUint32(offset, streamingPlaceholderSize, Endian.little);
     offset += 4;
 
-    if (kDebugMode) {
-      print(
-          '✅ WavHeaderUtils: Created streaming header (${header.lengthInBytes} bytes)');
-      print(
-          '🔧 Original data size: ${originalHeader.dataChunkSize}, streaming size: $streamingPlaceholderSize');
-    }
+    _debugLog(
+        '✅ WavHeaderUtils: Created streaming header (${header.lengthInBytes} bytes)');
+    _debugLog(
+        '🔧 Original data size: ${originalHeader.dataChunkSize}, streaming size: $streamingPlaceholderSize');
 
     return header.buffer.asUint8List();
   }
@@ -239,17 +223,14 @@ class WavHeaderUtils {
     final pcmStartOffset = headerInfo.totalHeaderSize;
 
     if (pcmStartOffset >= audioData.length) {
-      if (kDebugMode) {
-        print('⚠️ WavHeaderUtils: No PCM data found after header');
-      }
+      _debugLog('⚠️ WavHeaderUtils: No PCM data found after header');
       return Uint8List(0);
     }
 
     final pcmData = Uint8List.fromList(audioData.skip(pcmStartOffset).toList());
 
-    if (kDebugMode) {
-      print('📊 WavHeaderUtils: Extracted ${pcmData.length} bytes of PCM data');
-    }
+    _debugLog(
+        '📊 WavHeaderUtils: Extracted ${pcmData.length} bytes of PCM data');
 
     return pcmData;
   }
@@ -263,12 +244,139 @@ class WavHeaderUtils {
     combined.setRange(0, streamingHeader.length, streamingHeader);
     combined.setRange(streamingHeader.length, combined.length, pcmData);
 
-    if (kDebugMode) {
-      print(
-          '🔧 WavHeaderUtils: Combined header (${streamingHeader.length}B) + PCM (${pcmData.length}B) = ${combined.length}B total');
-    }
+    _debugLog(
+        '🔧 WavHeaderUtils: Combined header (${streamingHeader.length}B) + PCM (${pcmData.length}B) = ${combined.length}B total');
 
     return combined;
+  }
+
+  /// Logs detailed header information for debugging diagnostics.
+  static void logWavHeaderDetails(List<int> audioData, String context) {
+    final header = parseWavHeader(audioData);
+    if (header == null) {
+      _debugLog('❌ WavHeaderUtils[$context]: invalid or incomplete WAV header');
+      return;
+    }
+
+    final payloadBytes =
+        (audioData.length - header.totalHeaderSize).clamp(0, audioData.length);
+
+    _debugLog('📋 WavHeaderUtils[$context] header details:');
+    _debugLog(
+        '  Channels: ${header.numChannels}, Sample rate: ${header.sampleRate} Hz, Bits: ${header.bitsPerSample}');
+    _debugLog(
+        '  Byte rate: ${header.byteRate}, Block align: ${header.blockAlign}');
+    _debugLog(
+        '  RIFF size: ${header.riffSize}, Data size: ${header.dataChunkSize}, Payload bytes: $payloadBytes');
+  }
+
+  /// Validates RIFF/data chunk sizes and corrects them if necessary.
+  static List<int> validateAndFixWavHeader(List<int> audioData) {
+    if (audioData.length < standardWavHeaderSize) {
+      _debugLog(
+          '⚠️ WavHeaderUtils: Cannot fix header; buffer smaller than $standardWavHeaderSize bytes');
+      return List<int>.from(audioData);
+    }
+
+    final header = parseWavHeader(audioData);
+    if (header == null) {
+      return List<int>.from(audioData);
+    }
+
+    final fixed = List<int>.from(audioData);
+    final payloadSize =
+        (fixed.length - header.totalHeaderSize).clamp(0, fixed.length).toInt();
+    final expectedRiffSize =
+        (payloadSize + standardWavHeaderSize - 8).clamp(0, 0xFFFFFFFF).toInt();
+
+    bool changed = false;
+    const unknownMarker = 0xFFFFFFFF;
+
+    if (header.riffSize == unknownMarker ||
+        header.riffSize != expectedRiffSize) {
+      _writeUint32LE(fixed, 4, expectedRiffSize);
+      changed = true;
+    }
+
+    final dataChunkSizeOffset = header.dataChunkOffset + 4;
+    if (header.dataChunkSize == unknownMarker ||
+        header.dataChunkSize != payloadSize) {
+      _writeUint32LE(fixed, dataChunkSizeOffset, payloadSize);
+      changed = true;
+    }
+
+    if (changed) {
+      _debugLog(
+          '✅ WavHeaderUtils: Corrected WAV header sizes (payload: $payloadSize bytes)');
+    } else {
+      _debugLog('ℹ️ WavHeaderUtils: WAV header already consistent');
+    }
+
+    return fixed;
+  }
+
+  /// Creates a standard PCM WAV header for the provided payload size.
+  static List<int> createWavHeader({
+    required int dataSize,
+    int sampleRate = 44100,
+    int bitsPerSample = 16,
+    int numChannels = 1,
+  }) {
+    final bytesPerSample = bitsPerSample ~/ 8;
+    final blockAlign = numChannels * bytesPerSample;
+    final byteRate = sampleRate * blockAlign;
+    final riffSize =
+        (dataSize + standardWavHeaderSize - 8).clamp(0, 0xFFFFFFFF).toInt();
+
+    final header = ByteData(standardWavHeaderSize);
+    var offset = 0;
+
+    // RIFF chunk
+    header.setUint8(offset++, 'R'.codeUnitAt(0));
+    header.setUint8(offset++, 'I'.codeUnitAt(0));
+    header.setUint8(offset++, 'F'.codeUnitAt(0));
+    header.setUint8(offset++, 'F'.codeUnitAt(0));
+    header.setUint32(offset, riffSize, Endian.little);
+    offset += 4;
+
+    // WAVE
+    header.setUint8(offset++, 'W'.codeUnitAt(0));
+    header.setUint8(offset++, 'A'.codeUnitAt(0));
+    header.setUint8(offset++, 'V'.codeUnitAt(0));
+    header.setUint8(offset++, 'E'.codeUnitAt(0));
+
+    // fmt chunk
+    header.setUint8(offset++, 'f'.codeUnitAt(0));
+    header.setUint8(offset++, 'm'.codeUnitAt(0));
+    header.setUint8(offset++, 't'.codeUnitAt(0));
+    header.setUint8(offset++, ' '.codeUnitAt(0));
+    header.setUint32(offset, 16, Endian.little);
+    offset += 4;
+    header.setUint16(offset, 1, Endian.little); // PCM format
+    offset += 2;
+    header.setUint16(offset, numChannels, Endian.little);
+    offset += 2;
+    header.setUint32(offset, sampleRate, Endian.little);
+    offset += 4;
+    header.setUint32(offset, byteRate, Endian.little);
+    offset += 4;
+    header.setUint16(offset, blockAlign, Endian.little);
+    offset += 2;
+    header.setUint16(offset, bitsPerSample, Endian.little);
+    offset += 2;
+
+    // data chunk
+    header.setUint8(offset++, 'd'.codeUnitAt(0));
+    header.setUint8(offset++, 'a'.codeUnitAt(0));
+    header.setUint8(offset++, 't'.codeUnitAt(0));
+    header.setUint8(offset++, 'a'.codeUnitAt(0));
+    header.setUint32(
+        offset, dataSize.clamp(0, 0xFFFFFFFF).toInt(), Endian.little);
+
+    _debugLog(
+        '🎛️ WavHeaderUtils: Created WAV header (channels: $numChannels, sampleRate: $sampleRate, data: $dataSize bytes)');
+
+    return header.buffer.asUint8List();
   }
 
   /// Helper: Read 32-bit little-endian unsigned integer
@@ -284,6 +392,23 @@ class WavHeaderUtils {
     return data[offset] | (data[offset + 1] << 8);
   }
 
+  /// Helper: Write 32-bit little-endian unsigned integer.
+  static void _writeUint32LE(List<int> data, int offset, int value) {
+    data[offset] = value & 0xFF;
+    data[offset + 1] = (value >> 8) & 0xFF;
+    data[offset + 2] = (value >> 16) & 0xFF;
+    data[offset + 3] = (value >> 24) & 0xFF;
+  }
+
+  /// Debug logging utility routed through `debugPrint` in debug mode.
+  static void _debugLog(String message) {
+    if (!kDebugMode) {
+      return;
+    }
+    // ignore: avoid_print
+    print(message);
+  }
+
   /// Check if WAV headers are already streaming-friendly
   ///
   /// Returns true if the WAV file already has unlimited streaming markers:
@@ -296,10 +421,8 @@ class WavHeaderUtils {
     final headerInfo = parseWavHeader(audioData);
 
     if (headerInfo == null) {
-      if (kDebugMode) {
-        print(
-            '⚠️ WavHeaderUtils: Cannot determine if streaming-friendly - invalid header');
-      }
+      _debugLog(
+          '⚠️ WavHeaderUtils: Cannot determine if streaming-friendly - invalid header');
       return false;
     }
 
@@ -315,14 +438,12 @@ class WavHeaderUtils {
     final bool isStreamingFriendly =
         riffStreamingFriendly || dataStreamingFriendly;
 
-    if (kDebugMode) {
-      print('🔍 WavHeaderUtils: Streaming compatibility check:');
-      print(
-          '  RIFF size: ${headerInfo.riffSize} (streaming: $riffStreamingFriendly)');
-      print(
-          '  Data size: ${headerInfo.dataChunkSize} (streaming: $dataStreamingFriendly)');
-      print('  Overall streaming-friendly: $isStreamingFriendly');
-    }
+    _debugLog('🔍 WavHeaderUtils: Streaming compatibility check:');
+    _debugLog(
+        '  RIFF size: ${headerInfo.riffSize} (streaming: $riffStreamingFriendly)');
+    _debugLog(
+        '  Data size: ${headerInfo.dataChunkSize} (streaming: $dataStreamingFriendly)');
+    _debugLog('  Overall streaming-friendly: $isStreamingFriendly');
 
     return isStreamingFriendly;
   }

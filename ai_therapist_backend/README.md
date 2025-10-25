@@ -70,6 +70,15 @@ This is the backend API for the AI Therapist application, built with FastAPI and
 
 Once deployed, visit: `https://[YOUR-SERVICE-URL]/docs` to see the API documentation.
 
+## Authentication Identity Model
+
+- Each Firebase authentication provider (`provider`, `uid`) pair maps to its own `users` row.
+- Accounts are no longer merged implicitly by email address.
+- The backend links additional identities only when the same provider/uid logs in again.
+- Use `user_identities.email` if you need the raw email/phone that the user authenticated with.
+
+This isolation prevents users who share a device from seeing one another's therapy history.
+
 ## Session Endpoints
 
 - `POST /sessions`: Create a new therapy session
