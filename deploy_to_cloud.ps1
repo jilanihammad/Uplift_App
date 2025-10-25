@@ -95,7 +95,7 @@ DEBUG=0
 # Create Dockerfile
 Write-Host "Creating Dockerfile for deployment..." -ForegroundColor Yellow
 $dockerFileContent = @"
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -105,6 +105,7 @@ ENV BUILD_TIMESTAMP=$TIMESTAMP
 # Install dependencies with --no-cache-dir to avoid cache issues
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade google-genai==1.46.0
 
 # Explicitly install aiofiles - critical for voice endpoints
 RUN pip install --no-cache-dir aiofiles

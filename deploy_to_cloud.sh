@@ -102,7 +102,7 @@ fi
 # Create Dockerfile
 echo "Creating Dockerfile for deployment..."
 cat > "$TEMP_DIR/Dockerfile" << EOF
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -122,6 +122,7 @@ RUN pip install --no-cache-dir pipdeptree
 
 # Install all dependencies EXCEPT OpenAI first (langchain might try to downgrade it)
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade google-genai==1.46.0
 
 # Force reinstall OpenAI 1.95.0 AFTER other packages to override any downgrades
 RUN pip install --no-cache-dir --force-reinstall openai==1.95.0
@@ -181,7 +182,7 @@ echo "Deploying to Google Cloud Run with a fresh build..."
 
 # Execute the build command - use timestamp to force fresh build
 echo "Building container image with timestamp $TIMESTAMP to force fresh build..."
-if ! gcloud builds submit "$TEMP_DIR" --tag="gcr.io/$PROJECT_ID/$BUILD_TAG"; then
+if ! gcloud builds submit "$TEMP_DIR" --no-cache --tag="gcr.io/$PROJECT_ID/$BUILD_TAG"; then
     echo "Error: Building the container image failed."
     exit 1
 fi
