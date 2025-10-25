@@ -5,8 +5,10 @@ import os
 import base64
 import traceback
 import asyncio
+import io
+import wave
 from pathlib import Path
-from typing import Optional, List, Dict, Any, AsyncGenerator, Final
+from typing import Optional, List, Dict, Any, AsyncGenerator, Final, Tuple
 from tenacity import retry, stop_after_attempt, wait_exponential, wait_random_exponential, retry_if_exception, retry_if_exception_type
 from httpx import ReadTimeout, RemoteProtocolError, HTTPStatusError, ConnectTimeout
 from openai import OpenAI, AsyncOpenAI
@@ -153,6 +155,12 @@ class LLMManager:
     
     def __init__(self):
         """Initialize the LLM manager with current configuration."""
+        try:
+            from google import genai as _genai
+            logger.info("google-genai runtime version: %s", getattr(_genai, "__version__", "unknown"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Unable to determine google-genai version: %s", exc)
+
         self.llm_config = LLMConfig.get_active_model_config(ModelType.LLM)
         self.tts_config = LLMConfig.get_active_model_config(ModelType.TTS)
         self.transcription_config = LLMConfig.get_active_model_config(ModelType.TRANSCRIPTION)
@@ -858,9 +866,30 @@ class LLMManager:
         
         # Route to appropriate provider
         if self.tts_config.provider in [ModelProvider.OPENAI, ModelProvider.GROQ]:
-            return await self._openai_text_to_speech(text, output_file, voice=voice, response_format=response_format, **kwargs)
-        else:
-            raise ValueError(f"Unsupported TTS provider: {self.tts_config.provider}")
+            return await self._openai_text_to_speech(
+                text,
+                output_file,
+                voice=voice,
+                response_format=response_format,
+                **kwargs,
+            )
+        if self.tts_config.provider == ModelProvider.GOOGLE:
+            if response_format not in (None, "wav"):
+                raise ValueError("Google TTS currently supports only WAV output")
+
+            audio_bytes, _, _ = await self._google_generate_tts_bytes(
+                text,
+                voice=voice,
+                response_format="wav",
+                **kwargs,
+            )
+
+            with open(output_file, 'wb') as f:
+                f.write(audio_bytes)
+
+            return base64.b64encode(audio_bytes).decode('utf-8')
+
+        raise ValueError(f"Unsupported TTS provider: {self.tts_config.provider}")
 
     async def _openai_text_to_speech(self, text: str, output_file: str, voice: Optional[str] = None, response_format: Optional[str] = None, **kwargs) -> str:
         """Convert text to speech using OpenAI TTS API and return base64-encoded audio data."""
@@ -908,6 +937,159 @@ class LLMManager:
             logger.error(f"Error in OpenAI text-to-speech: {str(e)}")
             logger.error(traceback.format_exc())
             return ""
+
+    async def _google_generate_tts_bytes(
+        self,
+        text: str,
+        *,
+        voice: Optional[str],
+        response_format: str,
+        **kwargs,
+    ) -> Tuple[bytes, str, int]:
+        """Synthesize speech with Google Gemini and return audio bytes.
+
+        Args:
+            text: Text to synthesize.
+            voice: Optional voice override.
+            response_format: Desired output format (currently only 'wav').
+
+        Returns:
+            Tuple of (audio_bytes, mime_type, sample_rate).
+        """
+
+        if not self.tts_config:
+            raise ValueError("TTS configuration not available")
+
+        api_key = LLMConfig.get_api_key(self.tts_config)
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY is not configured")
+
+        if not hasattr(types, "AudioConfig"):
+            raise RuntimeError(
+                "Google TTS requires google-genai >= 1.35.0. Upgrade dependencies before enabling Gemini TTS."
+            )
+
+        if response_format != "wav":
+            raise ValueError("Google TTS helper only supports WAV output")
+
+        default_params = self.tts_config.default_params.copy()
+
+        sample_rate = int(
+            kwargs.pop("sample_rate_hz", None)
+            or default_params.get("sample_rate_hz", 24000)
+        )
+        # Gemini returns mono 16-bit PCM when LINEAR16 encoding is requested
+        channels = int(default_params.get("channels", 1))
+
+        voice_name = voice or default_params.get("voice", "charlie")
+
+        speaking_rate = kwargs.pop("speaking_rate", None)
+        pitch = kwargs.pop("pitch", None)
+        if speaking_rate is not None or pitch is not None:
+            logger.debug(
+                "Google TTS ignoring speaking_rate (%s) / pitch (%s) overrides for now",
+                speaking_rate,
+                pitch,
+            )
+
+        if kwargs:
+            logger.debug(
+                "Google TTS ignored additional parameters: %s",
+                ", ".join(sorted(map(str, kwargs.keys()))),
+            )
+
+        # Resolve audio encoding enum (default LINEAR16)
+        encoding_name = (
+            kwargs.pop("audio_encoding", None)
+            or default_params.get("audio_encoding")
+            or "LINEAR16"
+        )
+        try:
+            audio_encoding = getattr(types.AudioEncoding, encoding_name.upper())
+        except AttributeError:
+            logger.warning(
+                "Unknown Google audio encoding '%s'; defaulting to LINEAR16",
+                encoding_name,
+            )
+            audio_encoding = types.AudioEncoding.LINEAR16
+
+        audio_config_kwargs: Dict[str, Any] = {
+            "audio_encoding": audio_encoding,
+            "sample_rate_hertz": sample_rate,
+        }
+        if hasattr(types.AudioConfig, "channel_count"):
+            audio_config_kwargs["channel_count"] = channels
+
+        audio_config = types.AudioConfig(**audio_config_kwargs)
+
+        # Build speech configuration
+        speech_config = types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
+            )
+        )
+
+        generation_config = types.GenerateContentConfig(
+            response_modalities=[types.Modality.AUDIO],
+            audio_config=audio_config,
+            speech_config=speech_config,
+        )
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=text)],
+            )
+        ]
+
+        client = genai.Client(api_key=api_key)
+
+        loop = asyncio.get_event_loop()
+        try:
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=self.tts_config.model_id,
+                    contents=contents,
+                    config=generation_config,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Google TTS synthesis failed: %s", exc)
+            logger.error(traceback.format_exc())
+            raise
+
+        audio_chunks: List[bytes] = []
+        mime_type: Optional[str] = None
+
+        if response and response.candidates:
+            for candidate in response.candidates:
+                if not candidate.content or not candidate.content.parts:
+                    continue
+                for part in candidate.content.parts:
+                    inline_data = getattr(part, "inline_data", None)
+                    if inline_data and getattr(inline_data, "data", None):
+                        audio_chunks.append(inline_data.data)
+                        if inline_data.mime_type:
+                            mime_type = inline_data.mime_type
+
+        if not audio_chunks:
+            raise ValueError("Google TTS returned no audio data")
+
+        pcm_bytes = b"".join(audio_chunks)
+        mime_type = mime_type or "audio/pcm"
+
+        if mime_type.startswith("audio/wav"):
+            return pcm_bytes, "audio/wav", sample_rate
+
+        if not mime_type.startswith("audio/pcm"):
+            logger.warning(
+                "Unexpected Google TTS mime type '%s'; treating as PCM for WAV conversion",
+                mime_type,
+            )
+
+        wav_bytes = self._pcm_to_wav(pcm_bytes, sample_rate=sample_rate, channels=channels)
+        return wav_bytes, "audio/wav", sample_rate
     
     @tts_fallback
     async def stream_text_to_speech(self, text: str, voice: Optional[str] = None, response_format: Optional[str] = None, 
@@ -1017,6 +1199,39 @@ class LLMManager:
                     logger.error(f"OpenAI TTS WAV streaming error: {str(e)}")
                     logger.error(traceback.format_exc())
                     raise
+        elif self.tts_config.provider == ModelProvider.GOOGLE:
+            if response_format not in (None, "wav"):
+                raise ValueError("Google TTS currently supports only WAV streaming")
+
+            audio_bytes, _, _ = await self._google_generate_tts_bytes(
+                text,
+                voice=voice,
+                response_format="wav",
+                **kwargs,
+            )
+
+            total_bytes = len(audio_bytes)
+            if total_bytes == 0:
+                raise ValueError("Google TTS returned empty audio stream")
+
+            chunk_size = kwargs.get('chunk_size', 16384)
+            logger.info(
+                "🎤 Google TTS: streaming WAV output (%d bytes, chunk_size=%d)",
+                total_bytes,
+                chunk_size,
+            )
+
+            first_chunk = True
+            for idx in range(0, total_bytes, chunk_size):
+                chunk = audio_bytes[idx: idx + chunk_size]
+                if not chunk:
+                    continue
+                if first_chunk:
+                    logger.debug(
+                        "🔍 Google TTS first chunk size=%d bytes", len(chunk)
+                    )
+                    first_chunk = False
+                yield base64.b64encode(chunk).decode('utf-8')
         else:
             raise ValueError(f"Streaming TTS not implemented for provider: {self.tts_config.provider}")
     
@@ -1033,6 +1248,24 @@ class LLMManager:
         elif response_format == "wav":
             self._validate_wav_header(chunk)
         # Other formats can be added here
+
+    def _pcm_to_wav(
+        self,
+        pcm_bytes: bytes,
+        *,
+        sample_rate: int,
+        channels: int = 1,
+        sample_width: int = 2,
+    ) -> bytes:
+        """Wrap raw PCM bytes in a WAV header."""
+
+        with io.BytesIO() as buffer:
+            with wave.open(buffer, 'wb') as wav_file:
+                wav_file.setnchannels(channels)
+                wav_file.setsampwidth(sample_width)
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(pcm_bytes)
+            return buffer.getvalue()
     
     def _validate_ogg_header(self, chunk: bytes) -> None:
         """
