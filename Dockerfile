@@ -1,10 +1,11 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
 # Install minimal dependencies
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt && \
+    pip install --no-cache-dir --upgrade google-genai==1.46.0
 
 # Copy all application code
 COPY . .
