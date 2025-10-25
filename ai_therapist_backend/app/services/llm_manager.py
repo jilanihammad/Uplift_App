@@ -999,14 +999,19 @@ class LLMManager:
             or default_params.get("audio_encoding")
             or "LINEAR16"
         )
-        try:
-            audio_encoding = getattr(types.AudioEncoding, encoding_name.upper())
-        except AttributeError:
-            logger.warning(
-                "Unknown Google audio encoding '%s'; defaulting to LINEAR16",
-                encoding_name,
-            )
-            audio_encoding = types.AudioEncoding.LINEAR16
+
+        audio_encoding_enum = getattr(types, "AudioEncoding", None)
+        if audio_encoding_enum is not None:
+            try:
+                audio_encoding = getattr(audio_encoding_enum, encoding_name.upper())
+            except AttributeError:
+                logger.warning(
+                    "Unknown Google audio encoding '%s'; defaulting to LINEAR16",
+                    encoding_name,
+                )
+                audio_encoding = getattr(audio_encoding_enum, "LINEAR16", "LINEAR16")
+        else:
+            audio_encoding = encoding_name.upper()
 
         audio_config_kwargs: Dict[str, Any] = {
             "audio_encoding": audio_encoding,
