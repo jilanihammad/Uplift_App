@@ -114,9 +114,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final colorScheme = theme.colorScheme;
     final isLightTheme = theme.brightness == Brightness.light;
 
-    return WillPopScope(
-      onWillPop: () async {
-        // If already on home, show exit confirmation
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) {
+          return;
+        }
+
         final shouldExit = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
@@ -135,19 +139,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         );
+
         if (shouldExit == true) {
-          // End all initializations and exit the app
-          // Use SystemNavigator.pop() for Android
-          // Optionally, clean up services here if needed
           Future.delayed(const Duration(milliseconds: 100), () {
             // Add any cleanup logic here if needed
           });
-          // Import 'package:flutter/services.dart' at the top
           SystemNavigator.pop();
-          return true;
         }
-        // Don't exit
-        return false;
       },
       child: Scaffold(
         appBar: AppBar(

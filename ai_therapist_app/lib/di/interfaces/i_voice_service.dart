@@ -29,8 +29,8 @@ abstract class IVoiceService {
   bool get isPlaying;
 
   // Text-to-Speech
-  Future<String> generateSpeech(String text, {String voice = 'alloy'});
-  Future<void> speakText(String text, {String voice = 'alloy'});
+  Future<String> generateSpeech(String text, {String? voice});
+  Future<void> speakText(String text, {String? voice});
   Future<void> stopSpeaking();
 
   // TTS State Management (for auto-listening coordination)

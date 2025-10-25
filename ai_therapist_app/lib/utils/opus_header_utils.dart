@@ -56,7 +56,7 @@ class OpusHeaderUtils {
     }
 
     if (kDebugMode) {
-      print('✅ OpusHeaderUtils: Detected OGG container format');
+      debugPrint('✅ OpusHeaderUtils: Detected OGG container format');
     }
 
     return true;
@@ -92,7 +92,7 @@ class OpusHeaderUtils {
   static OpusHeaderInfo? parseOpusHeaders(List<int> data) {
     if (data.length < minHeaderBufferSize) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '⏳ OpusHeaderUtils: Buffer too small for complete headers (${data.length} < $minHeaderBufferSize)');
       }
       return null; // Need more data
@@ -100,7 +100,7 @@ class OpusHeaderUtils {
 
     if (!isOpusFormat(data)) {
       if (kDebugMode) {
-        print('❌ OpusHeaderUtils: Not OPUS/OGG format');
+        debugPrint('❌ OpusHeaderUtils: Not OPUS/OGG format');
       }
       return null;
     }
@@ -118,7 +118,7 @@ class OpusHeaderUtils {
           _matchesSignature(data, i, opusHeadSignature)) {
         opusHeadOffset = i;
         if (kDebugMode) {
-          print('🎯 OpusHeaderUtils: Found OpusHead at offset $i');
+          debugPrint('🎯 OpusHeaderUtils: Found OpusHead at offset $i');
         }
       }
 
@@ -127,7 +127,7 @@ class OpusHeaderUtils {
           _matchesSignature(data, i, opusTagsSignature)) {
         opusTagsOffset = i;
         if (kDebugMode) {
-          print('🎯 OpusHeaderUtils: Found OpusTags at offset $i');
+          debugPrint('🎯 OpusHeaderUtils: Found OpusTags at offset $i');
         }
       }
 
@@ -143,7 +143,7 @@ class OpusHeaderUtils {
             // Found potential audio data page
             opusDataOffset = j;
             if (kDebugMode) {
-              print('🎯 OpusHeaderUtils: Found audio data start at offset $j');
+              debugPrint('🎯 OpusHeaderUtils: Found audio data start at offset $j');
             }
             break;
           }
@@ -153,7 +153,7 @@ class OpusHeaderUtils {
 
     if (opusHeadOffset == null || opusTagsOffset == null) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '⏳ OpusHeaderUtils: Missing required headers - OpusHead: ${opusHeadOffset != null}, OpusTags: ${opusTagsOffset != null}');
       }
       return null; // Need more data
@@ -173,7 +173,7 @@ class OpusHeaderUtils {
     );
 
     if (kDebugMode) {
-      print('✅ OpusHeaderUtils: Parsed OPUS headers: $headerInfo');
+      debugPrint('✅ OpusHeaderUtils: Parsed OPUS headers: $headerInfo');
     }
 
     return headerInfo;
@@ -184,14 +184,14 @@ class OpusHeaderUtils {
       List<int> data, OpusHeaderInfo headerInfo) {
     if (!headerInfo.hasCompleteHeaders) {
       if (kDebugMode) {
-        print('⚠️ OpusHeaderUtils: Cannot extract incomplete headers');
+        debugPrint('⚠️ OpusHeaderUtils: Cannot extract incomplete headers');
       }
       return null;
     }
 
     if (data.length < headerInfo.totalHeaderSize) {
       if (kDebugMode) {
-        print('⚠️ OpusHeaderUtils: Data too small for header extraction');
+        debugPrint('⚠️ OpusHeaderUtils: Data too small for header extraction');
       }
       return null;
     }
@@ -200,7 +200,7 @@ class OpusHeaderUtils {
         Uint8List.fromList(data.take(headerInfo.totalHeaderSize).toList());
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '📦 OpusHeaderUtils: Extracted ${headers.length} bytes of OPUS headers');
     }
 
@@ -220,7 +220,7 @@ class OpusHeaderUtils {
     final audioData = Uint8List.fromList(data.skip(audioStartOffset).toList());
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🎵 OpusHeaderUtils: Extracted ${audioData.length} bytes of OPUS audio data');
     }
 
@@ -249,7 +249,7 @@ class OpusHeaderUtils {
     combined.setRange(headers.length, combined.length, audioData);
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🔧 OpusHeaderUtils: Combined headers (${headers.length}B) + audio (${audioData.length}B) = ${combined.length}B total');
     }
 

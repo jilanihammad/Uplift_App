@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import ai, anchors, mood_entries, profile, session_summaries, voice
+from app.api.endpoints import ai, anchors, mood_entries, profile, session_summaries, voice, system
 
 api_router = APIRouter()
 api_router.include_router(ai.router, prefix="/llm", tags=["ai"])
@@ -9,6 +9,7 @@ api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
 api_router.include_router(anchors.router, prefix="/anchors", tags=["anchors"])
 api_router.include_router(session_summaries.router, prefix="/session_summaries", tags=["session_summaries"])
 api_router.include_router(mood_entries.router, prefix="/mood_entries", tags=["mood_entries"])
+api_router.include_router(system.router, prefix="/system", tags=["system"])
 
 # Add your routes here, for example:
 # @api_router.get("/")

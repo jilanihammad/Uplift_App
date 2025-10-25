@@ -32,11 +32,11 @@ class AuthCoordinator implements IAuthEventHandler {
       _initialized = true;
 
       if (kDebugMode) {
-        print('AuthCoordinator: Initialized successfully');
+        debugPrint('AuthCoordinator: Initialized successfully');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('AuthCoordinator: Error during initialization: $e');
+        debugPrint('AuthCoordinator: Error during initialization: $e');
       }
       rethrow;
     }
@@ -48,7 +48,7 @@ class AuthCoordinator implements IAuthEventHandler {
       _eventController.add(event);
 
       if (kDebugMode) {
-        print('AuthCoordinator: Emitted ${event.runtimeType} event');
+        debugPrint('AuthCoordinator: Emitted ${event.runtimeType} event');
       }
 
       // Handle the event internally
@@ -60,7 +60,7 @@ class AuthCoordinator implements IAuthEventHandler {
   Future<void> _handleEvent(AuthEvent event) async {
     if (!_initialized) {
       if (kDebugMode) {
-        print('AuthCoordinator: Not initialized, skipping event handling');
+        debugPrint('AuthCoordinator: Not initialized, skipping event handling');
       }
       return;
     }
@@ -81,7 +81,7 @@ class AuthCoordinator implements IAuthEventHandler {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('AuthCoordinator: Error handling event ${event.runtimeType}: $e');
+        debugPrint('AuthCoordinator: Error handling event ${event.runtimeType}: $e');
       }
     }
   }
@@ -89,7 +89,7 @@ class AuthCoordinator implements IAuthEventHandler {
   @override
   Future<void> handleUserLoggedIn(UserLoggedInEvent event) async {
     if (kDebugMode) {
-      print(
+      debugPrint(
           'AuthCoordinator: Handling user login - isNewUser: ${event.isNewUser}, method: ${event.authMethod}');
     }
 
@@ -97,13 +97,13 @@ class AuthCoordinator implements IAuthEventHandler {
       // New user needs onboarding
       await _onboardingService.resetOnboarding();
       if (kDebugMode) {
-        print('AuthCoordinator: Reset onboarding for new user');
+        debugPrint('AuthCoordinator: Reset onboarding for new user');
       }
     } else {
       // Returning user - mark onboarding as complete
       await _onboardingService.completeOnboarding();
       if (kDebugMode) {
-        print(
+        debugPrint(
             'AuthCoordinator: Marked onboarding as complete for returning user');
       }
     }
@@ -112,7 +112,7 @@ class AuthCoordinator implements IAuthEventHandler {
   @override
   Future<void> handleUserLoggedOut(UserLoggedOutEvent event) async {
     if (kDebugMode) {
-      print('AuthCoordinator: Handling user logout');
+      debugPrint('AuthCoordinator: Handling user logout');
     }
     // No specific onboarding action needed for logout
   }
@@ -121,7 +121,7 @@ class AuthCoordinator implements IAuthEventHandler {
   Future<void> handleUserRegistrationCompleted(
       UserRegistrationCompletedEvent event) async {
     if (kDebugMode) {
-      print('AuthCoordinator: Handling user registration completed');
+      debugPrint('AuthCoordinator: Handling user registration completed');
     }
 
     // New registration always needs onboarding
@@ -131,7 +131,7 @@ class AuthCoordinator implements IAuthEventHandler {
   @override
   Future<void> handleUserSignupCompleted(UserSignupCompletedEvent event) async {
     if (kDebugMode) {
-      print('AuthCoordinator: Handling user signup completed');
+      debugPrint('AuthCoordinator: Handling user signup completed');
     }
 
     // When signup is completed, mark onboarding as complete
@@ -142,7 +142,7 @@ class AuthCoordinator implements IAuthEventHandler {
   Future<void> handleAuthenticationFailed(
       AuthenticationFailedEvent event) async {
     if (kDebugMode) {
-      print(
+      debugPrint(
           'AuthCoordinator: Handling authentication failed - method: ${event.authMethod}, reason: ${event.reason}');
     }
     // No specific onboarding action needed for failed auth
@@ -152,7 +152,7 @@ class AuthCoordinator implements IAuthEventHandler {
   Future<void> handleSessionVerificationRequested(
       SessionVerificationRequestedEvent event) async {
     if (kDebugMode) {
-      print('AuthCoordinator: Handling session verification requested');
+      debugPrint('AuthCoordinator: Handling session verification requested');
     }
     // No specific onboarding action needed for session verification
   }

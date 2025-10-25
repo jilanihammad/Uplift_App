@@ -58,12 +58,12 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
   void _onStepChanged() {
     if (_stepNotifier.value == OnboardingStep.complete) {
       // Mark the user as having completed signup when onboarding is done
-      print('OnboardingWrapper: Marking user as having completed signup');
+      debugPrint('OnboardingWrapper: Marking user as having completed signup');
       _authService.completeSignup();
 
       // Navigate to home screen
       if (mounted) {
-        print('OnboardingWrapper: Detected complete step, navigating to home');
+        debugPrint('OnboardingWrapper: Detected complete step, navigating to home');
         context.go(AppRouter.home);
       }
     }
@@ -74,7 +74,7 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
     return ValueListenableBuilder<OnboardingStep>(
       valueListenable: _onboardingService.stepChanged,
       builder: (context, step, child) {
-        print(
+        debugPrint(
             'OnboardingWrapper: ValueListenableBuilder triggered with step: $step');
 
         return Scaffold(
@@ -110,7 +110,7 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
       case OnboardingStep.profileExperience:
         return const ProfileExperienceScreen();
       case OnboardingStep.moodSetup:
-        print('Skipping mood setup for now...');
+        debugPrint('Skipping mood setup for now...');
         _onboardingService.goToNextStep();
         return Container(); // This screen is effectively skipped
       case OnboardingStep.complete:

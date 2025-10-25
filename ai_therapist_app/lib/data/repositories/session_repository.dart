@@ -18,10 +18,20 @@ class SessionRepository implements ISessionRepository {
     required this.userContextService,
   });
 
-  Future<String> _requireUserId() async {
-    final userId = await userContextService.getActiveUserId();
-    if (userId.isEmpty) {
-      throw Exception('No authenticated user - cannot scope session data');
+  String _requireUserId(String operation) {
+    final userId = userContextService.getSignedInUserId(operation: operation);
+    if (userId == null || userId.isEmpty) {
+      throw const AuthRequiredException(
+        'User is not signed in – session operation requires authentication',
+      );
+    }
+    return userId;
+  }
+
+  String? _resolveUserId(String operation) {
+    final userId = userContextService.getSignedInUserId(operation: operation);
+    if (userId == null || userId.isEmpty) {
+      return null;
     }
     return userId;
   }
@@ -29,7 +39,7 @@ class SessionRepository implements ISessionRepository {
   // Create a new session
   @override
   Future<Session> createSession(String title, {String? id}) async {
-    final userId = await _requireUserId();
+    final userId = _requireUserId('SessionRepository.createSession');
 
     // Check if session with this ID already exists locally
     if (id != null) {
@@ -126,7 +136,10 @@ class SessionRepository implements ISessionRepository {
   // Get all sessions
   @override
   Future<List<Session>> getSessions() async {
-    final userId = await _requireUserId();
+    final userId = _resolveUserId('SessionRepository.getSessions');
+    if (userId == null) {
+      return const <Session>[];
+    }
     try {
       // Try to get sessions from the server
       debugPrint('Fetching sessions from server');
@@ -200,7 +213,7 @@ class SessionRepository implements ISessionRepository {
   // Get a specific session
   @override
   Future<Session> getSession(String sessionId) async {
-    final userId = await _requireUserId();
+    final userId = _requireUserId('SessionRepository.getSession');
     try {
       // Try to get session from the server first
       debugPrint('Fetching session $sessionId from server');
@@ -272,7 +285,7 @@ class SessionRepository implements ISessionRepository {
     String? title,
     bool sync = true,
   }) async {
-    final userId = await _requireUserId();
+    final userId = _requireUserId('SessionRepository.updateSession');
     final now = DateTime.now();
 
     try {
@@ -344,7 +357,10 @@ class SessionRepository implements ISessionRepository {
   // Delete a session
   @override
   Future<void> deleteSession(String sessionId) async {
-    final userId = await _requireUserId();
+    final userId = _resolveUserId('SessionRepository.deleteSession');
+    if (userId == null) {
+      return;
+    }
     try {
       // Try to delete on server
       debugPrint('Deleting session $sessionId from server');
@@ -373,13 +389,13 @@ class SessionRepository implements ISessionRepository {
     required List<Map<String, dynamic>> messages,
     bool sync = true,
   }) async {
-    final userId = await _requireUserId();
+    final userId = _requireUserId('SessionRepository.saveSession');
     final now = DateTime.now();
 
     debugPrint(
-        'Saving session $sessionId with title: $title, summary length: ${summary.length}');
+        'Saving session $sessionId with title length: ${title.length}, summary length: ${summary.length}');
     debugPrint(
-        'Action items being saved: ${actionItems.length} items: ${actionItems.join(", ")}');
+        'Persisting ${actionItems.length} action items for session $sessionId');
 
     try {
       // Save to local DB (transactional)

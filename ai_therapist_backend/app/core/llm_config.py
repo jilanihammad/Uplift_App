@@ -37,7 +37,7 @@ class LLMConfig:
     # ACTIVE MODEL SELECTION - CHANGE THESE TO SWITCH MODELS EASILY
     # =============================================================================
     ACTIVE_LLM_PROVIDER = ModelProvider.GOOGLE        # Change this to switch LLM provider
-    ACTIVE_TTS_PROVIDER = ModelProvider.OPENAI        # Default TTS provider is OpenAI
+    ACTIVE_TTS_PROVIDER = ModelProvider.GOOGLE        # Default TTS provider is OpenAI
     ACTIVE_TRANSCRIPTION_PROVIDER = ModelProvider.GROQ  # Change this to switch transcription provider
     
     # Model overrides (optional - leave None to use provider defaults)
@@ -46,7 +46,7 @@ class LLMConfig:
     ACTIVE_TRANSCRIPTION_MODEL = None  # e.g., "whisper-1" to override default
 
     # Default TTS voice (change here to update default voice)
-    DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "nova")  # Nova is OpenAI-supported, good substitute for sage
+    DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "kore")  # Default Gemini voice; overridden per-provider as needed
     
     # Centralized TTS arguments to prevent parameter mismatches
     DEFAULT_TTS_ARGS = {
@@ -189,7 +189,7 @@ class LLMConfig:
         # Google (Gemini) Models
         (ModelProvider.GOOGLE, ModelType.LLM): ModelConfig(
             provider=ModelProvider.GOOGLE,
-            model_id=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash-lite-preview-06-17"),
+            model_id=os.getenv("GOOGLE_MODEL", "gemini-2.5-flash-lite"),
             base_url="https://generativelanguage.googleapis.com/v1beta",
             api_key_env="GOOGLE_API_KEY",
             default_params={
@@ -199,6 +199,20 @@ class LLMConfig:
             },
             supports_streaming=True,
             max_tokens_limit=128000
+        ),
+
+        (ModelProvider.GOOGLE, ModelType.TTS): ModelConfig(
+            provider=ModelProvider.GOOGLE,
+            model_id=os.getenv("GOOGLE_TTS_MODEL", "gemini-2.5-flash-preview-tts"),
+            base_url="https://generativelanguage.googleapis.com/v1beta",
+            api_key_env="GOOGLE_API_KEY",
+            default_params={
+                "voice": os.getenv("GOOGLE_TTS_VOICE", "kore"),
+                "audio_encoding": os.getenv("GOOGLE_TTS_AUDIO_ENCODING", "LINEAR16"),
+                "sample_rate_hz": int(os.getenv("GOOGLE_TTS_SAMPLE_RATE", "24000")),
+                "response_format": os.getenv("GOOGLE_TTS_RESPONSE_FORMAT", "wav"),
+            },
+            supports_streaming=True
         )
     }
     
@@ -233,7 +247,41 @@ class LLMConfig:
     def get_api_key(cls, config: ModelConfig) -> Optional[str]:
         """Get the API key for a model configuration."""
         return os.getenv(config.api_key_env)
-    
+
+    @classmethod
+    def get_tts_config(cls) -> Dict[str, Any]:
+        """Return the active TTS configuration in a JSON-serializable format."""
+        config = cls.get_active_model_config(ModelType.TTS)
+
+        if not config:
+            return {
+                "provider": cls.ACTIVE_TTS_PROVIDER.value,
+                "model": cls.ACTIVE_TTS_MODEL,
+                "voice": cls.DEFAULT_TTS_VOICE,
+                "sample_rate_hz": 24000,
+                "audio_encoding": "LINEAR16",
+                "response_format": "wav",
+                "supports_streaming": False,
+            }
+
+        params = dict(config.default_params or {})
+
+        model_id = cls.ACTIVE_TTS_MODEL or config.model_id
+        voice = params.get("voice") or cls.DEFAULT_TTS_VOICE
+        sample_rate = params.get("sample_rate_hz", 24000)
+        audio_encoding = params.get("audio_encoding", "LINEAR16")
+        response_format = params.get("response_format", "wav")
+
+        return {
+            "provider": config.provider.value,
+            "model": model_id,
+            "voice": voice,
+            "sample_rate_hz": sample_rate,
+            "audio_encoding": audio_encoding,
+            "response_format": response_format,
+            "supports_streaming": bool(config.supports_streaming),
+        }
+
     @classmethod
     def is_model_available(cls, model_type: ModelType) -> bool:
         """Check if the active model for the specified type is available."""

@@ -53,7 +53,7 @@ class AppRouter {
     initialLocation: home,
     debugLogDiagnostics: true,
     redirect: (BuildContext context, GoRouterState state) async {
-      print(
+      debugPrint(
           "ROUTER DEBUG: Redirect called with location: ${state.matchedLocation}");
 
       // Access services needed for routing decisions
@@ -64,7 +64,7 @@ class AppRouter {
         final bool isLoggedIn = await authService.isLoggedIn;
         final bool hasCompletedSignup = await authService.hasCompletedSignup;
 
-        print(
+        debugPrint(
             "ROUTER DEBUG: Redirect check - isLoggedIn: $isLoggedIn, hasCompletedSignup: $hasCompletedSignup, path: ${state.matchedLocation}");
 
         final bool isGoingToAuth = state.matchedLocation == login ||
@@ -89,7 +89,7 @@ class AppRouter {
 
         // If not logged in and not going to auth screens, redirect to login
         if (!isLoggedIn && !isGoingToAuth && !isGoingToOnboarding) {
-          print("ROUTER DEBUG: User not logged in, redirecting to login");
+          debugPrint("ROUTER DEBUG: User not logged in, redirecting to login");
           if (state.matchedLocation == login) return null;
           return login;
         }
@@ -97,7 +97,7 @@ class AppRouter {
         // If logged in but hasn't completed signup process, redirect to onboarding
         // ONLY if not already going to onboarding
         if (isLoggedIn && !hasCompletedSignup && !isGoingToOnboarding) {
-          print(
+          debugPrint(
               "ROUTER DEBUG: User is logged in but hasn't completed signup, redirecting to onboarding");
           if (state.matchedLocation == onboarding) return null;
           return onboarding;
@@ -105,7 +105,7 @@ class AppRouter {
 
         // If logged in and has completed signup but trying to go to onboarding, redirect to home
         if (isLoggedIn && hasCompletedSignup && isGoingToOnboarding) {
-          print(
+          debugPrint(
               "ROUTER DEBUG: User already completed signup, redirecting from onboarding to home");
           if (state.matchedLocation == home) return null;
           return home;
@@ -114,17 +114,17 @@ class AppRouter {
         // If logged in and going to auth screens, redirect to home or onboarding
         if (isLoggedIn && isGoingToAuth) {
           final redirectTo = hasCompletedSignup ? home : onboarding;
-          print(
+          debugPrint(
               "ROUTER DEBUG: User is logged in and going to auth screen, redirecting to $redirectTo");
           if (state.matchedLocation == redirectTo) return null;
           return redirectTo;
         }
 
         // Log the final routing decision
-        print(
+        debugPrint(
             "ROUTER DEBUG: No redirection needed for path: ${state.matchedLocation}");
       } catch (e) {
-        print("ROUTER DEBUG ERROR: Exception during redirection: $e");
+        debugPrint("ROUTER DEBUG ERROR: Exception during redirection: $e");
         // On error, allow navigation to continue without redirection
       }
 
@@ -311,11 +311,15 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) {
+          return;
+        }
+
         final int currentIndex = _calculateSelectedIndex(context);
         if (currentIndex == 0) {
-          // On Home tab, show exit dialog
           final shouldExit = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
@@ -336,13 +340,9 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
           );
           if (shouldExit == true) {
             SystemNavigator.pop();
-            return true;
           }
-          return false;
         } else {
-          // Not on Home tab, switch to Home
           _onItemTapped(0, context);
-          return false;
         }
       },
       child: Scaffold(

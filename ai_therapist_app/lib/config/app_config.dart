@@ -137,27 +137,27 @@ class AppConfig {
   static Future<void> initialize() async {
     try {
       await dotenv.load(fileName: '.env');
-      print('Environment configuration loaded successfully');
+      debugPrint('Environment configuration loaded successfully');
     } catch (e) {
-      print(
+      debugPrint(
           'Warning: Could not load .env file, using default values. Error: $e');
     }
   }
 
   /// Log the current configuration
   void logConfig() {
-    print('====== App Configuration ======');
-    print('Backend URL: $backendUrl');
-    print('API Base URL: $apiBaseUrl');
-    print('LLM API Endpoint: $llmApiEndpoint');
-    print('Voice Model Endpoint: $voiceModelEndpoint');
-    print('Debug Mode: $isDebugMode');
-    print('TTS Streaming Enabled: $ttsStreamingEnabled');
-    print('TTS Streaming Buffer Size: $ttsStreamingBufferSize');
-    print('TTS Max Memory Duration (s): $ttsMaxMemoryDurationSeconds');
-    print('Privacy Policy URL: $privacyPolicyUrl');
-    print('Terms of Service URL: $termsOfServiceUrl');
-    print('Account Deletion URL: $accountDeletionUrl');
-    print('==============================');
+    debugPrint('====== App Configuration ======');
+    debugPrint('Backend URL: $backendUrl');
+    debugPrint('API Base URL: $apiBaseUrl');
+    debugPrint('LLM API Endpoint: $llmApiEndpoint');
+    debugPrint('Voice Model Endpoint: $voiceModelEndpoint');
+    debugPrint('Debug Mode: $isDebugMode');
+    debugPrint('TTS Streaming Enabled: $ttsStreamingEnabled');
+    debugPrint('TTS Streaming Buffer Size: $ttsStreamingBufferSize');
+    debugPrint('TTS Max Memory Duration (s): $ttsMaxMemoryDurationSeconds');
+    debugPrint('Privacy Policy URL: $privacyPolicyUrl');
+    debugPrint('Terms of Service URL: $termsOfServiceUrl');
+    debugPrint('Account Deletion URL: $accountDeletionUrl');
+    debugPrint('==============================');
   }
 }

@@ -55,9 +55,9 @@ class GroqService implements IGroqService {
       _memory = ConversationBufferMemory();
 
       if (kDebugMode) {
-        print('GroqService: Initialized with LLM model: $_llmModelId');
-        print('GroqService: Using API base URL: ${ApiConfig.baseUrl}');
-        print('GroqService: Initialized LangChain memory');
+        debugPrint('GroqService: Initialized with LLM model: $_llmModelId');
+        debugPrint('GroqService: Using API base URL: ${ApiConfig.baseUrl}');
+        debugPrint('GroqService: Initialized LangChain memory');
       }
 
       // Check if backend LLM service is available
@@ -66,31 +66,31 @@ class GroqService implements IGroqService {
         final response = await _apiClient.get('/llm/status');
 
         if (kDebugMode) {
-          print('GroqService: Status response: $response');
+          debugPrint('GroqService: Status response: $response');
         }
 
         if (response != null && response['status'] == 'available') {
           _isAvailable = true;
           if (kDebugMode) {
-            print('GroqService: API is available');
+            debugPrint('GroqService: API is available');
           }
         } else {
           _isAvailable = false;
           if (kDebugMode) {
-            print(
+            debugPrint(
                 'GroqService: API reported as unavailable. Response: $response');
           }
         }
       } catch (e) {
         if (kDebugMode) {
-          print('GroqService: Error checking API availability: $e');
-          print('GroqService: Will continue with isAvailable=false');
+          debugPrint('GroqService: Error checking API availability: $e');
+          debugPrint('GroqService: Will continue with isAvailable=false');
         }
         _isAvailable = false;
       }
     } catch (e) {
       if (kDebugMode) {
-        print('GroqService initialization error: $e');
+        debugPrint('GroqService initialization error: $e');
       }
       _isAvailable = false;
     }
@@ -101,7 +101,7 @@ class GroqService implements IGroqService {
   void resetConversationMemory() {
     _memory = ConversationBufferMemory();
     if (kDebugMode) {
-      print('GroqService: Reset conversation memory');
+      debugPrint('GroqService: Reset conversation memory');
     }
   }
 
@@ -120,7 +120,7 @@ class GroqService implements IGroqService {
   void setAvailable(bool available) {
     _isAvailable = available;
     if (kDebugMode) {
-      print('GroqService: Manually set isAvailable=$available');
+      debugPrint('GroqService: Manually set isAvailable=$available');
     }
   }
 
@@ -166,7 +166,7 @@ class GroqService implements IGroqService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('GroqService: Error generating chat completion: $e');
+        debugPrint('GroqService: Error generating chat completion: $e');
       }
       rethrow;
     }
@@ -193,7 +193,7 @@ class GroqService implements IGroqService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('GroqService: Error testing connection: $e');
+        debugPrint('GroqService: Error testing connection: $e');
       }
       return {'available': false, 'error': e.toString()};
     }
@@ -248,7 +248,7 @@ class GroqService implements IGroqService {
         await for (final event in channel.stream) {
           lastMessageTime = DateTime.now();
           if (event is String) {
-            print('RAW WS EVENT: ' +
+            debugPrint('RAW WS EVENT: ' +
                 event); // <-- Debug print for raw WebSocket response
             try {
               final data = jsonDecode(event);

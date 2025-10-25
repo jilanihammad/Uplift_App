@@ -7,9 +7,9 @@ class TimezoneHelper {
   static void init() {
     if (kDebugMode) {
       final now = DateTime.now();
-      print(
+      debugPrint(
           '[TimezoneHelper] Device timezone: ${now.timeZoneName}, offset: ${now.timeZoneOffset}');
-      print('[TimezoneHelper] Current local time: $now');
+      debugPrint('[TimezoneHelper] Current local time: $now');
     }
   }
 

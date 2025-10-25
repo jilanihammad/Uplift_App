@@ -14,7 +14,7 @@ class WebDirectory {
 /// Get a directory where files can be stored
 Future<WebDirectory> getApplicationDocumentsDirectory() async {
   if (kDebugMode) {
-    print('Using web mock for getApplicationDocumentsDirectory');
+    debugPrint('Using web mock for getApplicationDocumentsDirectory');
   }
   return WebDirectory('/mock/documents');
 }
@@ -22,7 +22,7 @@ Future<WebDirectory> getApplicationDocumentsDirectory() async {
 /// Get a temporary directory
 Future<WebDirectory> getTemporaryDirectory() async {
   if (kDebugMode) {
-    print('Using web mock for getTemporaryDirectory');
+    debugPrint('Using web mock for getTemporaryDirectory');
   }
   return WebDirectory('/mock/temp');
 }
@@ -30,7 +30,7 @@ Future<WebDirectory> getTemporaryDirectory() async {
 /// Get the external storage directory
 Future<WebDirectory?> getExternalStorageDirectory() async {
   if (kDebugMode) {
-    print('Using web mock for getExternalStorageDirectory');
+    debugPrint('Using web mock for getExternalStorageDirectory');
   }
   return WebDirectory('/mock/external');
 }
@@ -38,7 +38,7 @@ Future<WebDirectory?> getExternalStorageDirectory() async {
 /// Get the downloads directory
 Future<WebDirectory?> getDownloadsDirectory() async {
   if (kDebugMode) {
-    print('Using web mock for getDownloadsDirectory');
+    debugPrint('Using web mock for getDownloadsDirectory');
   }
   return WebDirectory('/mock/downloads');
 }

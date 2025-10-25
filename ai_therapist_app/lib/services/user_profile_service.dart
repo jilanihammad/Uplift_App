@@ -141,7 +141,7 @@ class UserProfileService implements IUserProfileService {
       await updateProfile(firstName: firstName);
 
       if (kDebugMode) {
-        print('FirstName updated and cached: $firstName');
+        debugPrint('FirstName updated and cached: $firstName');
       }
     } catch (e) {
       debugPrint('Error updating firstName: $e');

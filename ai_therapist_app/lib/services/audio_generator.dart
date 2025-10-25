@@ -57,7 +57,7 @@ class AudioGenerator {
     // Return existing instance if already created
     if (_instance != null) {
       if (kDebugMode) {
-        print('Reusing existing AudioGenerator instance');
+        debugPrint('Reusing existing AudioGenerator instance');
       }
       return _instance!;
     }
@@ -80,7 +80,7 @@ class AudioGenerator {
         _audioFileManager = audioFileManager,
         _apiClient = apiClient {
     if (kDebugMode) {
-      print('AudioGenerator initialized with constructor injection');
+      debugPrint('AudioGenerator initialized with constructor injection');
     }
   }
 
@@ -88,7 +88,7 @@ class AudioGenerator {
   Future<bool> initialize() async {
     if (_isInitialized) {
       if (kDebugMode) {
-        print('AudioGenerator already initialized, skipping initialize()');
+        debugPrint('AudioGenerator already initialized, skipping initialize()');
       }
       return true;
     }
@@ -384,7 +384,7 @@ class AudioGenerator {
 
     try {
       // Note: In background isolates, we can't use the logger class directly
-      print(
+      debugPrint(
           '[BACKGROUND] Audio generation started for text: "${text.substring(0, min(20, text.length))}..."');
 
       // Simple audio generation using HTTP directly since we can't use the VoiceService in isolate
@@ -394,13 +394,17 @@ class AudioGenerator {
         if (authToken != null) 'Authorization': 'Bearer $authToken',
       };
 
-      print('[BACKGROUND] Sending request to: $uri');
+      debugPrint('[BACKGROUND] Sending request to: $uri');
       final stopwatch = Stopwatch()..start();
       final response = await http.post(uri,
-          headers: headers, body: jsonEncode({'text': text, 'voice': 'sage'}));
+          headers: headers,
+          body: jsonEncode({
+            'text': text,
+            'voice': LLMConfig.activeTTSVoice,
+          }));
       stopwatch.stop();
 
-      print(
+      debugPrint(
           '[BACKGROUND] Response received in ${stopwatch.elapsedMilliseconds}ms with status code: ${response.statusCode}');
 
       if (response.statusCode == 200) {
@@ -411,14 +415,14 @@ class AudioGenerator {
         if (audioUrl.startsWith('/')) {
           audioUrl = '$backendUrl$audioUrl';
         }
-        print('[BACKGROUND] Successfully generated audio, URL: $audioUrl');
+        debugPrint('[BACKGROUND] Successfully generated audio, URL: $audioUrl');
         return audioUrl;
       } else {
-        print(
+        debugPrint(
             '[BACKGROUND] Audio generation failed with status code: ${response.statusCode}');
       }
     } catch (e) {
-      print('[BACKGROUND] Error generating audio in background: $e');
+      debugPrint('[BACKGROUND] Error generating audio in background: $e');
     }
 
     return null;
@@ -431,7 +435,7 @@ class AudioGenerator {
       final backendUrl = AppConfig().backendUrl;
       final response = await _apiClient.post('/voice/synthesize', {
         'text': text,
-        'voice': isAiSpeaking ? 'sage' : 'onyx',
+        'voice': LLMConfig.activeTTSVoice,
       });
 
       if (response != null && response.containsKey('url')) {
@@ -553,7 +557,7 @@ class AudioGenerator {
       final ttsConfig = LLMConfig.currentTTSConfig;
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '[AudioGenerator] Making direct TTS call to ${ttsConfig.modelId}');
       }
 
@@ -571,8 +575,8 @@ class AudioGenerator {
       final body = _buildTTSRequestBody(ttsConfig, text, isAiSpeaking);
 
       if (kDebugMode) {
-        print('[AudioGenerator] TTS Request to: ${ttsConfig.endpoint}');
-        print('[AudioGenerator] TTS Model: ${ttsConfig.modelId}');
+        debugPrint('[AudioGenerator] TTS Request to: ${ttsConfig.endpoint}');
+        debugPrint('[AudioGenerator] TTS Model: ${ttsConfig.modelId}');
       }
 
       // Make the request
@@ -594,7 +598,7 @@ class AudioGenerator {
         await audioFile.writeAsBytes(audioBytes);
 
         if (kDebugMode) {
-          print(
+          debugPrint(
               '[AudioGenerator] Direct TTS audio saved to: ${audioFile.path}');
         }
 
@@ -605,7 +609,7 @@ class AudioGenerator {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[AudioGenerator] Direct TTS call failed: $e');
+        debugPrint('[AudioGenerator] Direct TTS call failed: $e');
       }
       return null;
     }
@@ -662,7 +666,8 @@ class AudioGenerator {
       return prefs.getString(envVarName);
     } catch (e) {
       if (kDebugMode) {
-        print('[AudioGenerator] Error getting API key for $envVarName: $e');
+        debugPrint(
+            '[AudioGenerator] Error getting API key for $envVarName: $e');
       }
       return null;
     }

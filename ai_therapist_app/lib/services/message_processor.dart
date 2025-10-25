@@ -171,10 +171,10 @@ class MessageProcessor {
       final responseText = _validateAndExtractResponse(response, 'direct LLM');
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '$_directLLMLogTag Direct LLM response received: ${responseText.length} characters');
         if (response.containsKey('usage')) {
-          print('$_directLLMLogTag Token usage: ${response['usage']}');
+          debugPrint('$_directLLMLogTag Token usage: ${response['usage']}');
         }
       }
 

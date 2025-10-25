@@ -37,7 +37,7 @@ class BackendService {
 
       if (baseUrl.isEmpty) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               'BackendService: ApiConfig.baseUrlWithoutPath is empty, cannot initialize');
         }
         _isInitialized = false;
@@ -48,13 +48,13 @@ class BackendService {
       _isInitialized = true;
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             'BackendService: Successfully initialized with base URL: $baseUrl');
       }
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('BackendService: Error during initialization: $e');
+        debugPrint('BackendService: Error during initialization: $e');
       }
       _isInitialized = false;
       return false;
@@ -69,7 +69,7 @@ class BackendService {
       final initialized = await init();
       if (!initialized) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               'BackendService: Cannot check availability - service not initialized');
         }
         return false;
@@ -80,7 +80,7 @@ class BackendService {
     if (_lastChecked != null &&
         DateTime.now().difference(_lastChecked!) < _cacheValidDuration) {
       if (kDebugMode) {
-        print('Backend availability using cached result: $_isAvailable');
+        debugPrint('Backend availability using cached result: $_isAvailable');
       }
       return _isAvailable;
     }
@@ -92,13 +92,13 @@ class BackendService {
       // First try DNS resolution by making a basic connection
       final baseUriString = ApiConfig.baseUrlWithoutPath;
       if (kDebugMode) {
-        print('Testing backend connectivity to: $baseUriString');
+        debugPrint('Testing backend connectivity to: $baseUriString');
       }
 
       // Use a simple status endpoint that should respond quickly
       final uri = Uri.parse('$baseUriString/api/v1/llm/status');
       if (kDebugMode) {
-        print('Making connectivity request to: $uri');
+        debugPrint('Making connectivity request to: $uri');
       }
 
       final response = await http.get(
@@ -114,8 +114,8 @@ class BackendService {
         _isAvailable = true;
         _lastChecked = DateTime.now();
         if (kDebugMode) {
-          print('Backend is available! Status code: ${response.statusCode}');
-          print(
+          debugPrint('Backend is available! Status code: ${response.statusCode}');
+          debugPrint(
               'Response body: ${response.body.length > 100 ? '${response.body.substring(0, 100)}...' : response.body}');
         }
         return true;
@@ -124,9 +124,9 @@ class BackendService {
       _isAvailable = false;
       _lastChecked = DateTime.now();
       if (kDebugMode) {
-        print(
+        debugPrint(
             'Backend availability check: ${response.statusCode} - Not available');
-        print(
+        debugPrint(
             'Response body: ${response.body.length > 100 ? '${response.body.substring(0, 100)}...' : response.body}');
       }
       return false;
@@ -134,19 +134,19 @@ class BackendService {
       _isAvailable = false;
       _lastChecked = DateTime.now();
       if (kDebugMode) {
-        print('Backend connectivity failed with error: $e');
+        debugPrint('Backend connectivity failed with error: $e');
         // More helpful message for common connection errors
         if (e is SocketException) {
-          print(
+          debugPrint(
               'Network socket error: Device may be offline or the server is unreachable');
         } else if (e is TimeoutException) {
-          print('Connection timed out: Backend server is too slow to respond');
+          debugPrint('Connection timed out: Backend server is too slow to respond');
         } else {
-          print('Unknown connection error: $e');
+          debugPrint('Unknown connection error: $e');
         }
-        print(
+        debugPrint(
             'Make sure your device has internet connectivity and the backend URL is correct');
-        print('Current backend URL: ${ApiConfig.baseUrlWithoutPath}');
+        debugPrint('Current backend URL: ${ApiConfig.baseUrlWithoutPath}');
       }
 
       // Still try to function without backend - just mark as offline
@@ -180,7 +180,7 @@ class BackendService {
       return await apiCall();
     } catch (e) {
       if (kDebugMode) {
-        print('API call failed with error: $e');
+        debugPrint('API call failed with error: $e');
       }
       // If API call fails, return fallback response
       return fallbackResponse();

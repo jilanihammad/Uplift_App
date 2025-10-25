@@ -58,7 +58,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
         if (appId.contains('asia')) _region = 'asia-east1';
       } catch (e) {
         if (kDebugMode) {
-          print('Could not get project info: $e');
+          debugPrint('Could not get project info: $e');
         }
       }
 
@@ -94,7 +94,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
             break;
           } catch (retryError) {
             if (kDebugMode) {
-              print('Firestore attempt ${i + 1} failed: $retryError');
+              debugPrint('Firestore attempt ${i + 1} failed: $retryError');
             }
             await Future.delayed(Duration(seconds: 1 + i));
             if (i == 2) {
@@ -161,11 +161,11 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
       if (DependencyContainer().isRegistered<FirebaseService>()) {
         await DependencyContainer().get<FirebaseService>().tryReconnect();
         if (kDebugMode) {
-          print('Reconnect attempt completed');
+          debugPrint('Reconnect attempt completed');
         }
       } else {
         if (kDebugMode) {
-          print('FirebaseService not registered in dependency container');
+          debugPrint('FirebaseService not registered in dependency container');
         }
       }
 
@@ -173,7 +173,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
       await _checkFirebaseConnection();
     } catch (e) {
       if (kDebugMode) {
-        print('Error during reconnect: $e');
+        debugPrint('Error during reconnect: $e');
       }
       setState(() {
         _isLoading = false;

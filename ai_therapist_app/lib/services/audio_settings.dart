@@ -19,7 +19,7 @@ class AudioSettings extends ChangeNotifier implements IAudioSettings {
     if (_isMuted != muted) {
       _isMuted = muted;
       if (kDebugMode) {
-        print('🔇 AudioSettings: Global mute changed to $muted');
+        debugPrint('🔇 AudioSettings: Global mute changed to $muted');
       }
       notifyListeners();
     }

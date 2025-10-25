@@ -18,7 +18,7 @@ class ConversationFlowManager {
   // Private constructor for singleton pattern
   ConversationFlowManager._() {
     if (kDebugMode) {
-      print('ConversationFlowManager private constructor called');
+      debugPrint('ConversationFlowManager private constructor called');
     }
   }
 
@@ -28,7 +28,7 @@ class ConversationFlowManager {
   // Factory constructor to return the singleton instance
   factory ConversationFlowManager() {
     if (kDebugMode) {
-      print('Reusing existing ConversationFlowManager instance');
+      debugPrint('Reusing existing ConversationFlowManager instance');
     }
     return _instance;
   }
@@ -37,7 +37,7 @@ class ConversationFlowManager {
   Future<void> init() async {
     if (_isInitialized) {
       if (kDebugMode) {
-        print('ConversationFlowManager already initialized, skipping init()');
+        debugPrint('ConversationFlowManager already initialized, skipping init()');
       }
       return;
     }
@@ -144,7 +144,7 @@ class ConversationFlowManager {
       final userMessage = params['userMessage'] as String;
       return await graph.processUserInput(userMessage);
     } catch (e) {
-      print('Error processing user input in background: $e');
+      debugPrint('Error processing user input in background: $e');
       return {};
     }
   }

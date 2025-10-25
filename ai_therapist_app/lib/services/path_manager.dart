@@ -54,7 +54,7 @@ class PathManager {
       }
 
       _isInitialized = true;
-      print('🗂️ PathManager initialized: $_cacheDir');
+      debugPrint('🗂️ PathManager initialized: $_cacheDir');
       _initCompleter.complete();
     } catch (e, st) {
       _initCompleter.completeError(e, st);
@@ -86,7 +86,7 @@ class PathManager {
         _buildSecurePath([SUBDIR_RECORDINGS], '${uuid}.${RECORDING_EXT}');
 
     // 🚨 CORRUPTION DIAGNOSTIC - Log clean path immediately after creation
-    print('🛡️ PathManager.recordingFile() created CLEAN path: $filePath');
+    debugPrint('🛡️ PathManager.recordingFile() created CLEAN path: $filePath');
 
     return filePath;
   }
@@ -181,7 +181,7 @@ class PathManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Warning: Could not create directory $dirPath: $e');
+        debugPrint('Warning: Could not create directory $dirPath: $e');
       }
     }
   }

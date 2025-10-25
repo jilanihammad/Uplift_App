@@ -33,22 +33,22 @@ class TTSStreamingConfig {
   /// Log current streaming configuration
   static void logConfig() {
     if (kDebugMode) {
-      print('🎯 TTS Streaming Config:');
-      print('  Enabled: $isEnabled');
-      print('  Should Use Streaming: $shouldUseStreaming');
-      print(
+      debugPrint('🎯 TTS Streaming Config:');
+      debugPrint('  Enabled: $isEnabled');
+      debugPrint('  Should Use Streaming: $shouldUseStreaming');
+      debugPrint(
           '  Buffer Size: $bufferSize bytes (${(bufferSize / 1024).toStringAsFixed(1)} KB)');
-      print('  Buffer Description: $bufferSizeDescription');
-      print('  Max Memory Duration: $maxMemoryDurationSeconds seconds');
+      debugPrint('  Buffer Description: $bufferSizeDescription');
+      debugPrint('  Max Memory Duration: $maxMemoryDurationSeconds seconds');
 
       if (shouldUseStreaming) {
-        print(
+        debugPrint(
             '  🚀 STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
       } else if (isEnabled) {
-        print(
+        debugPrint(
             '  ⚠️  STREAMING ENABLED but buffer too large (${(bufferSize / 1024).toStringAsFixed(1)}KB)');
       } else {
-        print('  🔄 STREAMING DISABLED - Using full-buffer mode');
+        debugPrint('  🔄 STREAMING DISABLED - Using full-buffer mode');
       }
     }
   }

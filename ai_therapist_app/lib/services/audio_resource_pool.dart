@@ -24,7 +24,7 @@ class AudioResourcePool {
     if (_isInitialized) return;
 
     if (kDebugMode) {
-      print('🎵 AudioResourcePool: Initializing audio player pool...');
+      debugPrint('🎵 AudioResourcePool: Initializing audio player pool...');
     }
 
     // Pre-create one AudioPlayer to avoid cold start delay
@@ -34,12 +34,12 @@ class AudioResourcePool {
       _isInitialized = true;
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🎵 AudioResourcePool: Successfully initialized with ${_availablePlayers.length} players');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('🎵 AudioResourcePool: Error during initialization: $e');
+        debugPrint('🎵 AudioResourcePool: Error during initialization: $e');
       }
       _isInitialized =
           true; // Still mark as initialized to avoid infinite retry
@@ -59,13 +59,13 @@ class AudioResourcePool {
     if (_availablePlayers.isNotEmpty) {
       player = _availablePlayers.removeLast();
       if (kDebugMode) {
-        print('🎵 AudioResourcePool: Reusing existing player for $userId');
+        debugPrint('🎵 AudioResourcePool: Reusing existing player for $userId');
       }
     } else if (_usedPlayers.length < _maxPoolSize) {
       // Create new player if under limit
       player = AudioPlayer();
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🎵 AudioResourcePool: Creating new player for $userId (${_usedPlayers.length + 1}/$_maxPoolSize)');
       }
     } else {
@@ -73,7 +73,7 @@ class AudioResourcePool {
       // This should be rare if pool size is tuned correctly
       player = AudioPlayer();
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🎵 AudioResourcePool: WARNING - Creating temporary player for $userId (pool full)');
       }
     }
@@ -91,7 +91,7 @@ class AudioResourcePool {
 
     if (!_playerUsers.contains(playerKey)) {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🎵 AudioResourcePool: WARNING - Returning untracked player from $userId');
       }
     }
@@ -108,27 +108,27 @@ class AudioResourcePool {
       if (_availablePlayers.length < _maxPoolSize) {
         _availablePlayers.add(player);
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🎵 AudioResourcePool: Returned player from $userId to pool (${_availablePlayers.length} available)');
         }
       } else {
         // Pool full, dispose the player
         await player.dispose();
         if (kDebugMode) {
-          print('🎵 AudioResourcePool: Disposed excess player from $userId');
+          debugPrint('🎵 AudioResourcePool: Disposed excess player from $userId');
         }
       }
     } catch (e) {
       // If reset fails, dispose the player to avoid corrupted state
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🎵 AudioResourcePool: Error resetting player from $userId, disposing: $e');
       }
       try {
         await player.dispose();
       } catch (disposeError) {
         if (kDebugMode) {
-          print(
+          debugPrint(
               '🎵 AudioResourcePool: Error disposing problematic player: $disposeError');
         }
       }
@@ -157,7 +157,7 @@ class AudioResourcePool {
   /// Dispose all players and clean up the pool
   Future<void> dispose() async {
     if (kDebugMode) {
-      print('🎵 AudioResourcePool: Disposing all players...');
+      debugPrint('🎵 AudioResourcePool: Disposing all players...');
     }
 
     final allPlayers = [..._availablePlayers, ..._usedPlayers];
@@ -170,7 +170,7 @@ class AudioResourcePool {
         await player.dispose();
       } catch (e) {
         if (kDebugMode) {
-          print('🎵 AudioResourcePool: Error disposing player: $e');
+          debugPrint('🎵 AudioResourcePool: Error disposing player: $e');
         }
       }
     }
@@ -178,7 +178,7 @@ class AudioResourcePool {
     _isInitialized = false;
 
     if (kDebugMode) {
-      print('🎵 AudioResourcePool: Disposed ${allPlayers.length} players');
+      debugPrint('🎵 AudioResourcePool: Disposed ${allPlayers.length} players');
     }
   }
 }

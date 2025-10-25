@@ -32,7 +32,7 @@ class AudioFormatNegotiator {
     _currentFormat = getPreferredFormat();
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🎵 AudioFormatNegotiator: Initialized with format: ${_currentFormat.name}');
       AudioFormatConfig.logCurrentConfiguration();
     }
@@ -44,7 +44,7 @@ class AudioFormatNegotiator {
     _currentFormat = AudioFormat.wav;
 
     if (kDebugMode) {
-      print('🚨 AudioFormatNegotiator: Emergency fallback to WAV - $reason');
+      debugPrint('🚨 AudioFormatNegotiator: Emergency fallback to WAV - $reason');
     }
   }
 
@@ -54,7 +54,7 @@ class AudioFormatNegotiator {
     _currentFormat = getPreferredFormat();
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '✅ AudioFormatNegotiator: Returned to configured format: ${_currentFormat.name}');
     }
   }
@@ -123,9 +123,9 @@ class AudioFormatNegotiator {
   static void logCurrentConfiguration() {
     if (kDebugMode) {
       final info = getFormatInfo();
-      print('🎵 AudioFormatNegotiator: Current configuration:');
+      debugPrint('🎵 AudioFormatNegotiator: Current configuration:');
       info.forEach((key, value) {
-        print('  $key: $value');
+        debugPrint('  $key: $value');
       });
     }
   }

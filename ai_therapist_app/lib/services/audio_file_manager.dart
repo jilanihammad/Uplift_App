@@ -17,7 +17,7 @@ class FileCleanupManager {
   static Future<void> safeDelete(String filePath) async {
     if (_deletingFiles.contains(filePath)) {
       if (kDebugMode) {
-        print('🗑️ File deletion already in progress for: $filePath');
+        debugPrint('🗑️ File deletion already in progress for: $filePath');
       }
       return;
     }
@@ -28,16 +28,16 @@ class FileCleanupManager {
       if (await file.exists()) {
         await file.delete();
         if (kDebugMode) {
-          print('🗑️ Successfully deleted file: $filePath');
+          debugPrint('🗑️ Successfully deleted file: $filePath');
         }
       } else {
         if (kDebugMode) {
-          print('🗑️ File already deleted: $filePath');
+          debugPrint('🗑️ File already deleted: $filePath');
         }
       }
     } catch (e) {
       if (kDebugMode) {
-        print('🗑️ Error deleting file $filePath: $e');
+        debugPrint('🗑️ Error deleting file $filePath: $e');
       }
     } finally {
       _deletingFiles.remove(filePath);
@@ -95,13 +95,13 @@ class AudioFileManager implements IAudioFileManager {
       await _ensureDirectoryExists(tempDir);
 
       if (kDebugMode) {
-        print('🎵 AudioFileManager initialized successfully');
+        debugPrint('🎵 AudioFileManager initialized successfully');
       }
 
       _initialized = true;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ AudioFileManager initialization error: $e');
+        debugPrint('❌ AudioFileManager initialization error: $e');
       }
       rethrow;
     }
@@ -129,13 +129,13 @@ class AudioFileManager implements IAudioFileManager {
       await file.writeAsBytes(data);
 
       if (kDebugMode) {
-        print('💾 Saved audio file: $filePath (${data.length} bytes)');
+        debugPrint('💾 Saved audio file: $filePath (${data.length} bytes)');
       }
 
       return filePath;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error saving audio file: $e');
+        debugPrint('❌ Error saving audio file: $e');
       }
       rethrow;
     }
@@ -153,7 +153,7 @@ class AudioFileManager implements IAudioFileManager {
     final cachedPath = await getCachedAudioPath(url);
     if (cachedPath != null && await fileExists(cachedPath)) {
       if (kDebugMode) {
-        print('📂 Using cached audio: $cachedPath');
+        debugPrint('📂 Using cached audio: $cachedPath');
       }
       return cachedPath;
     }
@@ -164,7 +164,7 @@ class AudioFileManager implements IAudioFileManager {
 
       if (response.statusCode != 200) {
         if (kDebugMode) {
-          print('❌ Failed to download audio: HTTP ${response.statusCode}');
+          debugPrint('❌ Failed to download audio: HTTP ${response.statusCode}');
         }
         return null;
       }
@@ -204,7 +204,7 @@ class AudioFileManager implements IAudioFileManager {
       await cacheAudioFile(url, filePath);
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '⬇️ Downloaded and cached audio: $filePath (${response.bodyBytes.length} bytes)');
       }
 
@@ -212,7 +212,7 @@ class AudioFileManager implements IAudioFileManager {
       return filePath;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error downloading audio: $e');
+        debugPrint('❌ Error downloading audio: $e');
       }
       return null;
     }
@@ -249,7 +249,7 @@ class AudioFileManager implements IAudioFileManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error cleaning temp files: $e');
+        debugPrint('❌ Error cleaning temp files: $e');
       }
     }
   }
@@ -292,7 +292,7 @@ class AudioFileManager implements IAudioFileManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error cleaning old files: $e');
+        debugPrint('❌ Error cleaning old files: $e');
       }
     }
   }
@@ -304,7 +304,7 @@ class AudioFileManager implements IAudioFileManager {
       return await file.exists();
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error checking file existence: $e');
+        debugPrint('❌ Error checking file existence: $e');
       }
       return false;
     }
@@ -318,7 +318,7 @@ class AudioFileManager implements IAudioFileManager {
       _removeFromCacheTracking(path);
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error deleting file: $e');
+        debugPrint('❌ Error deleting file: $e');
       }
       rethrow;
     }
@@ -334,12 +334,12 @@ class AudioFileManager implements IAudioFileManager {
 
       final bytes = await file.readAsBytes();
       if (kDebugMode) {
-        print('📖 Read audio file: $path (${bytes.length} bytes)');
+        debugPrint('📖 Read audio file: $path (${bytes.length} bytes)');
       }
       return bytes;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error reading audio file: $e');
+        debugPrint('❌ Error reading audio file: $e');
       }
       return null;
     }
@@ -355,7 +355,7 @@ class AudioFileManager implements IAudioFileManager {
       return await file.length();
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error getting file size: $e');
+        debugPrint('❌ Error getting file size: $e');
       }
       return 0;
     }
@@ -395,7 +395,7 @@ class AudioFileManager implements IAudioFileManager {
     _cacheTimestamps[url] = DateTime.now();
 
     if (kDebugMode) {
-      print('📂 Cached audio mapping: $url -> $localPath');
+      debugPrint('📂 Cached audio mapping: $url -> $localPath');
     }
   }
 
@@ -433,7 +433,7 @@ class AudioFileManager implements IAudioFileManager {
         }
 
         if (kDebugMode) {
-          print('🧹 Cleared cache: deleted $deletedCount files');
+          debugPrint('🧹 Cleared cache: deleted $deletedCount files');
         }
       }
 
@@ -442,7 +442,7 @@ class AudioFileManager implements IAudioFileManager {
       _cacheTimestamps.clear();
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error clearing cache: $e');
+        debugPrint('❌ Error clearing cache: $e');
       }
     }
   }
@@ -478,7 +478,7 @@ class AudioFileManager implements IAudioFileManager {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error validating audio file: $e');
+        debugPrint('❌ Error validating audio file: $e');
       }
       return false;
     }
@@ -506,7 +506,7 @@ class AudioFileManager implements IAudioFileManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error calculating cache size: $e');
+        debugPrint('❌ Error calculating cache size: $e');
       }
     }
 
@@ -570,12 +570,12 @@ class AudioFileManager implements IAudioFileManager {
       }
 
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🧹 Cache cleanup: deleted $deletedCount files (${_formatBytes(deletedSize)})');
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error limiting cache size: $e');
+        debugPrint('❌ Error limiting cache size: $e');
       }
     }
   }
@@ -588,7 +588,7 @@ class AudioFileManager implements IAudioFileManager {
     _cacheTimestamps.clear();
 
     if (kDebugMode) {
-      print('🎵 AudioFileManager disposed');
+      debugPrint('🎵 AudioFileManager disposed');
     }
   }
 
@@ -604,7 +604,7 @@ class AudioFileManager implements IAudioFileManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ Error creating directory $dirPath: $e');
+        debugPrint('❌ Error creating directory $dirPath: $e');
       }
     }
   }

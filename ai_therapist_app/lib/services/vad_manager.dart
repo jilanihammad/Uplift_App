@@ -121,7 +121,7 @@ class VADManager {
     } catch (e) {
       _errorController.add('Error initializing VAD: $e');
       if (kDebugMode) {
-        print('❌ VAD initialization error: $e');
+        debugPrint('❌ VAD initialization error: $e');
       }
     }
   }
@@ -190,14 +190,14 @@ class VADManager {
 
     if (kDebugMode) {
       AppLogger.d('VAD: VAD: Calibration complete!');
-      print('  Noise floor: ${_noiseFloor.toStringAsFixed(1)} dB');
-      print(
+      debugPrint('  Noise floor: ${_noiseFloor.toStringAsFixed(1)} dB');
+      debugPrint(
           '  Speech start threshold: ${_speechStartThreshold.toStringAsFixed(1)} dB');
-      print(
+      debugPrint(
           '  Speech end threshold: ${_speechEndThreshold.toStringAsFixed(1)} dB');
 
       if (_noiseFloor > _maxNoiseFloor) {
-        print(
+        debugPrint(
             '⚠️ VAD: Environment is very noisy (${_noiseFloor.toStringAsFixed(1)} dB). Consider finding a quieter location.');
       }
     }
@@ -206,14 +206,14 @@ class VADManager {
   // Start listening for voice activity (Option B: Single Recorder Instance)
   Future<bool> startListening() async {
     if (kDebugMode)
-      print(
+      debugPrint(
           '[VADManager] startListening() called. _isInitialized=$_isInitialized, _isListening=$_isListening');
 
     // Check if RecordingManager is using the recorder
     final sharedRecorder = SharedRecorderManager.instance;
     if (sharedRecorder.isInUse && sharedRecorder.currentUser != 'VADManager') {
       if (kDebugMode) {
-        print(
+        debugPrint(
             '🎙️ VAD: Cannot start - recorder in use by ${sharedRecorder.currentUser}');
       }
       return false;
@@ -221,7 +221,7 @@ class VADManager {
 
     // Prevent race conditions with simple lock
     if (_operationInProgress) {
-      if (kDebugMode) print('[VADManager] Operation in progress, waiting...');
+      if (kDebugMode) debugPrint('[VADManager] Operation in progress, waiting...');
       await Future.delayed(Duration(milliseconds: 10));
       return startListening(); // Retry
     }
@@ -234,7 +234,7 @@ class VADManager {
       }
 
       if (_isListening) {
-        if (kDebugMode) print('[VADManager] Already listening, returning true');
+        if (kDebugMode) debugPrint('[VADManager] Already listening, returning true');
         if (kDebugMode) {
           AppLogger.d('VAD: VAD is already listening');
         }
@@ -245,7 +245,7 @@ class VADManager {
       if (await _recorder.isRecording()) {
         // Edge case: still recording from previous session - reuse it
         if (kDebugMode)
-          print(
+          debugPrint(
               '[VADManager] Recorder still active from previous session, reusing');
         _isListening = true;
         _isSpeechDetected = false;
@@ -256,15 +256,15 @@ class VADManager {
       }
 
       // Ensure PathManager is initialized before creating paths
-      if (kDebugMode) print('[VADManager] Ensuring PathManager is initialized');
+      if (kDebugMode) debugPrint('[VADManager] Ensuring PathManager is initialized');
       await PathManager.instance.init();
 
-      if (kDebugMode) print('[VADManager] Creating monitor file path');
+      if (kDebugMode) debugPrint('[VADManager] Creating monitor file path');
       // Create a temporary file path for monitoring
       final String monitorFilePath = PathManager.instance.vadMonitorFile();
 
       if (kDebugMode)
-        print('[VADManager] Starting recorder for VAD (reusing instance)');
+        debugPrint('[VADManager] Starting recorder for VAD (reusing instance)');
 
       // Register VADManager as the current user for coordination
       await sharedRecorder.requestAccess('VADManager');
@@ -281,7 +281,7 @@ class VADManager {
       );
 
       if (kDebugMode)
-        print('[VADManager] Recorder started, starting amplitude polling');
+        debugPrint('[VADManager] Recorder started, starting amplitude polling');
 
       // Start polling amplitude
       _startAmplitudePolling();
@@ -298,14 +298,14 @@ class VADManager {
 
       if (kDebugMode) {
         AppLogger.d('VAD: VAD: Started listening for voice activity');
-        print('[VADManager] VAD is now listening for voice activity');
+        debugPrint('[VADManager] VAD is now listening for voice activity');
       }
       return true;
     } catch (e) {
       _errorController.add('Error starting VAD: $e');
       if (kDebugMode) {
-        print('❌ VAD start error: $e');
-        print('[VADManager] ERROR in startListening: $e');
+        debugPrint('❌ VAD start error: $e');
+        debugPrint('[VADManager] ERROR in startListening: $e');
       }
       return false;
     } finally {
@@ -343,18 +343,18 @@ class VADManager {
       } catch (e) {
         // Handle errors during amplitude polling
         if (kDebugMode) {
-          print('⚠️ VAD amplitude polling error: $e');
+          debugPrint('⚠️ VAD amplitude polling error: $e');
         }
         // For critical errors (permissions, recorder issues), stop gracefully
         if (e.toString().contains('permission') ||
             e.toString().contains('recording') ||
             e.toString().contains('disposed')) {
           if (kDebugMode) {
-            print('⚠️ VAD: Critical error, stopping speech detection');
+            debugPrint('⚠️ VAD: Critical error, stopping speech detection');
           }
           _stopSpeechDetection().catchError((e2) {
             if (kDebugMode)
-              print('⚠️ Error in emergency _stopSpeechDetection: $e2');
+              debugPrint('⚠️ Error in emergency _stopSpeechDetection: $e2');
           });
         }
       }
@@ -368,7 +368,7 @@ class VADManager {
     if (kDebugMode) {
       // Print every 10 amplitude readings (to avoid flooding the console)
       if (Random().nextInt(10) == 0) {
-        print(
+        debugPrint(
             '🎙️ VAD amplitude: $level dB (start threshold: $_speechStartThreshold, end threshold: $_speechEndThreshold, speech detected: $_isSpeechDetected)');
       }
     }
@@ -380,7 +380,7 @@ class VADManager {
         _consecutiveLoudFrames = 0; // Reset loud frames when quiet
 
         if (kDebugMode && _consecutiveQuietFrames % 3 == 0) {
-          print(
+          debugPrint(
               '🎙️ VAD: Quiet frames: $_consecutiveQuietFrames/$_consecutiveQuietFramesRequired (level: $level dB)');
         }
 
@@ -394,14 +394,14 @@ class VADManager {
           if (speechDuration > _minSpeechDuration) {
             // Only end speech if it's been long enough
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '🎙️ VAD: Speech ended after ${speechDuration}ms (quiet frames)');
             }
             _stopSpeechDetection().catchError((e) {
-              if (kDebugMode) print('⚠️ Error in _stopSpeechDetection: $e');
+              if (kDebugMode) debugPrint('⚠️ Error in _stopSpeechDetection: $e');
             });
           } else if (kDebugMode) {
-            print(
+            debugPrint(
                 '🎙️ VAD: Ignoring brief speech fragment (${speechDuration}ms < ${_minSpeechDuration}ms)');
             // Reset counters to continue listening
             _consecutiveQuietFrames = 0;
@@ -427,11 +427,11 @@ class VADManager {
                 ? DateTime.now().difference(_speechStartTime!).inMilliseconds
                 : 0;
             if (kDebugMode) {
-              print(
+              debugPrint(
                   '🎙️ VAD: Speech ended due to silence timeout after ${speechDuration}ms');
             }
             _stopSpeechDetection().catchError((e) {
-              if (kDebugMode) print('⚠️ Error in _stopSpeechDetection: $e');
+              if (kDebugMode) debugPrint('⚠️ Error in _stopSpeechDetection: $e');
             });
           }
         });
@@ -444,7 +444,7 @@ class VADManager {
 
         if (_consecutiveLoudFrames >= _consecutiveLoudFramesRequired) {
           if (kDebugMode) {
-            print(
+            debugPrint(
                 '🎙️ VAD: Speech detected! Starting recording (level: $level dB)');
           }
           _startSpeechDetection();
@@ -472,10 +472,10 @@ class VADManager {
     // OPTION ➋: Removed guard condition - always perform full teardown
     // if (!_isSpeechDetected) return;  // <-- REMOVED: This was preventing proper cleanup
     if (kDebugMode) {
-      print(
+      debugPrint(
           '[VADManager][DEBUG] _stopSpeechDetection: Tearing down recorder and state (unconditional)');
       if (loggingConfig.isVerboseDebugEnabled) {
-        print(StackTrace.current);
+        debugPrint(StackTrace.current.toString());
       }
     }
 
@@ -492,12 +492,12 @@ class VADManager {
       if (await _recorder.isRecording()) {
         await _recorder.stop();
         if (kDebugMode)
-          print(
+          debugPrint(
               '🎙️ VAD: Recorder stopped during speech end (keeping instance alive)');
       }
       // NOTE: No longer disposing recorder here - reuse the instance!
     } catch (e) {
-      if (kDebugMode) print('⚠️ Error stopping recorder: $e');
+      if (kDebugMode) debugPrint('⚠️ Error stopping recorder: $e');
     }
 
     // Flip all state flags
@@ -509,7 +509,7 @@ class VADManager {
     // Debounce timers removed for simplicity
 
     if (kDebugMode) {
-      print(
+      debugPrint(
           '🎙️ VAD: Complete teardown finished, emitting onSpeechEnd with debounce');
     }
 
@@ -524,7 +524,7 @@ class VADManager {
 
   // Stop listening for voice activity
   Future<void> stopListening() async {
-    if (kDebugMode) print('[VADManager] stopListening() called.');
+    if (kDebugMode) debugPrint('[VADManager] stopListening() called.');
 
     // Release access to shared recorder
     SharedRecorderManager.instance.releaseAccess('VADManager');
@@ -536,7 +536,7 @@ class VADManager {
 
     // Safe-guard: if we haven't even started, nothing to do
     if (!_isListening && !_isSpeechDetected) {
-      if (kDebugMode) print('[VADManager] Not listening, nothing to stop.');
+      if (kDebugMode) debugPrint('[VADManager] Not listening, nothing to stop.');
       return;
     }
 
@@ -598,7 +598,7 @@ class VADManager {
                 'VAD: VAD: Recorder finally disposed during full cleanup');
           }
         } catch (e) {
-          if (kDebugMode) print('⚠️ Error disposing recorder: $e');
+          if (kDebugMode) debugPrint('⚠️ Error disposing recorder: $e');
         }
       }
 
@@ -612,7 +612,7 @@ class VADManager {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('❌ VAD dispose error: $e');
+        debugPrint('❌ VAD dispose error: $e');
       }
     }
   }

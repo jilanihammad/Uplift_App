@@ -15,7 +15,7 @@ class MemoryMonitor {
       _baselineMemoryFootprint = _estimateMemoryUsage();
       _baselineSet = true;
       if (kDebugMode) {
-        print(
+        debugPrint(
             '📊 MemoryMonitor: Baseline memory footprint: ${(_baselineMemoryFootprint / 1024 / 1024).toStringAsFixed(1)} MB');
       }
     }
@@ -36,7 +36,7 @@ class MemoryMonitor {
   static void trackAllocation(Uint8List buffer, String source) {
     if (kDebugMode && buffer.length > 1024 * 1024) {
       // Track allocations >1MB
-      print(
+      debugPrint(
           '📊 MemoryMonitor: Large allocation from $source: ${(buffer.length / 1024 / 1024).toStringAsFixed(1)} MB');
     }
   }
@@ -85,11 +85,11 @@ class MemoryMonitor {
   static void logMemoryStatus() {
     if (kDebugMode) {
       final report = getMemoryReport();
-      print('📊 Memory Status:');
-      print(
+      debugPrint('📊 Memory Status:');
+      debugPrint(
           '  Current Usage: ${report['current_usage_mb'].toStringAsFixed(1)} MB');
-      print('  Growth: ${report['growth_mb'].toStringAsFixed(1)} MB');
-      print('  Safe: ${report['is_safe']}');
+      debugPrint('  Growth: ${report['growth_mb'].toStringAsFixed(1)} MB');
+      debugPrint('  Safe: ${report['is_safe']}');
     }
   }
 }

@@ -22,10 +22,12 @@ class MessageRepository implements IMessageRepository {
     required this.userContextService,
   });
 
-  Future<String> _requireUserId() async {
-    final userId = await userContextService.getActiveUserId();
-    if (userId.isEmpty) {
-      throw Exception('No authenticated user - cannot scope message data');
+  String _requireUserId(String operation) {
+    final userId = userContextService.getSignedInUserId(operation: operation);
+    if (userId == null || userId.isEmpty) {
+      throw const AuthRequiredException(
+        'User is not signed in – message operation requires authentication',
+      );
     }
     return userId;
   }
@@ -33,7 +35,7 @@ class MessageRepository implements IMessageRepository {
   // Send a message
   @override
   Future<Message> sendMessage(String sessionId, String content) async {
-    final userId = await _requireUserId();
+    final userId = _requireUserId('MessageRepository.sendMessage');
     final now = DateTime.now();
     final String localId = 'local_${now.millisecondsSinceEpoch}';
 
@@ -87,7 +89,16 @@ class MessageRepository implements IMessageRepository {
   // Send all queued messages in a batch
   @override
   Future<bool> sendQueuedMessages(String sessionId) async {
-    final userId = await _requireUserId();
+    final userId = userContextService.getSignedInUserId(
+      operation: 'MessageRepository.sendQueuedMessages',
+    );
+    if (userId == null || userId.isEmpty) {
+      logger.info(
+        'Auth guard bail – skipped queued message sync for session $sessionId',
+        tag: 'AuthGuard',
+      );
+      return false;
+    }
     if (_messageQueue.isEmpty) {
       logger.debug('No messages queued for batch sending');
       return true;
@@ -131,7 +142,23 @@ class MessageRepository implements IMessageRepository {
       // Clear the queue after successful sync
       _messageQueue.clear();
       return true;
+    } on AuthRequiredException catch (e) {
+      logger.warning(
+        'Auth lost while syncing queued messages for session $sessionId',
+        tag: 'AuthGuard',
+        error: e,
+      );
+      return false;
     } catch (e) {
+      final message = e.toString();
+      if (message.contains('401')) {
+        logger.warning(
+          'Received 401 during message sync for session $sessionId – deferring retry',
+          tag: 'AuthGuard',
+        );
+        return false;
+      }
+
       logger.error('Error sending batch messages: $e');
       return false;
     }
@@ -140,7 +167,7 @@ class MessageRepository implements IMessageRepository {
   // Get response from AI
   @override
   Future<Message> getAiResponse(String sessionId, String userMessage) async {
-    final userId = await _requireUserId();
+    final userId = _requireUserId('MessageRepository.getAiResponse');
     try {
       // Get AI response from server
       final response = await apiClient.post(
@@ -196,7 +223,12 @@ class MessageRepository implements IMessageRepository {
   // Get messages for a session
   @override
   Future<List<Message>> getSessionMessages(String sessionId) async {
-    final userId = await _requireUserId();
+    final userId = userContextService.getSignedInUserId(
+      operation: 'MessageRepository.getSessionMessages',
+    );
+    if (userId == null || userId.isEmpty) {
+      return const <Message>[];
+    }
     try {
       // Try to get messages from server
       final response =
