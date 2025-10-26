@@ -17,8 +17,7 @@ sealed class TtsException implements Exception {
 
 /// Network-related TTS failures (WebSocket, HTTP, connectivity)
 class TtsNetworkException extends TtsException {
-  const TtsNetworkException(String message, [String details = ''])
-      : super(message, details);
+  const TtsNetworkException(super.message, [super.details = '']);
 
   /// Factory for WebSocket connection failures
   factory TtsNetworkException.webSocketFailed(String url, Object error) =>
@@ -34,7 +33,7 @@ class TtsNetworkException extends TtsException {
       );
 
   /// Factory for authentication/authorization failures
-  factory TtsNetworkException.unauthorized() => TtsNetworkException(
+  factory TtsNetworkException.unauthorized() => const TtsNetworkException(
         'TTS service access denied',
         'Authentication failed or quota exceeded',
       );
@@ -42,8 +41,7 @@ class TtsNetworkException extends TtsException {
 
 /// Rate limiting and quota exceeded errors
 class TtsQuotaException extends TtsException {
-  const TtsQuotaException(String message, [String details = ''])
-      : super(message, details);
+  const TtsQuotaException(super.message, [super.details = '']);
 
   /// Factory for rate limit exceeded
   factory TtsQuotaException.rateLimitExceeded(Duration retryAfter) =>
@@ -53,7 +51,7 @@ class TtsQuotaException extends TtsException {
       );
 
   /// Factory for daily/monthly quota exceeded
-  factory TtsQuotaException.quotaExceeded() => TtsQuotaException(
+  factory TtsQuotaException.quotaExceeded() => const TtsQuotaException(
         'TTS quota exceeded',
         'Daily or monthly usage limit reached',
       );
@@ -61,17 +59,16 @@ class TtsQuotaException extends TtsException {
 
 /// Audio device and session conflicts
 class TtsDeviceBusyException extends TtsException {
-  const TtsDeviceBusyException(String message, [String details = ''])
-      : super(message, details);
+  const TtsDeviceBusyException(super.message, [super.details = '']);
 
   /// Factory for audio session conflicts
-  factory TtsDeviceBusyException.audioSessionBusy() => TtsDeviceBusyException(
+  factory TtsDeviceBusyException.audioSessionBusy() => const TtsDeviceBusyException(
         'Audio device is busy',
         'Another app is using the audio system',
       );
 
   /// Factory for audio focus conflicts
-  factory TtsDeviceBusyException.audioFocusLost() => TtsDeviceBusyException(
+  factory TtsDeviceBusyException.audioFocusLost() => const TtsDeviceBusyException(
         'Audio focus lost',
         'Audio focus was taken by another app',
       );
@@ -86,8 +83,7 @@ class TtsDeviceBusyException extends TtsException {
 
 /// Service configuration and initialization errors
 class TtsConfigurationException extends TtsException {
-  const TtsConfigurationException(String message, [String details = ''])
-      : super(message, details);
+  const TtsConfigurationException(super.message, [super.details = '']);
 
   /// Factory for missing configuration
   factory TtsConfigurationException.missingConfig(String configKey) =>
@@ -106,8 +102,7 @@ class TtsConfigurationException extends TtsException {
 
 /// Service disabled or permanently unavailable
 class TtsDisabledException extends TtsException {
-  const TtsDisabledException(String message, [String details = ''])
-      : super(message, details);
+  const TtsDisabledException(super.message, [super.details = '']);
 
   /// Factory for permanent disable after repeated failures
   factory TtsDisabledException.permanentlyDisabled(int failureCount) =>
@@ -117,13 +112,13 @@ class TtsDisabledException extends TtsException {
       );
 
   /// Factory for user-disabled TTS
-  factory TtsDisabledException.userDisabled() => TtsDisabledException(
+  factory TtsDisabledException.userDisabled() => const TtsDisabledException(
         'TTS disabled by user',
         'Text-to-speech has been turned off in settings',
       );
 
   /// Factory for system-level TTS unavailable
-  factory TtsDisabledException.systemUnavailable() => TtsDisabledException(
+  factory TtsDisabledException.systemUnavailable() => const TtsDisabledException(
         'TTS system unavailable',
         'Device does not support text-to-speech',
       );
@@ -137,7 +132,7 @@ extension ExceptionConverters on Object {
       case SocketException():
         return TtsNetworkException('Network connection failed', '$this');
       case TimeoutException():
-        return TtsNetworkException.timeout(Duration(seconds: 30));
+        return TtsNetworkException.timeout(const Duration(seconds: 30));
       case FormatException():
         return TtsConfigurationException('Invalid data format', '$this');
       case TtsException():

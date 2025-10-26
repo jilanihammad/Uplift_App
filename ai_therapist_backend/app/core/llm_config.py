@@ -6,6 +6,7 @@ from dataclasses import dataclass
 class ModelProvider(str, Enum):
     OPENAI = "openai"
     GROQ = "groq"
+    GROK = "grok"
     ANTHROPIC = "anthropic"
     AZURE_OPENAI = "azure_openai"
     DEEPSEEK = "deepseek"
@@ -36,7 +37,7 @@ class LLMConfig:
     # =============================================================================
     # ACTIVE MODEL SELECTION - CHANGE THESE TO SWITCH MODELS EASILY
     # =============================================================================
-    ACTIVE_LLM_PROVIDER = ModelProvider.GOOGLE        # Change this to switch LLM provider
+    ACTIVE_LLM_PROVIDER = ModelProvider.GROK        # Change this to switch LLM provider
     ACTIVE_TTS_PROVIDER = ModelProvider.GOOGLE        # Default TTS provider is OpenAI
     ACTIVE_TRANSCRIPTION_PROVIDER = ModelProvider.GROQ  # Change this to switch transcription provider
     
@@ -47,6 +48,11 @@ class LLMConfig:
 
     # Default TTS voice (change here to update default voice)
     DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "kore")  # Default Gemini voice; overridden per-provider as needed
+    GOOGLE_TTS_MODE = os.getenv("GOOGLE_TTS_MODE", "live").lower()
+    GOOGLE_TTS_NATIVE_MIME = os.getenv(
+        "GOOGLE_TTS_NATIVE_MIME",
+        "audio/ogg; codecs=opus",
+    )
     
     # Centralized TTS arguments to prevent parameter mismatches
     DEFAULT_TTS_ARGS = {
@@ -203,16 +209,38 @@ class LLMConfig:
 
         (ModelProvider.GOOGLE, ModelType.TTS): ModelConfig(
             provider=ModelProvider.GOOGLE,
-            model_id=os.getenv("GOOGLE_TTS_MODEL", "gemini-2.5-flash-preview-tts"),
+            model_id=os.getenv("GOOGLE_TTS_MODEL", "gemini-2.5-flash-native-audio-preview-09-2025"),
             base_url="https://generativelanguage.googleapis.com/v1beta",
             api_key_env="GOOGLE_API_KEY",
             default_params={
                 "voice": os.getenv("GOOGLE_TTS_VOICE", "kore"),
                 "audio_encoding": os.getenv("GOOGLE_TTS_AUDIO_ENCODING", "LINEAR16"),
                 "sample_rate_hz": int(os.getenv("GOOGLE_TTS_SAMPLE_RATE", "24000")),
-                "response_format": os.getenv("GOOGLE_TTS_RESPONSE_FORMAT", "wav"),
+                "response_format": (
+                    os.getenv("GOOGLE_TTS_RESPONSE_FORMAT", "wav")
+                    if GOOGLE_TTS_MODE != "live"
+                    else "native"
+                ),
+                "mode": GOOGLE_TTS_MODE,
+                "native_mime_type": GOOGLE_TTS_NATIVE_MIME,
             },
             supports_streaming=True
+        ),
+
+        # Grok Models (x.ai)
+        (ModelProvider.GROK, ModelType.LLM): ModelConfig(
+            provider=ModelProvider.GROK,
+            model_id=os.getenv("GROK_LLM_MODEL", "grok-4-fast-non-reasoning"),
+            base_url=os.getenv("GROK_API_BASE_URL", "https://api.x.ai/v1"),
+            api_key_env="XAI_API_KEY",
+            default_params={
+                "temperature": 0.7,
+                "max_tokens": 1000,
+                "top_p": 1.0,
+                "stream": False
+            },
+            supports_streaming=True,
+            max_tokens_limit=131072  # Grok supports 131K context window
         )
     }
     
@@ -249,6 +277,13 @@ class LLMConfig:
         return os.getenv(config.api_key_env)
 
     @classmethod
+    def get_tts_mode(cls) -> str:
+        config = cls.get_active_model_config(ModelType.TTS)
+        if not config:
+            return "rest"
+        return (config.default_params or {}).get("mode", "rest")
+
+    @classmethod
     def get_tts_config(cls) -> Dict[str, Any]:
         """Return the active TTS configuration in a JSON-serializable format."""
         config = cls.get_active_model_config(ModelType.TTS)
@@ -272,13 +307,25 @@ class LLMConfig:
         audio_encoding = params.get("audio_encoding", "LINEAR16")
         response_format = params.get("response_format", "wav")
 
+        mode = params.get("mode", "rest")
+        native_mime = params.get("native_mime_type")
+
+        mime_type = params.get("mime_type")
+        if not mime_type:
+            if mode == "live" and native_mime:
+                mime_type = native_mime
+            else:
+                mime_type = "audio/wav"
+
         return {
             "provider": config.provider.value,
             "model": model_id,
             "voice": voice,
+            "mode": mode,
             "sample_rate_hz": sample_rate,
             "audio_encoding": audio_encoding,
             "response_format": response_format,
+            "mime_type": mime_type,
             "supports_streaming": bool(config.supports_streaming),
         }
 

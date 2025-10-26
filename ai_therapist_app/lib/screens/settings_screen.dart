@@ -1,7 +1,6 @@
 // lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
@@ -9,7 +8,6 @@ import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/services/remote_config_service.dart';
 import 'package:ai_therapist_app/utils/feature_flags.dart';
-import 'package:ai_therapist_app/config/routes.dart';
 
 class SettingsScreen extends StatefulWidget {
   final IPreferencesService? preferencesService;
@@ -50,8 +48,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late IUserProfileService _userProfileService;
   final AppConfig _appConfig = AppConfig();
   bool _darkModeEnabled = false;
-  bool _notificationsEnabled = true;
-  bool _soundEnabled = true;
+  final bool _notificationsEnabled = true;
+  final bool _soundEnabled = true;
   String _selectedLanguage = 'English';
   late bool _useVoiceByDefault;
   TimeOfDay? _dailyCheckInTime;

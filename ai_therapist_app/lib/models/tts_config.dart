@@ -6,6 +6,8 @@ class TtsConfigDto {
   final String? audioEncoding;
   final String? responseFormat;
   final bool? supportsStreaming;
+  final String? mode;
+  final String? mimeType;
 
   const TtsConfigDto({
     required this.provider,
@@ -15,6 +17,8 @@ class TtsConfigDto {
     this.audioEncoding,
     this.responseFormat,
     this.supportsStreaming,
+    this.mode,
+    this.mimeType,
   });
 
   factory TtsConfigDto.fromJson(Map<String, dynamic> json) {
@@ -28,6 +32,8 @@ class TtsConfigDto {
       audioEncoding: (json['audio_encoding'] as String?)?.trim(),
       responseFormat: (json['response_format'] as String?)?.trim(),
       supportsStreaming: json['supports_streaming'] as bool?,
+      mode: (json['mode'] as String?)?.trim(),
+      mimeType: (json['mime_type'] as String?)?.trim(),
     );
   }
 
@@ -40,6 +46,8 @@ class TtsConfigDto {
       'audio_encoding': audioEncoding,
       'response_format': responseFormat,
       'supports_streaming': supportsStreaming,
+      'mode': mode,
+      'mime_type': mimeType,
     };
   }
 }

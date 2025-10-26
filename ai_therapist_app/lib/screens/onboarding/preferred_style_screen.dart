@@ -5,7 +5,7 @@ import '../../services/preferences_service.dart';
 import '../../models/therapist_style.dart';
 
 class PreferredStyleScreen extends StatefulWidget {
-  const PreferredStyleScreen({Key? key}) : super(key: key);
+  const PreferredStyleScreen({super.key});
 
   @override
   State<PreferredStyleScreen> createState() => _PreferredStyleScreenState();

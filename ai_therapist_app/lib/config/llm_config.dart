@@ -1,6 +1,7 @@
 /// Centralized LLM Configuration - Change LLM providers and models in one place
 /// This configuration system allows easy switching between OpenAI, Anthropic, Google, and other providers
 /// by simply changing the active provider and model IDs in one location.
+library;
 
 import 'package:flutter/foundation.dart';
 
@@ -79,6 +80,8 @@ class LLMConfig {
   static const String _defaultTTSAudioEncoding = 'LINEAR16';
   static const String _defaultTTSResponseFormat = 'wav';
   static const bool _defaultTTSSupportsStreaming = true;
+  static const String _defaultTTSMode = 'rest';
+  static const String _defaultTtsMimeType = 'audio/wav';
 
   /// Runtime overrides supplied by backend configuration
   static LLMProvider? _overrideTTSProvider;
@@ -88,6 +91,8 @@ class LLMConfig {
   static String? _overrideTTSAudioEncoding;
   static String? _overrideTTSResponseFormat;
   static bool? _overrideTTSSupportsStreaming;
+  static String? _overrideTTSMode;
+  static String? _overrideTtsMimeType;
 
   // =================================================================
   // PROVIDER CONFIGURATIONS - Add new providers here
@@ -325,6 +330,8 @@ class LLMConfig {
     mergedParams['sample_rate_hz'] = activeTTSSampleRate;
     mergedParams['audio_encoding'] = activeTTSAudioEncoding;
     mergedParams['response_format'] = activeTTSResponseFormat;
+    mergedParams['mode'] = activeTTSMode;
+    mergedParams['mime_type'] = activeTtsMimeType;
 
     return TTSModelConfig(
       modelId: modelId,
@@ -352,6 +359,9 @@ class LLMConfig {
       _overrideTTSResponseFormat ?? _defaultTTSResponseFormat;
   static bool get activeTTSSupportsStreaming =>
       _overrideTTSSupportsStreaming ?? _defaultTTSSupportsStreaming;
+  static String get activeTTSMode => _overrideTTSMode ?? _defaultTTSMode;
+  static String get activeTtsMimeType =>
+      _overrideTtsMimeType ?? _defaultTtsMimeType;
 
   /// Allow runtime overrides provided by the backend configuration endpoint.
   static void applyRemoteTtsConfig({
@@ -362,6 +372,8 @@ class LLMConfig {
     String? audioEncoding,
     String? responseFormat,
     bool? supportsStreaming,
+    String? mode,
+    String? mimeType,
   }) {
     final normalizedProvider = _providerFromString(provider);
     if (normalizedProvider != null) {
@@ -392,14 +404,24 @@ class LLMConfig {
       _overrideTTSSupportsStreaming = supportsStreaming;
     }
 
+    if (mode != null && mode.isNotEmpty) {
+      _overrideTTSMode = mode;
+    }
+
+    if (mimeType != null && mimeType.isNotEmpty) {
+      _overrideTtsMimeType = mimeType;
+    }
+
     if (kDebugMode) {
       debugPrint('[LLMConfig] Applied remote TTS config override: '
           'provider=${activeTTSProvider.name}, '
-          'model=${activeTTSModelId}, '
-          'voice=${activeTTSVoice}, '
-          'sampleRate=${activeTTSSampleRate}, '
-          'encoding=${activeTTSAudioEncoding}, '
-          'format=${activeTTSResponseFormat}');
+          'model=$activeTTSModelId, '
+          'voice=$activeTTSVoice, '
+          'sampleRate=$activeTTSSampleRate, '
+          'encoding=$activeTTSAudioEncoding, '
+          'format=$activeTTSResponseFormat, '
+          'mode=$activeTTSMode, '
+          'mime=$activeTtsMimeType');
     }
   }
 

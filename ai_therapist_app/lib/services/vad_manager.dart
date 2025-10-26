@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
@@ -205,9 +204,10 @@ class VADManager {
 
   // Start listening for voice activity (Option B: Single Recorder Instance)
   Future<bool> startListening() async {
-    if (kDebugMode)
+    if (kDebugMode) {
       debugPrint(
           '[VADManager] startListening() called. _isInitialized=$_isInitialized, _isListening=$_isListening');
+    }
 
     // Check if RecordingManager is using the recorder
     final sharedRecorder = SharedRecorderManager.instance;
@@ -222,7 +222,7 @@ class VADManager {
     // Prevent race conditions with simple lock
     if (_operationInProgress) {
       if (kDebugMode) debugPrint('[VADManager] Operation in progress, waiting...');
-      await Future.delayed(Duration(milliseconds: 10));
+      await Future.delayed(const Duration(milliseconds: 10));
       return startListening(); // Retry
     }
 
@@ -244,9 +244,10 @@ class VADManager {
       // Option B: Reuse existing recorder instead of creating new one
       if (await _recorder.isRecording()) {
         // Edge case: still recording from previous session - reuse it
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '[VADManager] Recorder still active from previous session, reusing');
+        }
         _isListening = true;
         _isSpeechDetected = false;
         _consecutiveLoudFrames = 0;
@@ -263,15 +264,16 @@ class VADManager {
       // Create a temporary file path for monitoring
       final String monitorFilePath = PathManager.instance.vadMonitorFile();
 
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[VADManager] Starting recorder for VAD (reusing instance)');
+      }
 
       // Register VADManager as the current user for coordination
       await sharedRecorder.requestAccess('VADManager');
 
       // Start recording with monitoring mode using existing recorder
       await _recorder.start(
-        RecordConfig(
+        const RecordConfig(
           encoder: AudioEncoder.aacLc,
           numChannels: 1,
           sampleRate: 16000,
@@ -280,8 +282,9 @@ class VADManager {
         path: monitorFilePath, // This file will be overwritten each time
       );
 
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[VADManager] Recorder started, starting amplitude polling');
+      }
 
       // Start polling amplitude
       _startAmplitudePolling();
@@ -353,8 +356,9 @@ class VADManager {
             debugPrint('⚠️ VAD: Critical error, stopping speech detection');
           }
           _stopSpeechDetection().catchError((e2) {
-            if (kDebugMode)
+            if (kDebugMode) {
               debugPrint('⚠️ Error in emergency _stopSpeechDetection: $e2');
+            }
           });
         }
       }
@@ -491,9 +495,10 @@ class VADManager {
     try {
       if (await _recorder.isRecording()) {
         await _recorder.stop();
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '🎙️ VAD: Recorder stopped during speech end (keeping instance alive)');
+        }
       }
       // NOTE: No longer disposing recorder here - reuse the instance!
     } catch (e) {
@@ -514,7 +519,7 @@ class VADManager {
     }
 
     // Add a tiny post-speech debounce to batch any quick amplitude bounces
-    await Future.delayed(Duration(milliseconds: 50));
+    await Future.delayed(const Duration(milliseconds: 50));
 
     // Finally, emit the end event
     _speechEndController.add(null);

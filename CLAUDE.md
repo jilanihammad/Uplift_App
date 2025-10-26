@@ -116,7 +116,7 @@ curl -X GET "https://ai-therapist-backend-385290373302.us-central1.run.app/healt
 
 ### LLM Integration
 - **Unified Manager**: Single interface for multiple LLM providers
-- **Providers**: OpenAI (GPT), Groq (fast inference), Anthropic (Claude), Google (Gemini)
+- **Providers**: OpenAI (GPT), Groq (fast inference), Grok (x.ai), Anthropic (Claude), Google (Gemini)
 - **Configuration**: Environment-based provider selection
 - **Streaming**: Supports both text and audio streaming responses
 
@@ -133,6 +133,7 @@ The codebase is undergoing a hybrid architecture migration to decompose monolith
 # Backend (.env)
 OPENAI_API_KEY=your-key
 GROQ_API_KEY=your-key
+XAI_API_KEY=your-key                       # x.ai Grok API key
 DATABASE_URL=postgresql://user:pass@host/db
 FIREBASE_CREDENTIALS=path/to/credentials.json
 

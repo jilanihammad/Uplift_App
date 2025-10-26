@@ -8,13 +8,13 @@ class ActionItemsCard extends StatelessWidget {
   final bool Function(String actionItem)? isItemAlreadyAdded;
 
   const ActionItemsCard({
-    Key? key,
+    super.key,
     required this.actionItems,
     this.sessionId,
     this.onAddToTasks,
     this.onRemoveFromTasks,
     this.isItemAlreadyAdded,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +93,7 @@ class ActionItemsCard extends StatelessWidget {
               final index = entry.key;
               final item = entry.value;
               return _buildActionItem(context, item, index);
-            }).toList(),
+            }),
           ],
         ),
       ),
@@ -108,7 +108,7 @@ class ActionItemsCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -199,7 +199,7 @@ class ActionItemsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: colorScheme.outlineVariant,

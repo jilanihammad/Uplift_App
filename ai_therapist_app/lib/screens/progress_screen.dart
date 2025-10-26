@@ -12,10 +12,10 @@ class ProgressScreen extends StatefulWidget {
   final int initialTabIndex;
 
   const ProgressScreen({
-    Key? key,
+    super.key,
     this.progressService,
     this.initialTabIndex = 0, // Default to 0 (Overview)
-  }) : super(key: key);
+  });
 
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();

@@ -13,9 +13,9 @@ class RegisterScreen extends StatefulWidget {
   final IAuthService? authService;
 
   const RegisterScreen({
-    Key? key,
+    super.key,
     this.authService,
-  }) : super(key: key);
+  });
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();

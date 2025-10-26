@@ -13,6 +13,7 @@
 ///
 /// Thread Safety: Uses Dart Timer (main thread callbacks)
 /// Dependencies: None (pure Dart)
+library;
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -133,7 +134,7 @@ class TimerManager {
     }
 
     if (kDebugMode) {
-      debugPrint('[TimerManager] Pausing timer at ${elapsedSeconds} seconds');
+      debugPrint('[TimerManager] Pausing timer at $elapsedSeconds seconds');
     }
 
     _isPaused = true;
@@ -152,7 +153,7 @@ class TimerManager {
 
     if (kDebugMode) {
       debugPrint(
-          '[TimerManager] Resuming timer from ${elapsedSeconds} seconds');
+          '[TimerManager] Resuming timer from $elapsedSeconds seconds');
     }
 
     _isPaused = false;
@@ -162,7 +163,7 @@ class TimerManager {
   /// Stop and reset the timer
   void stopTimer() {
     if (kDebugMode) {
-      debugPrint('[TimerManager] Stopping timer at ${elapsedSeconds} seconds');
+      debugPrint('[TimerManager] Stopping timer at $elapsedSeconds seconds');
     }
 
     _sessionTimer?.cancel();

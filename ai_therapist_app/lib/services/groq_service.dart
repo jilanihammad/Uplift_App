@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/services/config_service.dart';
@@ -69,7 +68,7 @@ class GroqService implements IGroqService {
           debugPrint('GroqService: Status response: $response');
         }
 
-        if (response != null && response['status'] == 'available') {
+        if (response['status'] == 'available') {
           _isAvailable = true;
           if (kDebugMode) {
             debugPrint('GroqService: API is available');
@@ -154,7 +153,7 @@ class GroqService implements IGroqService {
         'max_tokens': maxTokens,
       });
 
-      if (response != null && response.containsKey('response')) {
+      if (response.containsKey('response')) {
         final aiResponse = response['response'];
 
         // Add response to memory
@@ -179,19 +178,15 @@ class GroqService implements IGroqService {
       // Make API request to test the connection
       final response = await _apiClient.get('/ai/test-key');
 
-      if (response != null) {
-        // Update availability based on test result
-        if (response.containsKey('groq_api') &&
-            response['groq_api'] is Map<String, dynamic> &&
-            response['groq_api'].containsKey('available')) {
-          _isAvailable = response['groq_api']['available'] == true;
-        }
-
-        return response;
-      } else {
-        return {'available': false, 'error': 'No response from test endpoint'};
+      // Update availability based on test result
+      if (response.containsKey('groq_api') &&
+          response['groq_api'] is Map<String, dynamic> &&
+          response['groq_api'].containsKey('available')) {
+        _isAvailable = response['groq_api']['available'] == true;
       }
-    } catch (e) {
+
+      return response;
+        } catch (e) {
       if (kDebugMode) {
         debugPrint('GroqService: Error testing connection: $e');
       }
@@ -220,7 +215,7 @@ class GroqService implements IGroqService {
       throw Exception('Invalid backend URL: $httpBase');
     }
     final String host = httpBase.replaceFirst(RegExp(r'^https?://'), '');
-    final String wsUrl = wsProtocol + host + '/api/v1/llm/ws/chat';
+    final String wsUrl = '$wsProtocol$host/api/v1/llm/ws/chat';
 
     int attempt = 0;
     while (attempt < maxRetries) {
@@ -248,8 +243,7 @@ class GroqService implements IGroqService {
         await for (final event in channel.stream) {
           lastMessageTime = DateTime.now();
           if (event is String) {
-            debugPrint('RAW WS EVENT: ' +
-                event); // <-- Debug print for raw WebSocket response
+            debugPrint('RAW WS EVENT: $event'); // <-- Debug print for raw WebSocket response
             try {
               final data = jsonDecode(event);
               // Store session_id if present in the first chunk or done message

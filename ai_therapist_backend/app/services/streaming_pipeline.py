@@ -761,6 +761,8 @@ class EnhancedAsyncPipeline:
             str: Selected audio format
         """
         supported_formats = client_capabilities.get("supported_formats", ["wav"])
+        if "native" in supported_formats:
+            return "native"
         
         # Format selection logic based on network quality
         if network_quality == "poor":
@@ -803,6 +805,16 @@ class EnhancedAsyncPipeline:
         Returns:
             Dict: Format-specific parameters
         """
+        if audio_format == "native":
+            tts_config = LLMConfig.get_tts_config()
+            return {
+                "response_format": "native",
+                "mime_type": tts_config.get("mime_type", "audio/ogg; codecs=opus"),
+                "sample_rate": tts_config.get("sample_rate_hz", 24000),
+                "channels": 1,
+                "latency_category": "lowest"
+            }
+
         format_configs = {
             "wav": {
                 "response_format": "wav",

@@ -2,6 +2,7 @@
 ///
 /// These tests verify the pure state management logic of SessionStateManager.
 /// No mocking required as this manager has no external dependencies.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ai_therapist_app/blocs/managers/session_state_manager.dart';

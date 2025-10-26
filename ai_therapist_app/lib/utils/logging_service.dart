@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'dart:developer' as developer;
-import 'package:flutter/services.dart';
 
 // Optional Firebase imports - add if using Firebase Crashlytics
 // import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -134,7 +133,7 @@ class LoggingService {
   void _printLog(String level, String? tag, String message) {
     final timestamp = DateTime.now().toIso8601String();
     final tagStr = tag != null ? '[$tag] ' : '';
-    debugPrint('$timestamp | $level | ${tagStr}$message');
+    debugPrint('$timestamp | $level | $tagStr$message');
   }
 
   /// Helper to log to Firebase Crashlytics

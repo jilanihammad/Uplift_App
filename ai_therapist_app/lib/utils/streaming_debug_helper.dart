@@ -42,7 +42,7 @@ class StreamingDebugHelper {
     _streamingDebugEnabled = kDebugMode;
     _streamingLogLevel = kDebugMode ? Level.debug : Level.info;
     log.setLogLevel(_streamingLogLevel);
-    log.i('Streaming logs reset to DEFAULT - debug=${kDebugMode}');
+    log.i('Streaming logs reset to DEFAULT - debug=$kDebugMode');
   }
 
   /// Check if streaming debug is currently enabled

@@ -59,6 +59,7 @@ import '../services/simple_tts_service.dart';
 import '../services/audio_player_manager.dart';
 import '../services/audio_file_manager.dart';
 import '../blocs/voice_session_bloc.dart';
+import '../services/audio_format_negotiator.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -484,21 +485,6 @@ Future<void> setupServiceLocator(
       debugPrint('Registered ProgressService');
     }
 
-    if (!serviceLocator.isRegistered<SessionScheduleService>()) {
-      serviceLocator.registerLazySingleton<SessionScheduleService>(
-          () => SessionScheduleService(
-                apiClient: serviceLocator<IApiClient>(),
-                prefsManager: serviceLocator<PrefsManager>(),
-              ));
-      debugPrint('Registered SessionScheduleService');
-    }
-
-    if (!serviceLocator.isRegistered<ISessionScheduleService>()) {
-      serviceLocator.registerLazySingleton<ISessionScheduleService>(
-          () => serviceLocator<SessionScheduleService>());
-      debugPrint('Registered ISessionScheduleService interface binding');
-    }
-
     if (!serviceLocator.isRegistered<UserProfileService>()) {
       serviceLocator.registerLazySingleton<UserProfileService>(
           () => UserProfileService());
@@ -616,8 +602,12 @@ Future<void> registerApiDependentServices(
     ConfigService configService, ApiClient apiClient) async {
   if (DependencyStatus.apiDependenciesRegistered) {
     debugPrint('API dependencies already registered');
+    DependencyContainer.markReady();
     return;
   }
+
+  final stopwatch = Stopwatch()..start();
+  debugPrint('[Startup] Background init started');
 
   try {
     // Register ConfigService and ApiClient
@@ -642,7 +632,12 @@ Future<void> registerApiDependentServices(
           audioEncoding: remoteTtsConfig.audioEncoding,
           responseFormat: remoteTtsConfig.responseFormat,
           supportsStreaming: remoteTtsConfig.supportsStreaming,
+          mode: remoteTtsConfig.mode,
+          mimeType: remoteTtsConfig.mimeType,
         );
+
+        // Refresh audio negotiation now that we have runtime overrides
+        AudioFormatNegotiator.updateFromConfig(log: true);
       }
     } catch (e) {
       debugPrint('Warning: Failed to fetch remote TTS config: $e');
@@ -654,6 +649,24 @@ Future<void> registerApiDependentServices(
         () => serviceLocator<ApiClient>(),
       );
       debugPrint('Registered IApiClient interface');
+    }
+
+    // Register services that depend on the ApiClient now that it is available
+    if (!serviceLocator.isRegistered<SessionScheduleService>()) {
+      serviceLocator.registerLazySingleton<SessionScheduleService>(
+        () => SessionScheduleService(
+          apiClient: serviceLocator<IApiClient>(),
+          prefsManager: serviceLocator<PrefsManager>(),
+        ),
+      );
+      debugPrint('Registered SessionScheduleService');
+    }
+
+    if (!serviceLocator.isRegistered<ISessionScheduleService>()) {
+      serviceLocator.registerLazySingleton<ISessionScheduleService>(
+        () => serviceLocator<SessionScheduleService>(),
+      );
+      debugPrint('Registered ISessionScheduleService interface binding');
     }
 
     // Register repositories that depend on ApiClient and AppDatabase
@@ -716,9 +729,20 @@ Future<void> registerApiDependentServices(
 
     DependencyStatus.apiDependenciesRegistered = true;
     debugPrint('API-dependent service registration complete');
+
+    stopwatch.stop();
+    debugPrint(
+        '[Startup] Background init complete in ${stopwatch.elapsedMilliseconds}ms');
+    DependencyContainer.markReady();
+
+    // Optionally pre-warm latency-sensitive services
+    if (serviceLocator.isRegistered<ITTSService>()) {
+      unawaited(serviceLocator<ITTSService>().initialize());
+    }
   } catch (e, stackTrace) {
     debugPrint('ERROR during registerApiDependentServices: $e');
     debugPrint('Stack trace: $stackTrace');
+    DependencyContainer.markFailed(e, stackTrace);
     rethrow;
   }
 }

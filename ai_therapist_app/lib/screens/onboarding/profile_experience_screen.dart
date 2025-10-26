@@ -5,7 +5,7 @@ import '../../services/user_profile_service.dart';
 import '../../models/user_profile.dart';
 
 class ProfileExperienceScreen extends StatefulWidget {
-  const ProfileExperienceScreen({Key? key}) : super(key: key);
+  const ProfileExperienceScreen({super.key});
 
   @override
   State<ProfileExperienceScreen> createState() =>

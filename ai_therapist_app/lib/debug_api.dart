@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 class DebugApiScreen extends StatefulWidget {
-  const DebugApiScreen({Key? key}) : super(key: key);
+  const DebugApiScreen({super.key});
 
   @override
   _DebugApiScreenState createState() => _DebugApiScreenState();
@@ -88,7 +88,7 @@ class _DebugApiScreenState extends State<DebugApiScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Select API Endpoint:'),
+            const Text('Select API Endpoint:'),
             DropdownButton<String>(
               value: _selectedEndpoint,
               isExpanded: true,

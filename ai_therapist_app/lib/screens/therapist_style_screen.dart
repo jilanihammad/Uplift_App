@@ -8,9 +8,9 @@ class TherapistStyleScreen extends StatefulWidget {
   final ITherapyService? therapyService;
 
   const TherapistStyleScreen({
-    Key? key,
+    super.key,
     this.therapyService,
-  }) : super(key: key);
+  });
 
   @override
   State<TherapistStyleScreen> createState() => _TherapistStyleScreenState();

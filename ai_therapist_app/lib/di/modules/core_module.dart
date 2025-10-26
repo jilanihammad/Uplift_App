@@ -11,8 +11,6 @@ import '../../data/datasources/local/prefs_manager.dart';
 import '../../data/datasources/local/database_provider.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../utils/database_helper.dart';
-import '../interfaces/i_database_operation_manager.dart';
-import '../interfaces/i_app_database.dart';
 import '../interfaces/i_audio_settings.dart';
 
 /// Core dependency module
@@ -281,7 +279,7 @@ class _MockApiClient implements IApiClient {
   bool get isConnected => true;
 
   @override
-  Stream<String> get errorStream => Stream.empty();
+  Stream<String> get errorStream => const Stream.empty();
 
   @override
   Future<void> initialize() async {}

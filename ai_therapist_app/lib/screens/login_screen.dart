@@ -5,20 +5,13 @@ import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
-import 'package:ai_therapist_app/di/interfaces/i_auth_service.dart';
 import 'package:ai_therapist_app/config/routes.dart';
 import 'package:ai_therapist_app/services/memory_manager.dart';
 import 'package:ai_therapist_app/services/audio_generator.dart';
 
 class LoginScreen extends StatefulWidget {
-  final IAuthService? authService;
-
-  const LoginScreen({
-    Key? key,
-    this.authService,
-  }) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -29,14 +22,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
-  late IAuthService _authService;
 
   @override
   void initState() {
     super.initState();
-    // Use dependency injection with fallback to DependencyContainer
-    _authService = widget.authService ?? DependencyContainer().authService;
-
     // Defer heavy initializations to after navigation
     Future.microtask(() async {
       if (DependencyContainer().isRegistered<MemoryManager>()) {

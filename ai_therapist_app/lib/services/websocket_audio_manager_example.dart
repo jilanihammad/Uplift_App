@@ -1,7 +1,6 @@
 // lib/services/websocket_audio_manager_example.dart
 // Example usage of WebSocketAudioManager - for documentation purposes
 
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/i_websocket_audio_manager.dart';
@@ -84,7 +83,7 @@ class WebSocketAudioExample {
         await _wsManager.sendAudioChunk(chunk, i ~/ chunkSize);
 
         // Small delay between chunks
-        await Future.delayed(Duration(milliseconds: 50));
+        await Future.delayed(const Duration(milliseconds: 50));
       }
 
       // Finalize the stream
@@ -123,7 +122,7 @@ class WebSocketAudioExample {
       _wsManager.startKeepAliveTimer();
 
       // Simulate some work
-      await Future.delayed(Duration(seconds: 5));
+      await Future.delayed(const Duration(seconds: 5));
 
       // Stop keep-alive
       _wsManager.stopKeepAliveTimer();
@@ -146,7 +145,7 @@ class WebSocketAudioExample {
     await _wsManager.streamAudio(audioData);
 
     // Wait a bit to simulate processing time
-    await Future.delayed(Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 100));
   }
 
   /// Example: Custom message handling
@@ -181,7 +180,7 @@ class WebSocketAudioExample {
         }
       });
 
-      await Future.delayed(Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 2));
 
       await _wsManager.endSession();
       await _wsManager.disconnectFromBackend();

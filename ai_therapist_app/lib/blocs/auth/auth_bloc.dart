@@ -1,5 +1,6 @@
 /// AuthBloc manages the authentication state of the app including login, registration, logout, and OAuth flows.
 /// It acts as the gatekeeper for the app, determining user access and coordinating with AuthService for all auth operations.
+library;
 
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';

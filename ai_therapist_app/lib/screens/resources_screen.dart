@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 
 class ResourcesScreen extends StatelessWidget {
-  const ResourcesScreen({Key? key}) : super(key: key);
+  const ResourcesScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -101,10 +101,10 @@ class ResourceCategory extends StatelessWidget {
   final List<Resource> resources;
 
   const ResourceCategory({
-    Key? key,
+    super.key,
     required this.title,
     required this.resources,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -129,9 +129,9 @@ class ResourceTile extends StatelessWidget {
   final Resource resource;
 
   const ResourceTile({
-    Key? key,
+    super.key,
     required this.resource,
-  }) : super(key: key);
+  });
 
   IconData _getIcon() {
     switch (resource.type) {

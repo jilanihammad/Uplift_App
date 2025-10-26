@@ -1,6 +1,7 @@
 /// Accessibility service for managing motion sensitivity and other accessibility features
 ///
 /// Provides configuration for users who are sensitive to motion and animations
+library;
 
 import 'package:shared_preferences/shared_preferences.dart';
 

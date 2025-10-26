@@ -4,7 +4,7 @@ import '../../services/onboarding_service.dart';
 import '../widgets/welcome_feature_card.dart';
 
 class WelcomeScreen extends StatelessWidget {
-  const WelcomeScreen({Key? key}) : super(key: key);
+  const WelcomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +30,7 @@ class WelcomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 40),
                 // Title with Google-inspired simplicity
-                Text(
+                const Text(
                   'Welcome to Uplift',
                   style: TextStyle(
                     fontSize: 28,
@@ -42,7 +42,7 @@ class WelcomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 // Supportive description
-                Text(
+                const Text(
                   'Your companion for thoughtful conversations and personal growth, always here when you need it.',
                   style: TextStyle(
                     fontSize: 16,

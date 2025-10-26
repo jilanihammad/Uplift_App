@@ -13,8 +13,6 @@ import 'package:go_router/go_router.dart'; // Import GoRouter
 import '../config/routes.dart'; // Import route constants
 import '../services/config_service.dart';
 import '../data/datasources/remote/api_client.dart';
-import '../services/memory_manager.dart';
-import '../services/audio_generator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -24,12 +22,12 @@ class SplashScreen extends StatefulWidget {
   final ApiClient? apiClient;
 
   const SplashScreen({
-    Key? key,
+    super.key,
     this.skipFirebaseCheck = false,
     this.authService,
     this.onboardingService,
     this.apiClient,
-  }) : super(key: key);
+  });
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -41,7 +39,7 @@ class _SplashScreenState extends State<SplashScreen>
   late IAuthService _authService;
   late IOnboardingService _onboardingService;
   late BackendService _backendService;
-  bool _serviceInitialized = false;
+  final bool _serviceInitialized = false;
   bool _backendAvailable = false;
   String _statusMessage = "Initializing...";
   double _loadingProgress = 0.0;
@@ -700,7 +698,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: LinearProgressIndicator(
                   value: _loadingProgress,
                   backgroundColor: Colors.white.withOpacity(0.3),
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               ),
             ],

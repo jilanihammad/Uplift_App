@@ -1,7 +1,6 @@
 // lib/data/datasources/local/app_database.dart
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../../di/interfaces/i_app_database.dart';
@@ -1137,7 +1136,7 @@ class AppDatabase implements IAppDatabase {
     };
 
     for (final tableName in tableDefinitions.keys) {
-      await txn.execute('DROP TABLE IF EXISTS ' + tableName);
+      await txn.execute('DROP TABLE IF EXISTS $tableName');
     }
 
     for (final entry in tableDefinitions.entries) {

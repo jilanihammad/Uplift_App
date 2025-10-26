@@ -1,5 +1,6 @@
 /// VoiceSessionEvent defines all possible user actions and system events that can occur during a therapy session.
 /// These events trigger state changes in VoiceSessionBloc, enabling clean separation between UI actions and business logic.
+library;
 
 import '../widgets/mood_selector.dart';
 import '../models/therapy_message.dart';

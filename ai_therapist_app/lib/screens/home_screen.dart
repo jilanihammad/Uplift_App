@@ -18,17 +18,15 @@ import 'package:ai_therapist_app/utils/feature_flags.dart';
 
 class HomeScreen extends StatefulWidget {
   final IProgressService? progressService;
-  final IPreferencesService? preferencesService;
   final IUserProfileService? userProfileService;
   final ISessionScheduleService? sessionScheduleService;
 
   const HomeScreen({
-    Key? key,
+    super.key,
     this.progressService,
-    this.preferencesService,
     this.userProfileService,
     this.sessionScheduleService,
-  }) : super(key: key);
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -38,7 +36,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Mood _currentMood = Mood.neutral;
   DateTime? _nextSessionDate;
   late IProgressService _progressService;
-  late IPreferencesService _preferencesService;
   late IUserProfileService _userProfileService;
   late ISessionScheduleService _sessionScheduleService;
   late UserProgress _progress;
@@ -48,8 +45,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _progressService = widget.progressService ?? DependencyContainer().progress;
-    _preferencesService =
-        widget.preferencesService ?? DependencyContainer().preferences;
     _userProfileService =
         widget.userProfileService ?? DependencyContainer().userProfile;
     _sessionScheduleService =
@@ -133,8 +128,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Exit'),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Exit'),
               ),
             ],
           ),
@@ -224,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: colorScheme.surfaceVariant,
+                color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: isLightTheme
                     ? [
@@ -311,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   'assets/images/therapist_avatar.png',
                   height: 100,
                   errorBuilder: (context, error, stackTrace) {
-                    return Icon(
+                    return const Icon(
                       Icons.favorite_outline,
                       size: 80,
                       color: Colors.pinkAccent,
@@ -324,7 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: colorScheme.surfaceVariant,
+                color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: isLightTheme
                     ? [
@@ -395,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "You've already logged your mood 3 times today. Today's logs: ${todayLogsCount}",
+                          "You've already logged your mood 3 times today. Today's logs: $todayLogsCount",
                           style: const TextStyle(
                             color: Colors.amber,
                             fontWeight: FontWeight.bold,
@@ -536,46 +531,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Text(
           emoji,
           style: const TextStyle(fontSize: 24),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionCard(String title, IconData icon, Color bgColor,
-      Color iconColor, VoidCallback onTap) {
-    return Card(
-      elevation: 2,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: double.infinity, // Make it full width
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  icon,
-                  color: iconColor,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -805,70 +760,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildResourcesGrid() {
-    return GridView.count(
-      crossAxisCount: 1,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 16,
-      crossAxisSpacing: 16,
-      children: [
-        _buildResourceCard(
-          'Journaling',
-          'Express thoughts',
-          Icons.edit_note,
-          Colors.purple,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildResourceCard(
-      String title, String subtitle, IconData icon, Color color) {
-    return Card(
-      elevation: 2,
-      child: InkWell(
-        onTap: () {
-          context.go('/resources');
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 36,
-                color: color,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.6),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

@@ -22,7 +22,7 @@ void main() async {
 }
 
 class FirebaseDebugApp extends StatelessWidget {
-  const FirebaseDebugApp({Key? key}) : super(key: key);
+  const FirebaseDebugApp({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -2,18 +2,11 @@
 // Trivial change to trigger linter
 import 'dart:async';
 import 'dart:io';
-import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart'
-    show WidgetsFlutterBinding, DartPluginRegistrant;
-import 'package:flutter/foundation.dart' show BindingBase;
+import 'package:flutter/foundation.dart' show BindingBase, kDebugMode;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_messaging_platform_interface/firebase_messaging_platform_interface.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:ai_therapist_app/config/routes.dart';
@@ -29,23 +22,11 @@ import 'package:ai_therapist_app/services/auth_coordinator.dart';
 import 'package:ai_therapist_app/services/memory_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
 import 'package:ai_therapist_app/utils/app_logger.dart';
-import 'package:ai_therapist_app/services/memory_manager.dart';
-import 'package:ai_therapist_app/services/message_processor.dart';
-import 'package:ai_therapist_app/services/audio_generator.dart';
 import 'package:ai_therapist_app/services/conversation_flow_manager.dart';
 import 'package:ai_therapist_app/services/remote_config_service.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
-import 'package:ai_therapist_app/firebase_options.dart';
 import 'package:ai_therapist_app/services/firebase_service.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:ai_therapist_app/screens/splash_screen.dart';
-import 'package:ai_therapist_app/screens/login_screen.dart';
-import 'package:ai_therapist_app/screens/register_screen.dart';
-import 'package:ai_therapist_app/screens/home_screen.dart';
-import 'package:ai_therapist_app/screens/chat_screen.dart';
-import 'package:ai_therapist_app/screens/profile_screen.dart';
-import 'package:ai_therapist_app/screens/onboarding/onboarding_wrapper.dart';
 import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
 
@@ -66,13 +47,11 @@ import 'utils/logging_config.dart';
 import 'utils/database_helper.dart';
 
 // Import the new database health checker
-import 'utils/database_health_checker.dart';
 
 // Import feature flags
 import 'utils/feature_flags.dart';
 
 // Global variables for crucial service references
-FirebaseApp? _firebaseApp;
 ConfigService? _configService;
 ApiClient? _apiClient;
 
@@ -102,11 +81,6 @@ class SimpleBlocObserver extends BlocObserver {
   }
 }
 
-// Global app configuration - Using AppConfig instead of hardcoded values
-final bool isDebugMode = kDebugMode;
-final String firebaseProjectUrl =
-    'https://upliftapp-cd86e.web.app'; // Firebase project URL
-
 // Global error handler for unhandled exceptions
 void _handleGlobalError(dynamic error, StackTrace stack) {
   // Log the error details properly with LoggingService
@@ -135,183 +109,154 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
   logger.warning('Error message for user: $errorMessage', tag: 'USER_ERROR');
 }
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+Future<void> setupCoreServices() async {
+  debugPrint('[main.dart] App initialization starting...');
+  logger.info('[Main] Starting app initialization.');
 
-  // Initialize logging first
-  AppLogger.initialize();
-
-  // Initialize PathManager early - ADD THIS BLOCK
-  await PathManager.instance.init();
-
-  AppLogger.i('App initialization starting...');
-  // Only relax zone fatal errors during development where extra diagnostics are helpful
   if (kDebugMode) {
     BindingBase.debugZoneErrorsAreFatal = false;
   }
 
-  logger.info('[Main] Starting app initialization.');
+  WidgetsFlutterBinding.ensureInitialized();
+  debugPrint('[main.dart] Flutter bindings initialized');
+  logger.info(
+      '[Main] Flutter bindings initialized in the same zone as runApp.');
 
-  // Run the entire app in a single guarded zone to avoid zone mismatches
+  await AppConfig.initialize();
+  AppConfig().logConfig();
+  debugPrint('[main.dart] AppConfig initialized');
+  logger.info('[Main] AppConfig initialized with environment variables.');
+
+  await RemoteConfigService().preloadCachedOverrides();
+  debugPrint('[main.dart] Remote config cached overrides applied');
+  logger.info('[Main] Applied cached remote-config overrides.');
+
+  await FeatureFlags.init();
+  FeatureFlags.debugPrintFlags();
+  debugPrint('[main.dart] FeatureFlags initialized');
+  logger.info('[Main] FeatureFlags initialized with SharedPreferences.');
+
+  final firebaseApp = await ensureFirebaseInitialized();
+  if (firebaseApp != null) {
+    debugPrint(
+        '[main.dart] Firebase initialized successfully via ensureFirebaseInitialized()');
+    logger.info(
+        '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
+
+    await RemoteConfigService().initialize();
+    debugPrint('[main.dart] Remote config fetched and applied');
+    logger.info('[Main] Remote config fetched and applied.');
+  } else {
+    debugPrint(
+        '[main.dart] Could not initialize Firebase via ensureFirebaseInitialized()');
+    logger.warning(
+        '[Main] Could not initialize Firebase via ensureFirebaseInitialized(), some features may be limited');
+  }
+
+  try {
+    Firebase.app();
+    FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler);
+    debugPrint('[main.dart] Background messaging handler registered.');
+    logger.info('[Main] Background messaging handler registered.');
+  } catch (e) {
+    debugPrint(
+        '[main.dart] Firebase not available for background messaging handler registration or error: $e');
+    logger.warning(
+        '[Main] Firebase not available for background messaging handler registration or error: $e');
+  }
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    _handleGlobalError(details.exception, details.stack ?? StackTrace.current);
+  };
+  debugPrint('[main.dart] Error handlers configured.');
+
+  if (kDebugMode) {
+    Bloc.observer = SimpleBlocObserver();
+    debugPrint('[main.dart] Set up Bloc observer for debugging.');
+    logger.debug('[Main] Set up Bloc observer for debugging.');
+  }
+
+  final useNewVoicePipeline = FeatureFlags.useNewVoicePipeline;
+  debugPrint('[main.dart] useRefactoredVoicePipeline = $useNewVoicePipeline');
+  logger.info(
+      '[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
+
+  try {
+    await setupServiceLocator(
+        useRefactoredVoicePipeline: useNewVoicePipeline);
+    debugPrint('[main.dart] Service locator setup complete.');
+    logger.info('[Main] Service locator setup complete.');
+  } catch (e) {
+    debugPrint('[main.dart] ERROR during service locator setup: $e');
+    logger.error('[Main] ERROR during service locator setup', error: e);
+  }
+
+  debugPrint('[main.dart] Initializing app database connection...');
+  logger.info('[Main] Initializing app database connection...');
+  try {
+    final appDatabase = DependencyContainer().appDatabaseConcrete;
+    await appDatabase.database;
+    debugPrint('[main.dart] Database connection established.');
+    logger.info('[Main] Database connection established.');
+  } catch (e) {
+    debugPrint('[main.dart] ERROR initializing database connection: $e');
+    logger.error('[Main] ERROR initializing database connection', error: e);
+  }
+}
+
+Future<void> _startBackgroundInitialization() async {
+  DependencyContainer.resetReady();
+  final bgStopwatch = Stopwatch()..start();
+  try {
+    await _initializeFirebaseServices();
+    await _initializeConfigAndApi();
+    bgStopwatch.stop();
+    logger.info('[Startup] Background init pipeline finished in '
+        '${bgStopwatch.elapsedMilliseconds}ms');
+  } catch (e, stack) {
+    bgStopwatch.stop();
+    logger.error('[Startup] Background init failed',
+        error: e, stackTrace: stack);
+    DependencyContainer.markFailed(e, stack);
+    rethrow;
+  }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  AppLogger.initialize();
+  await PathManager.instance.init();
+
   runZonedGuarded(() async {
-    debugPrint('[main.dart] Entered runZonedGuarded');
-    // 0. Initialize LoggingService first - enables proper logging for the rest of initialization
     _initializeLogging();
-    debugPrint('[main.dart] Logging initialized');
 
-    // 1. Ensure Flutter bindings are initialized first - inside the same zone as runApp
-    final binding = WidgetsFlutterBinding.ensureInitialized();
-    debugPrint('[main.dart] Flutter bindings initialized');
+    final coreStopwatch = Stopwatch()..start();
+    await setupCoreServices();
+    coreStopwatch.stop();
+    debugPrint(
+        '[main.dart] Core services ready in ${coreStopwatch.elapsedMilliseconds}ms');
     logger.info(
-        '[Main] Flutter bindings initialized in the same zone as runApp.');
+        '[Startup] Core services ready in ${coreStopwatch.elapsedMilliseconds}ms');
 
-    // 1.5. Initialize AppConfig to load environment variables
-    await AppConfig.initialize();
-    AppConfig().logConfig();
-    debugPrint('[main.dart] AppConfig initialized');
-    logger.info('[Main] AppConfig initialized with environment variables.');
+    final backgroundInitFuture = _startBackgroundInitialization();
 
-    // 1.55. Apply cached remote-config overrides (supports offline kill switch)
-    await RemoteConfigService().preloadCachedOverrides();
-    debugPrint('[main.dart] Remote config cached overrides applied');
-    logger.info('[Main] Applied cached remote-config overrides.');
-
-    // 1.6. Initialize FeatureFlags early (before service locator)
-    await FeatureFlags.init();
-    FeatureFlags.debugPrintFlags();
-    debugPrint('[main.dart] FeatureFlags initialized');
-    logger.info('[Main] FeatureFlags initialized with SharedPreferences.');
-
-    // 2. Now initialize Firebase using the synchronized method ensureFirebaseInitialized()
-    // This will be the single point of Firebase initialization in the main isolate.
-    final firebaseApp = await ensureFirebaseInitialized();
-    if (firebaseApp != null) {
-      debugPrint(
-          '[main.dart] Firebase initialized successfully via ensureFirebaseInitialized()');
-      logger.info(
-          '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
-
-      // Fetch remote config now that Firebase is available
-      await RemoteConfigService().initialize();
-      debugPrint('[main.dart] Remote config fetched and applied');
-      logger.info('[Main] Remote config fetched and applied.');
-      // The debug print about App Check being disabled is already in ensureFirebaseInitialized()
-    } else {
-      debugPrint(
-          '[main.dart] Could not initialize Firebase via ensureFirebaseInitialized()');
-      logger.warning(
-          '[Main] Could not initialize Firebase via ensureFirebaseInitialized(), some features may be limited');
-    }
-
-    // 3. Register background messaging handler if Firebase is available
-    //    It's better to check if firebaseApp is not null rather than calling isFirebaseInitialized()
-    //    as isFirebaseInitialized() in your firebase_init.dart seems to rely on a separate flag _firebaseInitialized
-    //    which might not be set by ensureFirebaseInitialized in this version.
-    //    Or, ensure _firebaseInitialized is set within ensureFirebaseInitialized.
-    //    For now, let's assume ensureFirebaseInitialized handles making Firebase.app() available if successful.
-    try {
-      Firebase.app(); // Check if an app instance is available
-      FirebaseMessaging.onBackgroundMessage(
-          _firebaseMessagingBackgroundHandler);
-      debugPrint('[main.dart] Background messaging handler registered.');
-      logger.info('[Main] Background messaging handler registered.');
-    } catch (e) {
-      debugPrint(
-          '[main.dart] Firebase not available for background messaging handler registration or error: $e');
-      logger.warning(
-          '[Main] Firebase not available for background messaging handler registration or error: $e');
-    }
-
-    // 4. Setup error handling
-    debugPrint('[main.dart] Setting up error handlers.');
-    logger.info('[Main] Setting up error handlers.');
-    FlutterError.onError = (FlutterErrorDetails details) {
-      FlutterError.presentError(details);
-      _handleGlobalError(
-          details.exception, details.stack ?? StackTrace.current);
-    };
-
-    // 5. Setup Bloc observer for debugging
-    if (kDebugMode) {
-      Bloc.observer = SimpleBlocObserver();
-      debugPrint('[main.dart] Set up Bloc observer for debugging.');
-      logger.debug('[Main] Set up Bloc observer for debugging.');
-    }
-
-    // 6. Initialize service locator (GetIt) with feature flag
-    debugPrint('[main.dart] Setting up service locator...');
-    logger.info('[Main] Setting up service locator...');
-    final useNewVoicePipeline = FeatureFlags.useNewVoicePipeline;
-    debugPrint('[main.dart] useRefactoredVoicePipeline = $useNewVoicePipeline');
-    logger.info(
-        '[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
-
-    try {
-      await setupServiceLocator(
-          useRefactoredVoicePipeline: useNewVoicePipeline);
-      debugPrint('[main.dart] Service locator setup complete.');
-      logger.info('[Main] Service locator setup complete.');
-    } catch (e) {
-      debugPrint('[main.dart] ERROR during service locator setup: $e');
-      logger.error('[Main] ERROR during service locator setup', error: e);
-    }
-
-    // 7. Initialize database connection only (defer table checks/optimizations)
-    debugPrint('[main.dart] Initializing app database connection...');
-    logger.info('[Main] Initializing app database connection...');
-    try {
-      final appDatabase = DependencyContainer().appDatabaseConcrete;
-      await appDatabase.database;
-      debugPrint('[main.dart] Database connection established.');
-      logger.info('[Main] Database connection established.');
-    } catch (e) {
-      debugPrint('[main.dart] ERROR initializing database connection: $e');
-      logger.error('[Main] ERROR initializing database connection', error: e);
-    }
-
-    // 8. Initialize theme and auth (needed for first screen)
-    // (ThemeService and AuthService are registered in service locator)
-
-    // 9. Start the UI as soon as possible
-    debugPrint('[main.dart] Starting app UI...');
-    logger.info('[Main] Starting app UI...');
-    try {
-      debugPrint('[main.dart] Running app...');
-      logger.debug('[Main] Running app in same zone.');
-      runApp(const AiTherapistApp());
-      debugPrint('[main.dart] App should now be visible!');
-      logger.info('[Main] App should now be visible!');
-    } catch (e) {
-      debugPrint('[main.dart] Critical error in final app startup: $e');
-      logger.error('[Main] Critical error in final app startup', error: e);
-      runApp(MaterialApp(
-        home: Scaffold(
-          appBar: AppBar(title: const Text('Error')),
-          body: Center(child: Text('Error starting app: $e')),
-        ),
-      ));
-    }
-
-    // 10. Defer heavy service initializations and notification permissions until after UI is visible
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      debugPrint('[main.dart] PostFrameCallback: initializeHeavyServices');
-      await initializeHeavyServices();
-    });
-
-    // After UI is visible, run DB health check in background
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      debugPrint('[main.dart] PostFrameCallback: DB health check');
-      final dbProvider = DatabaseProvider();
-      final dbHealthChecker = DatabaseHealthChecker(dbProvider);
-      await dbHealthChecker.runHealthCheck();
-    });
+    runApp(AiTherapistApp(
+      initialBackgroundInit: backgroundInitFuture,
+      backgroundInitBuilder: _startBackgroundInitialization,
+    ));
   }, (error, stack) {
     debugPrint('[main.dart] Uncaught error in runZonedGuarded: $error');
     debugPrint('[main.dart] Stack trace: $stack');
     logger.error('[Main] Uncaught error in runZonedGuarded');
     _handleGlobalError(error, stack);
   });
-  if (kDebugMode) debugPrint('[Main] App initialization complete. Running app...');
+
+  if (kDebugMode) {
+    debugPrint('[Main] App initialization complete. Running app...');
+  }
 }
 
 // Initialize the logging service
@@ -342,26 +287,6 @@ void _initializeLogging() {
     debugPrint('- Analytics logging: ${kDebugMode ? 'ENABLED' : 'DISABLED'}');
     debugPrint('- Crashlytics: ${!kDebugMode ? 'ENABLED' : 'DISABLED'}');
     debugPrint('==============================');
-  }
-}
-
-// Initialize all other necessary services
-Future<void> _initializeServices() async {
-  // This method is no longer used - functionality moved to inline code in main()
-  debugPrint('[Main] WARNING: Using deprecated _initializeServices method');
-
-  // Database initialization handled directly in main() now
-
-  // Firebase services initialization moved to _initializeFirebaseServices()
-
-  // Initialize notification permissions if needed
-  try {
-    debugPrint(
-        '[Main] Requesting notification permissions via deprecated method...');
-    await _requestNotificationPermissions();
-    debugPrint('[Main] Notification permissions setup complete');
-  } catch (e) {
-    debugPrint('[Main] ERROR setting up notification permissions: $e');
   }
 }
 
@@ -397,7 +322,14 @@ Future<void> _requestNotificationPermissions() async {
 
 // Main app widget
 class AiTherapistApp extends StatefulWidget {
-  const AiTherapistApp({Key? key}) : super(key: key);
+  final Future<void> initialBackgroundInit;
+  final Future<void> Function() backgroundInitBuilder;
+
+  const AiTherapistApp({
+    super.key,
+    required this.initialBackgroundInit,
+    required this.backgroundInitBuilder,
+  });
 
   @override
   State<AiTherapistApp> createState() => _AiTherapistAppState();
@@ -405,10 +337,13 @@ class AiTherapistApp extends StatefulWidget {
 
 class _AiTherapistAppState extends State<AiTherapistApp> {
   late ThemeService _themeService;
+  late Future<void> _backgroundInit;
+  bool _postInitScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    _backgroundInit = widget.initialBackgroundInit;
     debugPrint('[main.dart] AiTherapistApp initState');
     try {
       if (serviceLocator.isRegistered<ThemeService>()) {
@@ -438,6 +373,78 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
   @override
   Widget build(BuildContext context) {
     debugPrint('[main.dart] AiTherapistApp build');
+    return FutureBuilder<void>(
+      future: _backgroundInit,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const HybridStartupSplash();
+        }
+
+        if (snapshot.hasError) {
+          return HybridStartupSplash(
+            error: snapshot.error,
+            onRetry: _restartBackgroundInit,
+          );
+        }
+
+        _schedulePostInit();
+        return _buildMainApp();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    debugPrint('[main.dart] AiTherapistApp dispose');
+    _cleanupResources();
+    super.dispose();
+  }
+
+  // Cleanup app resources
+  Future<void> _cleanupResources() async {
+    try {
+      // Close database connection
+      if (serviceLocator.isRegistered<AppDatabase>()) {
+        final appDatabase = DependencyContainer().appDatabaseConcrete;
+        await appDatabase.close();
+        debugPrint('[AiTherapistApp] Database connection closed');
+      }
+
+      // Close any BLoCs that were registered in the service locator
+      // This is a more reliable approach than using context which might not be available
+      if (serviceLocator.isRegistered<AuthBloc>()) {
+        try {
+          final authBloc = serviceLocator<AuthBloc>();
+          await authBloc.close();
+          logger.info('[AiTherapistApp] AuthBloc closed successfully');
+        } catch (e) {
+          logger.debug('[AiTherapistApp] Could not close AuthBloc: $e');
+        }
+      }
+
+      // Additional cleanup can be added here
+    } catch (e) {
+      debugPrint('[AiTherapistApp] Error during cleanup: $e');
+    }
+  }
+
+  void _schedulePostInit() {
+    if (_postInitScheduled) return;
+    _postInitScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await initializeHeavyServices();
+    });
+  }
+
+  void _restartBackgroundInit() {
+    DependencyContainer.resetReady();
+    setState(() {
+      _postInitScheduled = false;
+      _backgroundInit = widget.backgroundInitBuilder();
+    });
+  }
+
+  Widget _buildMainApp() {
     return ErrorBoundary(
       child: ChangeNotifierProvider.value(
         value: _themeService,
@@ -502,7 +509,7 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                 themeMode: themeService.themeMode,
                 debugShowCheckedModeBanner: false,
                 routerConfig: AppRouter.router,
-                localizationsDelegates: [
+                localizationsDelegates: const [
                   GlobalMaterialLocalizations.delegate,
                   GlobalWidgetsLocalizations.delegate,
                   GlobalCupertinoLocalizations.delegate,
@@ -517,48 +524,13 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       ),
     );
   }
-
-  @override
-  void dispose() {
-    debugPrint('[main.dart] AiTherapistApp dispose');
-    _cleanupResources();
-    super.dispose();
-  }
-
-  // Cleanup app resources
-  Future<void> _cleanupResources() async {
-    try {
-      // Close database connection
-      if (serviceLocator.isRegistered<AppDatabase>()) {
-        final appDatabase = DependencyContainer().appDatabaseConcrete;
-        await appDatabase.close();
-        debugPrint('[AiTherapistApp] Database connection closed');
-      }
-
-      // Close any BLoCs that were registered in the service locator
-      // This is a more reliable approach than using context which might not be available
-      if (serviceLocator.isRegistered<AuthBloc>()) {
-        try {
-          final authBloc = serviceLocator<AuthBloc>();
-          await authBloc.close();
-          logger.info('[AiTherapistApp] AuthBloc closed successfully');
-        } catch (e) {
-          logger.debug('[AiTherapistApp] Could not close AuthBloc: $e');
-        }
-      }
-
-      // Additional cleanup can be added here
-    } catch (e) {
-      debugPrint('[AiTherapistApp] Error during cleanup: $e');
-    }
-  }
 }
 
 // Error boundary widget to catch and display errors in the widget tree
 class ErrorBoundary extends StatefulWidget {
   final Widget child;
 
-  const ErrorBoundary({Key? key, required this.child}) : super(key: key);
+  const ErrorBoundary({super.key, required this.child});
 
   @override
   _ErrorBoundaryState createState() => _ErrorBoundaryState();
@@ -567,7 +539,6 @@ class ErrorBoundary extends StatefulWidget {
 class _ErrorBoundaryState extends State<ErrorBoundary> {
   bool _hasError = false;
   dynamic _error;
-  StackTrace? _stackTrace;
 
   @override
   void didChangeDependencies() {
@@ -575,7 +546,6 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
     // Reset error state on rebuild
     _hasError = false;
     _error = null;
-    _stackTrace = null;
   }
 
   @override
@@ -585,13 +555,13 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
       final errorTheme = ThemeData(
         primaryColor: Colors.red,
         primarySwatch: Colors.red,
-        colorScheme: ColorScheme.light(primary: Colors.red),
+        colorScheme: const ColorScheme.light(primary: Colors.red),
       );
 
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: errorTheme,
-        localizationsDelegates: [
+        localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
@@ -633,7 +603,6 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
                     setState(() {
                       _hasError = false;
                       _error = null;
-                      _stackTrace = null;
                     });
                   },
                   child: const Text('Retry'),
@@ -660,7 +629,6 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
         setState(() {
           _hasError = true;
           _error = errorDetails.exception;
-          _stackTrace = errorDetails.stack;
         });
       });
 
@@ -670,6 +638,62 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
 
     // Return the child widget
     return widget.child;
+  }
+}
+
+class HybridStartupSplash extends StatelessWidget {
+  final Object? error;
+  final VoidCallback? onRetry;
+
+  const HybridStartupSplash({super.key, this.error, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = error != null;
+    final message = hasError
+        ? 'Startup failed: ${error is Exception ? (error as Exception).toString() : error}'
+        : 'Initializing...';
+
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('en', '')],
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: CircularProgressIndicator(),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16),
+                ),
+                if (hasError && onRetry != null) ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: onRetry,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -837,6 +861,8 @@ Future<void> _initializeConfigAndApi() async {
 Future<void> initializeHeavyServices() async {
   logger.info('[Main] Initializing heavy services in background...');
   try {
+    await DependencyContainer.whenReady();
+
     // Table checks and health/repair
     try {
       final appDatabase = DependencyContainer().appDatabaseConcrete;
@@ -896,9 +922,8 @@ Future<void> initializeHeavyServices() async {
     // Initialize heavy services sequentially (as before)
     try {
       await _initializeFirebaseServices();
-      await _initializeConfigAndApi();
     } catch (e) {
-      logger.error('[Main] ERROR initializing heavy services', error: e);
+      logger.error('[Main] ERROR initializing Firebase services', error: e);
     }
 
     // Request notification permissions (deferred)

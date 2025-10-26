@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class SessionSummaryCard extends StatelessWidget {
   final String summary;
 
-  const SessionSummaryCard({Key? key, required this.summary}) : super(key: key);
+  const SessionSummaryCard({super.key, required this.summary});
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +61,7 @@ class SessionSummaryCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceVariant,
+                color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(

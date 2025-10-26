@@ -8,15 +8,11 @@ import 'welcome_screen.dart';
 import 'profile_name_screen.dart';
 import 'profile_goals_screen.dart';
 import 'profile_experience_screen.dart';
-import 'preferred_style_screen.dart';
-import 'mood_setup_screen.dart';
-import 'coping_strategies_screen.dart';
-import 'cbt_intro_screen.dart';
 import '../../services/memory_manager.dart';
 import '../../services/audio_generator.dart';
 
 class OnboardingWrapper extends StatefulWidget {
-  const OnboardingWrapper({Key? key}) : super(key: key);
+  const OnboardingWrapper({super.key});
 
   @override
   State<OnboardingWrapper> createState() => _OnboardingWrapperState();

@@ -86,7 +86,7 @@ class BackendService {
     }
 
     // Create a more aggressive timeout for better UX
-    final connectionTimeout = const Duration(seconds: 2);
+    const connectionTimeout = Duration(seconds: 2);
 
     try {
       // First try DNS resolution by making a basic connection

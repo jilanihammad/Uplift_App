@@ -19,6 +19,7 @@
 /// - All service method calls use interface pattern via _safeVoiceService
 /// - AutoListeningCoordinator methods use temporary helpers pending interface extension
 /// - Full migration to VoiceSessionCoordinator architecture achieved
+library;
 
 import 'dart:async';
 import 'dart:math';
@@ -38,14 +39,9 @@ import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import '../data/datasources/remote/api_client.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:meta/meta.dart';
-import '../models/therapy_message.dart';
-import '../services/recording_manager.dart';
 import '../widgets/mood_selector.dart'; // For Mood enum
 import '../utils/amplitude_utils.dart';
-import 'package:uuid/uuid.dart';
 
 // Phase 1.1.4: Import new managers
 import 'managers/session_state_manager.dart';
@@ -510,8 +506,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   Future<void> _onSwitchMode(
       SwitchMode event, Emitter<VoiceSessionState> emit) async {
     // PHASE 2A: Increment generation counter with overflow protection
-    if (++_modeGeneration == 0)
+    if (++_modeGeneration == 0) {
       _modeGeneration = 1; // Skip 0, avoid wrap-around
+    }
 
     // NATURAL UX: Clear deferred auto mode flag on generation change
     _deferAutoMode = false;
@@ -898,7 +895,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     try {
       // Phase 1.1.4: Use MessageCoordinator for user message
-      final userMessage = _messageCoordinator.addUserMessage(event.text);
+      _messageCoordinator.addUserMessage(event.text);
 
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
@@ -968,7 +965,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // Phase 1.1.4: Use MessageCoordinator for AI message
       // Only add message for text mode - voice mode already adds it in onTTSStart callback
       if (!state.isVoiceMode) {
-        final mayaResponse = _messageCoordinator.addAIMessage(mayaResponseText);
+        _messageCoordinator.addAIMessage(mayaResponseText);
       }
 
       emit(state.copyWith(
@@ -990,7 +987,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
 
       // Phase 1.1.4: Add fallback error message using MessageCoordinator
-      final errorMessage = _messageCoordinator.addAIMessage(
+      _messageCoordinator.addAIMessage(
           "I'm sorry, I'm having trouble responding right now. Please try again.");
 
       emit(state.copyWith(
@@ -1369,7 +1366,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _sessionStarted = true;
 
     // Now it is safe to enable voice mode
-    add(SwitchMode(true));
+    add(const SwitchMode(true));
 
     if (kDebugMode) {
       debugPrint(
@@ -1563,18 +1560,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   // Old _addInitialAIMessage and _getWelcomeMessage methods removed
   // All welcome message logic now handled by MessageCoordinator.addWelcomeMessage()
 
-  List<Map<String, String>> _buildConversationHistory(
-      List<TherapyMessage> messages) {
-    // Phase 1.1.4: Could use MessageCoordinator.buildConversationHistory()
-    // but keeping this method for backward compatibility in existing calls
-    return messages
-        .map((message) => {
-              'role': message.isUser ? 'user' : 'assistant',
-              'content': message.content,
-            })
-        .toList();
-  }
-
   void _onAutoEndTriggered(
       AutoEndTriggered event, Emitter<VoiceSessionState> emit) {
     if (state.autoEndTriggered) {
@@ -1618,22 +1603,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           '[VoiceSessionBloc] Session time warning - 5 minutes remaining');
     }
     // Could add a warning state or event here if needed in the future
-  }
-
-  // Phase 1.1.4: Synchronize manager states with bloc state
-  void _syncManagersWithState() {
-    // Update session manager state
-    _sessionManager.updateState(state);
-
-    // Update message coordinator
-    _messageCoordinator.updateMessages(
-        state.messages, state.currentMessageSequence);
-
-    // Update timer if duration is set
-    if (state.selectedDuration != null &&
-        _timerManager.sessionDuration != state.selectedDuration) {
-      _timerManager.setSessionDuration(state.selectedDuration!);
-    }
   }
 
   /// Cleanup after failed session initialization

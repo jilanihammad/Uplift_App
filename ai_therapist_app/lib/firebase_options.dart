@@ -4,7 +4,6 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:ai_therapist_app/di/dependency_container.dart';
-import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:ai_therapist_app/utils/logging_service.dart';
 
 /// Default [FirebaseOptions] for use with your Firebase apps.

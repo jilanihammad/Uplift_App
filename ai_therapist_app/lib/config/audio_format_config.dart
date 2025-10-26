@@ -181,13 +181,6 @@ class AudioFormatConfig {
     return isValid;
   }
 
-  /// Helper to get boolean from environment with default
-  static bool _getEnvBool(String key, bool defaultValue) {
-    final value = dotenv.env[key]?.toLowerCase();
-    if (value == null) return defaultValue;
-    return value == 'true' || value == '1' || value == 'yes' || value == 'on';
-  }
-
   /// Helper to get int from environment with default
   static int _getEnvInt(String key, int defaultValue) {
     return int.tryParse(dotenv.env[key] ?? '') ?? defaultValue;

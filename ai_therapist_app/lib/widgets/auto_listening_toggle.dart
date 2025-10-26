@@ -106,9 +106,10 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
 
   Widget _buildStateIndicator() {
     if (!_isAutoModeEnabled) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
             '[AutoListeningToggle] State indicator hidden: auto mode disabled');
+      }
       return const SizedBox.shrink();
     }
 
@@ -116,9 +117,10 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
     final showListening =
         _currentState == AutoListeningState.listeningForVoice ||
             _currentState == AutoListeningState.listening;
-    if (kDebugMode)
+    if (kDebugMode) {
       debugPrint(
           '[AutoListeningToggle] State indicator: $_currentState (showListening=$showListening)');
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

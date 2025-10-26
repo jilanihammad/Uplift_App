@@ -42,7 +42,7 @@ void main() {
 
     // Run a quick session to measure performance
     await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: Text('Performance Test'))));
+        const MaterialApp(home: Scaffold(body: Text('Performance Test'))));
     await tester.pumpAndSettle();
 
     stopwatch.stop();

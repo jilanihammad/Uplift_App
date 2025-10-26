@@ -1,5 +1,6 @@
 /// AuthEvent defines all user-triggered actions related to authentication (login, register, logout, etc.).
 /// These events are dispatched from UI widgets to AuthBloc, maintaining clean separation between UI and authentication logic.
+library;
 
 import 'package:equatable/equatable.dart';
 import 'package:firebase_auth/firebase_auth.dart';

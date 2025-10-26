@@ -1,11 +1,5 @@
 #!/usr/bin/env dart
 
-/// Integration test to verify the frontend TTS double extension bug is fixed.
-///
-/// This test simulates the exact workflow that was creating .wav.wav files
-/// and verifies the fix prevents double extensions.
-
-import 'dart:io';
 import 'lib/utils/audio_path_utils.dart';
 
 void main() {
@@ -21,7 +15,7 @@ void main() {
   // Test 3: Verify PathManager integration
   testPathManagerIntegration();
 
-  print('\n' + '=' * 50);
+  print('\n${'=' * 50}');
   print('✅ All tests passed! Frontend double extension bug is fixed.');
 }
 
@@ -29,7 +23,7 @@ void testUtilityFunction() {
   print('\n🔧 Testing AudioPathUtils utility...');
 
   // Test the specific case from the logs
-  final problematicInput = 'tts_1751243751996444.wav';
+  const problematicInput = 'tts_1751243751996444.wav';
   final result = AudioPathUtils.ensureWav(problematicInput);
 
   assert(result == 'tts_1751243751996444.wav',
@@ -49,7 +43,7 @@ void testTTSWorkflow() {
 
   // Simulate the FIXED workflow in simple_tts_service.dart
   const format = 'wav';
-  final ext = format == 'wav'
+  const ext = format == 'wav'
       ? 'wav'
       : format == 'opus'
           ? 'ogg'
@@ -86,15 +80,15 @@ void testPathManagerIntegration() {
   print('\n📁 Testing PathManager integration pattern...');
 
   // Test the interaction between AudioPathUtils and PathManager pattern
-  final baseId = 'tts_12345';
-  final ext = 'wav';
+  const baseId = 'tts_12345';
+  const ext = 'wav';
 
   // Ensure clean ID
   AudioPathUtils.validateBasename(baseId); // Should not throw
 
   // Simulate ttsFile() method
   const ttsPrefix = 'tts_stream_';
-  final finalPath = '$ttsPrefix$baseId.$ext';
+  const finalPath = '$ttsPrefix$baseId.$ext';
 
   print('Base ID: $baseId');
   print('Final path: $finalPath');

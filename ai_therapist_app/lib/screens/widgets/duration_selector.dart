@@ -5,10 +5,10 @@ class DurationSelector extends StatelessWidget {
   final void Function(int) onDurationSelected;
 
   const DurationSelector({
-    Key? key,
+    super.key,
     this.selectedDuration,
     required this.onDurationSelected,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

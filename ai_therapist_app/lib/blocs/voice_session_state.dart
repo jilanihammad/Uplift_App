@@ -1,6 +1,7 @@
 /// VoiceSessionState holds all the current state data for an active therapy session including
 /// UI states (mood/duration selectors), audio states (recording, playing), and session data (messages, timer).
 /// This immutable state class ensures predictable state management across the entire chat interface.
+library;
 
 import 'package:equatable/equatable.dart';
 import '../models/therapy_message.dart';
@@ -110,7 +111,7 @@ class VoiceSessionState extends Equatable {
   }) {
     return VoiceSessionState(
       status: VoiceSessionStatus.initial,
-      messages: [],
+      messages: const [],
       errorMessage: null,
       currentSessionId: sessionId,
       isListening: false,

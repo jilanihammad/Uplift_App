@@ -143,9 +143,9 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
             ),
             onPressed: () {
               if (state.isRecording) {
-                context.read<VoiceSessionBloc>().add(StopListening());
+                context.read<VoiceSessionBloc>().add(const StopListening());
               } else {
-                context.read<VoiceSessionBloc>().add(StartListening());
+                context.read<VoiceSessionBloc>().add(const StartListening());
               }
             },
           );
@@ -154,7 +154,7 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
           return IconButton(
             icon: const Icon(Icons.mic, color: Colors.blue),
             onPressed: () {
-              context.read<VoiceSessionBloc>().add(StartListening());
+              context.read<VoiceSessionBloc>().add(const StartListening());
             },
           );
         }

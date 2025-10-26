@@ -4,7 +4,7 @@ import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
 
 class ProfileReasonScreen extends StatefulWidget {
-  const ProfileReasonScreen({Key? key}) : super(key: key);
+  const ProfileReasonScreen({super.key});
 
   @override
   State<ProfileReasonScreen> createState() => _ProfileReasonScreenState();

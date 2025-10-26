@@ -8,7 +8,7 @@ class ApiConfig {
   // Use a getter for baseUrl that uses AppConfig
   static String get baseUrl {
     // Use the cloud backend URL from AppConfig
-    return '${AppConfig().apiBaseUrl}';
+    return AppConfig().apiBaseUrl;
   }
 
   // Add a getter for the base URL without the /api/v1 path

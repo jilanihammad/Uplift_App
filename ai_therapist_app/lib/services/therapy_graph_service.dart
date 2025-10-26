@@ -1,7 +1,6 @@
 // lib/services/therapy_graph_service.dart
 import 'dart:async';
 import 'dart:math';
-import '../models/conversation_memory.dart';
 
 /// Represents a node in the conversation graph
 class TherapyNode {

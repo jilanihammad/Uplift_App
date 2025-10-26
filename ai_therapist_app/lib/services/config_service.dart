@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'dart:io';
 import '../di/interfaces/i_config_service.dart';
@@ -99,8 +98,7 @@ class ConfigService implements IConfigService {
         debugPrint(
             "[ConfigService] Backend Mode: Using backend proxy endpoint: $_llmApiEndpoint (original private field)");
       }
-      return this
-          ._llmApiEndpoint; // refers to the original private field intended for backend proxy
+      return _llmApiEndpoint; // refers to the original private field intended for backend proxy
     }
   }
 
@@ -116,20 +114,20 @@ class ConfigService implements IConfigService {
     bool? directLLMMode,
   }) {
     // Initialize with default values
-    this._llmApiEndpoint =
+    _llmApiEndpoint =
         llmApiEndpoint ?? ''; // This is the backend proxy URL
-    this._voiceModelEndpoint = voiceModelEndpoint ?? '';
-    this._groqApiKey = groqApiKey ?? '';
-    this._useMockTranscription = useMockTranscription ?? false;
-    this._useMockLlmResponses = useMockLlmResponses ?? false;
-    this._isProductionMode = isProductionMode ?? false;
-    this._directLLMMode =
+    _voiceModelEndpoint = voiceModelEndpoint ?? '';
+    _groqApiKey = groqApiKey ?? '';
+    _useMockTranscription = useMockTranscription ?? false;
+    _useMockLlmResponses = useMockLlmResponses ?? false;
+    _isProductionMode = isProductionMode ?? false;
+    _directLLMMode =
         directLLMMode ?? false; // Initialize from constructor or default
 
     // Debug output
     debugPrint(
-        '[ConfigService] Initialized with BACKEND llmApiEndpoint: ${this._llmApiEndpoint}');
-    if (this._directLLMMode) {
+        '[ConfigService] Initialized with BACKEND llmApiEndpoint: $_llmApiEndpoint');
+    if (_directLLMMode) {
       debugPrint(
           '[ConfigService] Initialized in DIRECT LLM MODE. Effective endpoint will be: ${this.llmApiEndpoint}');
     }

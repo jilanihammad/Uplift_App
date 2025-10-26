@@ -9,14 +9,14 @@ class TextInputBar extends StatelessWidget {
   final bool enabled;
 
   const TextInputBar({
-    Key? key,
+    super.key,
     required this.messageController,
     required this.micButton,
     required this.isProcessing,
     required this.onSend,
     required this.onSwitchMode,
     this.enabled = true,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

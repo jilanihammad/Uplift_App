@@ -134,7 +134,7 @@ class PreferencesService implements IPreferencesService {
       await init();
     }
 
-    final enforcedStyleId = 'cbt';
+    const enforcedStyleId = 'cbt';
 
     _preferences = _preferences!.copyWith(
       therapistStyleId: enforcedStyleId,

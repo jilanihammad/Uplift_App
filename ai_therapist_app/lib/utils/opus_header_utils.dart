@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 /// Utility for handling OPUS/OGG header detection and buffering
@@ -161,7 +160,7 @@ class OpusHeaderUtils {
 
     // Calculate total header size
     final headerEndOffset = opusDataOffset ??
-        (opusTagsOffset! +
+        (opusTagsOffset +
             256); // Conservative estimate if no audio data found yet
 
     final headerInfo = OpusHeaderInfo(

@@ -203,22 +203,25 @@ class AutoListeningCoordinator with SessionDisposable {
   // Safe VAD management with resource tracking and native crash protection
   Future<bool> _safeStartVAD() async {
     if (_isVadActive) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] VAD already active, skipping start');
+      }
       return true;
     }
     try {
       final success = await _vadManager.startListening();
       if (success) {
         _isVadActive = true;
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint('[AutoListeningCoordinator] VAD started successfully');
+        }
       }
       return success;
     } catch (e) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator] CRITICAL: VAD start failed (native crash protection): $e');
+      }
       _isVadActive = false; // Ensure state is consistent on failure
       return false;
     }
@@ -227,9 +230,10 @@ class AutoListeningCoordinator with SessionDisposable {
   // NEW: VAD start with retry mechanism and exponential backoff
   Future<bool> _startVADWithRetry() async {
     if (_isVadActive) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator] [RETRY] VAD already active, skipping start');
+      }
       return true;
     }
 
@@ -289,19 +293,22 @@ class AutoListeningCoordinator with SessionDisposable {
 
   Future<void> _safeStopVAD() async {
     if (!_isVadActive) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] VAD not active, skipping stop');
+      }
       return;
     }
     try {
       await _vadManager.stopListening();
       _isVadActive = false;
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] VAD stopped successfully');
+      }
     } catch (e) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator] CRITICAL: VAD stop failed (native crash protection): $e');
+      }
       _isVadActive = false; // Ensure state is consistent even on failure
     }
   }
@@ -309,36 +316,42 @@ class AutoListeningCoordinator with SessionDisposable {
   // Safe recording management with resource tracking
   Future<void> _safeStartRecording() async {
     if (_isRecordingActive) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator] Recording already active, skipping start');
+      }
       return;
     }
     try {
       await _recordingManager.startRecording();
       _isRecordingActive = true;
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] Recording started successfully');
+      }
     } catch (e) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] Recording start failed: $e');
+      }
     }
   }
 
   Future<void> _safeStopRecording() async {
     if (!_isRecordingActive) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] Recording not active, skipping stop');
+      }
       return;
     }
     try {
       await _recordingManager.tryStopRecording();
       _isRecordingActive = false;
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] Recording stopped successfully');
+      }
     } catch (e) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] Recording stop failed: $e');
+      }
     }
   }
 
@@ -1036,9 +1049,10 @@ class AutoListeningCoordinator with SessionDisposable {
   // Stop recording and process the audio
   Future<void> _stopRecording() async {
     if (_isStoppingRecording) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator][DEBUG] _stopRecording ignored: already stopping');
+      }
       return;
     }
     _isStoppingRecording = true;
@@ -1108,9 +1122,10 @@ class AutoListeningCoordinator with SessionDisposable {
       // CRITICAL FIX: Always clear recording flag, even on error (engineer's fix)
       _isRecordingActive = false;
       _isStoppingRecording = false;
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator][DEBUG] _isStoppingRecording and _isRecordingActive reset to false');
+      }
     }
   }
 
@@ -1162,14 +1177,16 @@ class AutoListeningCoordinator with SessionDisposable {
 
       // Use the audio state provided by the Bloc instead of checking AudioPlayerManager
       if (!isAudioPlaying) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '[AutoListeningCoordinator] [MODE] Bloc says audio not playing, calling _startListening()');
+        }
         await _startListening();
       } else {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '[AutoListeningCoordinator] [MODE] Bloc says audio is playing, setting state to aiSpeaking');
+        }
         _updateState(AutoListeningState.aiSpeaking);
       }
     } else if (kDebugMode) {
@@ -1216,14 +1233,16 @@ class AutoListeningCoordinator with SessionDisposable {
 
       // If AI is not currently speaking, start listening
       if (!isAudioPlaying) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '[AutoListeningCoordinator] [MODE] Not playing audio, calling _startListening()');
+        }
         await _startListening();
       } else {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '[AutoListeningCoordinator] [MODE] Audio is playing, setting state to aiSpeaking');
+        }
         _updateState(AutoListeningState.aiSpeaking);
       }
     } else if (kDebugMode) {

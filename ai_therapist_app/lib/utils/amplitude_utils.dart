@@ -1,6 +1,7 @@
 /// Utility functions for audio amplitude processing and visualization
 ///
 /// Converts raw dB values from VAD to normalized [0-1] linear scale suitable for UI
+library;
 import 'dart:math' as math;
 
 class AmplitudeUtils {
