@@ -1,17 +1,14 @@
 // lib/services/memory_service.dart
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/conversation_memory.dart';
-import '../di/service_locator.dart';
 import '../di/dependency_container.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../di/initialization_tracker.dart';
 import '../utils/logging_service.dart';
-import '../utils/database_helper.dart';
 import '../utils/feature_flags.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../di/interfaces/i_user_profile_service.dart';
@@ -516,7 +513,7 @@ class MemoryService {
         if (rawItem is! Map) {
           continue;
         }
-        final item = Map<String, dynamic>.from(rawItem as Map);
+        final item = Map<String, dynamic>.from(rawItem);
         final clientId = item['client_anchor_id'] as String?;
         if (clientId == null || clientId.isEmpty) {
           continue;

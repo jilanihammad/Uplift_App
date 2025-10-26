@@ -6,11 +6,11 @@ class WelcomeFeatureCard extends StatelessWidget {
   final String description;
 
   const WelcomeFeatureCard({
-    Key? key,
+    super.key,
     required this.icon,
     required this.title,
     required this.description,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

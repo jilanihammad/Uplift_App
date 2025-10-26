@@ -8,11 +8,11 @@ class ChatMessageList extends StatelessWidget {
   final void Function(int newMessageCount)? onNewMessage;
 
   const ChatMessageList({
-    Key? key,
+    super.key,
     required this.messages,
     required this.scrollController,
     this.onNewMessage,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

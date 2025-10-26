@@ -946,33 +946,37 @@ class EnhancedVADManager {
       try {
         await _speechStartController.close();
       } catch (e) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing speech start controller: $e');
+        }
       }
 
       try {
         await _speechEndController.close();
       } catch (e) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing speech end controller: $e');
+        }
       }
 
       try {
         await _errorController.close();
       } catch (e) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing error controller: $e');
+        }
       }
 
       try {
         await _amplitudeController.close();
       } catch (e) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '⚠️ Enhanced VAD ($_vadInstanceId): Error closing amplitude controller: $e');
+        }
       }
 
       // Reset all state

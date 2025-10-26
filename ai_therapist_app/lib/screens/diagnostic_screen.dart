@@ -19,12 +19,12 @@ class DiagnosticScreen extends StatefulWidget {
   final AudioGenerator? audioGenerator;
 
   const DiagnosticScreen({
-    Key? key,
+    super.key,
     this.therapyService,
     this.apiClient,
     this.voiceService,
     this.audioGenerator,
-  }) : super(key: key);
+  });
 
   @override
   State<DiagnosticScreen> createState() => _DiagnosticScreenState();
@@ -168,8 +168,6 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
     });
 
     try {
-      final apiClient =
-          widget.apiClient ?? DependencyContainer().apiClientConcrete;
       debugPrint(
           '[DEBUG] Testing status endpoint directly with raw HTTP request');
 

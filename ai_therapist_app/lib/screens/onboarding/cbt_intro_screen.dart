@@ -3,7 +3,7 @@ import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 
 class CbtIntroScreen extends StatelessWidget {
-  const CbtIntroScreen({Key? key}) : super(key: key);
+  const CbtIntroScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

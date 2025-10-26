@@ -352,14 +352,14 @@ class MemoryManager implements IMemoryManager {
     final seen = <String>{};
     final candidates = <_AnchorCandidate>[];
 
-    String _titleCaseSegment(String input) {
+    String titleCaseSegment(String input) {
       return input.replaceAllMapped(RegExp(r"[A-Za-z]+"), (match) {
         final segment = match.group(0)!;
         return segment[0].toUpperCase() + segment.substring(1).toLowerCase();
       });
     }
 
-    String? _sanitizeName(String raw) {
+    String? sanitizeName(String raw) {
       if (raw.isEmpty) return null;
       var candidate = raw.split(RegExp(r"[\.,!?]")).first;
       candidate = candidate.replaceAll(RegExp(r"[^A-Za-z'\-\s]"), ' ').trim();
@@ -405,7 +405,7 @@ class MemoryManager implements IMemoryManager {
         return null;
       }
 
-      final formatted = words.map(_titleCaseSegment).join(' ');
+      final formatted = words.map(titleCaseSegment).join(' ');
       if (formatted.isEmpty || formatted.length > 40) {
         return null;
       }
@@ -434,7 +434,7 @@ class MemoryManager implements IMemoryManager {
     );
     for (final match in namePattern.allMatches(userMessage)) {
       final raw = match.group(2);
-      final cleaned = raw != null ? _sanitizeName(raw) : null;
+      final cleaned = raw != null ? sanitizeName(raw) : null;
       if (cleaned != null) {
         addCandidate(cleaned, type: 'name', confidence: 0.98);
       }
@@ -446,7 +446,7 @@ class MemoryManager implements IMemoryManager {
     );
     for (final match in introPattern.allMatches(userMessage)) {
       final raw = match.group(1);
-      final cleaned = raw != null ? _sanitizeName(raw) : null;
+      final cleaned = raw != null ? sanitizeName(raw) : null;
       if (cleaned == null) {
         continue;
       }

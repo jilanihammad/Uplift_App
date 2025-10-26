@@ -263,7 +263,7 @@ class AudioGenerator {
     // Check if audio is in cache first
     if (_audioCache.containsKey(text)) {
       log.i(
-          'Using cached audio for text: \"${text.substring(0, min(20, text.length))}...\"');
+          'Using cached audio for text: "${text.substring(0, min(20, text.length))}..."');
       final cachedPath = _audioCache[text]!;
       stopwatch.stop();
       _performanceMetrics['fetch_cached_audio'] = stopwatch.elapsedMilliseconds;
@@ -438,7 +438,7 @@ class AudioGenerator {
         'voice': LLMConfig.activeTTSVoice,
       });
 
-      if (response != null && response.containsKey('url')) {
+      if (response.containsKey('url')) {
         final audioUrl = response['url'];
         if (audioUrl != null) {
           // Ensure URL is absolute
@@ -592,7 +592,7 @@ class AudioGenerator {
 
         // Save to temporary file
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final audioFileName = 'direct_tts_${timestamp}.mp3';
+        final audioFileName = 'direct_tts_$timestamp.mp3';
         final audioFile = io.File(_getAudioFilePath(audioFileName));
 
         await audioFile.writeAsBytes(audioBytes);

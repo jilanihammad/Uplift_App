@@ -18,6 +18,7 @@ import uuid
 # Use unified LLM manager instead of individual services
 from app.services.llm_manager import llm_manager
 from app.utils.audio_path import ensure_wav, ensure_basename_no_extension
+from app.core.llm_config import LLMConfig
 
 # Import our enhanced streaming pipeline
 from app.services.streaming_pipeline import (
@@ -920,10 +921,20 @@ async def websocket_streaming_tts(
         init_frame = await pipeline.register_client(client_id, websocket)
         
         # Add binary frame capability to init frame
+        tts_mode = LLMConfig.get_tts_mode()
+        tts_config_payload = LLMConfig.get_tts_config()
+        supported_formats = ["wav", "opus", "aac"]
+        if tts_mode == "live" and "native" not in supported_formats:
+            supported_formats.insert(0, "native")
+
+        default_format = "native" if tts_mode == "live" else "wav"
         init_frame["capabilities"] = {
             "binary_frames": supports_binary,
             "max_frame_size": 65536,  # 64KB max frame size
-            "supported_formats": ["wav", "opus", "aac"]
+            "supported_formats": supported_formats,
+            "default_format": default_format,
+            "tts_mode": tts_mode,
+            "mime_type": tts_config_payload.get("mime_type", "audio/wav"),
         }
         
         # Include security validation info in capabilities
@@ -935,7 +946,15 @@ async def websocket_streaming_tts(
         
         # Send initialization frame with jitter buffer guidance
         await websocket.send_text(json.dumps(init_frame))
-        
+
+        connection_info = connection_manager.active_connections.get(client_id)
+        if connection_info is not None:
+            capabilities = init_frame.get("capabilities", {})
+            connection_info["supported_formats"] = capabilities.get("supported_formats", ["wav"])
+            connection_info["default_format"] = capabilities.get("default_format", "wav")
+            connection_info["mime_type"] = capabilities.get("mime_type", "audio/wav")
+            connection_info["tts_mode"] = capabilities.get("tts_mode", "rest")
+
         logger.info(f"Streaming WebSocket client {client_id} ready for conversation {conversation_id} (binary_frames: {supports_binary})")
         
         # Main message processing loop
@@ -961,17 +980,23 @@ async def websocket_streaming_tts(
                     preferred_format = message_data.get("preferred_format", "wav")
                     opus_params = message_data.get("opus_params", {})
                     
-                    # Validate and negotiate format
-                    supported_formats = ["wav", "opus"]  # Backend supported formats
-                    negotiated_format = "wav"  # Default fallback
+                    connection_info = connection_manager.active_connections.get(client_id, {})
+                    supported_formats = connection_info.get("supported_formats", ["wav", "opus"])
+                    default_format = connection_info.get("default_format", "wav")
+                    mime_type = connection_info.get("mime_type")
                     
-                    # Prefer OPUS if client supports it and includes proper parameters
+                    negotiated_format = default_format if default_format in supported_formats else supported_formats[0]
+                    
+                    # Prefer client-selected format when supported
                     if preferred_format in supported_formats and preferred_format in accept_formats:
                         negotiated_format = preferred_format
-                    elif "opus" in accept_formats and "opus" in supported_formats:
-                        negotiated_format = "opus"
-                    elif "wav" in accept_formats:
-                        negotiated_format = "wav"
+                    elif default_format in accept_formats and default_format in supported_formats:
+                        negotiated_format = default_format
+                    else:
+                        for fmt in supported_formats:
+                            if fmt in accept_formats:
+                                negotiated_format = fmt
+                                break
                     
                     # Store negotiated format in client metadata
                     if client_id in connection_manager.active_connections:
@@ -987,8 +1012,9 @@ async def websocket_streaming_tts(
                         "type": "format_negotiated",
                         "negotiated_format": negotiated_format,
                         "supported_formats": supported_formats,
-                        "opus_params": opus_params if negotiated_format == "opus" else None,
-                        "fallback_format": "wav"
+                        "opus_params": opus_params if negotiated_format in {"opus", "ogg_opus"} else None,
+                        "fallback_format": default_format,
+                        "mime_type": mime_type,
                     }))
                     server_protocol_version = 2  # Current server protocol version
                     
@@ -1186,8 +1212,9 @@ async def websocket_streaming_tts(
                     
                     # Get negotiated format and OPUS parameters from connection
                     connection_info = connection_manager.active_connections.get(client_id, {})
-                    negotiated_format = connection_info.get("negotiated_format", "wav")
+                    negotiated_format = connection_info.get("negotiated_format", connection_info.get("default_format", "wav"))
                     opus_params = connection_info.get("opus_params", {})
+                    mime_type = connection_info.get("mime_type") or LLMConfig.get_tts_config().get("mime_type")
                     
                     logger.info(f"🎵 TTS request for client {client_id}: format={negotiated_format}, opus_params={opus_params}")
                     
@@ -1233,6 +1260,7 @@ async def websocket_streaming_tts(
                             "supports_binary": supports_binary,
                             "tts_params": params,
                             "opus_params": opus_params,  # Include OPUS parameters
+                            "mime_type": mime_type,
                             "request_type": "audio_request",
                             "is_tts_only": True  # 🎯 KEY FLAG: Tells pipeline to skip LLM and go straight to TTS
                         }
@@ -1555,7 +1583,10 @@ async def websocket_tts(websocket: WebSocket):
                 voice = payload.get("voice", "sage")
                 params = payload.get("params", {})
                 session_id = payload.get("session_id")  # Get session_id from client request
-                response_format = params.get("response_format", "wav")  # Default to wav
+                tts_mode = LLMConfig.get_tts_mode()
+                default_format = "native" if tts_mode == "live" else "wav"
+                response_format = params.get("response_format", default_format)
+                mime_type = LLMConfig.get_tts_config().get("mime_type", "audio/wav")
 
                 if not text:
                     await websocket.send_text(json.dumps({
@@ -1584,7 +1615,8 @@ async def websocket_tts(websocket: WebSocket):
                     # When done, send a 'tts-done' message with total size for ExoPlayer completion
                     done_message = {
                         "type": "tts-done",
-                        "total_size": total_audio_size
+                        "total_size": total_audio_size,
+                        "mime_type": mime_type,
                     }
                     if session_id:
                         done_message["session_id"] = session_id
@@ -1660,7 +1692,10 @@ async def websocket_tts_enhanced(websocket: WebSocket):
                     voice = payload.get("voice", "sage")
                     params = payload.get("params", {})
                     session_id = payload.get("session_id")
-                    response_format = params.get("response_format", "wav")
+                    tts_mode = LLMConfig.get_tts_mode()
+                    default_format = "native" if tts_mode == "live" else "wav"
+                    response_format = params.get("response_format", default_format)
+                    mime_type = LLMConfig.get_tts_config().get("mime_type", "audio/wav")
                     
                     if not text:
                         await websocket.send_text(json.dumps({
@@ -1703,7 +1738,8 @@ async def websocket_tts_enhanced(websocket: WebSocket):
                             "type": "tts-done",
                             "total_size": total_audio_size,
                             "streaming_duration_ms": streaming_duration * 1000,
-                            "chunks_sent": chunk_sequence
+                            "chunks_sent": chunk_sequence,
+                            "mime_type": mime_type,
                         }
                         if session_id:
                             done_message["session_id"] = session_id
@@ -1764,7 +1800,10 @@ async def websocket_voice_tts(websocket: WebSocket):
                 voice = payload.get("voice", "sage")
                 params = payload.get("params", {})
                 session_id = payload.get("session_id")  # Get session_id from client request
-                response_format = params.get("response_format", "wav")  # Default to wav
+                tts_mode = LLMConfig.get_tts_mode()
+                default_format = "native" if tts_mode == "live" else "wav"
+                response_format = params.get("response_format", default_format)
+                mime_type = LLMConfig.get_tts_config().get("mime_type", "audio/wav")
 
                 if not text:
                     await websocket.send_text(json.dumps({
@@ -1793,7 +1832,8 @@ async def websocket_voice_tts(websocket: WebSocket):
                     # When done, send a 'tts-done' message with total size for ExoPlayer completion
                     done_message = {
                         "type": "tts-done",
-                        "total_size": total_audio_size
+                        "total_size": total_audio_size,
+                        "mime_type": mime_type,
                     }
                     if session_id:
                         done_message["session_id"] = session_id
@@ -1833,4 +1873,5 @@ async def websocket_voice_tts(websocket: WebSocket):
             }))
             await websocket.close()
         except:
-            pass  # WebSocket might already be closed 
+            pass  # WebSocket might already be closed
+        

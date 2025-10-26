@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../services/therapy_graph_service.dart';
 import '../services/therapy_conversation_graph.dart';
 import '../utils/logger_util.dart';
 
@@ -76,10 +75,8 @@ class ConversationFlowManager {
       _conversationGraph = TherapyConversationGraph.createCbtGraph();
     }
 
-    if (_conversationGraph != null) {
-      _conversationGraph.approach = approach;
-    }
-
+    _conversationGraph.approach = approach;
+  
     log.i(
         'Therapeutic approach set to: ${approach.toString().split('.').last}');
   }

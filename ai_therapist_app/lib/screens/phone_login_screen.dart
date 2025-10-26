@@ -6,7 +6,7 @@ import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 
 class PhoneLoginScreen extends StatefulWidget {
-  const PhoneLoginScreen({Key? key}) : super(key: key);
+  const PhoneLoginScreen({super.key});
 
   @override
   State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();

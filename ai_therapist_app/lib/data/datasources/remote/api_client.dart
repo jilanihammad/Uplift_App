@@ -797,10 +797,10 @@ class BackendSchemaException extends ApiException {
   final String expectedField;
 
   BackendSchemaException({
-    required String message,
+    required super.message,
     required this.expectedField,
     this.receivedResponse,
-  }) : super(statusCode: 422, message: message);
+  }) : super(statusCode: 422);
 
   @override
   String toString() =>

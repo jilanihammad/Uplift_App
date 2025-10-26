@@ -9,7 +9,7 @@ import 'package:ai_therapist_app/services/firebase_service.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 
 class FirebaseDebugScreen extends StatefulWidget {
-  const FirebaseDebugScreen({Key? key}) : super(key: key);
+  const FirebaseDebugScreen({super.key});
 
   @override
   State<FirebaseDebugScreen> createState() => _FirebaseDebugScreenState();
@@ -82,7 +82,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
         bool firestoreConnected = false;
         for (int i = 0; i < 3 && !firestoreConnected; i++) {
           try {
-            final result = await FirebaseFirestore.instance
+            await FirebaseFirestore.instance
                 .collection('_debug_test')
                 .doc('test')
                 .get()
@@ -112,7 +112,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
 
       // Check Storage
       try {
-        final ref = FirebaseStorage.instance.ref().child('_debug_test');
+        FirebaseStorage.instance.ref().child('_debug_test');
         setState(() {
           _storageStatus = 'Storage is working correctly';
         });
@@ -206,7 +206,7 @@ class _FirebaseDebugScreenState extends State<FirebaseDebugScreen> {
                   Text('Attempt #$_retryCount',
                       style: const TextStyle(fontSize: 14, color: Colors.grey)),
                   const SizedBox(height: 8),
-                  Text('Project: $_projectId (${_region})',
+                  Text('Project: $_projectId ($_region)',
                       style: const TextStyle(fontSize: 14)),
                   const SizedBox(height: 16),
                   _buildStatusCard('Firebase Core', _status),

@@ -5,16 +5,23 @@ import os
 import base64
 import traceback
 import asyncio
+import contextlib
 import io
 import wave
+import struct
 from pathlib import Path
-from typing import Optional, List, Dict, Any, AsyncGenerator, Final, Tuple
+from typing import Optional, List, Dict, Any, AsyncGenerator, Final, Tuple, Union, Callable
 from tenacity import retry, stop_after_attempt, wait_exponential, wait_random_exponential, retry_if_exception, retry_if_exception_type
 from httpx import ReadTimeout, RemoteProtocolError, HTTPStatusError, ConnectTimeout
 from openai import OpenAI, AsyncOpenAI
 from google import genai
 from google.genai import types
 import anthropic
+
+try:
+    from xai import AsyncClient as XAIAsyncClient  # Official xAI SDK
+except ImportError:  # pragma: no cover - optional dependency
+    XAIAsyncClient = None
 
 from app.core.llm_config import LLMConfig, ModelType, ModelProvider, ModelConfig
 from app.utils.audio_path import ensure_wav
@@ -161,6 +168,14 @@ class LLMManager:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Unable to determine google-genai version: %s", exc)
 
+        if XAIAsyncClient is not None:
+            try:
+                import xai  # type: ignore
+
+                logger.info("xai runtime version: %s", getattr(xai, "__version__", "unknown"))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Unable to determine xai SDK version: %s", exc)
+
         self.llm_config = LLMConfig.get_active_model_config(ModelType.LLM)
         self.tts_config = LLMConfig.get_active_model_config(ModelType.TTS)
         self.transcription_config = LLMConfig.get_active_model_config(ModelType.TRANSCRIPTION)
@@ -168,6 +183,7 @@ class LLMManager:
         # Initialize clients based on active providers
         self._openai_client = None
         self._anthropic_client = None
+        self._xai_client = None
         
         logger.info("LLMManager initialized with:")
         logger.info(f"LLM: {self.llm_config.provider if self.llm_config else 'None'} - {self.llm_config.model_id if self.llm_config else 'None'}")
@@ -200,6 +216,23 @@ class LLMManager:
             
             self._anthropic_client = anthropic.AsyncAnthropic(api_key=api_key)
         return self._anthropic_client
+
+    def _get_xai_client(self, config: ModelConfig) -> "XAIAsyncClient":
+        """Get or create the xAI (Grok) client for the current configuration."""
+        if XAIAsyncClient is None:
+            raise RuntimeError(
+                "xAI SDK is not installed. Add 'xai-sdk' to requirements to enable Grok provider."
+            )
+
+        if not self._xai_client:
+            api_key = LLMConfig.get_api_key(config)
+            if not api_key:
+                raise ValueError(f"API key not found for {config.api_key_env}")
+
+            # The SDK defaults to https://api.x.ai/v1; allow overrides via config.base_url
+            self._xai_client = XAIAsyncClient(api_key=api_key, base_url=config.base_url)
+
+        return self._xai_client
     
     # =============================================================================
     # LLM CHAT COMPLETION METHODS
@@ -236,6 +269,8 @@ class LLMManager:
         # Route to appropriate provider
         if self.llm_config.provider in [ModelProvider.OPENAI, ModelProvider.GROQ, ModelProvider.AZURE_OPENAI]:
             return await self._generate_openai_compatible_response(message, context, system_prompt, user_info, **kwargs)
+        elif self.llm_config.provider == ModelProvider.GROK:
+            return await self._generate_grok_response(message, context, system_prompt, user_info, **kwargs)
         elif self.llm_config.provider == ModelProvider.ANTHROPIC:
             return await self._generate_anthropic_response(message, context, system_prompt, user_info, **kwargs)
         elif self.llm_config.provider == ModelProvider.DEEPSEEK:
@@ -244,7 +279,34 @@ class LLMManager:
             return await self._generate_google_response(message, context, system_prompt, user_info, **kwargs)
         else:
             raise ValueError(f"Unsupported LLM provider: {self.llm_config.provider}")
-    
+
+    def _prepare_chat_messages(
+        self,
+        message: str,
+        context: Optional[List[Dict[str, str]]],
+        system_prompt: str,
+        user_info: Optional[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, str]], str]:
+        """Build OpenAI-style chat message payloads shared across providers."""
+
+        messages: List[Dict[str, str]] = []
+        final_system_prompt = system_prompt
+
+        if final_system_prompt:
+            messages.append({"role": "system", "content": final_system_prompt})
+        elif user_info:
+            final_system_prompt = self._build_system_prompt(user_info)
+            messages.append({"role": "system", "content": final_system_prompt})
+
+        if context:
+            for msg in context:
+                role = "user" if msg.get("isUser", False) else "assistant"
+                messages.append({"role": role, "content": msg.get("content", "")})
+
+        messages.append({"role": "user", "content": message})
+
+        return messages, final_system_prompt or system_prompt
+
     async def _generate_openai_compatible_response(
         self, 
         message: str,
@@ -257,25 +319,9 @@ class LLMManager:
         try:
             client = self._get_openai_client(self.llm_config)
             
-            # Build messages array
-            messages = []
-            
-            # Add system prompt
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            elif user_info:
-                # Build system prompt from user info if provided
-                system_prompt = self._build_system_prompt(user_info)
-                messages.append({"role": "system", "content": system_prompt})
-            
-            # Add conversation history
-            if context:
-                for msg in context:
-                    role = "user" if msg.get("isUser", False) else "assistant"
-                    messages.append({"role": role, "content": msg.get("content", "")})
-            
-            # Add current message
-            messages.append({"role": "user", "content": message})
+            messages, system_prompt = self._prepare_chat_messages(
+                message, context, system_prompt, user_info
+            )
             
             # Prepare parameters
             params = self.llm_config.default_params.copy()
@@ -296,7 +342,86 @@ class LLMManager:
             logger.error(f"Error generating OpenAI-compatible response: {str(e)}")
             logger.error(traceback.format_exc())
             raise
-    
+
+    async def _generate_grok_response(
+        self,
+        message: str,
+        context: List[Dict[str, str]] = None,
+        system_prompt: str = "",
+        user_info: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> str:
+        """Generate a response using xAI's Grok models."""
+
+        api_key = LLMConfig.get_api_key(self.llm_config)
+        if not api_key:
+            raise ValueError("XAI_API_KEY not configured")
+
+        messages, system_prompt = self._prepare_chat_messages(
+            message, context, system_prompt, user_info
+        )
+
+        params = self.llm_config.default_params.copy()
+        params.update(kwargs)
+        params.pop("model", None)
+
+        payload: Dict[str, Any] = {"model": self.llm_config.model_id, "messages": messages}
+        payload.update(params)
+
+        url = f"{self.llm_config.base_url.rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        if XAIAsyncClient is not None:
+            try:
+                sdk_client = self._get_xai_client(self.llm_config)
+                sdk_response = await sdk_client.chat.completions.create(**payload)
+
+                sdk_choices = getattr(sdk_response, "choices", None)
+                if sdk_choices:
+                    first_choice = sdk_choices[0]
+                    message_obj = getattr(first_choice, "message", None)
+                    if isinstance(message_obj, dict):
+                        content = message_obj.get("content")
+                    else:
+                        content = getattr(message_obj, "content", None)
+                    if content:
+                        return content
+            except AttributeError:
+                logger.warning(
+                    "xAI SDK interface differs from OpenAI-compatible API; falling back to REST"
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("xAI SDK call failed (%s); falling back to REST", exc)
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+            choices = data.get("choices", [])
+            if not choices:
+                raise ValueError(f"No choices returned from Grok: {data}")
+
+            content = choices[0].get("message", {}).get("content")
+            if not content:
+                raise ValueError(f"No content found in Grok response: {choices[0]}")
+
+            return content
+
+        except httpx.HTTPStatusError as exc:
+            logger.error(
+                "Grok API error: status=%s body=%s", exc.response.status_code, exc.response.text
+            )
+            raise
+        except Exception as exc:
+            logger.error("Unexpected Grok API failure: %s", exc)
+            logger.error(traceback.format_exc())
+            raise
+
     async def _generate_anthropic_response(
         self, 
         message: str,
@@ -599,7 +724,7 @@ class LLMManager:
             return
         
         # Route to appropriate provider for streaming
-        if self.llm_config.provider in [ModelProvider.OPENAI, ModelProvider.GROQ, ModelProvider.AZURE_OPENAI]:
+        if self.llm_config.provider in [ModelProvider.OPENAI, ModelProvider.GROQ, ModelProvider.GROK, ModelProvider.AZURE_OPENAI]:
             async for chunk in self._stream_openai_compatible_response(message, context, system_prompt, user_info, **kwargs):
                 yield chunk
         elif self.llm_config.provider == ModelProvider.ANTHROPIC:
@@ -938,24 +1063,15 @@ class LLMManager:
             logger.error(traceback.format_exc())
             return ""
 
-    async def _google_generate_tts_bytes(
+    async def _google_stream_tts_chunks(
         self,
         text: str,
         *,
         voice: Optional[str],
         response_format: str,
         **kwargs,
-    ) -> Tuple[bytes, str, int]:
-        """Synthesize speech with Google Gemini and return audio bytes.
-
-        Args:
-            text: Text to synthesize.
-            voice: Optional voice override.
-            response_format: Desired output format (currently only 'wav').
-
-        Returns:
-            Tuple of (audio_bytes, mime_type, sample_rate).
-        """
+    ) -> AsyncGenerator[bytes, None]:
+        """Stream raw audio chunks from Google Gemini TTS."""
 
         if not self.tts_config:
             raise ValueError("TTS configuration not available")
@@ -970,11 +1086,8 @@ class LLMManager:
         default_params = self.tts_config.default_params.copy()
 
         sample_rate = int(
-            kwargs.pop("sample_rate_hz", None)
-            or default_params.get("sample_rate_hz", 24000)
+            kwargs.get("sample_rate_hz") or default_params.get("sample_rate_hz", 24000)
         )
-        # Gemini returns mono 16-bit PCM when LINEAR16 encoding is requested
-        channels = int(default_params.get("channels", 1))
 
         voice_name = voice or default_params.get("voice") or LLMConfig.DEFAULT_TTS_VOICE
 
@@ -993,8 +1106,6 @@ class LLMManager:
                 ", ".join(sorted(map(str, kwargs.keys()))),
             )
 
-        # Resolve audio encoding enum (default LINEAR16)
-        # Build speech configuration
         voice_config_cls = getattr(types, "VoiceConfig", None)
         prebuilt_voice_config_cls = getattr(types, "PrebuiltVoiceConfig", None)
         if voice_config_cls and prebuilt_voice_config_cls:
@@ -1024,53 +1135,274 @@ class LLMManager:
             )
         ]
 
-        client = genai.Client(api_key=api_key)
+        loop = asyncio.get_running_loop()
+        queue: "asyncio.Queue[Optional[Union[bytes, Exception]]]" = asyncio.Queue()
 
-        loop = asyncio.get_event_loop()
-        try:
-            response = await loop.run_in_executor(
-                None,
-                lambda: client.models.generate_content(
+        def _produce_chunks() -> None:
+            try:
+                client = genai.Client(api_key=api_key)
+                responses = client.models.generate_content_stream(
                     model=self.tts_config.model_id,
                     contents=contents,
                     config=generation_config,
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Google TTS synthesis failed: %s", exc)
-            logger.error(traceback.format_exc())
-            raise
+                )
+                for response in responses:
+                    if not response or not response.candidates:
+                        continue
+                    for candidate in response.candidates:
+                        if not candidate.content or not candidate.content.parts:
+                            continue
+                        for part in candidate.content.parts:
+                            inline_data = getattr(part, "inline_data", None)
+                            if inline_data and getattr(inline_data, "data", None):
+                                data = bytes(inline_data.data)
+                                loop.call_soon_threadsafe(queue.put_nowait, data)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Google TTS streaming failed: %s", exc)
+                logger.error(traceback.format_exc())
+                loop.call_soon_threadsafe(queue.put_nowait, exc)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
 
-        audio_chunks: List[bytes] = []
-        mime_type: Optional[str] = None
+        producer_future = loop.run_in_executor(None, _produce_chunks)
 
-        if response and response.candidates:
-            for candidate in response.candidates:
-                if not candidate.content or not candidate.content.parts:
-                    continue
-                for part in candidate.content.parts:
-                    inline_data = getattr(part, "inline_data", None)
-                    if inline_data and getattr(inline_data, "data", None):
-                        audio_chunks.append(inline_data.data)
-                        if inline_data.mime_type:
-                            mime_type = inline_data.mime_type
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    await asyncio.wrap_future(producer_future)
+                    raise item
+                yield item
+        finally:
+            await asyncio.wrap_future(producer_future)
 
-        if not audio_chunks:
+    async def _google_live_stream_tts_chunks(
+        self,
+        text: str,
+        *,
+        voice: Optional[str],
+        response_format: str,
+        on_mime_detected: Optional[Callable[[str], None]] = None,
+    ) -> AsyncGenerator[bytes, None]:
+        """Stream raw audio chunks from Google Gemini Live API."""
+
+        if not self.tts_config:
+            raise ValueError("TTS configuration not available")
+
+        api_key = LLMConfig.get_api_key(self.tts_config)
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY is not configured")
+
+        default_params = self.tts_config.default_params.copy()
+        native_mime = default_params.get("native_mime_type", "audio/ogg; codecs=opus")
+        sample_rate = int(default_params.get("sample_rate_hz", 24000))
+        channels = int(default_params.get("channels", 1))
+        sample_width = int(default_params.get("sample_width", 2))
+        voice_name = voice or default_params.get("voice") or LLMConfig.DEFAULT_TTS_VOICE
+
+        voice_config = types.VoiceConfig(
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
+        )
+        speech_config = types.SpeechConfig(voice_config=voice_config)
+
+        generation_config = types.GenerationConfig(
+            response_modalities=[types.Modality.AUDIO],
+            speech_config=speech_config,
+        )
+
+        live_config = types.LiveConnectConfig(
+            generation_config=generation_config,
+        )
+
+        client = genai.Client(api_key=api_key)
+
+        if logger.isEnabledFor(logging.DEBUG):
+            try:
+                logger.debug(
+                    "Google Live TTS: model=%s live_config=%s",
+                    self.tts_config.model_id,
+                    live_config.model_dump_json(),
+                )
+            except Exception as exc:  # pragma: no cover - best effort logging
+                logger.debug("Unable to serialize LiveConnectConfig for logging: %s", exc)
+
+        queue: "asyncio.Queue[Optional[Union[bytes, Exception]]]" = asyncio.Queue()
+        mime_notified = False
+        pcm_header_sent = False
+
+        def _parse_pcm_formats(mime: str) -> Tuple[int, int, int]:
+            """Parse PCM mime strings like 'audio/pcm;rate=24000' into ints."""
+            parsed_rate = sample_rate
+            parsed_channels = channels
+            parsed_width = sample_width
+
+            if not mime:
+                return parsed_rate, parsed_channels, parsed_width
+
+            try:
+                lower_mime = mime.lower()
+                parts = [part.strip() for part in lower_mime.split(';')]
+                for part in parts[1:]:
+                    if not part:
+                        continue
+                    key, _, value = part.partition('=')
+                    key = key.strip()
+                    value = value.strip()
+                    if key in ("rate", "samplerate") and value.isdigit():
+                        parsed_rate = int(value)
+                    elif key in ("channels", "ch") and value.isdigit():
+                        parsed_channels = int(value)
+                    elif key in ("bit", "bits", "bitdepth") and value.isdigit():
+                        parsed_width = max(1, int(value) // 8)
+                if "l16" in lower_mime and parsed_width == sample_width:
+                    parsed_width = 2
+            except Exception:
+                # Fall back to defaults on parsing issues
+                parsed_rate = sample_rate
+                parsed_channels = channels
+                parsed_width = sample_width
+
+            return parsed_rate, parsed_channels, parsed_width
+
+        async def producer() -> None:
+            nonlocal mime_notified
+            nonlocal pcm_header_sent
+            try:
+                async with client.aio.live.connect(
+                    model=self.tts_config.model_id,
+                    config=live_config,
+                ) as session:
+                    await session.send_client_content(
+                        turns=types.Content(
+                            role="user",
+                            parts=[types.Part.from_text(text=text)],
+                        ),
+                        turn_complete=True,
+                    )
+
+                    async for message in session.receive():
+                        server_content = message.server_content
+                        if not server_content or not server_content.model_turn:
+                            continue
+
+                        parts = server_content.model_turn.parts or []
+                        for part in parts:
+                            inline_data = getattr(part, "inline_data", None)
+                            if inline_data and getattr(inline_data, "data", None):
+                                mime_type = inline_data.mime_type or ""
+                                lower_mime = mime_type.lower()
+
+                                if "pcm" in lower_mime or "l16" in lower_mime:
+                                    pcm_rate, pcm_channels, pcm_width = _parse_pcm_formats(mime_type)
+
+                                    if not pcm_header_sent:
+                                        header_bytes = self._build_streaming_wav_header(
+                                            pcm_rate,
+                                            channels=pcm_channels,
+                                            sample_width=pcm_width or 2,
+                                        )
+                                        await queue.put(header_bytes)
+                                        pcm_header_sent = True
+
+                                        if on_mime_detected and not mime_notified:
+                                            mime_notified = True
+                                            on_mime_detected("audio/wav")
+
+                                    await queue.put(bytes(inline_data.data))
+                                else:
+                                    if (
+                                        on_mime_detected
+                                        and inline_data.mime_type
+                                        and not mime_notified
+                                    ):
+                                        mime_notified = True
+                                        on_mime_detected(inline_data.mime_type)
+
+                                    await queue.put(bytes(inline_data.data))
+
+                        if server_content.turn_complete:
+                            break
+            except Exception as exc:  # noqa: BLE001
+                await queue.put(exc)
+            finally:
+                await queue.put(None)
+
+        producer_task = asyncio.create_task(producer())
+
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                if item:
+                    yield item
+        finally:
+            if not producer_task.done():
+                producer_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await producer_task
+
+    async def _google_generate_tts_bytes(
+        self,
+        text: str,
+        *,
+        voice: Optional[str],
+        response_format: str,
+        **kwargs,
+    ) -> Tuple[bytes, str, int]:
+        """Synthesize speech with Google Gemini and return audio bytes."""
+
+        default_params = self.tts_config.default_params.copy() if self.tts_config else {}
+        sample_rate = int(
+            kwargs.pop("sample_rate_hz", None)
+            or default_params.get("sample_rate_hz", 24000)
+        )
+        channels = int(default_params.get("channels", 1))
+
+        google_mode = default_params.get("mode", "rest")
+
+        if google_mode == "live":
+            mime_holder: Dict[str, Optional[str]] = {"value": None}
+
+            def _on_mime_detected(mime: str) -> None:
+                if mime_holder["value"] is None:
+                    mime_holder["value"] = mime
+
+            collected = bytearray()
+            async for chunk in self._google_live_stream_tts_chunks(
+                text,
+                voice=voice,
+                response_format=response_format or "native",
+                on_mime_detected=_on_mime_detected,
+            ):
+                collected.extend(chunk)
+
+            if not collected:
+                raise ValueError("Google TTS returned no audio data")
+
+            mime = mime_holder["value"] or default_params.get("native_mime_type", "audio/ogg; codecs=opus")
+            return bytes(collected), mime, sample_rate
+
+        if response_format != "wav":
+            raise ValueError("Google TTS helper only supports WAV output")
+
+        collected = bytearray()
+        async for chunk in self._google_stream_tts_chunks(
+            text,
+            voice=voice,
+            response_format=response_format,
+            sample_rate_hz=sample_rate,
+        ):
+            collected.extend(chunk)
+
+        if not collected:
             raise ValueError("Google TTS returned no audio data")
 
-        pcm_bytes = b"".join(audio_chunks)
-        mime_type = mime_type or "audio/pcm"
-
-        if mime_type.startswith("audio/wav"):
-            return pcm_bytes, "audio/wav", sample_rate
-
-        if not mime_type.startswith("audio/pcm"):
-            logger.warning(
-                "Unexpected Google TTS mime type '%s'; treating as PCM for WAV conversion",
-                mime_type,
-            )
-
-        wav_bytes = self._pcm_to_wav(pcm_bytes, sample_rate=sample_rate, channels=channels)
+        wav_bytes = self._pcm_to_wav(bytes(collected), sample_rate=sample_rate, channels=channels, sample_width=2)
         return wav_bytes, "audio/wav", sample_rate
     
     @tts_fallback
@@ -1089,7 +1421,15 @@ class LLMManager:
         Yields:
             Base64-encoded audio chunks
         """
-        response_format = response_format or "wav"  # Default to WAV for compatibility
+        default_format = "wav"
+        if (
+            self.tts_config
+            and self.tts_config.provider == ModelProvider.GOOGLE
+            and (self.tts_config.default_params or {}).get("mode", "rest") == "live"
+        ):
+            default_format = "native"
+
+        response_format = response_format or default_format
         
         if not self.tts_config:
             raise ValueError("No TTS configuration available")
@@ -1182,38 +1522,118 @@ class LLMManager:
                     logger.error(traceback.format_exc())
                     raise
         elif self.tts_config.provider == ModelProvider.GOOGLE:
-            if response_format not in (None, "wav"):
-                raise ValueError("Google TTS currently supports only WAV streaming")
-
-            audio_bytes, _, _ = await self._google_generate_tts_bytes(
-                text,
-                voice=voice,
-                response_format="wav",
-                **kwargs,
+            google_mode = (self.tts_config.default_params or {}).get("mode", "rest")
+            default_params = self.tts_config.default_params.copy() if self.tts_config else {}
+            sample_rate = int(
+                kwargs.get("sample_rate_hz") or default_params.get("sample_rate_hz", 24000)
             )
+            channels = int(default_params.get("channels", 1))
 
-            total_bytes = len(audio_bytes)
-            if total_bytes == 0:
-                raise ValueError("Google TTS returned empty audio stream")
+            if google_mode == "live":
+                # Native audio streaming via Gemini Live API
+                mime_holder: Dict[str, Optional[str]] = {"value": None}
 
-            chunk_size = kwargs.get('chunk_size', 16384)
-            logger.info(
-                "🎤 Google TTS: streaming WAV output (%d bytes, chunk_size=%d)",
-                total_bytes,
-                chunk_size,
-            )
+                def _on_mime_detected(mime: str) -> None:
+                    if mime_holder["value"] is None:
+                        mime_holder["value"] = mime
 
-            first_chunk = True
-            for idx in range(0, total_bytes, chunk_size):
-                chunk = audio_bytes[idx: idx + chunk_size]
-                if not chunk:
-                    continue
-                if first_chunk:
-                    logger.debug(
-                        "🔍 Google TTS first chunk size=%d bytes", len(chunk)
-                    )
-                    first_chunk = False
-                yield base64.b64encode(chunk).decode('utf-8')
+                chunk_size = int(kwargs.get('chunk_size', 0))
+                buffer = bytearray()
+                total_bytes = 0
+                first_chunk_logged = False
+
+                logger.info("🎤 Google Live TTS: streaming native audio (chunk_size=%d)", chunk_size)
+
+                async for raw_chunk in self._google_live_stream_tts_chunks(
+                    text,
+                    voice=voice,
+                    response_format=response_format or "native",
+                    on_mime_detected=_on_mime_detected,
+                ):
+                    if not raw_chunk:
+                        continue
+
+                    total_bytes += len(raw_chunk)
+                    if chunk_size > 0:
+                        buffer.extend(raw_chunk)
+                        while len(buffer) >= chunk_size:
+                            chunk = bytes(buffer[:chunk_size])
+                            del buffer[:chunk_size]
+                            if not first_chunk_logged:
+                                logger.debug("🔍 Google Live TTS first chunk size=%d bytes", len(chunk))
+                                first_chunk_logged = True
+                            yield base64.b64encode(chunk).decode('utf-8')
+                    else:
+                        if not first_chunk_logged:
+                            logger.debug("🔍 Google Live TTS first chunk size=%d bytes", len(raw_chunk))
+                            first_chunk_logged = True
+                        yield base64.b64encode(raw_chunk).decode('utf-8')
+
+                if chunk_size > 0 and buffer:
+                    chunk = bytes(buffer)
+                    if not first_chunk_logged:
+                        logger.debug("🔍 Google Live TTS first chunk size=%d bytes", len(chunk))
+                        first_chunk_logged = True
+                    yield base64.b64encode(chunk).decode('utf-8')
+
+                logger.info(
+                    "🎤 Google Live TTS: native stream complete (%d bytes, mime=%s)",
+                    total_bytes,
+                    mime_holder.get("value"),
+                )
+            else:
+                if response_format not in (None, "wav"):
+                    raise ValueError("Google TTS currently supports only WAV streaming")
+
+                chunk_size = int(kwargs.get('chunk_size', 16384))
+                header = self._build_streaming_wav_header(sample_rate, channels=channels, sample_width=2)
+                buffer = bytearray(header)
+                total_audio_bytes = 0
+                first_chunk_logged = False
+
+                logger.info("🎤 Google TTS: streaming WAV output (chunk_size=%d)", chunk_size)
+
+                async for raw_chunk in self._google_stream_tts_chunks(
+                    text,
+                    voice=voice,
+                    response_format="wav",
+                    sample_rate_hz=sample_rate,
+                ):
+                    if not raw_chunk:
+                        continue
+
+                    total_audio_bytes += len(raw_chunk)
+                    buffer.extend(raw_chunk)
+
+                    while chunk_size and len(buffer) >= chunk_size:
+                        chunk = bytes(buffer[:chunk_size])
+                        del buffer[:chunk_size]
+                        if not first_chunk_logged:
+                            logger.debug("🔍 Google TTS first chunk size=%d bytes", len(chunk))
+                            first_chunk_logged = True
+                        yield base64.b64encode(chunk).decode('utf-8')
+
+                    if not chunk_size:
+                        chunk = bytes(buffer)
+                        buffer.clear()
+                        if chunk:
+                            if not first_chunk_logged:
+                                logger.debug("🔍 Google TTS first chunk size=%d bytes", len(chunk))
+                                first_chunk_logged = True
+                            yield base64.b64encode(chunk).decode('utf-8')
+
+                if buffer:
+                    chunk = bytes(buffer)
+                    if not first_chunk_logged:
+                        logger.debug("🔍 Google TTS first chunk size=%d bytes", len(chunk))
+                        first_chunk_logged = True
+                    yield base64.b64encode(chunk).decode('utf-8')
+
+                logger.info(
+                    "🎤 Google TTS: WAV completed - streamed %d audio bytes (header %d bytes)",
+                    total_audio_bytes,
+                    len(header),
+                )
         else:
             raise ValueError(f"Streaming TTS not implemented for provider: {self.tts_config.provider}")
     
@@ -1248,6 +1668,35 @@ class LLMManager:
                 wav_file.setframerate(sample_rate)
                 wav_file.writeframes(pcm_bytes)
             return buffer.getvalue()
+
+    @staticmethod
+    def _build_streaming_wav_header(
+        sample_rate: int,
+        *,
+        channels: int = 1,
+        sample_width: int = 2,
+    ) -> bytes:
+        """Create a WAV header with placeholder sizes suitable for streaming."""
+
+        byte_rate = sample_rate * channels * sample_width
+        block_align = channels * sample_width
+
+        return struct.pack(
+            '<4sI4s4sIHHIIHH4sI',
+            b'RIFF',
+            0xFFFFFFFF,
+            b'WAVE',
+            b'fmt ',
+            16,
+            1,
+            channels,
+            sample_rate,
+            byte_rate,
+            block_align,
+            sample_width * 8,
+            b'data',
+            0xFFFFFFFF,
+        )
     
     def _validate_ogg_header(self, chunk: bytes) -> None:
         """

@@ -1,23 +1,13 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:io';
-import 'dart:math';
-import 'voice_service.dart';
-import 'memory_service.dart';
 import 'memory_manager.dart';
 import 'message_processor.dart';
 import 'audio_generator.dart';
 import 'conversation_flow_manager.dart';
-import '../services/therapy_graph_service.dart';
 import '../services/therapy_conversation_graph.dart';
-import '../models/conversation_memory.dart';
 import '../di/interfaces/i_api_client.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger_util.dart';
-import '../config/app_config.dart';
 import '../di/dependency_container.dart';
 import 'enhanced_vad_manager.dart';
 import '../di/interfaces/i_therapy_service.dart';
@@ -146,7 +136,7 @@ class TherapyService implements ITherapyService {
   final ConversationFlowManager _conversationFlowManager;
 
   // Enhanced VAD configuration
-  bool _useEnhancedVAD = false; // Default to false for backwards compatibility
+  final bool _useEnhancedVAD = false; // Default to false for backwards compatibility
   EnhancedVADManager? _enhancedVADManager;
 
   // Constructor with injected dependencies

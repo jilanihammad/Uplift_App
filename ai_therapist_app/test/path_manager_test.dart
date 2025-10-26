@@ -20,7 +20,7 @@ void main() {
     });
 
     test('Path round-trip should work (BEST TEST)', () async {
-      final id = 'test123';
+      const id = 'test123';
       final path = pathManager.ttsFile(id);
 
       // Actually test that file operations work with generated paths
@@ -52,7 +52,7 @@ void main() {
     });
 
     test('Filename sanitization should preserve directory structure', () {
-      final input = 'some/path/test@file#name.wav';
+      const input = 'some/path/test@file#name.wav';
       final result = pathManager.sanitizeFileName(input);
       // Use path.join to create expected result for cross-platform compatibility
       expect(result, endsWith('test_file_name.wav'));
@@ -62,7 +62,7 @@ void main() {
 
     test('TTS collision prevention with microseconds', () async {
       final path1 = pathManager.ttsFile(); // Auto-generate ID
-      await Future.delayed(Duration(
+      await Future.delayed(const Duration(
           milliseconds: 1)); // Ensure different timestamp (use ms not μs)
       final path2 = pathManager.ttsFile(); // Auto-generate ID
       expect(path1, isNot(equals(path2)),

@@ -5,7 +5,7 @@ import '../../services/user_profile_service.dart';
 import '../../models/user_profile.dart';
 
 class CopingStrategiesScreen extends StatefulWidget {
-  const CopingStrategiesScreen({Key? key}) : super(key: key);
+  const CopingStrategiesScreen({super.key});
 
   @override
   State<CopingStrategiesScreen> createState() => _CopingStrategiesScreenState();

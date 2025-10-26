@@ -11,9 +11,9 @@ class HistoryScreen extends StatefulWidget {
   final ISessionRepository? sessionRepository;
 
   const HistoryScreen({
-    Key? key,
+    super.key,
     this.sessionRepository,
-  }) : super(key: key);
+  });
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -363,8 +363,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -388,11 +388,11 @@ class SessionHistoryTile extends StatelessWidget {
   final Future<void> Function()? onDelete;
 
   const SessionHistoryTile({
-    Key? key,
+    super.key,
     required this.session,
     this.onRename,
     this.onDelete,
-  }) : super(key: key);
+  });
 
   String _formatDate(DateTime date) {
     return DateFormatter.formatTime(date);

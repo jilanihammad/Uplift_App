@@ -58,7 +58,6 @@ class _ChatScreenBody extends StatefulWidget {
   final String? sessionId;
 
   const _ChatScreenBody({
-    super.key,
     this.sessionId,
   });
 
@@ -243,9 +242,9 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         builder: (context, state) {
           // Handle initialization state
           if (state.isInitializing) {
-            return Scaffold(
-              appBar: const ChatAppBar.simple(),
-              body: const Center(child: CircularProgressIndicator()),
+            return const Scaffold(
+              appBar: ChatAppBar.simple(),
+              body: Center(child: CircularProgressIndicator()),
             );
           }
 
@@ -360,7 +359,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
 
     try {
       // Initialize services through Bloc
-      context.read<VoiceSessionBloc>().add(InitializeService());
+      context.read<VoiceSessionBloc>().add(const InitializeService());
 
       // Set up callback for recording completion
       _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
@@ -384,9 +383,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   }
 
   Future<void> _loadTherapistStyle() async {
-    final preferencesService = DependencyContainer().preferences;
-    final userPreferences = preferencesService.preferences;
-
     // Set therapist style
     _therapistStyle = TherapistStyle.getById('cbt');
 
@@ -407,13 +403,13 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     if (widget.sessionId != null) {
       // Load existing session (legacy path - keep existing logic for now)
       _currentSessionId = widget.sessionId ?? '';
-      bloc.add(SetInitializing(true));
-      bloc.add(ShowMoodSelector(false));
-      bloc.add(ShowDurationSelector(false));
+      bloc.add(const SetInitializing(true));
+      bloc.add(const ShowMoodSelector(false));
+      bloc.add(const ShowDurationSelector(false));
 
       // TODO: Implement proper existing session loading
       _startSessionTimer();
-      bloc.add(SetInitializing(false));
+      bloc.add(const SetInitializing(false));
     } else {
       // Generate a temporary UUID for local session tracking
       _currentSessionId = const Uuid().v4();
@@ -467,7 +463,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _navigationService.hideBottomNav();
 
     // Ensure speaker is unmuted for new session (in case previous session ended with mute)
-    bloc.add(SetSpeakerMuted(false));
+    bloc.add(const SetSpeakerMuted(false));
 
     // Enable wakelock now that therapy session is starting
     _enableWakelock();
@@ -483,7 +479,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     // Start a new timer that updates every second
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
-        context.read<VoiceSessionBloc>().add(UpdateSessionTimer());
+        context.read<VoiceSessionBloc>().add(const UpdateSessionTimer());
 
         // Timer continues - no wakelock refresh needed here
       }
@@ -575,8 +571,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     _sessionTimer?.cancel();
     _sessionTimer = null;
 
-    bloc.add(SetEndingSession(true));
-    bloc.add(SetProcessing(true));
+    bloc.add(const SetEndingSession(true));
+    bloc.add(const SetProcessing(true));
 
     _navigationService.showBottomNav();
 
@@ -641,8 +637,8 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         Navigator.of(context).pop();
       }
 
-      bloc.add(SetEndingSession(false));
-      bloc.add(SetProcessing(false));
+      bloc.add(const SetEndingSession(false));
+      bloc.add(const SetProcessing(false));
 
       if (kDebugMode) {
         debugPrint('Error ending session: $e');
@@ -851,7 +847,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         '🔄 Switching from ${state.isVoiceMode ? "voice" : "chat"} to ${state.isVoiceMode ? "chat" : "voice"} mode');
 
     // Stop any ongoing audio before switching
-    bloc.add(StopAudio());
+    bloc.add(const StopAudio());
 
     setState(() {
       _messageController.clear();

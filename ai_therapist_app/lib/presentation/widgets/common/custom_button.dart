@@ -33,7 +33,7 @@ class CustomButton extends StatelessWidget {
   final double height;
 
   const CustomButton({
-    Key? key,
+    super.key,
     required this.label,
     required this.onPressed,
     this.isLoading = false,
@@ -43,7 +43,7 @@ class CustomButton extends StatelessWidget {
     this.padding,
     this.width,
     this.height = 48.0,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

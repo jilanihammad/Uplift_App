@@ -30,8 +30,8 @@ class AppConfig {
   String get apiBaseUrl => '$backendUrl/api/v1';
 
   // Endpoints
-  String get llmApiEndpoint => '$backendUrl';
-  String get voiceModelEndpoint => '$backendUrl';
+  String get llmApiEndpoint => backendUrl;
+  String get voiceModelEndpoint => backendUrl;
 
   String get privacyPolicyUrl =>
       dotenv.env['PRIVACY_POLICY_URL'] ??

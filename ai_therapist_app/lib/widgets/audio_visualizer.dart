@@ -6,6 +6,7 @@
 /// - EMA smoothing to prevent flicker
 /// - Device pixel unit rendering for sharp visuals
 /// - Performance optimizations for battery efficiency
+library;
 
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -38,7 +39,7 @@ class AudioVisualizerWidget extends StatefulWidget {
       motionSensitive; // Accessibility: disable for motion-sensitive users
 
   const AudioVisualizerWidget({
-    Key? key,
+    super.key,
     required this.amplitude,
     required this.state,
     this.mode = VisualizationMode.ripple,
@@ -46,7 +47,7 @@ class AudioVisualizerWidget extends StatefulWidget {
     required this.accentColor,
     this.size = 120.0,
     this.motionSensitive = false,
-  }) : super(key: key);
+  });
 
   @override
   State<AudioVisualizerWidget> createState() => _AudioVisualizerWidgetState();
@@ -320,7 +321,7 @@ class _RipplePainter extends CustomPainter {
     }
 
     // Draw multiple ripples with amplitude-based scaling
-    final numRipples = 3;
+    const numRipples = 3;
     final baseRadius = maxRadius * 0.3;
     final amplitudeScale = AmplitudeUtils.amplitudeToScale(amplitude);
 
@@ -403,7 +404,7 @@ class _BarsPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..style = PaintingStyle.fill;
-    final barCount = 5;
+    const barCount = 5;
     final barWidth = size.width / (barCount * 2 - 1);
     final maxHeight = size.height * 0.8;
 

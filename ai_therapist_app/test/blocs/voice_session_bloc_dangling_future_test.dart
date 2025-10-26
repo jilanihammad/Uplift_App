@@ -1,10 +1,6 @@
 // test/blocs/voice_session_bloc_dangling_future_test.dart
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ai_therapist_app/blocs/voice_session_bloc.dart';
-import 'package:ai_therapist_app/blocs/voice_session_event.dart';
-import 'package:ai_therapist_app/blocs/voice_session_state.dart';
-import 'dart:async';
 
 void main() {
   group('VoiceSessionBloc Generation Counter Tests', () {

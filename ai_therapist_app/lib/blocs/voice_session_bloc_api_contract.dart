@@ -6,19 +6,17 @@
 ///
 /// Created: Phase 0.5.3 - API Contract Definition (Safety-First Approach)
 /// Status: FROZEN - Do not modify without careful consideration
+library;
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'voice_session_event.dart';
 import 'voice_session_state.dart';
-import '../services/voice_service.dart';
-import '../services/vad_manager.dart';
-import '../di/interfaces/interfaces.dart';
 
 /// Public API Contract for VoiceSessionBloc
 /// This abstract class defines the complete public interface that must be preserved
 abstract class IVoiceSessionBloc
     extends Bloc<VoiceSessionEvent, VoiceSessionState> {
-  IVoiceSessionBloc(VoiceSessionState initialState) : super(initialState);
+  IVoiceSessionBloc(super.initialState);
 
   /// Required constructor parameters that must be maintained
   /// Note: These are constructor contracts, not method contracts

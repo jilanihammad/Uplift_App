@@ -62,12 +62,10 @@ class AppTheme {
         primary: caldietPrimaryColor,
         secondary: caldietAccentBlue,
         surface: Colors.white,
-        background: caldietBackgroundGray,
         error: errorColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         onSurface: caldietTextPrimary,
-        onBackground: caldietTextPrimary,
         onError: Colors.white,
       ),
       primaryColor: caldietPrimaryColor,
@@ -113,7 +111,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: caldietAccentBlue,
-          side: BorderSide(color: caldietAccentBlue),
+          side: const BorderSide(color: caldietAccentBlue),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
@@ -209,12 +207,10 @@ class AppTheme {
         primary: primaryColor,
         secondary: secondaryColor,
         surface: darkSurfaceColor,
-        background: darkBackgroundColor,
         error: errorColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         onSurface: darkTextPrimaryColor,
-        onBackground: darkTextPrimaryColor,
         onError: Colors.white,
       ),
       primaryColor: primaryColor,
@@ -259,7 +255,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: buttonColor,
-          side: BorderSide(color: buttonColor),
+          side: const BorderSide(color: buttonColor),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),

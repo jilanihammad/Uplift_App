@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:isolate';
 
 /// 🛡️ BULLETPROOF PathManager with Centralized Path Constants
 /// Prevents ALL path corruption by using immutable constants and validation
@@ -69,7 +68,7 @@ class PathManager {
     // Strip dangerous characters for security (prevent path traversal)
     final safeExt = ext.replaceAll(RegExp(r'[./\\]'), '');
     final filePath =
-        _buildSecurePath([SUBDIR_TTS], '${TTS_PREFIX}${safeId}.${safeExt}');
+        _buildSecurePath([SUBDIR_TTS], '$TTS_PREFIX$safeId.$safeExt');
     return filePath;
   }
 
@@ -83,7 +82,7 @@ class PathManager {
       throw ArgumentError('Invalid UUID format: $uuid');
     }
     final filePath =
-        _buildSecurePath([SUBDIR_RECORDINGS], '${uuid}.${RECORDING_EXT}');
+        _buildSecurePath([SUBDIR_RECORDINGS], '$uuid.$RECORDING_EXT');
 
     // 🚨 CORRUPTION DIAGNOSTIC - Log clean path immediately after creation
     debugPrint('🛡️ PathManager.recordingFile() created CLEAN path: $filePath');

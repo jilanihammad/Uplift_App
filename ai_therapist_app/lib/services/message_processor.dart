@@ -235,7 +235,7 @@ class MessageProcessor {
       } catch (e, stackTrace) {
         log.e('Backend API Error', e, stackTrace);
         _logDetailedError(e);
-        throw e; // Re-throw to be caught by the outer try-catch
+        rethrow; // Re-throw to be caught by the outer try-catch
       }
     } catch (e) {
       log.w('Backend call failed, generating fallback response');
@@ -498,7 +498,7 @@ $conversationText''';
         // If JSON parsing fails, create summary from text
         return {
           'summary': responseText.length > 500
-              ? responseText.substring(0, 500) + '...'
+              ? '${responseText.substring(0, 500)}...'
               : responseText,
           'action_items': ['Reflect on today\'s session', 'Practice self-care'],
           'topics': [],
@@ -542,16 +542,11 @@ $conversationText''';
 
       final response = await apiClient.post('/therapy/end_session', payload);
 
-      if (response != null) {
-        log.i(
-            'Received response from end_session API: ${json.encode(response)}');
-        log.i('Session summary generated successfully');
-        return response;
-      } else {
-        log.w('Received null response from end_session API');
-        return _generateFallbackSummary(messages);
-      }
-    } catch (e) {
+      log.i(
+          'Received response from end_session API: ${json.encode(response)}');
+      log.i('Session summary generated successfully');
+      return response;
+        } catch (e) {
       log.e('Backend API error in generateSessionSummary', e);
       _logDetailedError(e);
       return _generateFallbackSummary(messages);
@@ -593,10 +588,7 @@ $conversationText''';
         }
       }
 
-      final summary = 'Thank you for your session today. ' +
-          'We discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, ' +
-          'and explored ways to approach these areas in your life. ' +
-          'Remember that personal growth takes time, and it\'s important to be patient with yourself.';
+      final summary = 'Thank you for your session today. ' 'We discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, ' 'and explored ways to approach these areas in your life. ' 'Remember that personal growth takes time, and it\'s important to be patient with yourself.';
 
       final actionItems = [
         'Take time for self-reflection',
@@ -635,20 +627,12 @@ $conversationText''';
 
       try {
         // Make a request to the service status endpoint
-        log.d('Making request to ${backendUrl}/llm/status');
+        log.d('Making request to $backendUrl/llm/status');
         final response = await apiClient.get('/llm/status');
 
-        if (response != null) {
-          log.d('Service status response: $response');
-          return response as Map<String, dynamic>;
-        } else {
-          log.w('Got null response from service status endpoint');
-          return {
-            'error': 'No response received from status endpoint',
-            'status': 'offline'
-          };
-        }
-      } catch (e) {
+        log.d('Service status response: $response');
+        return response;
+            } catch (e) {
         log.e('Error checking service status', e);
         _logDetailedError(e);
 

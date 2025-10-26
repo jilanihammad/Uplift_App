@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'dart:async';
 
 /// TTS Streaming Monitor
 ///

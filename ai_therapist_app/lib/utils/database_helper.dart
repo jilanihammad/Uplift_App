@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
-import 'package:sqflite/sqflite.dart';
 import '../di/interfaces/i_database_operation_manager.dart';
 
 /// Database operation manager utility to coordinate database operations and prevent conflicts

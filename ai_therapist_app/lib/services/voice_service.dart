@@ -2,29 +2,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
-import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:permission_handler/permission_handler.dart';
-import 'package:async/async.dart';
 import 'package:mutex/mutex.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
-import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:just_audio/just_audio.dart';
 
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
-import 'package:ai_therapist_app/config/api.dart';
-import 'package:ai_therapist_app/data/models/log_entry.dart';
-import 'package:ai_therapist_app/data/repositories/log_repo.dart';
-import 'package:ai_therapist_app/services/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:record/record.dart';
 import '../config/app_config.dart'; // Import AppConfig
-import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'auto_listening_coordinator.dart';
 import 'vad_manager.dart';
@@ -222,9 +208,10 @@ class VoiceService {
   Future<void> disableAutoMode() async {
     if (kDebugMode) debugPrint('[VoiceService] disableAutoMode() called');
     await _autoListeningCoordinator.disableAutoMode();
-    if (kDebugMode)
+    if (kDebugMode) {
       debugPrint(
           '[VoiceService] disableAutoMode() completed. autoModeEnabled=${_autoListeningCoordinator.autoModeEnabled}');
+    }
   }
 
   // Enable auto mode with explicit audio state from Bloc
@@ -552,9 +539,10 @@ class VoiceService {
           await FileCleanupManager.safeDelete(recordedFilePath);
         }
       } catch (delErr) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '❌ VOICE ERROR: processRecordedAudioFile: Error deleting file during cleanup: $delErr');
+        }
       }
       return "Error: Problem processing audio. Please try again.";
     }
@@ -630,8 +618,9 @@ class VoiceService {
       final session = await AudioSession.instance;
       final focusGranted = await session.setActive(true);
       if (!focusGranted) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint('🔊 VoiceService: Audio session activation NOT granted');
+        }
         _audioPlaybackController.add(false);
         return;
       } else {
@@ -639,9 +628,10 @@ class VoiceService {
       }
 
       session.becomingNoisyEventStream.listen((_) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '🔊 VoiceService: Audio becoming noisy (e.g. headphones unplugged)');
+        }
         stopAudio();
       });
       session.interruptionEventStream.listen((event) {
@@ -691,8 +681,9 @@ class VoiceService {
       } else if (!_isWeb) {
         final file = io.File(audioPath);
         if (await file.exists()) {
-          if (kDebugMode)
+          if (kDebugMode) {
             debugPrint('🔊 VoiceService: Playing local audio file: $audioPath');
+          }
           try {
             await _audioPlayerManager.playAudio(audioPath);
             // AudioPlayerManager will handle state updates
@@ -700,22 +691,25 @@ class VoiceService {
               _audioPlaybackController.add(isPlaying);
             });
           } catch (e) {
-            if (kDebugMode)
+            if (kDebugMode) {
               debugPrint('🔊 VoiceService: Error playing local file: $e');
+            }
             _audioPlaybackController.add(false);
             await _useTtsBackup(); // Fallback to TTS
           }
         } else {
-          if (kDebugMode)
+          if (kDebugMode) {
             debugPrint('🔊 VoiceService: File not found $audioPath, using TTS');
+          }
           _audioPlaybackController.add(false);
           await _useTtsBackup();
         }
       } else {
         // Web, non-HTTP path - likely an error or needs TTS
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint(
               '🔊 VoiceService: Unhandled audio path on web: $audioPath, using TTS');
+        }
         _audioPlaybackController.add(false);
         await _useTtsBackup();
       }
@@ -1032,8 +1026,9 @@ class VoiceService {
 
     _lastPlayedFile = filePath;
     _setAiSpeaking(true);
-    if (kDebugMode)
+    if (kDebugMode) {
       debugPrint('[VoiceService] playAudioWithCallbacks: Playing $filePath');
+    }
 
     try {
       // Ensure the AudioPlayerManager's playAudio method is awaited

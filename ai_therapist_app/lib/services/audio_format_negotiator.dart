@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../config/audio_format_config.dart';
+import '../config/llm_config.dart';
 
 /// Audio format negotiation and configuration
 ///
@@ -8,6 +9,7 @@ import '../config/audio_format_config.dart';
 class AudioFormatNegotiator {
   /// Available audio formats in order of preference
   static const List<AudioFormat> _supportedFormats = [
+    AudioFormat.native,
     AudioFormat.opus, // Preferred for streaming
     AudioFormat.wav, // Fallback for compatibility
   ];
@@ -17,7 +19,22 @@ class AudioFormatNegotiator {
 
   /// Get the preferred format for new TTS requests
   static AudioFormat getPreferredFormat() {
-    // Use AudioFormatConfig to determine format
+    final backendFormat =
+        LLMConfig.activeTTSResponseFormat.toLowerCase().trim();
+    final backendMode = LLMConfig.activeTTSMode.toLowerCase().trim();
+
+    if (backendMode == 'live' || backendFormat == 'native') {
+      return AudioFormat.native;
+    }
+
+    if (backendFormat == 'opus' && _isOpusSupported()) {
+      return AudioFormat.opus;
+    }
+
+    if (backendFormat == 'wav') {
+      return AudioFormat.wav;
+    }
+
     if (AudioFormatConfig.shouldUseOpus && _isOpusSupported()) {
       return AudioFormat.opus;
     }
@@ -29,12 +46,29 @@ class AudioFormatNegotiator {
 
   /// Initialize format based on configuration
   static void initialize() {
-    _currentFormat = getPreferredFormat();
+    updateFromConfig(log: true);
+  }
+
+  /// Refresh the current format using the latest backend configuration.
+  /// This can be called whenever remote overrides change (e.g., after
+  /// fetching `/system/tts-config`).
+  static void updateFromConfig({bool log = false}) {
+    final preferredFormat = getPreferredFormat();
+    final formatChanged = _currentFormat != preferredFormat;
+    _currentFormat = preferredFormat;
 
     if (kDebugMode) {
-      debugPrint(
-          '🎵 AudioFormatNegotiator: Initialized with format: ${_currentFormat.name}');
-      AudioFormatConfig.logCurrentConfiguration();
+      if (formatChanged) {
+        debugPrint(
+            '🎵 AudioFormatNegotiator: Format updated to ${_currentFormat.name}');
+      } else if (log) {
+        debugPrint(
+            '🎵 AudioFormatNegotiator: Format remains ${_currentFormat.name}');
+      }
+
+      if (log) {
+        AudioFormatConfig.logCurrentConfiguration();
+      }
     }
   }
 
@@ -68,10 +102,20 @@ class AudioFormatNegotiator {
 
   /// Get MIME type for the current format
   static String getMimeType() {
-    switch (_currentFormat) {
-      case AudioFormat.opus:
-        return 'audio/ogg'; // OPUS in OGG container
-      case AudioFormat.wav:
+    return getMimeTypeForFormat(_currentFormat.name.toLowerCase());
+  }
+
+  static String getMimeTypeForFormat(String format) {
+    switch (format.toLowerCase()) {
+      case 'native':
+        return LLMConfig.activeTtsMimeType;
+      case 'opus':
+      case 'ogg_opus':
+        return 'audio/ogg; codecs=opus';
+      case 'aac':
+        return 'audio/aac';
+      case 'wav':
+      default:
         return 'audio/wav';
     }
   }
@@ -79,6 +123,8 @@ class AudioFormatNegotiator {
   /// Get file extension for the current format
   static String getFileExtension() {
     switch (_currentFormat) {
+      case AudioFormat.native:
+        return 'ogg';
       case AudioFormat.opus:
         return 'ogg';
       case AudioFormat.wav:
@@ -89,6 +135,8 @@ class AudioFormatNegotiator {
   /// Get backend request format parameter
   static String getBackendFormat() {
     switch (_currentFormat) {
+      case AudioFormat.native:
+        return 'native';
       case AudioFormat.opus:
         return 'opus'; // Backend parameter
       case AudioFormat.wav:
@@ -112,6 +160,8 @@ class AudioFormatNegotiator {
   /// Check if current format supports true streaming
   static bool supportsStreaming() {
     switch (_currentFormat) {
+      case AudioFormat.native:
+        return true;
       case AudioFormat.opus:
         return true; // OPUS is designed for streaming
       case AudioFormat.wav:
@@ -133,6 +183,7 @@ class AudioFormatNegotiator {
 
 /// Supported audio formats
 enum AudioFormat {
+  native,
   opus,
   wav,
 }
@@ -141,6 +192,8 @@ enum AudioFormat {
 extension AudioFormatExtension on AudioFormat {
   String get name {
     switch (this) {
+      case AudioFormat.native:
+        return 'NATIVE';
       case AudioFormat.opus:
         return 'OPUS';
       case AudioFormat.wav:
@@ -150,6 +203,8 @@ extension AudioFormatExtension on AudioFormat {
 
   String get description {
     switch (this) {
+      case AudioFormat.native:
+        return 'Gemini Live native audio';
       case AudioFormat.opus:
         return 'OPUS/OGG - Optimized for streaming';
       case AudioFormat.wav:

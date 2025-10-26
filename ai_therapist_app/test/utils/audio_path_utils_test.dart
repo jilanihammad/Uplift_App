@@ -45,7 +45,7 @@ void main() {
 
       test('prevents double .wav extensions', () {
         // This is the key test for the bug fix
-        final input = 'tts_1751243751996444.wav';
+        const input = 'tts_1751243751996444.wav';
         final result = AudioPathUtils.ensureWav(input);
         expect(result, 'tts_1751243751996444.wav');
         expect(result.endsWith('.wav.wav'), false);
@@ -90,7 +90,7 @@ void main() {
 
         // Simulate what PathManager.ttsFile() would do
         const ttsPrefix = 'tts_stream_';
-        final ext = 'wav';
+        const ext = 'wav';
         final simulatedPath = '$ttsPrefix$fileId.$ext';
 
         // Verify no double extension

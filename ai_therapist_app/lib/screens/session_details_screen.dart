@@ -1,7 +1,6 @@
 // Screen for viewing detailed session information including messages and summary from history screen
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../domain/entities/session.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
@@ -17,11 +16,11 @@ class SessionDetailsScreen extends StatefulWidget {
   final IDatabase? database;
 
   const SessionDetailsScreen({
-    Key? key,
+    super.key,
     required this.sessionId,
     this.sessionRepository,
     this.database,
-  }) : super(key: key);
+  });
 
   @override
   State<SessionDetailsScreen> createState() => _SessionDetailsScreenState();

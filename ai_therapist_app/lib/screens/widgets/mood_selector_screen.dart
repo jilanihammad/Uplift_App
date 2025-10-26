@@ -6,10 +6,10 @@ class MoodSelectorScreen extends StatelessWidget {
   final void Function(Mood) onMoodSelected;
 
   const MoodSelectorScreen({
-    Key? key,
+    super.key,
     this.selectedMood,
     required this.onMoodSelected,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

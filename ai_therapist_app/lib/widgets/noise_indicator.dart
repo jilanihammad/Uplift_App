@@ -68,7 +68,7 @@ class _NoiseIndicatorState extends State<NoiseIndicator> {
             const SizedBox(
               width: 16,
               height: 16,
-              child: const CircularProgressIndicator(
+              child: CircularProgressIndicator(
                 strokeWidth: 2,
                 color: Colors.blue,
               ),

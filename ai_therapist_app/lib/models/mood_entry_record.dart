@@ -27,7 +27,7 @@ class MoodEntryRecord {
   final DateTime? lastSyncedAt;
   final String? syncError;
 
-  static final _uuid = const Uuid();
+  static const _uuid = Uuid();
 
   factory MoodEntryRecord.newLocal({
     required String userId,

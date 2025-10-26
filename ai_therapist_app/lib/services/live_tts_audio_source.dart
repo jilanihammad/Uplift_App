@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
@@ -333,7 +332,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
         // Throttled logging to prevent UI thread blocking (every 16 chunks ≈ 64KB)
         if (kDebugMode && ((_chunkCount++ & 0x0F) == 0)) {
           debugPrint(
-              '📊 LiveTtsAudioSource: Buffered ${_dataBuffer.length} bytes (${_chunkCount} chunks, headersReady: $_headersReady)');
+              '📊 LiveTtsAudioSource: Buffered ${_dataBuffer.length} bytes ($_chunkCount chunks, headersReady: $_headersReady)');
         }
       },
       onDone: () {

@@ -2,6 +2,7 @@
 ///
 /// These tests verify message management, sequencing, and conversation history
 /// functionality of MessageCoordinator.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ai_therapist_app/blocs/managers/message_coordinator.dart';

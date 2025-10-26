@@ -24,6 +24,7 @@ langgraph>=0.2.72
 Mako>=1.3.0
 MarkupSafe>=3.0.0
 openai==1.95.0
+xai-sdk>=0.2.0
 passlib>=1.7.0
 psycopg2-binary>=2.9.0
 pyasn1>=0.4.8

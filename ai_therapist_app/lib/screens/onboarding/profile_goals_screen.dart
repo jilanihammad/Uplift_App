@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../di/dependency_container.dart';
-import 'package:go_router/go_router.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
 
 class ProfileGoalsScreen extends StatefulWidget {
-  const ProfileGoalsScreen({Key? key}) : super(key: key);
+  const ProfileGoalsScreen({super.key});
 
   @override
   State<ProfileGoalsScreen> createState() => _ProfileGoalsScreenState();

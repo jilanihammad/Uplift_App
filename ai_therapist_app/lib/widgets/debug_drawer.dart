@@ -77,10 +77,10 @@ class _DebugDrawerState extends State<DebugDrawer> {
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               color: Colors.red,
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     '🚧 DEBUG DRAWER',
                     style: TextStyle(
                       color: Colors.white,
@@ -90,7 +90,7 @@ class _DebugDrawerState extends State<DebugDrawer> {
                   ),
                   Text(
                     kDebugMode ? 'Debug Build' : 'Release Build',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
                     ),

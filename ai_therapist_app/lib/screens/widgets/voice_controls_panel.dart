@@ -118,7 +118,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                     }
                   } else {
                     // Fallback to Lottie animations in text mode
-                    return Container(
+                    return SizedBox(
                       width: 120,
                       height: 120,
                       child: (data.processing || data.speaking)
@@ -219,7 +219,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                       context.read<VoiceSessionBloc>().state.isMicEnabled,
                   onTap: () {
                     final bloc = context.read<VoiceSessionBloc>();
-                    bloc.add(ToggleMicMute());
+                    bloc.add(const ToggleMicMute());
                   },
                 ),
                 // Speaker Toggle Button

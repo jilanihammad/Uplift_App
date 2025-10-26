@@ -5,7 +5,7 @@ import '../../services/progress_service.dart';
 import '../../widgets/mood_selector.dart';
 
 class MoodSetupScreen extends StatefulWidget {
-  const MoodSetupScreen({Key? key}) : super(key: key);
+  const MoodSetupScreen({super.key});
 
   @override
   State<MoodSetupScreen> createState() => _MoodSetupScreenState();

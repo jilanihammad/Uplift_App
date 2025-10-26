@@ -14,12 +14,9 @@ import '../../data/repositories/session_repository.dart';
 import '../../services/websocket_audio_manager.dart';
 import '../../services/memory_manager.dart';
 import '../../services/therapy_service.dart';
-import '../interfaces/i_therapy_service.dart';
 import '../../services/auth_coordinator.dart';
 import '../../services/auth_service.dart';
 import '../../services/onboarding_service.dart';
-import '../../data/datasources/local/database_provider.dart';
-import '../interfaces/i_memory_manager.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/repositories/message_repository.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -76,7 +73,8 @@ class ServicesModule {
       );
     }
 
-    if (!locator.isRegistered<ISessionScheduleService>()) {
+    if (locator.isRegistered<SessionScheduleService>() &&
+        !locator.isRegistered<ISessionScheduleService>()) {
       locator.registerLazySingleton<ISessionScheduleService>(
         () => locator<SessionScheduleService>(),
       );

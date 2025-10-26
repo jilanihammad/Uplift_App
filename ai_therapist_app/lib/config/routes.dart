@@ -247,7 +247,7 @@ class AppRouter {
           GoRoute(
             path: settings,
             builder: (context, state) => const SettingsScreen(),
-            routes: [
+            routes: const [
               // Therapist style selection sub-route
             ],
           ),
@@ -275,7 +275,7 @@ class AppRouter {
 class ScaffoldWithNavBar extends StatefulWidget {
   final Widget child;
 
-  const ScaffoldWithNavBar({Key? key, required this.child}) : super(key: key);
+  const ScaffoldWithNavBar({super.key, required this.child});
 
   @override
   State<ScaffoldWithNavBar> createState() => _ScaffoldWithNavBarState();
@@ -332,8 +332,8 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Exit'),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  child: const Text('Exit'),
                 ),
               ],
             ),
@@ -394,7 +394,7 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
 class ErrorScreen extends StatelessWidget {
   final Exception? error;
 
-  const ErrorScreen({Key? key, this.error}) : super(key: key);
+  const ErrorScreen({super.key, this.error});
 
   @override
   Widget build(BuildContext context) {

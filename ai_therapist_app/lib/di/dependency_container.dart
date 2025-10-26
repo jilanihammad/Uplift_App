@@ -1,5 +1,7 @@
 // lib/di/dependency_container.dart
 
+import 'dart:async';
+
 import 'package:get_it/get_it.dart';
 import 'interfaces/interfaces.dart';
 import 'interfaces/i_audio_settings.dart';
@@ -22,6 +24,7 @@ class DependencyContainer {
 
   final GetIt _locator = GetIt.instance;
   bool _isInitialized = false;
+  static Completer<void>? _readyCompleter;
 
   /// Initialize the dependency container with all required modules
   Future<void> initialize({bool testing = false}) async {
@@ -69,6 +72,35 @@ class DependencyContainer {
   /// Dispose resources
   void dispose() {
     // Future implementation for proper resource cleanup
+  }
+
+  /// Signal that dependency graph is ready
+  static void markReady() {
+    final completer = _readyCompleter ??= Completer<void>();
+    if (!completer.isCompleted) {
+      completer.complete();
+    }
+  }
+
+  /// Signal that dependency graph failed to initialize
+  static void markFailed(Object error, [StackTrace? stackTrace]) {
+    final completer = _readyCompleter ??= Completer<void>();
+    if (!completer.isCompleted) {
+      completer.completeError(error, stackTrace);
+    }
+  }
+
+  /// Reset the readiness completer so callers can await a new initialization cycle
+  static void resetReady() {
+    if (_readyCompleter == null || _readyCompleter!.isCompleted) {
+      _readyCompleter = Completer<void>();
+    }
+  }
+
+  /// Await until dependencies are ready
+  static Future<void> whenReady() {
+    _readyCompleter ??= Completer<void>();
+    return _readyCompleter!.future;
   }
 
   // Convenience getters for commonly used services

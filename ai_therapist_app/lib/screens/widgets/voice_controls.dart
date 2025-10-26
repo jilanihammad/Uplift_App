@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 
 class VoiceControls extends StatelessWidget {
   final bool isRecording;
@@ -11,7 +10,7 @@ class VoiceControls extends StatelessWidget {
   final VoidCallback onSwitchMode;
 
   const VoiceControls({
-    Key? key,
+    super.key,
     required this.isRecording,
     required this.isProcessing,
     required this.isSpeakerMuted,
@@ -19,7 +18,7 @@ class VoiceControls extends StatelessWidget {
     required this.onMicTap,
     required this.onSpeakerToggle,
     required this.onSwitchMode,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -9,12 +9,12 @@ class ChatBubble extends StatelessWidget {
   final VoidCallback? onPlayAudio;
 
   const ChatBubble({
-    Key? key,
+    super.key,
     required this.message,
     required this.isUser,
     required this.isDarkMode,
     this.onPlayAudio,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

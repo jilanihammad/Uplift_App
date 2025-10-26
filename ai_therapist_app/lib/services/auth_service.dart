@@ -1,6 +1,5 @@
 // lib/services/auth_service.dart
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:ai_therapist_app/di/interfaces/i_auth_service.dart';
 import 'package:ai_therapist_app/services/user_profile_service.dart';
@@ -364,7 +363,7 @@ class AuthService implements IAuthService {
   void _addRateLimitedNumber(String phoneNumber) {
     // Set rate limit for 24 hours
     _rateLimitedPhoneNumbers[phoneNumber] = DateTime.now().add(
-      Duration(hours: 24),
+      const Duration(hours: 24),
     );
   }
 

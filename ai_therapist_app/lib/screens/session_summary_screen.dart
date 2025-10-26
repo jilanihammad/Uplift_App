@@ -21,13 +21,13 @@ class SessionSummaryScreen extends StatefulWidget {
   final Mood? initialMood;
 
   const SessionSummaryScreen({
-    Key? key,
+    super.key,
     required this.sessionId,
     required this.summary,
     required this.actionItems,
     required this.messages,
     this.initialMood,
-  }) : super(key: key);
+  });
 
   @override
   State<SessionSummaryScreen> createState() => _SessionSummaryScreenState();
@@ -388,7 +388,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
   // Add this new method for scheduling dialog
   void _showScheduleDialog(BuildContext context) {
     DateTime selectedDate = DateTime.now().add(const Duration(days: 7));
-    TimeOfDay selectedTime = TimeOfDay(hour: 10, minute: 0);
+    TimeOfDay selectedTime = const TimeOfDay(hour: 10, minute: 0);
     bool setReminder = true;
 
     showDialog(
@@ -473,8 +473,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                          'Session scheduled for ${DateFormat.yMMMEd().add_jm().format(selectedDate)}' +
-                              (setReminder ? ' with reminder' : '')),
+                          'Session scheduled for ${DateFormat.yMMMEd().add_jm().format(selectedDate)}${setReminder ? ' with reminder' : ''}'),
                     ),
                   );
 
@@ -499,7 +498,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       margin: const EdgeInsets.only(bottom: 24),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant.withOpacity(0.6),
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.6),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(

@@ -4,10 +4,10 @@ void main() {
   print('=== Timestamp Parsing Debug Test ===\n');
 
   // Test timestamps
-  final timestampWithoutZ = "2025-06-29T17:34:37";
-  final timestampWithZ = "2025-06-29T17:34:37Z";
-  final timestampWithMillis = "2025-06-29T17:34:37.123";
-  final timestampWithMillisZ = "2025-06-29T17:34:37.123Z";
+  const timestampWithoutZ = "2025-06-29T17:34:37";
+  const timestampWithZ = "2025-06-29T17:34:37Z";
+  const timestampWithMillis = "2025-06-29T17:34:37.123";
+  const timestampWithMillisZ = "2025-06-29T17:34:37.123Z";
 
   print('Test 1: Parsing timestamp without Z');
   testTimestampParsing(timestampWithoutZ);
@@ -82,7 +82,7 @@ void testTimestampParsing(String timestamp) {
 void testDateFormatterFunctions() {
   final now = DateTime.now();
   final utcNow = now.toUtc();
-  final testTimestamp = "2025-06-29T17:34:37";
+  const testTimestamp = "2025-06-29T17:34:37";
 
   print('Testing DateFormatter-like functions:');
   print('Current time: ${now.toIso8601String()}');

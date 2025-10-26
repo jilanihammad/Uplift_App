@@ -7,7 +7,7 @@ void main() {
 }
 
 class TestBackendApp extends StatelessWidget {
-  const TestBackendApp({Key? key}) : super(key: key);
+  const TestBackendApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +23,7 @@ class TestBackendApp extends StatelessWidget {
 }
 
 class TestScreen extends StatefulWidget {
-  const TestScreen({Key? key}) : super(key: key);
+  const TestScreen({super.key});
 
   @override
   _TestScreenState createState() => _TestScreenState();

@@ -1,14 +1,11 @@
 // lib/domain/repositories/auth_repository.dart
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ai_therapist_app/domain/entities/user.dart';
 import 'package:ai_therapist_app/services/auth_service.dart';
-import 'package:ai_therapist_app/di/service_locator.dart';
 
 class AuthRepository {
   final String baseUrl;
-  final http.Client _httpClient;
   late SharedPreferences _prefs;
   final AuthService _authService;
   bool _initialized = false;
@@ -16,9 +13,7 @@ class AuthRepository {
   AuthRepository({
     required this.baseUrl,
     required AuthService authService,
-    http.Client? httpClient,
-  })  : _httpClient = httpClient ?? http.Client(),
-        _authService = authService {
+  })  : _authService = authService {
     _initPrefs();
   }
 
@@ -125,7 +120,7 @@ class AuthRepository {
 
       final verificationId =
           'mock-verification-id-${DateTime.now().millisecondsSinceEpoch}';
-      final resendToken = 123456;
+      const resendToken = 123456;
 
       return {
         'success': true,

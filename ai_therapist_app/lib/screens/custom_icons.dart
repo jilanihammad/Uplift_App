@@ -6,8 +6,8 @@ class UpliftIcons {
   /// Size parameter controls the dimensions of the icon
   static Widget therapyLogo({double size = 120.0, Color? color}) {
     final primaryColor = color ?? const Color(0xFF5E72E4);
-    final accentColor = const Color(0xFFFB6340);
-    final secondaryColor = const Color(0xFF11CDEF);
+    const accentColor = Color(0xFFFB6340);
+    const secondaryColor = Color(0xFF11CDEF);
 
     return Container(
       width: size,

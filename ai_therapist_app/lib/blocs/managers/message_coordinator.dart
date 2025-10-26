@@ -13,6 +13,7 @@
 ///
 /// Thread Safety: Async operations return to main thread
 /// Dependencies: None (pure Dart)
+library;
 
 import 'package:flutter/foundation.dart';
 import '../../models/therapy_message.dart';

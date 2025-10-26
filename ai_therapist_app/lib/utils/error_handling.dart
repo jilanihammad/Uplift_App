@@ -32,10 +32,10 @@ class ErrorBoundary extends StatefulWidget {
   final Widget Function(BuildContext context, dynamic error)? errorBuilder;
 
   const ErrorBoundary({
-    Key? key,
+    super.key,
     required this.child,
     this.errorBuilder,
-  }) : super(key: key);
+  });
 
   @override
   ErrorBoundaryState createState() => ErrorBoundaryState();
@@ -106,10 +106,9 @@ class _ErrorInterceptor extends StatefulWidget {
   final Function(dynamic) onError;
 
   const _ErrorInterceptor({
-    Key? key,
     required this.child,
     required this.onError,
-  }) : super(key: key);
+  });
 
   @override
   _ErrorInterceptorState createState() => _ErrorInterceptorState();
@@ -158,11 +157,11 @@ class SafeBuilder extends StatelessWidget {
   final Function(dynamic error)? onError;
 
   const SafeBuilder({
-    Key? key,
+    super.key,
     required this.builder,
     this.fallback,
     this.onError,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

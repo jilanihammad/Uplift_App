@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -320,7 +319,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
     // Check queue size limit
     if (_audioQueue.length >= _maxQueueSize) {
-      final error = 'Audio queue full (max: $_maxQueueSize items)';
+      const error = 'Audio queue full (max: $_maxQueueSize items)';
       if (kDebugMode) {
         AppLogger.e('AudioPlayerManager', error);
       }
@@ -1186,7 +1185,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
   /// Play audio directly from memory bytes (eliminates file I/O)
   /// This is the optimized path for TTS that avoids unnecessary disk writes
-  Future<void> playAudioBytes(Uint8List audioBytes, {String? debugName}) async {
+  Future<void> playAudioBytes(Uint8List audioBytes,
+      {String? debugName, String? mimeType}) async {
     if (audioBytes.isEmpty) {
       _errorController.add('Empty audio bytes provided for playback');
       throw ArgumentError('Empty audio bytes provided for playback');
@@ -1219,7 +1219,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       // Load audio from memory bytes - this is the key optimization!
       // Create a data URI from bytes for just_audio
       final base64Audio = base64Encode(audioBytes);
-      final dataUri = 'data:audio/wav;base64,$base64Audio';
+      final sanitizedMime = (mimeType ?? 'audio/wav').replaceAll('; ', ';');
+      final dataUri = 'data:$sanitizedMime;base64,$base64Audio';
       await _setSourceAndApplyVolume(() =>
           _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(dataUri))));
 

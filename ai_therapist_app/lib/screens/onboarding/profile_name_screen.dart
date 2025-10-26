@@ -4,7 +4,7 @@ import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
 
 class ProfileNameScreen extends StatefulWidget {
-  const ProfileNameScreen({Key? key}) : super(key: key);
+  const ProfileNameScreen({super.key});
 
   @override
   State<ProfileNameScreen> createState() => _ProfileNameScreenState();

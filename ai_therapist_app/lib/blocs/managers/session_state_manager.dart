@@ -12,6 +12,7 @@
 ///
 /// Thread Safety: All operations are synchronous and main-thread only
 /// Dependencies: None (pure Dart)
+library;
 
 import 'package:flutter/foundation.dart';
 import '../../widgets/mood_selector.dart';
