@@ -339,6 +339,8 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
   late ThemeService _themeService;
   late Future<void> _backgroundInit;
   bool _postInitScheduled = false;
+  bool _showMainApp = false;
+  Timer? _completionDelayTimer;
 
   @override
   void initState() {
@@ -376,19 +378,43 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
     return FutureBuilder<void>(
       future: _backgroundInit,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const HybridStartupSplash();
-        }
-
-        if (snapshot.hasError) {
-          return HybridStartupSplash(
-            error: snapshot.error,
-            onRetry: _restartBackgroundInit,
+        final bool isDone = snapshot.connectionState == ConnectionState.done;
+        if (isDone && snapshot.hasError) {
+          _completionDelayTimer?.cancel();
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            switchInCurve: Curves.easeInOut,
+            switchOutCurve: Curves.easeInOut,
+            child: HybridStartupSplash(
+              key: const ValueKey('startup-error'),
+              error: snapshot.error,
+              onRetry: () {
+                logger.info('Startup retry requested from splash');
+                _restartBackgroundInit();
+              },
+            ),
           );
         }
 
-        _schedulePostInit();
-        return _buildMainApp();
+        if (isDone && !_showMainApp) {
+          _schedulePostInit();
+          _scheduleCompletionReveal();
+        }
+
+        final bool showSplash = !isDone || !_showMainApp;
+        final Widget target = showSplash
+            ? HybridStartupSplash(
+                key: ValueKey(isDone ? 'startup-finishing' : 'startup-loading'),
+                isFinishing: isDone,
+              )
+            : _buildMainAppWithKey();
+
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 450),
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          child: target,
+        );
       },
     );
   }
@@ -396,6 +422,7 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
   @override
   void dispose() {
     debugPrint('[main.dart] AiTherapistApp dispose');
+    _completionDelayTimer?.cancel();
     _cleanupResources();
     super.dispose();
   }
@@ -436,12 +463,31 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
     });
   }
 
+  void _scheduleCompletionReveal() {
+    _completionDelayTimer?.cancel();
+    _completionDelayTimer = Timer(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      setState(() {
+        _showMainApp = true;
+      });
+    });
+  }
+
   void _restartBackgroundInit() {
     DependencyContainer.resetReady();
+    _completionDelayTimer?.cancel();
     setState(() {
       _postInitScheduled = false;
+      _showMainApp = false;
       _backgroundInit = widget.backgroundInitBuilder();
     });
+  }
+
+  Widget _buildMainAppWithKey() {
+    return KeyedSubtree(
+      key: const ValueKey('main-app'),
+      child: _buildMainApp(),
+    );
   }
 
   Widget _buildMainApp() {
@@ -641,57 +687,335 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
   }
 }
 
-class HybridStartupSplash extends StatelessWidget {
+class HybridStartupSplash extends StatefulWidget {
   final Object? error;
   final VoidCallback? onRetry;
+  final bool isFinishing;
 
-  const HybridStartupSplash({super.key, this.error, this.onRetry});
+  const HybridStartupSplash({
+    super.key,
+    this.error,
+    this.onRetry,
+    this.isFinishing = false,
+  });
+
+  @override
+  State<HybridStartupSplash> createState() => _HybridStartupSplashState();
+}
+
+class _HybridStartupSplashState extends State<HybridStartupSplash>
+    with SingleTickerProviderStateMixin {
+  static const _logoAsset = 'assets/icons/app_icon.png';
+  bool _contentVisible = false;
+  bool _animationReady = false;
+  bool _retryEnabled = false;
+  bool _reduceMotion = false;
+  bool _assetsCached = false;
+  late final AnimationController _breathController;
+  late final Animation<double> _breathScale;
+  Timer? _animationGateTimer;
+  Timer? _retryEnableTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _breathController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _breathScale = Tween<double>(begin: 0.92, end: 1.04).animate(
+      CurvedAnimation(parent: _breathController, curve: Curves.easeInOut),
+    );
+    _animationGateTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      setState(() {
+        _animationReady = true;
+      });
+      _restartAnimationIfNeeded();
+    });
+
+    if (widget.error != null) {
+      _scheduleRetryEnable();
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _contentVisible = true;
+      });
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_assetsCached) {
+      unawaited(precacheImage(const AssetImage(_logoAsset), context));
+      _assetsCached = true;
+    }
+    _updateReduceMotion();
+    _restartAnimationIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(HybridStartupSplash oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.error != oldWidget.error && widget.error != null) {
+      _scheduleRetryEnable();
+    }
+    if (widget.error == null && oldWidget.error != null) {
+      _retryEnableTimer?.cancel();
+      _retryEnabled = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _breathController.dispose();
+    _animationGateTimer?.cancel();
+    _retryEnableTimer?.cancel();
+    super.dispose();
+  }
+
+  void _updateReduceMotion() {
+    final mediaQuery = MediaQuery.maybeOf(context);
+    _reduceMotion = mediaQuery?.disableAnimations ?? false;
+  }
+
+  void _restartAnimationIfNeeded() {
+    if (!mounted) return;
+    if (_animationReady && !_reduceMotion) {
+      if (!_breathController.isAnimating) {
+        _breathController.repeat(reverse: true);
+      }
+    } else {
+      _breathController.stop();
+    }
+  }
+
+  void _scheduleRetryEnable() {
+    _retryEnabled = false;
+    _retryEnableTimer?.cancel();
+    _retryEnableTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() {
+        _retryEnabled = true;
+      });
+    });
+  }
+
+  void _handleRetryPressed() {
+    if (!_retryEnabled || widget.onRetry == null) {
+      return;
+    }
+    logger.info('Startup retry button tapped');
+    widget.onRetry!.call();
+    _scheduleRetryEnable();
+  }
+
+  Color _softenAccent(Color color, bool isDark) {
+    return Color.lerp(color, isDark ? Colors.white : Colors.black, isDark ? 0.3 : 0.2) ?? color;
+  }
+
+  Color _withAlpha(Color color, double alpha) => color.withValues(alpha: alpha);
 
   @override
   Widget build(BuildContext context) {
-    final hasError = error != null;
-    final message = hasError
-        ? 'Startup failed: ${error is Exception ? (error as Exception).toString() : error}'
-        : 'Initializing...';
+    final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    final themeMode = brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light;
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('en', '')],
-      home: Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(
-                  width: 72,
-                  height: 72,
-                  child: CircularProgressIndicator(),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16),
-                ),
-                if (hasError && onRetry != null) ...[
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: onRetry,
-                    child: const Text('Retry'),
+      home: Builder(
+        builder: (context) => _buildContent(context),
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final bool hasError = widget.error != null;
+    final String primaryText = hasError
+        ? 'We hit a bump connecting to Maya.'
+        : (widget.isFinishing ? 'Almost ready…' : 'Preparing Maya for you…');
+    final String secondaryText = hasError
+        ? 'Couldn\'t reach our servers. Please check your connection.'
+        : 'A moment of calm while we get ready.';
+    final String semanticsLabel = hasError
+        ? 'Startup error. Please try again.'
+        : 'Preparing Maya for you';
+
+    final Color accent = _softenAccent(colorScheme.primary, isDark);
+    final Color gradientStart = Color.alphaBlend(
+      _withAlpha(accent, isDark ? 0.16 : 0.12),
+      colorScheme.surface,
+    );
+    final Color gradientEnd = colorScheme.surface;
+
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: Semantics(
+        label: semanticsLabel,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [gradientStart, gradientEnd],
+            ),
+          ),
+          child: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeOut,
+                    opacity: _contentVisible ? 1 : 0,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildLogo(theme, accent, isDark),
+                        const SizedBox(height: 32),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeOut,
+                          child: Column(
+                            key: ValueKey<String>(primaryText + secondaryText),
+                            children: [
+                              Text(
+                                primaryText,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                secondaryText,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                        _buildLoader(accent, isDark),
+                        if (widget.error != null && widget.onRetry != null) ...[
+                          const SizedBox(height: 32),
+                          _buildRetryButton(theme),
+                        ],
+                      ],
+                    ),
                   ),
-                ],
-              ],
+                ),
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLogo(ThemeData theme, Color accent, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: isDark ? 0.35 : 0.75,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: _withAlpha(accent, isDark ? 0.35 : 0.18),
+            blurRadius: 38,
+            offset: const Offset(0, 18),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.asset(
+          _logoAsset,
+          width: 128,
+          height: 128,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoader(Color accent, bool isDark) {
+    final base = Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _withAlpha(accent, isDark ? 0.18 : 0.12),
+        border: Border.all(color: _withAlpha(accent, 0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: _withAlpha(accent, isDark ? 0.3 : 0.18),
+            blurRadius: 32,
+            spreadRadius: 4,
+          ),
+        ],
+      ),
+      child: Center(
+        child: Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: accent,
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
+
+    final bool canAnimate = _animationReady && !_reduceMotion;
+    if (!canAnimate) {
+      return base;
+    }
+
+    return AnimatedBuilder(
+      animation: _breathController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _breathScale.value,
+          child: child,
+        );
+      },
+      child: base,
+    );
+  }
+
+  Widget _buildRetryButton(ThemeData theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _retryEnabled ? _handleRetryPressed : null,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+        icon: const Icon(Icons.refresh),
+        label: const Text('Try again'),
       ),
     );
   }
