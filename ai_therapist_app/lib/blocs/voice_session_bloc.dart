@@ -42,6 +42,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import '../widgets/mood_selector.dart'; // For Mood enum
 import '../utils/amplitude_utils.dart';
+import '../services/gemini_live_duplex_controller.dart';
 
 // Phase 1.1.4: Import new managers
 import 'managers/session_state_manager.dart';
@@ -91,6 +92,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   // Session start guard: Prevents duplicate session initialization
   bool _sessionStarted = false;
 
+  final bool _usesGeminiLive;
+  StreamSubscription<GeminiLiveEvent>? _geminiLiveSub;
+  StringBuffer? _geminiResponseBuffer;
+
   /// Whether a session is currently active (has session scope)
   bool get inSession => _scopeManager.inSession;
 
@@ -122,7 +127,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     // Phase 1B.1: Standardized service injection
     this.progressService,
     this.navigationService,
-  }) : super(VoiceSessionState.initial()) {
+  })  : _usesGeminiLive = voiceService.geminiLiveEnabled,
+        super(VoiceSessionState.initial()) {
     // Phase 1.1.4: Initialize managers
     _sessionManager = SessionStateManager();
     _timerManager = TimerManager();
@@ -173,6 +179,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     // Two-step session start flow to prevent premature audio activation
     on<StartSessionRequested>(_onStartSessionRequested);
     on<InitialMoodSelected>(_onInitialMoodSelected);
+    on<GeminiLiveEventReceived>(_onGeminiLiveEventReceived);
 
     // Phase 2.2.5: Optimized streams with distinct/shareReplay to eliminate spam
     if (interfaceVoiceService != null) {
@@ -265,6 +272,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     // TIMING FIX: Set up generation callback for VoiceService
     voiceService.getCurrentGeneration = () => _modeGeneration;
+
+    if (_usesGeminiLive) {
+      _geminiLiveSub = voiceService.geminiLiveEventStream
+          .listen((event) => add(GeminiLiveEventReceived(event)));
+    }
   }
 
   // Phase 6B-3: Helper method to safely choose between interface and legacy service
@@ -419,6 +431,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         add(const UpdateSessionTimer());
       }
 
+      if (_usesGeminiLive) {
+        await voiceService.startGeminiLiveSession();
+      }
+
       emit(newState);
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error starting session: $e');
@@ -452,6 +468,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       // Destroy entire session scope (automatic disposal)
       await _scopeManager.destroySessionScope();
+
+      if (_usesGeminiLive) {
+        await voiceService.stopGeminiLiveSession();
+      }
 
       // Reset session start flag for next session
       _sessionStarted = false;
@@ -662,6 +682,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   Future<void> _onProcessAudio(
       ProcessAudio event, Emitter<VoiceSessionState> emit) async {
+    if (_usesGeminiLive) {
+      _messageCoordinator.addUserMessage('[Voice message]');
+      emit(state.copyWith(
+        messages: _messageCoordinator.messages,
+        currentMessageSequence: _messageCoordinator.currentSequence,
+        isProcessingAudio: true,
+      ));
+      return;
+    }
+
     if (_sessionManager.state.status == VoiceSessionStatus.ended) {
       debugPrint(
           '[VoiceSessionBloc] Ignoring ProcessAudio - session is ending');
@@ -798,6 +828,102 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
+  Future<void> _onGeminiLiveEventReceived(GeminiLiveEventReceived wrapper,
+      Emitter<VoiceSessionState> emit) async {
+    final event = wrapper.event;
+
+    if (event is GeminiLiveReadyEvent) {
+      emit(state.copyWith(
+        geminiLiveSessionId: event.sessionId,
+        status: VoiceSessionStatus.listening,
+      ));
+      return;
+    }
+
+    if (event is GeminiLiveTextEvent) {
+      _geminiResponseBuffer ??= StringBuffer();
+      _geminiResponseBuffer!.write(event.text);
+      final partial = _geminiResponseBuffer!.toString();
+
+      emit(state.copyWith(
+        geminiLivePartialText: partial,
+        isProcessingAudio: true,
+        status: VoiceSessionStatus.processing,
+      ));
+
+      if (event.isFinal) {
+        final finalText = partial.trim();
+        _geminiResponseBuffer = null;
+
+        if (finalText.isNotEmpty) {
+          _messageCoordinator.addAIMessage(finalText);
+          emit(state.copyWith(
+            messages: _messageCoordinator.messages,
+            currentMessageSequence: _messageCoordinator.currentSequence,
+            geminiLivePartialText: null,
+            isProcessingAudio: true,
+          ));
+        } else {
+          emit(state.copyWith(
+            geminiLivePartialText: null,
+            isProcessingAudio: true,
+          ));
+        }
+      }
+      return;
+    }
+
+    if (event is GeminiLiveAudioStartedEvent) {
+      emit(state.copyWith(
+        ttsStatus: TtsStatus.streaming,
+        isAiSpeaking: true,
+        status: VoiceSessionStatus.speaking,
+      ));
+      return;
+    }
+
+    if (event is GeminiLiveAudioCompletedEvent) {
+      emit(state.copyWith(
+        ttsStatus: TtsStatus.idle,
+        isAiSpeaking: false,
+        status: VoiceSessionStatus.listening,
+        isProcessingAudio: false,
+      ));
+      _onProcessingComplete();
+      return;
+    }
+
+    if (event is GeminiLiveTurnCompleteEvent) {
+      _geminiResponseBuffer = null;
+      emit(state.copyWith(
+        geminiLivePartialText: null,
+        isProcessingAudio: false,
+        status: VoiceSessionStatus.listening,
+      ));
+      return;
+    }
+
+    if (event is GeminiLiveErrorEvent) {
+      _geminiResponseBuffer = null;
+      emit(state.copyWith(
+        errorMessage: event.message,
+        hasError: true,
+        geminiLivePartialText: null,
+        status: VoiceSessionStatus.error,
+      ));
+      return;
+    }
+
+    if (event is GeminiLiveDisconnectedEvent) {
+      _geminiResponseBuffer = null;
+      emit(state.copyWith(
+        geminiLiveSessionId: null,
+        geminiLivePartialText: null,
+        status: VoiceSessionStatus.idle,
+      ));
+    }
+  }
+
   void _onHandleError(HandleError event, Emitter<VoiceSessionState> emit) {
     // Enhanced error handling with specific BackendSchemaException support
     String userFriendlyMessage;
@@ -891,6 +1017,18 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         '[VoiceSessionBloc] Received ProcessTextMessage: \'${event.text}\'');
     debugPrint(
         '[VoiceSessionBloc] Current state - isVoiceMode: ${state.isVoiceMode}, isProcessingAudio: ${state.isProcessingAudio}');
+
+    if (_usesGeminiLive) {
+      _messageCoordinator.addUserMessage(event.text);
+      emit(state.copyWith(
+        messages: _messageCoordinator.messages,
+        currentMessageSequence: _messageCoordinator.currentSequence,
+        isProcessingAudio: true,
+      ));
+      await voiceService.sendGeminiLiveText(event.text, turnComplete: true);
+      return;
+    }
+
     emit(state.copyWith(isProcessingAudio: true));
 
     try {
@@ -1743,6 +1881,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _audioPlaybackSub?.cancel();
     _ttsStateSub?.cancel();
     _amplitudeSub?.cancel();
+    await _geminiLiveSub?.cancel();
+    _geminiLiveSub = null;
+
+    if (_usesGeminiLive) {
+      await voiceService.stopGeminiLiveSession();
+    }
 
     // PHASE 2B: Cancel any pending auto-enable operations
     _pendingAutoEnable?.cancel();

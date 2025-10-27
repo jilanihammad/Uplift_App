@@ -20,6 +20,8 @@ import '../../services/audio_file_manager.dart';
 import '../../services/voice_session_coordinator.dart';
 import '../../services/audio_player_manager.dart';
 import '../../services/recording_manager.dart';
+import '../../services/gemini_live_duplex_controller.dart';
+import '../../services/config_service.dart';
 
 /// Module for registering refactored audio services
 /// Replaces the monolithic VoiceService with focused, single-responsibility services
@@ -55,6 +57,19 @@ class AudioServicesModule {
       locator.registerLazySingleton<IAudioRecordingService>(() {
         return AudioRecordingService(
             recordingManager: locator<RecordingManager>());
+      });
+    }
+
+    if (!locator.isRegistered<GeminiLiveDuplexController>()) {
+      locator.registerLazySingleton<GeminiLiveDuplexController>(() {
+        final configService = locator.isRegistered<ConfigService>()
+            ? locator<ConfigService>()
+            : null;
+        return GeminiLiveDuplexController(
+          recordingService: locator<IAudioRecordingService>(),
+          audioPlayerManager: locator<AudioPlayerManager>(),
+          configService: configService,
+        );
       });
     }
 

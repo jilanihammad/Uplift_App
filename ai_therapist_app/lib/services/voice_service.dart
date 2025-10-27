@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import 'package:http/http.dart' as http;
 import 'package:mutex/mutex.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
@@ -21,6 +22,8 @@ import 'audio_recording_service.dart';
 import 'base_voice_service.dart' as base_voice;
 import 'path_manager.dart';
 import '../di/interfaces/i_audio_settings.dart';
+import 'config_service.dart';
+import 'gemini_live_duplex_controller.dart';
 
 /// File cleanup manager to prevent race conditions from multiple deletion attempts
 class FileCleanupManager {
@@ -187,6 +190,13 @@ class VoiceService {
   late final AudioPlayerManager _audioPlayerManager;
   late final RecordingManager _recordingManager;
   late final AudioRecordingService _audioRecordingService;
+  final ConfigService? _configService;
+  final GeminiLiveDuplexController? _geminiDuplexController;
+  StreamSubscription<GeminiLiveEvent>? _geminiEventSubscription;
+  bool _geminiSessionActive = false;
+  bool get _useGeminiLive =>
+      (_configService?.geminiLiveDuplexEnabled ?? false) &&
+      _geminiDuplexController != null;
 
   // Expose coordinator's streams
   Stream<AutoListeningState> get autoListeningStateStream =>
@@ -195,6 +205,7 @@ class VoiceService {
       _autoListeningCoordinator.autoModeEnabledStream;
   AutoListeningCoordinator get autoListeningCoordinator =>
       _autoListeningCoordinator;
+  bool get geminiLiveEnabled => _useGeminiLive;
 
   // Passthrough methods for auto mode control
   Future<void> enableAutoMode() async {
@@ -250,7 +261,14 @@ class VoiceService {
     required ApiClient apiClient,
     IAudioSettings? audioSettings,
   })  : _apiClient = apiClient,
-        _audioSettings = audioSettings {
+        _audioSettings = audioSettings,
+        _configService = GetIt.instance.isRegistered<ConfigService>()
+            ? GetIt.instance<ConfigService>()
+            : null,
+        _geminiDuplexController =
+            GetIt.instance.isRegistered<GeminiLiveDuplexController>()
+                ? GetIt.instance<GeminiLiveDuplexController>()
+                : null {
     // _audioRecorder = AudioRecorder(); // REMOVED
     // _ensureStreamControllerIsActive(); // REMOVED, no local controller
     _audioPlayerManager = AudioPlayerManager(audioSettings: audioSettings);
@@ -373,6 +391,18 @@ class VoiceService {
           '⏺️ VOICE DEBUG: VoiceService.startRecording called - delegating to AudioRecordingService');
     }
 
+    if (_useGeminiLive) {
+      try {
+        await _geminiDuplexController!.startMicStream();
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('❌ [VoiceService] Failed to start Gemini mic stream: $e');
+        }
+        rethrow;
+      }
+      return;
+    }
+
     if (_isWeb) {
       // Simulate recording in web mode - AudioRecordingService handles web compatibility
       if (kDebugMode) {
@@ -415,6 +445,17 @@ class VoiceService {
           '⏹️ VOICE DEBUG: VoiceService.stopRecording called - delegating to RecordingManager');
     }
 
+    if (_useGeminiLive) {
+      try {
+        await _geminiDuplexController!.stopMicStream();
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('❌ [VoiceService] Error stopping Gemini mic stream: $e');
+        }
+      }
+      return null;
+    }
+
     String? recordedFilePath;
 
     if (!_isWeb) {
@@ -445,6 +486,17 @@ class VoiceService {
           '⏹️ VOICE DEBUG: VoiceService.tryStopRecording called - delegating to AudioRecordingService');
     }
 
+    if (_useGeminiLive) {
+      try {
+        await _geminiDuplexController!.stopMicStream();
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('❌ [VoiceService] Error stopping Gemini mic stream (idempotent): $e');
+        }
+      }
+      return null;
+    }
+
     String? recordedFilePath;
     if (_audioRecordingService.isRecording ||
         _autoListeningCoordinator.isRecording) {
@@ -455,11 +507,80 @@ class VoiceService {
     return recordedFilePath;
   }
 
+  Future<void> startGeminiLiveSession({String? userId}) async {
+    if (!_useGeminiLive) {
+      return;
+    }
+    if (_geminiSessionActive) {
+      return;
+    }
+    try {
+      await _geminiDuplexController!.connect(userId: userId);
+      _setupGeminiEventSubscription();
+      _geminiSessionActive = true;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ [VoiceService] Failed to start Gemini Live session: $e');
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> stopGeminiLiveSession() async {
+    if (!_useGeminiLive) {
+      return;
+    }
+    _geminiSessionActive = false;
+    await _geminiDuplexController?.disconnect();
+    await _geminiEventSubscription?.cancel();
+    _geminiEventSubscription = null;
+    _setAiSpeaking(false);
+  }
+
+  Future<void> sendGeminiLiveText(String text,
+      {bool turnComplete = false}) async {
+    if (!_useGeminiLive) {
+      throw StateError('Gemini Live duplex mode is disabled');
+    }
+    await _geminiDuplexController?.sendText(text, turnComplete: turnComplete);
+  }
+
+  Stream<GeminiLiveEvent> get geminiLiveEventStream =>
+      _geminiDuplexController?.events ?? const Stream<GeminiLiveEvent>.empty();
+
+  void _setupGeminiEventSubscription() {
+    _geminiEventSubscription?.cancel();
+    if (_geminiDuplexController == null) {
+      return;
+    }
+    _geminiEventSubscription =
+        _geminiDuplexController!.events.listen((event) {
+      if (event is GeminiLiveAudioStartedEvent) {
+        _setAiSpeaking(true);
+      } else if (event is GeminiLiveAudioCompletedEvent ||
+          event is GeminiLiveDisconnectedEvent) {
+        _setAiSpeaking(false);
+      } else if (event is GeminiLiveErrorEvent) {
+        if (kDebugMode) {
+          debugPrint('❌ [VoiceService] Gemini Live error: ${event.message}');
+        }
+      }
+    });
+  }
+
   // New method to process an already recorded audio file
   Future<String> processRecordedAudioFile(String recordedFilePath) async {
     if (kDebugMode) {
       debugPrint(
           '⏹️ VOICE DEBUG: VoiceService.processRecordedAudioFile called with path: $recordedFilePath');
+    }
+
+    if (_useGeminiLive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] processRecordedAudioFile bypassed - Gemini Live mode active');
+      }
+      return '';
     }
 
     if (recordedFilePath.isEmpty) {
@@ -940,6 +1061,10 @@ class VoiceService {
   void dispose() {
     if (kDebugMode) debugPrint('[VoiceService] dispose called');
     _disposed = true;
+
+    if (_useGeminiLive) {
+      unawaited(stopGeminiLiveSession());
+    }
 
     // WebSocket cleanup removed - handled by TTSService
 

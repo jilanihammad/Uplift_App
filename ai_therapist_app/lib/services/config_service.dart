@@ -41,8 +41,9 @@ class ConfigService implements IConfigService {
   bool _useMockTranscription = false;
   String? _appVersion;
 
-  // ADD THIS FIELD
+  // Feature flags
   bool _directLLMMode = false; // Default to false
+  bool _geminiLiveDuplexEnabled = false; // Default to false
 
   // Getters for config values
   @override
@@ -78,6 +79,7 @@ class ConfigService implements IConfigService {
 
   // ADD THIS GETTER
   bool get directLLMModeEnabled => _directLLMMode;
+  bool get geminiLiveDuplexEnabled => _geminiLiveDuplexEnabled;
 
   // ADJUST llmApiEndpoint GETTER
   // This getter will now decide which endpoint to return based on _directLLMMode
@@ -110,8 +112,8 @@ class ConfigService implements IConfigService {
     bool? useMockTranscription,
     bool? useMockLlmResponses,
     bool? isProductionMode,
-    // ADD directLLMMode to constructor if you want to set it during instantiation for tests
     bool? directLLMMode,
+    bool? geminiLiveDuplexEnabled,
   }) {
     // Initialize with default values
     _llmApiEndpoint =
@@ -121,15 +123,19 @@ class ConfigService implements IConfigService {
     _useMockTranscription = useMockTranscription ?? false;
     _useMockLlmResponses = useMockLlmResponses ?? false;
     _isProductionMode = isProductionMode ?? false;
-    _directLLMMode =
-        directLLMMode ?? false; // Initialize from constructor or default
+    _directLLMMode = directLLMMode ?? false;
+    _geminiLiveDuplexEnabled = geminiLiveDuplexEnabled ?? false;
 
     // Debug output
     debugPrint(
         '[ConfigService] Initialized with BACKEND llmApiEndpoint: $_llmApiEndpoint');
     if (_directLLMMode) {
       debugPrint(
-          '[ConfigService] Initialized in DIRECT LLM MODE. Effective endpoint will be: ${this.llmApiEndpoint}');
+          '[ConfigService] Initialized in DIRECT LLM MODE. Effective endpoint will be: ${llmApiEndpoint}');
+    }
+    if (_geminiLiveDuplexEnabled) {
+      debugPrint(
+          '[ConfigService] Gemini Live duplex enabled via constructor');
     }
   }
 
@@ -151,8 +157,8 @@ class ConfigService implements IConfigService {
       // Get app version information
       await _loadAppInfo();
 
-      // ADD THIS CALL to load the preference
       await _loadDirectLLMModePreference();
+      await _loadGeminiLiveDuplexFlag();
 
       if (kDebugMode) {
         debugPrint('ConfigService initialized successfully');
@@ -162,6 +168,7 @@ class ConfigService implements IConfigService {
             'Backend Proxy LLM API Endpoint (private field): $_llmApiEndpoint');
         debugPrint('Direct LLM Model Endpoint (private field): $_llmModelEndpoint');
         debugPrint('Direct LLM Mode Enabled: $_directLLMMode');
+        debugPrint('Gemini Live Duplex Enabled: $_geminiLiveDuplexEnabled');
         // ... other prints ...
       }
     } catch (e) {
@@ -262,6 +269,22 @@ class ConfigService implements IConfigService {
       final envIsProd = _safeGetEnv('IS_PRODUCTION_MODE') == 'true';
       final envUseVoiceFeatures = _safeGetEnv('USE_VOICE_FEATURES') == 'true';
       final envEnableAnalytics = _safeGetEnv('ENABLE_ANALYTICS') == 'true';
+      final envGeminiLiveDuplex =
+          _safeGetEnv('GEMINI_LIVE_DUPLEX').toLowerCase();
+
+      if (envGeminiLiveDuplex == 'true') {
+        if (!_geminiLiveDuplexEnabled) {
+          await setGeminiLiveDuplexPreference(true);
+        } else {
+          _geminiLiveDuplexEnabled = true;
+        }
+      } else if (envGeminiLiveDuplex == 'false') {
+        if (_geminiLiveDuplexEnabled) {
+          await setGeminiLiveDuplexPreference(false);
+        } else {
+          _geminiLiveDuplexEnabled = false;
+        }
+      }
 
       // Set base URLs and endpoints
       if (envGroqBaseUrl.isNotEmpty) {
@@ -367,6 +390,11 @@ class ConfigService implements IConfigService {
       // Set flags
       _isProductionMode = envIsProd;
       _useMockTranscription = !envUseVoiceFeatures;
+      if (envGeminiLiveDuplex == 'true') {
+        _geminiLiveDuplexEnabled = true;
+      } else if (envGeminiLiveDuplex == 'false') {
+        _geminiLiveDuplexEnabled = false;
+      }
 
       debugPrint(
           '[ConfigService] Environment variables processed successfully');
@@ -459,6 +487,44 @@ class ConfigService implements IConfigService {
             '[ConfigService] Error loading directLLMModeEnabled preference: $e. Defaulting to false.');
       }
       _directLLMMode = false; // Fallback
+    }
+  }
+
+  Future<void> _loadGeminiLiveDuplexFlag() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.containsKey('geminiLiveDuplexEnabled')) {
+        final storedValue = prefs.getBool('geminiLiveDuplexEnabled');
+        if (storedValue != null) {
+          _geminiLiveDuplexEnabled = storedValue;
+        }
+      }
+      if (kDebugMode) {
+        debugPrint(
+            '[ConfigService] Gemini Live duplex flag initialized to $_geminiLiveDuplexEnabled');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+            '[ConfigService] Error loading Gemini Live duplex preference: $e');
+      }
+    }
+  }
+
+  Future<void> setGeminiLiveDuplexPreference(bool enabled) async {
+    _geminiLiveDuplexEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('geminiLiveDuplexEnabled', enabled);
+      if (kDebugMode) {
+        debugPrint(
+            '[ConfigService] Gemini Live duplex preference saved: $enabled');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+            '[ConfigService] Error saving Gemini Live duplex preference: $e');
+      }
     }
   }
 

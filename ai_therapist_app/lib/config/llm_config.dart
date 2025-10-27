@@ -73,7 +73,7 @@ class LLMConfig {
   static const String _defaultTTSModelId = 'gpt-4o-mini-tts';
 
   /// Default TTS Voice
-  static const String _defaultTTSVoice = 'kore';
+  static const String _defaultTTSVoice = 'coral';
 
   /// Default audio characteristics used when backend doesn't supply overrides
   static const int _defaultTTSSampleRate = 24000;

@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
@@ -173,6 +174,41 @@ class AudioRecordingService implements IAudioRecordingService {
   }
 
   @override
+  Future<Stream<Uint8List>> startStreaming({
+    int sampleRate = 24000,
+    int numChannels = 1,
+  }) async {
+    if (_disposed) {
+      throw StateError('AudioRecordingService has been disposed');
+    }
+
+    await _recordingLock.acquire();
+    try {
+      final hasPermission = await hasMicrophonePermission();
+      if (!hasPermission) {
+        throw Exception('Microphone permission not available');
+      }
+
+      final stream = await _recordingManager.startStreaming(
+        sampleRate: sampleRate,
+        numChannels: numChannels,
+      );
+
+      _startAudioLevelMonitoring();
+      return stream;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ AudioRecordingService: Error starting streaming: $e');
+      }
+      rethrow;
+    } finally {
+      if (_recordingLock.isLocked) {
+        _recordingLock.release();
+      }
+    }
+  }
+
+  @override
   Future<String> stopRecording() async {
     if (_disposed) {
       throw StateError('AudioRecordingService has been disposed');
@@ -211,6 +247,28 @@ class AudioRecordingService implements IAudioRecordingService {
       rethrow;
     } finally {
       _recordingLock.release();
+    }
+  }
+
+  @override
+  Future<void> stopStreaming() async {
+    if (_disposed) {
+      return;
+    }
+
+    await _recordingLock.acquire();
+    try {
+      _stopAudioLevelMonitoring();
+      await _recordingManager.stopStreaming();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ AudioRecordingService: Error stopping streaming: $e');
+      }
+      rethrow;
+    } finally {
+      if (_recordingLock.isLocked) {
+        _recordingLock.release();
+      }
     }
   }
 
@@ -311,6 +369,11 @@ class AudioRecordingService implements IAudioRecordingService {
 
       // Stop audio level monitoring
       _stopAudioLevelMonitoring();
+
+      if (_recordingManager.isStreaming) {
+        await _recordingManager.stopStreaming();
+        return;
+      }
 
       // Stop recording through RecordingManager
       final recordingPath = await _recordingManager.stopRecording();

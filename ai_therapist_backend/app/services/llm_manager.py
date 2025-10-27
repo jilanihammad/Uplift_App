@@ -9,6 +9,7 @@ import contextlib
 import io
 import wave
 import struct
+import uuid
 from pathlib import Path
 from typing import Optional, List, Dict, Any, AsyncGenerator, Final, Tuple, Union, Callable
 from tenacity import retry, stop_after_attempt, wait_exponential, wait_random_exponential, retry_if_exception, retry_if_exception_type
@@ -109,6 +110,268 @@ def _is_retryable_stt_error(exc):
         exc.response.status_code == 429
     )
 
+
+class GeminiLiveSession:
+    """Manage lifecycle and streaming for Gemini Live duplex sessions."""
+
+    _DEFAULT_INPUT_MIME = "audio/pcm; rate=24000; channels=1; bit=16"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model_id: str,
+        live_config: Optional[types.LiveConnectConfig] = None,
+        user_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self._api_key = api_key
+        self._model_id = model_id
+        self._live_config = live_config
+        self._user_id = user_id
+        self._metadata = metadata or {}
+        self.session_id: str = self._metadata.get("session_id", f"gemini-live-{uuid.uuid4().hex}")
+        self._client = genai.Client(api_key=self._api_key)
+        self._session_cm: Optional[Any] = None
+        self._session: Optional[Any] = None
+        self._receiver_task: Optional[asyncio.Task] = None
+        self._incoming_queue: "asyncio.Queue[Optional[Union[Dict[str, Any], Exception]]]" = asyncio.Queue()
+        self._closed = False
+        self._lock = asyncio.Lock()
+        self._logger = logger.getChild("GeminiLiveSession")
+        self._input_mime = self._metadata.get("input_mime", self._DEFAULT_INPUT_MIME)
+        self._incremental_transcripts = bool(self._metadata.get("incremental_transcripts", False))
+        self._sequence = 0
+        self._pcm_header_sent = False
+        self._pcm_sample_rate = 24000
+        self._pcm_channels = 1
+        self._pcm_sample_width = 2
+
+    async def start(self) -> None:
+        async with self._lock:
+            if self._session is not None:
+                return
+
+            self._logger.info(
+                "[GeminiLiveSession] opening live session (session_id=%s, user_id=%s)",
+                self.session_id,
+                self._user_id,
+            )
+
+            self._session_cm = self._client.aio.live.connect(
+                model=self._model_id,
+                config=self._live_config,
+            )
+            self._session = await self._session_cm.__aenter__()
+
+            self._receiver_task = asyncio.create_task(
+                self._receiver_loop(), name=f"gemini-live-recv-{self.session_id}"
+            )
+            self._closed = False
+
+    async def close(self) -> None:
+        async with self._lock:
+            if self._closed:
+                return
+
+            self._logger.info("[GeminiLiveSession] closing session %s", self.session_id)
+
+            if self._receiver_task is not None:
+                self._receiver_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._receiver_task
+                self._receiver_task = None
+
+            if self._session_cm is not None:
+                await self._session_cm.__aexit__(None, None, None)
+                self._session_cm = None
+
+            self._session = None
+            self._closed = True
+            await self._incoming_queue.put(None)
+
+    async def send_audio_chunk(
+        self,
+        pcm_bytes: bytes,
+        *,
+        mime_type: Optional[str] = None,
+    ) -> None:
+        if not self._session:
+            raise RuntimeError("Gemini Live session has not been started")
+
+        blob = types.Blob(
+            mime_type=mime_type or self._input_mime,
+            data=pcm_bytes,
+        )
+        await self._session.send_realtime_input(audio=blob)
+
+    async def mark_audio_complete(self) -> None:
+        if not self._session:
+            return
+        await self._session.send_realtime_input(audio_stream_end=True)
+
+    async def send_client_content(
+        self,
+        content: types.Content,
+        *,
+        turn_complete: bool = False,
+    ) -> None:
+        if not self._session:
+            raise RuntimeError("Gemini Live session has not been started")
+        await self._session.send_client_content(turns=content, turn_complete=turn_complete)
+
+    async def receive_events(self) -> AsyncGenerator[Dict[str, Any], None]:
+        while True:
+            item = await self._incoming_queue.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+    async def _receiver_loop(self) -> None:
+        assert self._session is not None
+        try:
+            async for message in self._session.receive():
+                for event in self._parse_server_message(message):
+                    await self._incoming_queue.put(event)
+        except Exception as exc:  # noqa: BLE001
+            await self._incoming_queue.put(exc)
+        finally:
+            await self._incoming_queue.put(None)
+
+    def _parse_server_message(self, message: types.LiveServerMessage) -> List[Dict[str, Any]]:
+        events: List[Dict[str, Any]] = []
+        server_content = getattr(message, "server_content", None)
+        if not server_content:
+            return events
+
+        model_turn = getattr(server_content, "model_turn", None)
+        if not model_turn:
+            return events
+
+        parts = getattr(model_turn, "parts", None) or []
+        turn_complete = bool(getattr(model_turn, "turn_complete", False))
+
+        for part in parts:
+            inline_data = getattr(part, "inline_data", None)
+            if inline_data and getattr(inline_data, "data", None):
+                audio_chunks = self._normalize_audio_chunk(
+                    bytes(inline_data.data),
+                    inline_data.mime_type or "",
+                )
+                for chunk_bytes, is_header in audio_chunks:
+                    self._sequence += 1
+                    events.append(
+                        {
+                            "kind": "audio",
+                            "data": chunk_bytes,
+                            "mime_type": "audio/wav" if is_header or self._pcm_header_sent else inline_data.mime_type,
+                            "is_header": is_header,
+                            "sequence": self._sequence,
+                        }
+                    )
+
+            text_value = getattr(part, "text", None)
+            if text_value:
+                if not self._incremental_transcripts and not turn_complete:
+                    continue
+                self._sequence += 1
+                events.append(
+                    {
+                        "kind": "text",
+                        "text": text_value,
+                        "is_final": turn_complete,
+                        "sequence": self._sequence,
+                    }
+                )
+
+        if turn_complete:
+            self._sequence += 1
+            events.append(
+                {
+                    "kind": "turn_complete",
+                    "sequence": self._sequence,
+                }
+            )
+
+        return events
+
+    def _normalize_audio_chunk(
+        self,
+        data: bytes,
+        mime_type: str,
+    ) -> List[Tuple[bytes, bool]]:
+        lower_mime = (mime_type or "").lower()
+        is_pcm = "pcm" in lower_mime or "l16" in lower_mime
+
+        if not is_pcm:
+            return [(data, False)]
+
+        sample_rate, channels, sample_width = self._parse_pcm_mime(lower_mime)
+
+        chunks: List[Tuple[bytes, bool]] = []
+        if (
+            not self._pcm_header_sent
+            or sample_rate != self._pcm_sample_rate
+            or channels != self._pcm_channels
+        ):
+            header = self._build_wav_header(sample_rate, channels=channels, sample_width=sample_width)
+            chunks.append((header, True))
+            self._pcm_header_sent = True
+            self._pcm_sample_rate = sample_rate
+            self._pcm_channels = channels
+            self._pcm_sample_width = sample_width
+
+        chunks.append((data, False))
+        return chunks
+
+    def _parse_pcm_mime(self, mime: str) -> Tuple[int, int, int]:
+        sample_rate = self._pcm_sample_rate
+        channels = self._pcm_channels
+        sample_width = self._pcm_sample_width
+
+        for part in mime.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            key, value = part.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if key in {"rate", "samplerate"} and value.isdigit():
+                sample_rate = int(value)
+            elif key == "channels" and value.isdigit():
+                channels = max(1, int(value))
+            elif key in {"bit", "bits", "bitdepth"} and value.isdigit():
+                sample_width = max(1, int(value) // 8)
+        return sample_rate, channels, sample_width
+
+    @staticmethod
+    def _build_wav_header(
+        sample_rate: int,
+        *,
+        channels: int = 1,
+        sample_width: int = 2,
+    ) -> bytes:
+        byte_rate = sample_rate * channels * sample_width
+        block_align = channels * sample_width
+        return struct.pack(
+            '<4sI4s4sIHHIIHH4sI',
+            b'RIFF',
+            0xFFFFFFFF,
+            b'WAVE',
+            b'fmt ',
+            16,
+            1,
+            channels,
+            sample_rate,
+            byte_rate,
+            block_align,
+            sample_width * 8,
+            b'data',
+            0xFFFFFFFF,
+        )
+
 async def _do_post(audio_path: Path, model: str, api_key: str) -> str:
     """One network round-trip to Groq with hard 5s timeout."""
     async def _groq_post():
@@ -189,6 +452,55 @@ class LLMManager:
         logger.info(f"LLM: {self.llm_config.provider if self.llm_config else 'None'} - {self.llm_config.model_id if self.llm_config else 'None'}")
         logger.info(f"TTS: {self.tts_config.provider if self.tts_config else 'None'} - {self.tts_config.model_id if self.tts_config else 'None'}")
         logger.info(f"Transcription: {self.transcription_config.provider if self.transcription_config else 'None'} - {self.transcription_config.model_id if self.transcription_config else 'None'}")
+
+    # ---------------------------------------------------------------------
+    # Gemini Live Duplex Helpers (scaffolding)
+    # ---------------------------------------------------------------------
+
+    def create_gemini_live_session(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        live_config: Optional[types.LiveConnectConfig] = None,
+    ) -> GeminiLiveSession:
+        """Factory for GeminiLiveSession respecting current configuration."""
+
+        if not LLMConfig.is_gemini_live_duplex_enabled():
+            raise RuntimeError("Gemini Live duplex mode is disabled in configuration")
+
+        tts_config = self.tts_config or LLMConfig.get_active_model_config(ModelType.TTS)
+        if not tts_config or tts_config.provider != ModelProvider.GOOGLE:
+            raise RuntimeError("Gemini Live requires Google TTS provider to be active")
+
+        api_key = LLMConfig.get_api_key(tts_config)
+        if not api_key:
+            raise RuntimeError("GOOGLE_API_KEY is not configured")
+
+        if live_config is None:
+            voice_name = (tts_config.default_params or {}).get("voice", LLMConfig.DEFAULT_TTS_VOICE)
+            speech_config = types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
+                )
+            )
+            generation_config = types.GenerationConfig(
+                response_modalities=[types.Modality.AUDIO, types.Modality.TEXT],
+                speech_config=speech_config,
+            )
+            live_config = types.LiveConnectConfig(generation_config=generation_config)
+
+        metadata = metadata.copy() if metadata else {}
+        metadata.setdefault("incremental_transcripts", LLMConfig.use_gemini_live_incremental_transcripts())
+        metadata.setdefault("input_mime", "audio/pcm; rate=24000; channels=1; bit=16")
+
+        return GeminiLiveSession(
+            api_key=api_key,
+            model_id=tts_config.model_id,
+            live_config=live_config,
+            user_id=user_id,
+            metadata=metadata,
+        )
     
     def _get_openai_client(self, config: ModelConfig) -> OpenAI:
         """Get a new OpenAI client for the given configuration (no caching)."""
@@ -1294,7 +1606,19 @@ class LLMManager:
                                 mime_type = inline_data.mime_type or ""
                                 lower_mime = mime_type.lower()
 
-                                if "pcm" in lower_mime or "l16" in lower_mime:
+                                is_pcm = "pcm" in lower_mime or "l16" in lower_mime
+                                is_audio = lower_mime.startswith("audio/") or is_pcm
+
+                                if not is_audio:
+                                    # Gemini Live sometimes sends text/json metadata – skip forwarding
+                                    logger.debug(
+                                        "Google Live TTS ignoring non-audio inline data (mime=%s, bytes=%d)",
+                                        mime_type or "<none>",
+                                        len(inline_data.data or b"") if inline_data.data else 0,
+                                    )
+                                    continue
+
+                                if is_pcm:
                                     pcm_rate, pcm_channels, pcm_width = _parse_pcm_formats(mime_type)
 
                                     if not pcm_header_sent:
