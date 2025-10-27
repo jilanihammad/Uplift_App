@@ -38,6 +38,8 @@ class VoiceSessionState extends Equatable {
   final List<TherapyMessage> messages;
   final String? errorMessage;
   final String? currentSessionId;
+  final String? geminiLiveSessionId;
+  final String? geminiLivePartialText;
   final bool isListening; // General listening state (mic active)
   final bool isRecording; // Specifically if audio is being captured to a file
   final bool
@@ -76,6 +78,8 @@ class VoiceSessionState extends Equatable {
     required this.messages,
     this.errorMessage,
     this.currentSessionId,
+    this.geminiLiveSessionId,
+    this.geminiLivePartialText,
     this.isListening = false,
     this.isRecording = false,
     this.isProcessingAudio = false,
@@ -114,6 +118,8 @@ class VoiceSessionState extends Equatable {
       messages: const [],
       errorMessage: null,
       currentSessionId: sessionId,
+      geminiLiveSessionId: null,
+      geminiLivePartialText: null,
       isListening: false,
       isRecording: false,
       isProcessingAudio: false,
@@ -147,6 +153,9 @@ class VoiceSessionState extends Equatable {
     String? errorMessage,
     bool? clearErrorMessage,
     String? currentSessionId,
+    String? geminiLiveSessionId,
+    String? geminiLivePartialText,
+    bool? clearGeminiLivePartialText,
     bool? isListening,
     bool? isRecording,
     bool? isProcessingAudio,
@@ -181,6 +190,10 @@ class VoiceSessionState extends Equatable {
       errorMessage:
           clearErrorMessage == true ? null : errorMessage ?? this.errorMessage,
       currentSessionId: currentSessionId ?? this.currentSessionId,
+      geminiLiveSessionId: geminiLiveSessionId ?? this.geminiLiveSessionId,
+      geminiLivePartialText: clearGeminiLivePartialText == true
+          ? null
+          : geminiLivePartialText ?? this.geminiLivePartialText,
       isListening: isListening ?? this.isListening,
       isRecording: isRecording ?? this.isRecording,
       isProcessingAudio: isProcessingAudio ?? this.isProcessingAudio,
@@ -247,9 +260,11 @@ class VoiceSessionState extends Equatable {
         currentMessageSequence, // Added
         speakerMuted,
         amplitude,
-        timerRemainingSeconds,
-        autoEndTriggered,
-      ];
+      timerRemainingSeconds,
+      autoEndTriggered,
+      geminiLiveSessionId,
+      geminiLivePartialText,
+    ];
 
   bool get canSend {
     // In chat mode: allow sending when not processing audio

@@ -38,7 +38,7 @@ class LLMConfig:
     # ACTIVE MODEL SELECTION - CHANGE THESE TO SWITCH MODELS EASILY
     # =============================================================================
     ACTIVE_LLM_PROVIDER = ModelProvider.GROK        # Change this to switch LLM provider
-    ACTIVE_TTS_PROVIDER = ModelProvider.GOOGLE        # Default TTS provider is OpenAI
+    ACTIVE_TTS_PROVIDER = ModelProvider.OPENAI        # Default TTS provider is OpenAI
     ACTIVE_TRANSCRIPTION_PROVIDER = ModelProvider.GROQ  # Change this to switch transcription provider
     
     # Model overrides (optional - leave None to use provider defaults)
@@ -47,11 +47,15 @@ class LLMConfig:
     ACTIVE_TRANSCRIPTION_MODEL = None  # e.g., "whisper-1" to override default
 
     # Default TTS voice (change here to update default voice)
-    DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "kore")  # Default Gemini voice; overridden per-provider as needed
-    GOOGLE_TTS_MODE = os.getenv("GOOGLE_TTS_MODE", "live").lower()
+    DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "coral")  # Default Gemini voice; overridden per-provider as needed
+    GOOGLE_TTS_MODE = os.getenv("GOOGLE_TTS_MODE", "tts_only").lower()
     GOOGLE_TTS_NATIVE_MIME = os.getenv(
         "GOOGLE_TTS_NATIVE_MIME",
         "audio/ogg; codecs=opus",
+    )
+    GOOGLE_LIVE_MODE = os.getenv("GOOGLE_LIVE_MODE", "duplex").lower() # tts_only or duplex
+    GEMINI_LIVE_INCREMENTAL_TRANSCRIPTS = (
+        os.getenv("GEMINI_LIVE_INCREMENTAL_TRANSCRIPTS", "false").lower() == "true"
     )
     
     # Centralized TTS arguments to prevent parameter mismatches
@@ -88,7 +92,7 @@ class LLMConfig:
             base_url="https://api.openai.com/v1",
             api_key_env="OPENAI_API_KEY",
             default_params={
-                "voice": os.getenv("OPENAI_TTS_VOICE", DEFAULT_TTS_VOICE),
+                "voice": os.getenv("OPENAI_TTS_VOICE", "coral"),
                 "response_format": "wav",
                 "speed": 1.0
             },
@@ -223,6 +227,7 @@ class LLMConfig:
                 ),
                 "mode": GOOGLE_TTS_MODE,
                 "native_mime_type": GOOGLE_TTS_NATIVE_MIME,
+                "live_mode": GOOGLE_LIVE_MODE,
             },
             supports_streaming=True
         ),
@@ -328,6 +333,14 @@ class LLMConfig:
             "mime_type": mime_type,
             "supports_streaming": bool(config.supports_streaming),
         }
+
+    @classmethod
+    def is_gemini_live_duplex_enabled(cls) -> bool:
+        return cls.GOOGLE_LIVE_MODE == "duplex"
+
+    @classmethod
+    def use_gemini_live_incremental_transcripts(cls) -> bool:
+        return cls.GEMINI_LIVE_INCREMENTAL_TRANSCRIPTS
 
     @classmethod
     def is_model_available(cls, model_type: ModelType) -> bool:

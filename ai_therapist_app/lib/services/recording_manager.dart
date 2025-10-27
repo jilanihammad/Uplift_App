@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' as io;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
@@ -128,6 +129,7 @@ class RecordingManager {
   // Current recording state
   RecordingState _currentState = RecordingState.stopped;
   RecordingState get currentState => _currentState;
+  bool get isStreaming => _isStreamingMode;
 
   // Recorded audio file path
   String? _lastRecordedPath;
@@ -142,6 +144,11 @@ class RecordingManager {
   // RACE CONDITION FIX: Atomic protection for stopRecording
   bool _isStopping = false;
 
+  // Streaming support
+  bool _isStreamingMode = false;
+  StreamController<Uint8List>? _streamController;
+  StreamSubscription<List<int>>? _streamSubscription;
+
   // Constructor
   RecordingManager();
 
@@ -152,6 +159,85 @@ class RecordingManager {
     } catch (e) {
       _errorController.add('Failed to initialize recording: $e');
       _updateState(RecordingState.error);
+    }
+  }
+
+  /// Begin streaming PCM audio frames instead of writing to disk
+  Future<Stream<Uint8List>> startStreaming({
+    int sampleRate = 24000,
+    int numChannels = 1,
+  }) async {
+    if (_isStreamingMode) {
+      return _streamController!.stream;
+    }
+
+    final hasAccess =
+        await SharedRecorderManager.instance.requestAccess(_userId);
+    if (!hasAccess) {
+      _errorController.add('Cannot access recorder - already in use');
+      _updateState(RecordingState.error);
+      throw StateError('Recorder already in use');
+    }
+
+    final recorder = _recorder;
+    if (recorder == null) {
+      _errorController.add('Recorder not available');
+      _updateState(RecordingState.error);
+      SharedRecorderManager.instance.releaseAccess(_userId);
+      throw StateError('Recorder not available');
+    }
+
+    if (await recorder.hasPermission() == false) {
+      _errorController.add('Microphone permission not granted');
+      _updateState(RecordingState.error);
+      SharedRecorderManager.instance.releaseAccess(_userId);
+      throw StateError('Microphone permission not granted');
+    }
+
+    if (_currentState == RecordingState.recording) {
+      _errorController.add('Already recording to file - stop before streaming');
+      SharedRecorderManager.instance.releaseAccess(_userId);
+      throw StateError('Recorder already in file recording mode');
+    }
+
+    try {
+      final rawStream = await recorder.startStream(
+        RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: sampleRate,
+          numChannels: numChannels,
+        ),
+      );
+
+      _streamController = StreamController<Uint8List>.broadcast();
+      _streamSubscription = rawStream.listen(
+        (chunk) {
+          if (chunk.isNotEmpty) {
+            _streamController?.add(Uint8List.fromList(chunk));
+          }
+        },
+        onError: (error) {
+          _streamController?.addError(error);
+        },
+        onDone: () {
+          _streamController?.close();
+        },
+      );
+
+      _isStreamingMode = true;
+      _recordingStartTime = DateTime.now();
+      _updateState(RecordingState.recording);
+
+      return _streamController!.stream;
+    } catch (e) {
+      await _streamSubscription?.cancel();
+      _streamSubscription = null;
+      await _streamController?.close();
+      _streamController = null;
+      SharedRecorderManager.instance.releaseAccess(_userId);
+      _errorController.add('Error starting streaming recorder: $e');
+      _updateState(RecordingState.error);
+      rethrow;
     }
   }
 
@@ -175,6 +261,12 @@ class RecordingManager {
 
   // Start recording audio
   Future<void> startRecording() async {
+    if (_isStreamingMode) {
+      _errorController
+          .add('Cannot start file recording while streaming is active');
+      throw StateError('Cannot start file recording while streaming');
+    }
+
     // Request access to shared recorder
     final hasAccess =
         await SharedRecorderManager.instance.requestAccess(_userId);
@@ -272,11 +364,45 @@ class RecordingManager {
     }
   }
 
+  Future<void> stopStreaming() async {
+    if (!_isStreamingMode) {
+      return;
+    }
+
+    final recorder = _recorder;
+    try {
+      if (recorder != null) {
+        await recorder.stop();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Error stopping streaming recorder: $e');
+      }
+    } finally {
+      await _streamSubscription?.cancel();
+      _streamSubscription = null;
+
+      if (_streamController != null && !(_streamController!.isClosed)) {
+        await _streamController!.close();
+      }
+      _streamController = null;
+      _isStreamingMode = false;
+      _recordingStartTime = null;
+      SharedRecorderManager.instance.releaseAccess(_userId);
+      _updateState(RecordingState.stopped);
+    }
+  }
+
   /// Stops the current recording session if active.
   ///
   /// Returns the path to the recorded file, or null if not recording.
   /// Throws [NotRecordingException] if called when not recording.
   Future<String?> stopRecording() async {
+    if (_isStreamingMode) {
+      throw NotRecordingException(
+          'Recorder is currently streaming; call stopStreaming instead');
+    }
+
     // RACE CONDITION FIX: Atomic stop protection (prevents overlapping releases)
     // Double-stop guard: Early return if already stopping
     if (_isStopping) {
@@ -358,6 +484,14 @@ class RecordingManager {
   /// Thread-safe idempotent recording stop that never throws
   /// Returns null if already stopped or operation in progress
   Future<String?> tryStopRecording() async {
+    if (_isStreamingMode) {
+      if (kDebugMode) {
+        debugPrint(
+            '⚠️ RecordingManager.tryStopRecording(): Currently streaming, returning null');
+      }
+      return null;
+    }
+
     // Quick fast path - already stopping or nothing to stop
     if (_isStopping) {
       if (kDebugMode) {
@@ -512,16 +646,21 @@ class RecordingManager {
 
   // Clean up resources
   Future<void> dispose() async {
-    final recorder = _recorder;
-    if (recorder != null) {
-      try {
-        await recorder.stop();
-      } catch (e) {
-        // Ignore errors on dispose
+    if (_isStreamingMode) {
+      await stopStreaming();
+    } else {
+      final recorder = _recorder;
+      if (recorder != null) {
+        try {
+          if (await recorder.isRecording()) {
+            await recorder.stop();
+          }
+        } catch (e) {
+          // Ignore errors on dispose
+        }
       }
+      SharedRecorderManager.instance.releaseAccess(_userId);
     }
-    // Release access to shared recorder
-    SharedRecorderManager.instance.releaseAccess(_userId);
 
     await _recordingStateController.close();
     await _errorController.close();

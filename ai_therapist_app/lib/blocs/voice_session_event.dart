@@ -4,6 +4,7 @@ library;
 
 import '../widgets/mood_selector.dart';
 import '../models/therapy_message.dart';
+import '../services/gemini_live_duplex_controller.dart';
 
 abstract class VoiceSessionEvent {
   const VoiceSessionEvent();
@@ -116,6 +117,11 @@ class ShowDurationSelector extends VoiceSessionEvent {
 
 class ToggleMicMute extends VoiceSessionEvent {
   const ToggleMicMute();
+}
+
+class GeminiLiveEventReceived extends VoiceSessionEvent {
+  final GeminiLiveEvent event;
+  const GeminiLiveEventReceived(this.event);
 }
 
 // Phase 3: New events for service calls
