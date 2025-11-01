@@ -53,6 +53,8 @@ class VoiceSessionState extends Equatable {
   final bool showMicButton;
   final bool showSendButton;
   final bool isMicToggleEnabled;
+  final bool isVoicePipelineReady;
+  final bool isVoiceModeSwitching;
   final Duration? selectedDuration;
   final bool showDurationSelector;
   final bool showMoodSelector;
@@ -92,6 +94,8 @@ class VoiceSessionState extends Equatable {
     this.showMicButton = true, // Default to true, adjust based on mode
     this.showSendButton = false, // Default to false, adjust based on mode
     this.isMicToggleEnabled = true,
+    this.isVoicePipelineReady = true,
+    this.isVoiceModeSwitching = false,
     this.selectedDuration,
     this.showDurationSelector = false, // Initialize to false
     this.showMoodSelector = false,
@@ -131,6 +135,8 @@ class VoiceSessionState extends Equatable {
       showMicButton: true, // Show mic button in initial voice mode
       showSendButton: false, // Don't show send in initial voice mode
       isMicToggleEnabled: true,
+      isVoicePipelineReady: true,
+      isVoiceModeSwitching: false,
       selectedDuration: null,
       showDurationSelector: false, // Start by showing duration selector
       showMoodSelector: false,
@@ -171,6 +177,8 @@ class VoiceSessionState extends Equatable {
     bool? showMicButton,
     bool? showSendButton,
     bool? isMicToggleEnabled,
+    bool? isVoicePipelineReady,
+    bool? isVoiceModeSwitching,
     Duration? selectedDuration,
     bool? showDurationSelector,
     bool? showMoodSelector,
@@ -211,6 +219,8 @@ class VoiceSessionState extends Equatable {
       showMicButton: showMicButton ?? this.showMicButton,
       showSendButton: showSendButton ?? this.showSendButton,
       isMicToggleEnabled: isMicToggleEnabled ?? this.isMicToggleEnabled,
+      isVoicePipelineReady: isVoicePipelineReady ?? this.isVoicePipelineReady,
+      isVoiceModeSwitching: isVoiceModeSwitching ?? this.isVoiceModeSwitching,
       selectedDuration: selectedDuration ?? this.selectedDuration,
       showDurationSelector: showDurationSelector ?? this.showDurationSelector,
       showMoodSelector: showMoodSelector ?? this.showMoodSelector,
@@ -268,6 +278,8 @@ class VoiceSessionState extends Equatable {
         timerRemainingSeconds,
         autoEndTriggered,
         isMicToggleEnabled,
+        isVoicePipelineReady,
+        isVoiceModeSwitching,
         geminiLiveSessionId,
         geminiLivePartialText,
       ];

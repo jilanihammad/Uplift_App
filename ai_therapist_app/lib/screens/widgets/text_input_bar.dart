@@ -7,6 +7,7 @@ class TextInputBar extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onSwitchMode;
   final bool enabled;
+  final bool switchEnabled;
 
   const TextInputBar({
     super.key,
@@ -16,6 +17,7 @@ class TextInputBar extends StatelessWidget {
     required this.onSend,
     required this.onSwitchMode,
     this.enabled = true,
+    this.switchEnabled = true,
   });
 
   @override
@@ -71,7 +73,9 @@ class TextInputBar extends StatelessWidget {
                         ? null
                         : isTyping
                             ? onSend
-                            : onSwitchMode,
+                            : switchEnabled
+                                ? onSwitchMode
+                                : null,
                   );
                 },
               ),
@@ -84,35 +88,41 @@ class TextInputBar extends StatelessWidget {
               if (isTyping) return const SizedBox.shrink();
               return Padding(
                 padding: const EdgeInsets.only(top: 8.0),
-                child: InkWell(
-                  onTap: onSwitchMode,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                child: Opacity(
+                  opacity: switchEnabled ? 1.0 : 0.4,
+                  child: IgnorePointer(
+                    ignoring: !switchEnabled,
+                    child: InkWell(
+                      onTap: onSwitchMode,
                       borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.graphic_eq,
-                          color: Theme.of(context).primaryColor,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Switch to Voice Mode',
-                          style: TextStyle(
-                            color: Theme.of(context).primaryColor,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.graphic_eq,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Switch to Voice Mode',
+                              style: TextStyle(
+                                color: Theme.of(context).primaryColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
