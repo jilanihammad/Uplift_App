@@ -50,6 +50,16 @@ class LiveTtsAudioSource extends StreamAudioSource {
   OpusHeaderInfo? _opusHeaderInfo;
   Uint8List? _completeHeaders;
 
+  int? _playbackToken;
+
+  void attachPlaybackToken(int token) {
+    _playbackToken = token;
+    if (kDebugMode) {
+      debugPrint(
+          '🎯 LiveTtsAudioSource: Attached playback token $token for ${_debugName ?? "TTS"}');
+    }
+  }
+
   /// Mark WebSocket as closed (no more data will arrive)
   /// This enables proper END_OF_INPUT signaling to ExoPlayer
   void markWebSocketClosed([int? totalSize]) {
@@ -136,6 +146,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
       debugPrint('  Request ID: $requestId');
       debugPrint('  Request Count: $_requestCount');
       debugPrint('  Debug Name: ${_debugName ?? "unknown"}');
+      debugPrint('  Playback Token: ${_playbackToken ?? 'none'}');
       debugPrint('  Start: $start, End: $end');
       debugPrint('  Content Type: $_contentType');
       debugPrint(

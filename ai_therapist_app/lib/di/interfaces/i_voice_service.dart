@@ -34,7 +34,7 @@ abstract class IVoiceService {
   Future<void> stopSpeaking();
 
   // TTS State Management (for auto-listening coordination)
-  void updateTTSSpeakingState(bool isSpeaking);
+  void updateTTSSpeakingState(bool isSpeaking, {int? playbackToken});
   Stream<bool> get isTtsActuallySpeaking;
   void resetTTSState();
 

@@ -119,6 +119,10 @@ class ToggleMicMute extends VoiceSessionEvent {
   const ToggleMicMute();
 }
 
+class EnsureMicToggleEnabled extends VoiceSessionEvent {
+  const EnsureMicToggleEnabled();
+}
+
 class GeminiLiveEventReceived extends VoiceSessionEvent {
   final GeminiLiveEvent event;
   const GeminiLiveEventReceived(this.event);

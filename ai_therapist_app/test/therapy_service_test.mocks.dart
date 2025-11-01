@@ -775,10 +775,12 @@ class MockVoiceService extends _i1.Mock implements _i13.VoiceService {
       ) as _i9.Future<void>);
 
   @override
-  void updateTTSSpeakingState(bool? isSpeaking) => super.noSuchMethod(
+  void updateTTSSpeakingState(bool? isSpeaking, {int? playbackToken}) =>
+      super.noSuchMethod(
         Invocation.method(
           #updateTTSSpeakingState,
           [isSpeaking],
+          {#playbackToken: playbackToken},
         ),
         returnValueForMissingStub: null,
       );

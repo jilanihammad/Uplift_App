@@ -48,6 +48,10 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   // Force override for isPlaying state
   bool? _forceIsPlayingState;
 
+  // Playback token tracking to guard against stale callbacks racing new streams
+  int _activePlaybackToken = 0;
+  String? _activePlaybackDebugName;
+
   // Stream controllers
   final StreamController<bool> _playingStateController =
       StreamController<bool>.broadcast();
@@ -131,6 +135,18 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       }
     }
   }
+
+  int _promotePlaybackToken(String debugName) {
+    final token = ++_activePlaybackToken;
+    _activePlaybackDebugName = debugName;
+    if (kDebugMode) {
+      debugPrint(
+          '🎯 AudioPlayerManager: Activated playback token $token for $debugName');
+    }
+    return token;
+  }
+
+  bool _isActivePlaybackToken(int token) => token == _activePlaybackToken;
 
   // Wrapper to ensure volume is applied after source changes
   Future<void> _setSourceAndApplyVolume(
@@ -896,7 +912,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   /// Prevents false positive from rapid idle→completed transitions
   Future<void> _waitForTrueCompletion() async {
     if (kDebugMode) {
-      debugPrint('🎵 AudioPlayerManager: Waiting for robust completion detection');
+      debugPrint(
+          '🎵 AudioPlayerManager: Waiting for robust completion detection');
     }
 
     try {
@@ -932,7 +949,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('❌ AudioPlayerManager: Robust completion detection failed: $e');
+        debugPrint(
+            '❌ AudioPlayerManager: Robust completion detection failed: $e');
       }
       rethrow;
     }
@@ -990,7 +1008,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     dynamic audioSourceOrStream, {
     String? debugName,
     String contentType = 'audio/wav',
-    VoidCallback?
+    void Function(int playbackToken)? onPlaybackToken,
+    void Function(int playbackToken)?
         onNaturalCompletion, // Callback for natural ExoPlayer completion
   }) async {
     final displayName = debugName ?? 'live-tts-audio';
@@ -1001,6 +1020,9 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     // Start monitoring
     TTSStreamingMonitor().recordStreamingStart();
     MemoryMonitor.setBaseline();
+
+    final playbackToken = _promotePlaybackToken(displayName);
+    onPlaybackToken?.call(playbackToken);
 
     if (kDebugMode) {
       AppLogger.d(
@@ -1050,6 +1072,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
             'audioSourceOrStream must be either Stream<Uint8List> or LiveTtsAudioSource');
       }
 
+      liveSource.attachPlaybackToken(playbackToken);
+
       // Set up the live audio source with error recovery
       try {
         await _setSourceAndApplyVolume(
@@ -1098,6 +1122,18 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       StreamSubscription? subscription;
 
       subscription = _audioPlayer.processingStateStream.listen((state) {
+        if (playbackToken != _activePlaybackToken) {
+          if (kDebugMode) {
+            debugPrint(
+                '⏭️ Live TTS: Ignoring processing state $state for stale token $playbackToken (active: $_activePlaybackToken)');
+          }
+          if (!playbackCompleter.isCompleted) {
+            playbackCompleter.complete();
+          }
+          subscription?.cancel();
+          return;
+        }
+
         if (kDebugMode) {
           debugPrintThrottledCustom(
               '🔄 Live TTS ProcessingState: $state for $displayName (playing: ${_audioPlayer.playing})',
@@ -1137,7 +1173,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
             debugPrint(
                 '🎯 Calling onNaturalCompletion callback for immediate VAD transition');
           }
-          onNaturalCompletion?.call();
+          onNaturalCompletion?.call(playbackToken);
 
           if (!playbackCompleter.isCompleted) {
             playbackCompleter.complete();
@@ -1154,6 +1190,18 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       errorSubscription = _audioPlayer.playbackEventStream.listen(
         (_) {},
         onError: (error) {
+          if (playbackToken != _activePlaybackToken) {
+            if (kDebugMode) {
+              debugPrint(
+                  '⏭️ Live TTS: Ignoring playback error for stale token $playbackToken (active: $_activePlaybackToken)');
+            }
+            if (!playbackCompleter.isCompleted) {
+              playbackCompleter.complete();
+            }
+            errorSubscription?.cancel();
+            return;
+          }
+
           // Record playback failure
           TTSStreamingMonitor()
               .recordStreamingFailure('Live playback error: $error');
@@ -1167,6 +1215,14 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
       // Wait for playback to complete
       await playbackCompleter.future;
+
+      if (playbackToken != _activePlaybackToken) {
+        if (kDebugMode) {
+          debugPrint(
+              '🔕 Live TTS audio playback future resolved for stale token $playbackToken (active: $_activePlaybackToken)');
+        }
+        return;
+      }
 
       if (kDebugMode) {
         debugPrint('✅ Live TTS audio playback finished: $displayName');

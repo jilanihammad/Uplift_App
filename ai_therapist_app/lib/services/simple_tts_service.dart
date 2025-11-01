@@ -110,7 +110,8 @@ class SimpleTTSService implements ITTSService {
   final ListQueue<TtsRequest> _queue = ListQueue();
   final AudioPlayerManager _audioPlayerManager;
   void Function(bool isSpeaking)? _onTTSComplete;
-  void Function(bool isSpeaking)? _voiceServiceUpdateCallback;
+  void Function(bool isSpeaking, {int? playbackToken})?
+      _voiceServiceUpdateCallback;
 
   // TIMING FIX: Callback to get current generation for completion checks
   int Function()? _getCurrentGenerationCallback;
@@ -136,7 +137,8 @@ class SimpleTTSService implements ITTSService {
     AudioPlayerManager? audioPlayerManager,
     IAudioSettings? audioSettings,
     void Function(bool isSpeaking)? onTTSComplete,
-    void Function(bool isSpeaking)? voiceServiceUpdateCallback,
+    void Function(bool isSpeaking, {int? playbackToken})?
+        voiceServiceUpdateCallback,
   })  : _audioPlayerManager = audioPlayerManager ??
             AudioPlayerManager(audioSettings: audioSettings),
         _onTTSComplete = onTTSComplete,
@@ -167,7 +169,8 @@ class SimpleTTSService implements ITTSService {
   }
 
   /// Set the VoiceService update callback (for TTS-VAD coordination)
-  void setVoiceServiceUpdateCallback(void Function(bool isSpeaking)? callback) {
+  void setVoiceServiceUpdateCallback(
+      void Function(bool isSpeaking, {int? playbackToken})? callback) {
     _voiceServiceUpdateCallback = callback;
     if (kDebugMode) {
       debugPrint(
@@ -456,8 +459,8 @@ class SimpleTTSService implements ITTSService {
             // Check if we have enough data to start streaming
             if (gotHello &&
                 audioBuffer.length >= bufferSize && // Format-aware buffer size
-                _isValidAudioHeader(audioBuffer, requestedFormat,
-                    currentMimeType)) {
+                _isValidAudioHeader(
+                    audioBuffer, requestedFormat, currentMimeType)) {
               // Validate headers based on format
 
               playbackStarted =
@@ -562,7 +565,13 @@ class SimpleTTSService implements ITTSService {
                 liveAudioSource, // Pass the LiveTtsAudioSource object for proper lifecycle management
                 debugName: 'tts_stream_${req.id}',
                 contentType: currentMimeType, // Use negotiated content type
-                onNaturalCompletion: () {
+                onPlaybackToken: (playbackToken) {
+                  _voiceServiceUpdateCallback?.call(
+                    true,
+                    playbackToken: playbackToken,
+                  );
+                },
+                onNaturalCompletion: (playbackToken) {
                   // TIMING FIX: Check if mode changed since TTS started
                   if (_getCurrentGenerationCallback?.call() != genAtStart) {
                     // Allow welcome messages (generation -1) to complete regardless
@@ -588,7 +597,9 @@ class SimpleTTSService implements ITTSService {
                   // ONLY notify VoiceService (VoiceSessionCoordinator or legacy VoiceService)
                   // This triggers VAD state transition - _onTTSComplete is for AudioGenerator, not VAD
                   _voiceServiceUpdateCallback?.call(
-                      false); // Update VoiceService state for VAD coordination
+                    false,
+                    playbackToken: playbackToken,
+                  ); // Update VoiceService state for VAD coordination
                 },
               ).then((_) {
                 // Mark player phase complete when playback finishes
@@ -784,8 +795,7 @@ class SimpleTTSService implements ITTSService {
 
   /// Validate audio header based on format
   /// Returns true if the chunk contains valid headers for the specified format
-  bool _isValidAudioHeader(
-      List<int> chunk, String format, String? mimeType) {
+  bool _isValidAudioHeader(List<int> chunk, String format, String? mimeType) {
     switch (format.toLowerCase()) {
       case 'native':
         return _isValidNativeHeader(chunk, mimeType);
@@ -1377,9 +1387,11 @@ class SimpleTTSService implements ITTSService {
     final endTime = DateTime.now();
     final totalDuration = endTime.difference(startTime).inMilliseconds;
 
-    final timeToFirstAudio = firstAudioTime?.difference(startTime).inMilliseconds;
+    final timeToFirstAudio =
+        firstAudioTime?.difference(startTime).inMilliseconds;
 
-    final timeToPlayback = playbackStartTime?.difference(startTime).inMilliseconds;
+    final timeToPlayback =
+        playbackStartTime?.difference(startTime).inMilliseconds;
 
     if (kDebugMode) {
       debugPrint('📊 [TTS-METRICS] $requestId ($format):');
