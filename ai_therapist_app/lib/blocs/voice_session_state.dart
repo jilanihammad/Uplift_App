@@ -52,6 +52,7 @@ class VoiceSessionState extends Equatable {
   final String? transcribedText;
   final bool showMicButton;
   final bool showSendButton;
+  final bool isMicToggleEnabled;
   final Duration? selectedDuration;
   final bool showDurationSelector;
   final bool showMoodSelector;
@@ -90,6 +91,7 @@ class VoiceSessionState extends Equatable {
     this.transcribedText,
     this.showMicButton = true, // Default to true, adjust based on mode
     this.showSendButton = false, // Default to false, adjust based on mode
+    this.isMicToggleEnabled = true,
     this.selectedDuration,
     this.showDurationSelector = false, // Initialize to false
     this.showMoodSelector = false,
@@ -128,6 +130,7 @@ class VoiceSessionState extends Equatable {
       transcribedText: null,
       showMicButton: true, // Show mic button in initial voice mode
       showSendButton: false, // Don't show send in initial voice mode
+      isMicToggleEnabled: true,
       selectedDuration: null,
       showDurationSelector: false, // Start by showing duration selector
       showMoodSelector: false,
@@ -167,6 +170,7 @@ class VoiceSessionState extends Equatable {
     bool? clearTranscribedText,
     bool? showMicButton,
     bool? showSendButton,
+    bool? isMicToggleEnabled,
     Duration? selectedDuration,
     bool? showDurationSelector,
     bool? showMoodSelector,
@@ -206,6 +210,7 @@ class VoiceSessionState extends Equatable {
           : transcribedText ?? this.transcribedText,
       showMicButton: showMicButton ?? this.showMicButton,
       showSendButton: showSendButton ?? this.showSendButton,
+      isMicToggleEnabled: isMicToggleEnabled ?? this.isMicToggleEnabled,
       selectedDuration: selectedDuration ?? this.selectedDuration,
       showDurationSelector: showDurationSelector ?? this.showDurationSelector,
       showMoodSelector: showMoodSelector ?? this.showMoodSelector,
@@ -260,11 +265,12 @@ class VoiceSessionState extends Equatable {
         currentMessageSequence, // Added
         speakerMuted,
         amplitude,
-      timerRemainingSeconds,
-      autoEndTriggered,
-      geminiLiveSessionId,
-      geminiLivePartialText,
-    ];
+        timerRemainingSeconds,
+        autoEndTriggered,
+        isMicToggleEnabled,
+        geminiLiveSessionId,
+        geminiLivePartialText,
+      ];
 
   bool get canSend {
     // In chat mode: allow sending when not processing audio

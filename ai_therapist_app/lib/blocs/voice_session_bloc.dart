@@ -161,6 +161,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<ShowMoodSelector>(_onShowMoodSelector);
     on<ShowDurationSelector>(_onShowDurationSelector);
     on<ToggleMicMute>(_onToggleMicMute);
+    on<EnsureMicToggleEnabled>(_onEnsureMicToggleEnabled);
     on<SetSpeakerMuted>(_onSetSpeakerMuted);
     on<InitializeService>(_onInitializeService);
     on<EnableAutoMode>(_onEnableAutoMode);
@@ -828,8 +829,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
-  Future<void> _onGeminiLiveEventReceived(GeminiLiveEventReceived wrapper,
-      Emitter<VoiceSessionState> emit) async {
+  Future<void> _onGeminiLiveEventReceived(
+      GeminiLiveEventReceived wrapper, Emitter<VoiceSessionState> emit) async {
     final event = wrapper.event;
 
     if (event is GeminiLiveReadyEvent) {
@@ -1151,8 +1152,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     emit(newState);
   }
 
-  void _onToggleMicMute(
-      ToggleMicMute event, Emitter<VoiceSessionState> emit) {
+  void _onToggleMicMute(ToggleMicMute event, Emitter<VoiceSessionState> emit) {
+    if (!state.isMicToggleEnabled) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceSessionBloc] Ignoring mic toggle while welcome playback guard active');
+      }
+      return;
+    }
+
     final newMicEnabledState = !state.isMicEnabled;
     debugPrint('[VoiceSessionBloc] Toggle mic enabled: $newMicEnabledState');
     emit(state.copyWith(isMicEnabled: newMicEnabledState));
@@ -1168,6 +1176,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     } else {
       // Muted: stop listening safely via bloc event; underlying coordinator will pause VAD/recording
       add(const DisableAutoMode());
+    }
+  }
+
+  void _onEnsureMicToggleEnabled(
+      EnsureMicToggleEnabled event, Emitter<VoiceSessionState> emit) {
+    if (!state.isMicToggleEnabled) {
+      emit(state.copyWith(isMicToggleEnabled: true));
     }
   }
 
@@ -1300,6 +1315,16 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     debugPrint(
         '[VoiceSessionBloc] Playing welcome message TTS: ${event.welcomeMessage}');
 
+    if (!state.isMicToggleEnabled) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceSessionBloc] Welcome TTS already guarded, skipping re-entry');
+      }
+      return;
+    }
+
+    emit(state.copyWith(isMicToggleEnabled: false));
+
     try {
       // Ensure any in-flight atomic reset has finished before starting TTS
       if (_atomicResetCompleter != null &&
@@ -1340,6 +1365,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
       _safeVoiceService.updateTTSSpeakingState(false); // Reset state on error
       emit(state.copyWith(errorMessage: e.toString()));
+    } finally {
+      await Future.delayed(const Duration(milliseconds: 120));
+      emit(state.copyWith(isMicToggleEnabled: true));
     }
   }
 
@@ -1472,6 +1500,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       return;
     }
 
+    emit(state.copyWith(isMicToggleEnabled: false));
     await _beginSessionIfNeeded(event.mood, emit);
   }
 
@@ -1603,7 +1632,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onSessionStarted(
       SessionStarted event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      debugPrint('[VoiceSessionBloc] Session started with ID: ${event.sessionId}');
+      debugPrint(
+          '[VoiceSessionBloc] Session started with ID: ${event.sessionId}');
     }
 
     // Phase 1.1.4: Use SessionStateManager for session started

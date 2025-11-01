@@ -15,7 +15,6 @@ import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/models/session_reminder.dart';
 import 'package:ai_therapist_app/utils/feature_flags.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 class HomeScreen extends StatefulWidget {
   final IProgressService? progressService;
@@ -183,9 +182,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
 
                 // Next session card moved up to position #2
-                if (_nextSessionDate != null) _buildNextSessionCard(),
+                _buildNextSessionCard(),
 
-                if (_nextSessionDate != null) const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
                 // Progress tracking
                 _buildProgressCard(),
@@ -211,48 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        floatingActionButton: Visibility(
-          visible: false,
-          maintainAnimation: true,
-          maintainState: true,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: isLightTheme
-                    ? [
-                        BoxShadow(
-                          color: colorScheme.primary.withOpacity(0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ]
-                    : [],
-              ),
-              child: OutlinedButton.icon(
-                onPressed: () => context.go('/chat'),
-                icon: Icon(Icons.favorite, color: colorScheme.primary),
-                label: Text(
-                  'Talk Now',
-                  style: TextStyle(color: colorScheme.primary),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  side: BorderSide(color: colorScheme.primary.withOpacity(0.5)),
-                  foregroundColor: colorScheme.primary,
-                ),
-              ),
-            ),
-          ),
-        ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+        floatingActionButton: null,
       ),
     );
   }
@@ -279,103 +237,48 @@ class _HomeScreenState extends State<HomeScreen> {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '$greeting, $userName!',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '$greeting, $userName!',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
                   ),
                 ),
-                Image.asset(
-                  'assets/images/therapist_avatar.png',
-                  height: 100,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.favorite_outline,
-                      size: 80,
-                      color: Colors.pinkAccent,
-                    );
-                  },
+                const Icon(
+                  Icons.favorite_border,
+                  size: 56,
+                  color: Colors.pinkAccent,
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: Icon(Icons.schedule,
-                        size: 20, color: colorScheme.primary),
-                    label: const Text('Schedule'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      side: BorderSide(color: colorScheme.primary, width: 1.2),
-                      foregroundColor: colorScheme.primary,
-                    ),
-                    onPressed: _showRescheduleDialog,
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.favorite, size: 20),
+                label: const Text('Start Session'),
+                style: FilledButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                  shape: const StadiumBorder(),
+                  textStyle: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      backgroundColor: colorScheme.primary,
-                      foregroundColor: colorScheme.onPrimary,
-                    ),
-                    onPressed: () => context.go('/chat'),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: colorScheme.onPrimary.withOpacity(0.14),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: SvgPicture.asset(
-                            'assets/icons/talk_wave.svg',
-                            width: 18,
-                            height: 18,
-                            colorFilter: ColorFilter.mode(
-                              colorScheme.onPrimary,
-                              BlendMode.srcIn,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text('Talk'),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+                onPressed: () => context.go(AppRouter.chat),
+              ),
             ),
           ],
         ),
@@ -567,107 +470,126 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNextSessionCard() {
     final dateFormat = DateFormat.yMMMd().add_jm();
+    final hasSession = _nextSessionDate != null;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.calendar_today,
-                  color: Theme.of(context).primaryColor,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Your Next Session',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
+                  child: Icon(
+                    Icons.calendar_today,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your Next Session',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      hasSession
+                          ? dateFormat.format(_nextSessionDate!)
+                          : 'No session scheduled yet',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              dateFormat.format(_nextSessionDate!),
-              style: const TextStyle(
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.edit_calendar),
-                  label: const Text('Reschedule'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: Icon(
+                      hasSession ? Icons.edit_calendar : Icons.add_circle,
                     ),
+                    label: Text(hasSession ? 'Reschedule' : 'Schedule'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    onPressed: _showRescheduleDialog,
                   ),
-                  onPressed: () {
-                    // Show reschedule page
-                    _showRescheduleDialog();
-                  },
                 ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.notifications),
-                  label: const Text('Remind Me'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.notifications_active_outlined),
+                    label: const Text('Remind Me'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
                     ),
+                    onPressed: hasSession
+                        ? () async {
+                            final now = DateTime.now();
+                            if (_nextSessionDate!.isBefore(now)) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'The scheduled session is in the past. Please reschedule.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            try {
+                              await NotificationService().scheduleNotification(
+                                id: 1001,
+                                title: 'Therapy Session Reminder',
+                                body:
+                                    'You have a therapy session scheduled now.',
+                                scheduledDateTime: _nextSessionDate!,
+                              );
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Reminder set!')),
+                              );
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to set reminder: $e'),
+                                ),
+                              );
+                            }
+                          }
+                        : null,
                   ),
-                  onPressed: () async {
-                    if (_nextSessionDate == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('No session scheduled to remind!')),
-                      );
-                      return;
-                    }
-
-                    final now = DateTime.now();
-                    if (_nextSessionDate!.isBefore(now)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text(
-                                'The scheduled session is in the past. Please reschedule.')),
-                      );
-                      return;
-                    }
-
-                    try {
-                      await NotificationService().scheduleNotification(
-                        id: 1001, // Use a fixed or unique ID
-                        title: 'Therapy Session Reminder',
-                        body: 'You have a therapy session scheduled now.',
-                        scheduledDateTime: _nextSessionDate!,
-                      );
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Reminder set!')),
-                      );
-                    } catch (e) {
-                      debugPrint('Error scheduling notification: $e');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Failed to set reminder: ${e.toString()}',
-                          ),
-                        ),
-                      );
-                    }
-                  },
                 ),
               ],
             ),

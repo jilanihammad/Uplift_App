@@ -282,7 +282,7 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   }
 
   @override
-  void updateTTSSpeakingState(bool isSpeaking) {
+  void updateTTSSpeakingState(bool isSpeaking, {int? playbackToken}) {
     // Phase 2.2.5: Removed duplicate TTS logging - VoiceSessionBloc logs this
 
     // For now, try to coordinate with legacy VoiceService AutoListeningCoordinator if available
@@ -294,7 +294,8 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
         final legacyVoiceService = serviceLocator<VoiceService>();
 
         // CRITICAL FIX: Update legacy TTS state so streams stay consistent
-        legacyVoiceService.updateTTSSpeakingState(isSpeaking);
+        legacyVoiceService.updateTTSSpeakingState(isSpeaking,
+            playbackToken: playbackToken);
 
         // Use the legacy coordination logic for TTS-VAD timing
         // Phase 2.2.5: Removed verbose VAD coordination logging
