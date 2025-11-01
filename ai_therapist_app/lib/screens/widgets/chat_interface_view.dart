@@ -92,7 +92,7 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
   /// Builds the text input bar with mic button and controls
   Widget _buildTextInput() {
     return BlocSelector<VoiceSessionBloc, VoiceSessionState,
-        ({bool isVoice, bool isProcessing, bool canSend})>(
+        ({bool isVoice, bool isProcessing, bool canSend, bool switching})>(
       selector: (state) => (
         isVoice: state.isVoiceMode,
         isProcessing: state.isProcessing,
@@ -101,6 +101,7 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
             !state.isEndingSession &&
             !state.showMoodSelector &&
             !state.showDurationSelector,
+        switching: state.isVoiceModeSwitching,
       ),
       builder: (context, data) {
         if (data.isVoice) {
@@ -113,6 +114,7 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
           onSend: widget.onSendMessage,
           onSwitchMode: widget.onSwitchMode,
           enabled: data.canSend,
+          switchEnabled: !data.switching,
         );
       },
     );
