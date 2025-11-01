@@ -1151,18 +1151,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     emit(newState);
   }
 
-  void _onToggleMicMute(ToggleMicMute event, Emitter<VoiceSessionState> emit) {
+  void _onToggleMicMute(
+      ToggleMicMute event, Emitter<VoiceSessionState> emit) {
     final newMicEnabledState = !state.isMicEnabled;
     debugPrint('[VoiceSessionBloc] Toggle mic enabled: $newMicEnabledState');
     emit(state.copyWith(isMicEnabled: newMicEnabledState));
 
-    // Behavior: when mic is muted, dispatch DisableAutoMode so bloc state is consistent;
-    // when unmuted, re-arm auto mode if appropriate
-    if (!newMicEnabledState) {
-      // Muted: stop listening safely via bloc event and stop recording idempotently
-      add(const DisableAutoMode());
-      _safeVoiceService.tryStopRecording();
-    } else {
+    if (newMicEnabledState) {
       // Unmuted: only re-enable auto mode if in voice mode and not speaking
       if (state.isVoiceMode && !isTtsActive && !state.isRecording) {
         add(const EnableAutoMode());
@@ -1170,6 +1165,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // Defer auto-enable until current TTS finishes naturally
         _deferAutoMode = true;
       }
+    } else {
+      // Muted: stop listening safely via bloc event; underlying coordinator will pause VAD/recording
+      add(const DisableAutoMode());
     }
   }
 

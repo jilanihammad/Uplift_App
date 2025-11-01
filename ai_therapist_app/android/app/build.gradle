@@ -77,12 +77,16 @@ android {
         }
     }
 
+    def flutterBuildMode = (System.getenv("FLUTTER_BUILD_MODE") ?: "").toLowerCase()
+    def isReleaseBuild = flutterBuildMode == "release" || flutterBuildMode == "profile" ||
+            gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+
     splits {
         abi {
-            enable true
+            enable isReleaseBuild
             reset()
             include 'armeabi-v7a', 'arm64-v8a', 'x86_64'
-            universalApk false
+            universalApk !isReleaseBuild
         }
     }
 }

@@ -7,16 +7,19 @@ import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/models/user_profile.dart';
+import 'package:ai_therapist_app/config/llm_config.dart';
 import 'package:go_router/go_router.dart';
 
 class ProfileScreen extends StatefulWidget {
   final IUserProfileService? userProfileService;
   final IThemeService? themeService;
+  final IPreferencesService? preferencesService;
 
   const ProfileScreen({
     super.key,
     this.userProfileService,
     this.themeService,
+    this.preferencesService,
   });
 
   @override
@@ -32,7 +35,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   late IUserProfileService _userProfileService;
   late IThemeService _themeService;
+  late IPreferencesService _preferencesService;
   UserProfile? _userProfile;
+  late String _selectedVoiceId;
 
   @override
   void initState() {
@@ -40,8 +45,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _userProfileService =
         widget.userProfileService ?? DependencyContainer().userProfile;
     _themeService = widget.themeService ?? DependencyContainer().theme;
+    _preferencesService =
+        widget.preferencesService ?? DependencyContainer().preferences;
     _loadUserProfile();
     _darkModeEnabled = _themeService.isDarkMode;
+
+    // Initialize voice selection
+    _selectedVoiceId = _preferencesService.preferences?.aiVoiceId ??
+        LLMConfig.activeTTSVoice;
+    if (!LLMConfig.voiceDisplayNames.containsKey(_selectedVoiceId)) {
+      if (LLMConfig.availableVoiceIds.isNotEmpty) {
+        _selectedVoiceId = LLMConfig.availableVoiceIds.first;
+      } else {
+        _selectedVoiceId = 'sage'; // fallback
+      }
+    }
   }
 
   Future<void> _loadUserProfile() async {
@@ -216,6 +234,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                 ),
                 const Divider(),
+                // Voice Selection
+                ListTile(
+                  leading: Icon(
+                    Icons.record_voice_over,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                  title: const Text('AI Voice'),
+                  subtitle: Text(LLMConfig.displayNameForVoice(_selectedVoiceId)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: LLMConfig.voiceDisplayNames.length > 1
+                      ? _showVoiceSelectionSheet
+                      : null,
+                ),
+                const Divider(),
                 const SizedBox(height: 32),
                 ElevatedButton.icon(
                   onPressed: () {
@@ -263,5 +295,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  void _showVoiceSelectionSheet() {
+    final voiceEntries = LLMConfig.voiceDisplayNames.entries.toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  child: Text(
+                    'Choose Voice',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ...voiceEntries.map(
+                  (entry) => RadioListTile<String>(
+                    title: Text(entry.value),
+                    value: entry.key,
+                    groupValue: _selectedVoiceId,
+                    onChanged: (value) {
+                      if (value != null) {
+                        _handleVoiceSelection(value);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleVoiceSelection(String voiceId) async {
+    Navigator.of(context).pop();
+
+    try {
+      await _preferencesService.setPreferredVoice(voiceId);
+      if (!mounted) return;
+
+      setState(() {
+        _selectedVoiceId = voiceId;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('${LLMConfig.displayNameForVoice(voiceId)} voice selected'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to update voice. Please try again.'),
+        ),
+      );
+    }
   }
 }

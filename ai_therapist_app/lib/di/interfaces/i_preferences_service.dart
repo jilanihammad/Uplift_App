@@ -36,4 +36,5 @@ abstract class IPreferencesService {
   // Specific preference setters
   Future<void> setUseVoiceByDefault(bool enabled);
   Future<void> setDailyCheckInTime(TimeOfDay? time);
+  Future<void> setPreferredVoice(String voiceId);
 }

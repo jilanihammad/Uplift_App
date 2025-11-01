@@ -179,17 +179,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Greeting card
                 _buildGreetingCard(),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
                 // Next session card moved up to position #2
                 if (_nextSessionDate != null) _buildNextSessionCard(),
 
-                const SizedBox(height: 24),
+                if (_nextSessionDate != null)
+                  const SizedBox(height: 16),
 
                 // Progress tracking
                 _buildProgressCard(),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
                 // Quick mood check
                 _buildMoodCheckCard(),
@@ -316,37 +317,42 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: isLightTheme
-                    ? [
-                        BoxShadow(
-                          color: colorScheme.primary.withOpacity(0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ]
-                    : [],
-              ),
-              padding: const EdgeInsets.all(4),
-              child: FilledButton.icon(
-                icon: const Icon(Icons.favorite),
-                label: const Text('Start Session'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: Icon(Icons.schedule, size: 20, color: colorScheme.primary),
+                    label: const Text('Schedule'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      side: BorderSide(color: colorScheme.primary, width: 1.2),
+                      foregroundColor: colorScheme.primary,
+                    ),
+                    onPressed: _showRescheduleDialog,
                   ),
-                  minimumSize: const Size.fromHeight(0),
                 ),
-                onPressed: () => context.go('/chat'),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.forum, size: 20),
+                    label: const Text('Talk'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                    ),
+                    onPressed: () => context.go('/chat'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -649,16 +655,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showRescheduleDialog() {
-    DateTime selectedDate =
-        _nextSessionDate ?? DateTime.now().add(const Duration(days: 1));
+    final hasExistingSchedule = _nextSessionDate != null;
+    DateTime selectedDate = hasExistingSchedule
+        ? _nextSessionDate!
+        : DateTime.now().add(const Duration(hours: 1));
     TimeOfDay selectedTime = TimeOfDay.fromDateTime(selectedDate);
+    final dialogTitle = hasExistingSchedule
+        ? 'Reschedule Session'
+        : 'Schedule Session';
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text('Reschedule Session'),
+            title: Text(dialogTitle),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -740,7 +751,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Session rescheduled for $formattedDate'),
+                        content: Text(hasExistingSchedule
+                            ? 'Session rescheduled for $formattedDate'
+                            : 'Session scheduled for $formattedDate'),
                       ),
                     );
                   } catch (e) {
@@ -755,7 +768,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   }
                 },
-                child: const Text('Confirm'),
+                child: Text(hasExistingSchedule ? 'Confirm' : 'Schedule'),
               ),
             ],
           );
