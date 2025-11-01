@@ -16,8 +16,7 @@ class FeatureFlags {
         true, // Enable new pipeline to test Maya self-detection fix
     memoryPersistenceEnabled:
         true, // Always keep memory persistence enabled by default
-    moodPersistenceEnabled:
-        false, // Mood logging sync rollout guarded by remote flag
+    moodPersistenceEnabled: true, // Mood logging sync enabled across the board
   };
 
   static SharedPreferences? _prefs;
@@ -26,6 +25,15 @@ class FeatureFlags {
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     debugPrint('[FeatureFlags] Initialized with SharedPreferences');
+
+    // Seed defaults for any unset flags so rollouts behave deterministically
+    for (final entry in _defaults.entries) {
+      _prefs!.setBool(entry.key, _prefs!.getBool(entry.key) ?? entry.value);
+    }
+
+    // Force-enable mood persistence for existing installs even if a stale
+    // preference cached "false" before the rollout flipped on.
+    await _prefs!.setBool(moodPersistenceEnabled, true);
   }
 
   /// Get the value of a feature flag
