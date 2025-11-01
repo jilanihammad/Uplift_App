@@ -5,6 +5,7 @@ import '../models/user_preferences.dart';
 import '../models/therapist_style.dart';
 import '../di/interfaces/i_preferences_service.dart';
 import '../data/datasources/local/prefs_manager.dart';
+import '../config/llm_config.dart';
 
 // Implementation of user preferences service with persistent storage
 class PreferencesService implements IPreferencesService {
@@ -50,6 +51,11 @@ class PreferencesService implements IPreferencesService {
           }
         }
 
+        if (_preferences?.aiVoiceId != null &&
+            _preferences!.aiVoiceId!.isNotEmpty) {
+          LLMConfig.setPreferredTtsVoice(_preferences!.aiVoiceId!);
+        }
+
         if (kDebugMode) {
           debugPrint('Preferences loaded from storage');
         }
@@ -64,12 +70,14 @@ class PreferencesService implements IPreferencesService {
           notificationsEnabled: true,
           audioEnabled: true,
           fontSizeLevel: 2, // Medium font size (1=small, 2=medium, 3=large)
-          aiVoiceId: 'female-1',
+          aiVoiceId: 'sage',
           useVoiceByDefault: false,
         );
 
         // Save default preferences to storage
         await _savePreferences();
+
+        LLMConfig.setPreferredTtsVoice('sage');
 
         if (kDebugMode) {
           debugPrint('Default preferences created and saved');
@@ -81,6 +89,9 @@ class PreferencesService implements IPreferencesService {
       }
       // Fallback to default preferences
       _preferences = const UserPreferences();
+      if (_preferences?.aiVoiceId != null) {
+        LLMConfig.setPreferredTtsVoice(_preferences!.aiVoiceId!);
+      }
     }
   }
 
@@ -150,6 +161,10 @@ class PreferencesService implements IPreferencesService {
       lastUpdated: DateTime.now(),
     );
 
+    if (aiVoiceId != null && aiVoiceId.isNotEmpty) {
+      LLMConfig.setPreferredTtsVoice(aiVoiceId);
+    }
+
     // Save to persistent storage
     await _savePreferences();
 
@@ -188,6 +203,15 @@ class PreferencesService implements IPreferencesService {
 
     if (kDebugMode) {
       debugPrint('Use voice by default set to: $enabled');
+    }
+  }
+
+  @override
+  Future<void> setPreferredVoice(String voiceId) async {
+    await updateSinglePreference(aiVoiceId: voiceId);
+
+    if (kDebugMode) {
+      debugPrint('Preferred AI voice set to: $voiceId');
     }
   }
 

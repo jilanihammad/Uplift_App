@@ -72,8 +72,15 @@ class LLMConfig {
   /// Default TTS Model ID
   static const String _defaultTTSModelId = 'gpt-4o-mini-tts';
 
-  /// Default TTS Voice
-  static const String _defaultTTSVoice = 'coral';
+  /// Default TTS Voice (internal voice id as used by backend)
+  static const String _defaultTTSVoice = 'sage';
+
+  /// Supported voice ids mapped to user-facing display names
+  static const Map<String, String> _voiceDisplayNames = {
+    'sage': 'Maya',
+    'coral': 'Alie',
+    'nova': 'Cindy',
+  };
 
   /// Default audio characteristics used when backend doesn't supply overrides
   static const int _defaultTTSSampleRate = 24000;
@@ -363,6 +370,28 @@ class LLMConfig {
   static String get activeTtsMimeType =>
       _overrideTtsMimeType ?? _defaultTtsMimeType;
 
+  /// Voice helpers for UI/feature code
+  static Map<String, String> get voiceDisplayNames =>
+      Map.unmodifiable(_voiceDisplayNames);
+
+  static List<String> get availableVoiceIds =>
+      List.unmodifiable(_voiceDisplayNames.keys);
+
+  static String displayNameForVoice(String voiceId) =>
+      _voiceDisplayNames[voiceId] ?? voiceId;
+
+  static void setPreferredTtsVoice(String voiceId) {
+    if (voiceId.isEmpty) {
+      return;
+    }
+
+    _overrideTTSVoice = voiceId;
+
+    if (kDebugMode) {
+      debugPrint('[LLMConfig] Preferred TTS voice set to $voiceId');
+    }
+  }
+
   /// Allow runtime overrides provided by the backend configuration endpoint.
   static void applyRemoteTtsConfig({
     required String provider,
@@ -385,7 +414,7 @@ class LLMConfig {
     }
 
     if (voice != null && voice.isNotEmpty) {
-      _overrideTTSVoice = voice;
+      setPreferredTtsVoice(voice);
     }
 
     if (sampleRateHz != null && sampleRateHz > 0) {

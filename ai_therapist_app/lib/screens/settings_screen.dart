@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
+import 'package:ai_therapist_app/config/llm_config.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
@@ -52,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final bool _soundEnabled = true;
   String _selectedLanguage = 'English';
   late bool _useVoiceByDefault;
+  late String _selectedVoiceId;
   TimeOfDay? _dailyCheckInTime;
   bool _dailyCheckInEnabled = false;
 
@@ -72,6 +74,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _dailyCheckInTime = _preferencesService.preferences?.dailyCheckInTime;
     _dailyCheckInEnabled = _dailyCheckInTime != null;
     _darkModeEnabled = _themeService.isDarkMode;
+
+    // Voice initialization with diagnostic logging
+    if (kDebugMode) {
+      print('🔍 [SettingsScreen] Voice config diagnostics:');
+      print('   - LLMConfig.voiceDisplayNames: ${LLMConfig.voiceDisplayNames}');
+      print('   - LLMConfig.availableVoiceIds: ${LLMConfig.availableVoiceIds}');
+      print('   - LLMConfig.activeTTSVoice: ${LLMConfig.activeTTSVoice}');
+    }
+
+    _selectedVoiceId =
+        _preferencesService.preferences?.aiVoiceId ?? LLMConfig.activeTTSVoice;
+
+    if (kDebugMode) {
+      print('   - Initial _selectedVoiceId: $_selectedVoiceId');
+    }
+
+    // Safety check: Ensure voice is valid
+    if (!LLMConfig.voiceDisplayNames.containsKey(_selectedVoiceId)) {
+      if (LLMConfig.availableVoiceIds.isNotEmpty) {
+        _selectedVoiceId = LLMConfig.availableVoiceIds.first;
+        if (kDebugMode) {
+          print('   - Updated _selectedVoiceId to first available: $_selectedVoiceId');
+        }
+      } else {
+        // Fallback if no voices available - use default
+        _selectedVoiceId = 'sage'; // fallback to default
+        if (kDebugMode) {
+          print('   - ⚠️ WARNING: No available voice IDs! Using fallback: $_selectedVoiceId');
+        }
+      }
+    }
+
+    if (kDebugMode) {
+      print('   - Final _selectedVoiceId: $_selectedVoiceId');
+    }
   }
 
   @override
@@ -102,6 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+          _buildVoiceSection(),
           _buildSection(
             title: 'Daily Check-in',
             children: [
@@ -260,6 +298,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _showVoiceSelectionSheet() {
+    final voiceEntries = LLMConfig.voiceDisplayNames.entries.toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  child: Text(
+                    'Choose Voice',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ...voiceEntries.map(
+                  (entry) => RadioListTile<String>(
+                    title: Text(entry.value),
+                    value: entry.key,
+                    groupValue: _selectedVoiceId,
+                    onChanged: (value) {
+                      if (value != null) {
+                        _handleVoiceSelection(value);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleVoiceSelection(String voiceId) async {
+    Navigator.of(context).pop();
+
+    try {
+      await _preferencesService.setPreferredVoice(voiceId);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedVoiceId = voiceId;
+      });
+
+      _showSnack(
+        '${LLMConfig.displayNameForVoice(voiceId)} voice selected',
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _showSnack('Unable to update voice. Please try again.');
+    }
+  }
+
   Widget _buildUserProfileSection() {
     final userProfile = _userProfileService.profile;
     final userName = userProfile?.displayName ?? 'User';
@@ -291,6 +397,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           trailing: const Icon(Icons.edit),
           onTap: () => _showEditNameDialog(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVoiceSection() {
+    final usableVoices = LLMConfig.voiceDisplayNames;
+
+    if (kDebugMode) {
+      print('🎤 [_buildVoiceSection] Building voice section:');
+      print('   - usableVoices.length: ${usableVoices.length}');
+      print('   - usableVoices: $usableVoices');
+      print('   - _selectedVoiceId: $_selectedVoiceId');
+      print('   - displayNameForVoice: ${LLMConfig.displayNameForVoice(_selectedVoiceId)}');
+    }
+
+    // Safety check: If no voices available, don't render the section
+    if (usableVoices.isEmpty) {
+      if (kDebugMode) {
+        print('   - ⚠️ WARNING: No voices available, skipping voice section');
+      }
+      return const SizedBox.shrink();
+    }
+
+    return _buildSection(
+      title: 'AI Voice',
+      children: [
+        ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            child: const Icon(Icons.record_voice_over, color: Colors.white),
+          ),
+          title: Text(
+            LLMConfig.displayNameForVoice(_selectedVoiceId),
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: usableVoices.length > 1
+              ? const Text('Tap to choose a different therapist voice')
+              : const Text('Using default voice'),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [Icon(Icons.arrow_forward_ios, size: 16)],
+          ),
+          onTap: usableVoices.length > 1 ? _showVoiceSelectionSheet : null,
         ),
       ],
     );
