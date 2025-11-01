@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/models/session_reminder.dart';
 import 'package:ai_therapist_app/utils/feature_flags.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class HomeScreen extends StatefulWidget {
   final IProgressService? progressService;
@@ -164,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.settings),
-              onPressed: () => context.go('/profile'),
+              onPressed: () => context.go(AppRouter.settings),
             ),
           ],
         ),
@@ -184,8 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Next session card moved up to position #2
                 if (_nextSessionDate != null) _buildNextSessionCard(),
 
-                if (_nextSessionDate != null)
-                  const SizedBox(height: 16),
+                if (_nextSessionDate != null) const SizedBox(height: 16),
 
                 // Progress tracking
                 _buildProgressCard(),
@@ -321,7 +321,8 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: Icon(Icons.schedule, size: 20, color: colorScheme.primary),
+                    icon: Icon(Icons.schedule,
+                        size: 20, color: colorScheme.primary),
                     label: const Text('Schedule'),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
@@ -337,9 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.forum, size: 20),
-                    label: const Text('Talk'),
+                  child: FilledButton(
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -350,6 +349,30 @@ class _HomeScreenState extends State<HomeScreen> {
                       foregroundColor: colorScheme.onPrimary,
                     ),
                     onPressed: () => context.go('/chat'),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: colorScheme.onPrimary.withOpacity(0.14),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: SvgPicture.asset(
+                            'assets/icons/talk_wave.svg',
+                            width: 18,
+                            height: 18,
+                            colorFilter: ColorFilter.mode(
+                              colorScheme.onPrimary,
+                              BlendMode.srcIn,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        const Text('Talk'),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -660,9 +683,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ? _nextSessionDate!
         : DateTime.now().add(const Duration(hours: 1));
     TimeOfDay selectedTime = TimeOfDay.fromDateTime(selectedDate);
-    final dialogTitle = hasExistingSchedule
-        ? 'Reschedule Session'
-        : 'Schedule Session';
+    final dialogTitle =
+        hasExistingSchedule ? 'Reschedule Session' : 'Schedule Session';
 
     showDialog(
       context: context,

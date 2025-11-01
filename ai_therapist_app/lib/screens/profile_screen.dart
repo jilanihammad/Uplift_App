@@ -248,7 +248,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       : null,
                 ),
                 const Divider(),
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
+                // Settings Button
+                OutlinedButton.icon(
+                  onPressed: () {
+                    context.push('/settings');
+                  },
+                  icon: const Icon(Icons.settings),
+                  label: const Text('Settings'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 12),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: () {
                     BlocProvider.of<AuthBloc>(context).add(LogoutEvent());
