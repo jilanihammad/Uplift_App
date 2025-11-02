@@ -178,6 +178,20 @@ class VoiceService {
   // RACE CONDITION FIX: Track current TTS state to prevent duplicate calls
   bool _currentTtsState = false;
   int? _currentPlaybackToken;
+  bool _ttsActive = false;
+  bool _recordingActive = false;
+  bool _playbackActive = false;
+  bool _playbackStartedForCurrentTts = false;
+  StreamSubscription<bool>? _playbackActiveSub;
+  bool get isTtsActive => _ttsActive;
+  bool get isRecordingActive =>
+      _recordingActive ||
+      _audioRecordingService.isRecording ||
+      _autoListeningCoordinator.isRecording;
+
+  /// Callback for the bloc to veto automatic listening restarts while deferrals
+  /// (like `_pendingVoiceModeAutoEnable`) are in effect.
+  bool Function()? canStartListeningCallback;
 
   // BYPASS FIX: Callback to check if we're in voice mode
   bool Function()? isVoiceModeCallback;
@@ -236,6 +250,48 @@ class VoiceService {
         .enableAutoModeWithAudioState(isAudioPlaying);
   }
 
+  Future<void> enableAutoModeWhenPlaybackCompletes() async {
+    if (_disposed) {
+      return;
+    }
+
+    if (kDebugMode) {
+      debugPrint('[VoiceService] enableAutoModeWhenPlaybackCompletes called');
+    }
+
+    if (_ttsActive) {
+      try {
+        await isTtsActuallySpeaking
+            .firstWhere((speaking) => speaking == false)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceService] Waiting for TTS to finish timed out: $e (continuing)');
+        }
+      }
+    }
+
+    await _waitForPlaybackToFinish();
+
+    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] Voice mode inactive after playback – skipping auto mode enable');
+      }
+      return;
+    }
+
+    if (_autoListeningCoordinator.autoModeEnabled) {
+      if (kDebugMode) {
+        debugPrint('[VoiceService] Auto mode already enabled – no action needed');
+      }
+      return;
+    }
+
+    await enableAutoMode();
+  }
+
   // Factory constructor to enforce singleton pattern
   factory VoiceService({
     required ApiClient apiClient,
@@ -283,6 +339,14 @@ class VoiceService {
       recordingManager: _recordingManager,
       voiceService: this,
     );
+    _playbackActiveSub =
+        _audioPlayerManager.playbackActiveStream.listen((isActive) {
+      _playbackActive = isActive;
+      if (isActive) {
+        _playbackStartedForCurrentTts = true;
+      }
+    });
+    _playbackActive = _audioPlayerManager.isPlaybackActive;
     if (kDebugMode) {
       debugPrint('VoiceService initialized with constructor injection');
       debugPrint(
@@ -396,6 +460,7 @@ class VoiceService {
     if (_useGeminiLive) {
       try {
         await _geminiDuplexController!.startMicStream();
+        _recordingActive = true;
       } catch (e) {
         if (kDebugMode) {
           debugPrint('❌ [VoiceService] Failed to start Gemini mic stream: $e');
@@ -416,6 +481,7 @@ class VoiceService {
 
     // Phase 2.1.1: Delegate to AudioRecordingService
     await _audioRecordingService.startRecording();
+    _recordingActive = true;
 
     // } catch (e) { // REMOVED
     //   _currentState = RecordingState.error;
@@ -455,6 +521,7 @@ class VoiceService {
           debugPrint('❌ [VoiceService] Error stopping Gemini mic stream: $e');
         }
       }
+      _recordingActive = false;
       return null;
     }
 
@@ -465,10 +532,12 @@ class VoiceService {
         // Phase 2.1.1: Delegate to AudioRecordingService
         recordedFilePath = await _audioRecordingService.stopRecording();
         _recordingPath = recordedFilePath;
+        _recordingActive = false;
       } on NotRecordingException catch (e) {
         if (kDebugMode) {
           debugPrint('⏹️ VOICE DEBUG: Not recording, nothing to stop. ($e)');
         }
+        _recordingActive = false;
         return null;
       } catch (e) {
         if (kDebugMode) {
@@ -477,6 +546,9 @@ class VoiceService {
         rethrow;
       }
     }
+    _recordingActive =
+        _audioRecordingService.isRecording ||
+            _autoListeningCoordinator.isRecording;
     return recordedFilePath;
   }
 
@@ -497,6 +569,7 @@ class VoiceService {
               '❌ [VoiceService] Error stopping Gemini mic stream (idempotent): $e');
         }
       }
+      _recordingActive = false;
       return null;
     }
 
@@ -507,6 +580,9 @@ class VoiceService {
       recordedFilePath = await _audioRecordingService.tryStopRecording();
       _recordingPath = recordedFilePath;
     }
+    _recordingActive =
+        _audioRecordingService.isRecording ||
+            _autoListeningCoordinator.isRecording;
     return recordedFilePath;
   }
 
@@ -759,8 +835,9 @@ class VoiceService {
         stopAudio();
       });
       session.interruptionEventStream.listen((event) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint('🔊 VoiceService: Audio interruption: $event');
+        }
         if (event.begin) stopAudio();
       });
 
@@ -794,8 +871,9 @@ class VoiceService {
               throw Exception('Failed to download audio from URL');
             }
           } catch (e) {
-            if (kDebugMode)
+            if (kDebugMode) {
               debugPrint('🔊 VoiceService: Error playing URL: $e');
+            }
             _audioPlaybackController.add(false);
             await _useTtsBackup(); // Fallback to TTS if URL play fails
           }
@@ -1068,6 +1146,12 @@ class VoiceService {
   void dispose() {
     if (kDebugMode) debugPrint('[VoiceService] dispose called');
     _disposed = true;
+    _ttsActive = false;
+    _currentTtsState = false;
+    _currentPlaybackToken = null;
+    _recordingActive = false;
+    _playbackActive = false;
+    _playbackStartedForCurrentTts = false;
 
     if (_useGeminiLive) {
       unawaited(stopGeminiLiveSession());
@@ -1082,6 +1166,9 @@ class VoiceService {
     //     !_recordingStateController!.isClosed) {
     //   _recordingStateController!.close();
     // }
+
+    unawaited(_playbackActiveSub?.cancel());
+    _playbackActiveSub = null;
 
     if (!_audioPlaybackController.isClosed) {
       _audioPlaybackController.close();
@@ -1182,6 +1269,7 @@ class VoiceService {
 
   void _setAiSpeaking(bool speaking) {
     isAiSpeaking = speaking;
+    _ttsActive = speaking;
     _ttsSpeakingStateController.add(speaking);
 
     // SIMPLIFIED: Only update TTS state - AutoListeningCoordinator handles VAD coordination
@@ -1205,58 +1293,164 @@ class VoiceService {
   /// Update TTS speaking state for auto-listening coordination
   /// This is the clean interface for external TTS state updates
   void updateTTSSpeakingState(bool isSpeaking, {int? playbackToken}) {
-    final tokenChanged =
-        playbackToken != null && playbackToken != _currentPlaybackToken;
+    final guarded = _ttsLock.protect(() async {
+      final tokenChanged =
+          playbackToken != null && playbackToken != _currentPlaybackToken;
 
-    // Allow token refresh even if the boolean state is unchanged
-    if (!tokenChanged && _currentTtsState == isSpeaking) {
+      // Allow token refresh even if the boolean state is unchanged
+      if (!tokenChanged && _currentTtsState == isSpeaking) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceService] updateTTSSpeakingState: State already $_currentTtsState, ignoring duplicate call');
+        }
+        return;
+      }
+
+      if (!isSpeaking && playbackToken != null) {
+        if (_currentPlaybackToken != null &&
+            playbackToken != _currentPlaybackToken) {
+          if (kDebugMode) {
+            debugPrint(
+                '[VoiceService] updateTTSSpeakingState: Ignoring stale completion for token $playbackToken (active: $_currentPlaybackToken)');
+          }
+          return;
+        }
+      }
+
+      if (isSpeaking && playbackToken != null) {
+        _currentPlaybackToken = playbackToken;
+      }
+
+      _currentTtsState = isSpeaking; // Update tracked state
+      _setAiSpeaking(isSpeaking);
+
+      if (isSpeaking) {
+        await _drainRecordingBeforePlayback();
+      } else {
+        await _handleTtsCompletion();
+      }
+    });
+
+    unawaited(guarded.catchError((error, stackTrace) {
       if (kDebugMode) {
         debugPrint(
-            '[VoiceService] updateTTSSpeakingState: State already $_currentTtsState, ignoring duplicate call');
+            '[VoiceService] updateTTSSpeakingState error: $error\n$stackTrace');
+      }
+    }));
+  }
+
+  Future<void> _drainRecordingBeforePlayback() async {
+    if (kDebugMode) {
+      debugPrint('[VoiceService] Playback lock acquired – preparing for TTS start');
+    }
+
+    _playbackStartedForCurrentTts = false;
+    if (_playbackActive) {
+      _playbackStartedForCurrentTts = true;
+    }
+
+    if (isRecordingActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] TTS starting – stopping active recording before playback');
+      }
+      try {
+        await tryStopRecording();
+      } catch (e, stack) {
+        if (kDebugMode) {
+          debugPrint('[VoiceService] Error stopping recording before TTS: $e');
+          debugPrint('$stack');
+        }
+      }
+    }
+
+    autoListeningCoordinator.stopListening();
+    if (kDebugMode) {
+      debugPrint('[VoiceService] updateTTSSpeakingState: TTS started, listening stopped');
+    }
+  }
+
+  Future<void> _waitForPlaybackToFinish({
+    Duration playbackStartTimeout = const Duration(seconds: 3),
+    Duration playbackEndTimeout = const Duration(seconds: 8),
+  }) async {
+    if (!_playbackStartedForCurrentTts && !_playbackActive) {
+      // No playback was triggered for this TTS cycle.
+      return;
+    }
+
+    if (!_playbackStartedForCurrentTts) {
+      try {
+        await _audioPlayerManager.playbackActiveStream
+            .firstWhere((active) => active)
+            .timeout(playbackStartTimeout);
+        _playbackStartedForCurrentTts = true;
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceService] Playback start wait timed out: $e (continuing)');
+        }
+      }
+    }
+
+    if (!_playbackActive) {
+      return;
+    }
+
+    try {
+      await _audioPlayerManager.playbackActiveStream
+          .firstWhere((active) => !active)
+          .timeout(playbackEndTimeout);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] Playback completion wait timed out: $e (continuing)');
+      }
+    }
+  }
+
+  Future<void> _handleTtsCompletion() async {
+    _currentPlaybackToken = null;
+
+    // BYPASS FIX: Check voice mode before re-arming VAD
+    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] TTS done in chat mode – skipping listening restart');
       }
       return;
     }
 
-    if (!isSpeaking && playbackToken != null) {
-      if (_currentPlaybackToken != null &&
-          playbackToken != _currentPlaybackToken) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] updateTTSSpeakingState: Ignoring stale completion for token $playbackToken (active: $_currentPlaybackToken)');
-        }
-        return;
-      }
-    }
+    await _waitForPlaybackToFinish();
 
-    if (isSpeaking && playbackToken != null) {
-      _currentPlaybackToken = playbackToken;
-    }
-
-    _currentTtsState = isSpeaking; // Update tracked state
-    _setAiSpeaking(isSpeaking);
-
-    // NEW: only toggle listening, never touch autoModeEnabled
-    if (!isSpeaking) {
-      _currentPlaybackToken = null;
-      // BYPASS FIX: Check voice mode before re-arming VAD
-      if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] TTS done in chat mode – skipping VAD restart');
-        }
-        return;
-      }
-      autoListeningCoordinator.startListening(); // guarantees VAD on
+    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
       if (kDebugMode) {
         debugPrint(
-            '[VoiceService] updateTTSSpeakingState: TTS done, starting listening');
+            '[VoiceService] Playback finished but voice mode exited – skipping listening restart');
       }
-    } else {
-      autoListeningCoordinator.stopListening(); // guarantees VAD off
+      return;
+    }
+
+    if (canStartListeningCallback != null && !canStartListeningCallback!()) {
       if (kDebugMode) {
         debugPrint(
-            '[VoiceService] updateTTSSpeakingState: TTS started, stopping listening');
+            '[VoiceService] TTS done but bloc deferred listening restart – awaiting readiness');
       }
+      return;
+    }
+
+    if (!_autoListeningCoordinator.autoModeEnabled) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] TTS done but autoMode disabled – skipping listening restart');
+      }
+      return;
+    }
+
+    autoListeningCoordinator.startListening(); // guarantees VAD on
+    if (kDebugMode) {
+      debugPrint(
+          '[VoiceService] updateTTSSpeakingState: TTS done, listening restarted');
     }
   }
 

@@ -358,10 +358,10 @@ class AutoListeningCoordinator with SessionDisposable {
   // Set up listeners for component events
   void _setupListeners() {
     // Listen for audio playback state changes (UI updates only - NO VAD restarts)
-    _audioPlayerManager.isPlayingStream.listen((isPlaying) {
+    _audioPlayerManager.playbackActiveStream.listen((isPlaying) {
       if (kDebugMode) {
         debugPrint(
-            '[AutoListeningCoordinator] [AUDIO] isPlayingStream emitted: $isPlaying | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+            '[AutoListeningCoordinator] [AUDIO] playbackActiveStream emitted: $isPlaying | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
       }
       if (_autoModeEnabled) {
         if (!isPlaying) {
@@ -793,7 +793,7 @@ class AutoListeningCoordinator with SessionDisposable {
     }
 
     // Only stop playback if something is actually playing
-    if (_audioPlayerManager.isPlaying) {
+    if (_audioPlayerManager.isPlaybackActive) {
       await _voiceService.stopAudio();
     }
 
@@ -1223,7 +1223,7 @@ class AutoListeningCoordinator with SessionDisposable {
       }
 
       // Check audio playing state with detailed logging
-      final isAudioPlaying = _audioPlayerManager.isPlaying;
+      final isAudioPlaying = _audioPlayerManager.isPlaybackActive;
       if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator] [MODE] Audio playing state check: isPlaying=$isAudioPlaying');

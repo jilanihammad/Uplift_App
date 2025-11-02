@@ -436,9 +436,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: usableVoices.length > 1
               ? const Text('Tap to choose a different therapist voice')
               : const Text('Using default voice'),
-          trailing: Column(
+          trailing: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: const [Icon(Icons.arrow_forward_ios, size: 16)],
+            children: [Icon(Icons.arrow_forward_ios, size: 16)],
           ),
           onTap: usableVoices.length > 1 ? _showVoiceSelectionSheet : null,
         ),

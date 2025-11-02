@@ -43,7 +43,6 @@ import '../models/tts_config.dart';
 import 'interfaces/i_app_database.dart';
 import 'interfaces/i_database.dart';
 import 'interfaces/i_database_operation_manager.dart';
-import 'interfaces/i_voice_service.dart';
 import 'interfaces/i_session_schedule_service.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../services/memory_manager.dart';
@@ -60,6 +59,8 @@ import '../services/audio_player_manager.dart';
 import '../services/audio_file_manager.dart';
 import '../blocs/voice_session_bloc.dart';
 import '../services/audio_format_negotiator.dart';
+import '../services/facades/chat_voice_facade.dart';
+import '../services/facades/voice_mode_facade.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -128,18 +129,14 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
       // This is done lazily to avoid circular dependency during registration
       Future.microtask(() {
         try {
-          // For new pipeline, wire to VoiceSessionCoordinator
-          if (useRefactoredVoicePipeline &&
-              locator.isRegistered<IVoiceService>()) {
-            final voiceService = locator<IVoiceService>();
-            simpleTTSService.setVoiceServiceUpdateCallback(
-                voiceService.updateTTSSpeakingState);
+          if (useRefactoredVoicePipeline) {
             debugPrint(
-                '✅ SimpleTTSService wired to VoiceSessionCoordinator for TTS-VAD coordination');
+                'ℹ️ SimpleTTSService defers VoiceService wiring to VoiceModeFacade');
+            return;
           }
+
           // For legacy pipeline, wire to legacy VoiceService
-          else if (!useRefactoredVoicePipeline &&
-              locator.isRegistered<VoiceService>()) {
+          if (locator.isRegistered<VoiceService>()) {
             final voiceService = locator<VoiceService>();
             simpleTTSService.setVoiceServiceUpdateCallback(
                 voiceService.updateTTSSpeakingState);
@@ -378,20 +375,25 @@ Future<void> setupServiceLocator(
 
           // Set up TTS state callback to coordinate with VoiceService
           // This is done after initialization to avoid circular dependency issues
-          try {
-            final voiceService = serviceLocator<VoiceService>();
-            generator.setTTSStateCallback((isSpeaking) {
-              voiceService.updateTTSSpeakingState(isSpeaking);
-            });
+          if (useRefactoredVoicePipeline) {
             debugPrint(
-                'AudioGenerator TTS state callback connected to VoiceService');
+                'ℹ️ AudioGenerator defers TTS callback wiring to VoiceModeFacade');
+          } else {
+            try {
+              final voiceService = serviceLocator<VoiceService>();
+              generator.setTTSStateCallback((isSpeaking) {
+                voiceService.updateTTSSpeakingState(isSpeaking);
+              });
+              debugPrint(
+                  'AudioGenerator TTS state callback connected to VoiceService');
 
-            // VAD callbacks removed - no longer needed with new TTS architecture
-            debugPrint(
-                'AudioGenerator VAD callbacks disabled (legacy workaround removed)');
-          } catch (e) {
-            debugPrint(
-                'Warning: Could not connect AudioGenerator callbacks: $e');
+              // VAD callbacks removed - no longer needed with new TTS architecture
+              debugPrint(
+                  'AudioGenerator VAD callbacks disabled (legacy workaround removed)');
+            } catch (e) {
+              debugPrint(
+                  'Warning: Could not connect AudioGenerator callbacks: $e');
+            }
           }
         });
 
@@ -467,6 +469,33 @@ Future<void> setupServiceLocator(
         debugPrint(
             '✅ Registered legacy VoiceService with true lazy initialization');
       }
+    }
+
+    // === SESSION FACADE REGISTRATIONS ===
+    if (!serviceLocator.isRegistered<VoiceModeFacade>()) {
+      serviceLocator.registerFactory<VoiceModeFacade>(() {
+        final rawTtsService = serviceLocator<ITTSService>();
+        final simpleTtsService = rawTtsService is SimpleTTSService
+            ? rawTtsService
+            : throw StateError(
+                'VoiceModeFacade requires SimpleTTSService instance, found ${rawTtsService.runtimeType}');
+
+        return VoiceModeFacade(
+          voiceService: serviceLocator<VoiceService>(),
+          ttsService: simpleTtsService,
+          therapyService: serviceLocator<ITherapyService>(),
+          coordinatorFactory: ({required voiceService}) =>
+              voiceService.autoListeningCoordinator,
+        );
+      });
+      debugPrint('✅ Registered VoiceModeFacade factory');
+    }
+
+    if (!serviceLocator.isRegistered<ChatVoiceFacade>()) {
+      serviceLocator.registerFactory<ChatVoiceFacade>(() => ChatVoiceFacade(
+            therapyService: serviceLocator<ITherapyService>(),
+          ));
+      debugPrint('✅ Registered ChatVoiceFacade factory');
     }
 
     if (!serviceLocator.isRegistered<service_tgs.TherapyGraphService>()) {

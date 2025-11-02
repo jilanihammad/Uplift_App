@@ -7,6 +7,9 @@ import 'interfaces/interfaces.dart';
 import 'interfaces/i_audio_settings.dart';
 import '../data/datasources/remote/api_client.dart';
 import '../services/audio_generator.dart';
+import '../services/facades/chat_voice_facade.dart';
+import '../services/facades/voice_mode_facade.dart';
+import '../services/facades/session_voice_facade.dart';
 import '../services/vad_manager.dart';
 import '../data/datasources/local/app_database.dart';
 import '../utils/database_helper.dart';
@@ -145,6 +148,9 @@ class DependencyContainer {
   VADManager get vadManager => get<VADManager>();
   RecordingManager get recordingManager => get<RecordingManager>();
   IAudioSettings get audioSettings => get<IAudioSettings>();
+  VoiceModeFacade get voiceModeFacade => get<VoiceModeFacade>();
+  ChatVoiceFacade get chatVoiceFacade => get<ChatVoiceFacade>();
+  SessionVoiceFacade get sessionVoiceFacade => get<VoiceModeFacade>();
 
   // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;
