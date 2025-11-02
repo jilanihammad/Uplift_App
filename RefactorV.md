@@ -179,3 +179,29 @@ Decouple chat-only flows from the voice pipeline so TTS callbacks, AutoListening
 - Add an `AudioPlayerManager.playbackActive` stream (true while ExoPlayer is actually playing, false once it returns to `ProcessingState.completed/idle`) so higher-level services can observe real playback state instead of inferring from queued TTS events.
 - Replace eager `enableAutoMode()` calls with a deferred helper (for example, `enableAutoModeWhenPlaybackCompletes`) that waits for both `_ttsActive == false` *and* `playbackActive == false` before rearming the mic, skipping re-enable if the session or mode has changed in the meantime.
 - Gate AutoListeningCoordinator restarts on a “first frame rendered” signal from ExoPlayer (via `AudioPlayerManager` callbacks or a dedicated stream) so listening only resumes after playback has genuinely begun and then completed.
+
+## VAD Race Guard Plan
+1. **Introduce VAD Transition Lock**  
+   - Add a `Completer<void>? _vadTransitionLock` inside `AutoListeningCoordinator`.  
+   - Wrap `_startListening()` and `_stopListeningAndRecording()` so each checks for an in-flight lock, awaits it, assigns a new completer, performs work, then completes the lock inside a `finally`.  
+   - Ensure all entry points (`enableAutoMode`, `_triggerListening`, unified-TTS callbacks) go through these guarded methods.
+2. **Atomic Auto-Mode Setter**  
+   - Replace direct `_autoModeEnabled = ...` writes with a private `void _setAutoModeEnabled(bool value)` that no-ops if unchanged, logs the transition, updates the stream controller, and only ever flips the flag on the main isolate.  
+   - Update `enableAutoMode()*` and `disableAutoMode()` paths to call the setter instead of mutating the field in multiple places.
+3. **VAD Generation Guard**  
+   - Maintain an `int _vadGeneration` that increments inside `_startListening()` before any async awaits.  
+   - Timers/callbacks (speech end timers, retry timers, `_startSpeechEndTimer`) capture the generation value and re-check `if (gen != _vadGeneration)` before mutating state.  
+   - Cancel stale timers and reset the generation when auto mode is disabled or voice mode tears down.
+4. **Cleanup & Delay Safety Nets**  
+   - Add `cancelAllTimers()` helper invoked before each `_startListening()` to clear `_speechEndDebounceTimer`, `_pendingSpeechEndTimer`, `_stuckStateTimer`.  
+   - After `_stopRecording()` returns, `await Future.delayed(const Duration(milliseconds: 100))` so Android’s `AudioRecord` can release native buffers before `_startListening()` is allowed to continue.  
+   - Integrate this delay into the transition lock so rapid stop→start loops respect it.
+
+## AutoListeningCoordinator Race Fix Plan
+- Instrument `_startListening`, `_stopListeningAndRecording`, and `_startRecording` with temporary telemetry (timestamps, `_autoModeEnabled`, generation values) to establish baseline overlap conditions during rapid voice/chat switches.
+- Introduce `_vadTransitionLock` helpers (`_awaitVadTransition`, `_beginVadTransition`, `_endVadTransition`) and wrap `_startListeningAfterDelay`, `_startListening`, `_stopListeningAndRecording` so only one transition can run at a time.
+- Replace direct `_autoModeEnabled` writes with `_setAutoModeEnabled(bool value, {String context})` and call it from every path (`enableAutoMode*`, `disableAutoMode`, `reset`, `initialize`) to keep toggles atomic and centrally logged.
+- Maintain `_vadGeneration`/`_activeListeningGeneration`; pass the current generation into `_executeListeningStart`, `_startRecording`, and timer callbacks to ignore stale work when the generation changes.
+- Add `_cancelAllTimers(reason)` and call it before each transition; after `_safeStopVAD()` and `_stopRecording()` await a short delay (`kPostStopDelay`) so AudioRecord releases native resources before new starts.
+- Ensure `VoiceService.enableAutoModeWhenPlaybackCompletes()` waits for both `_ttsActive == false` and `AudioPlayerManager.playbackActive == false` before re-enabling auto mode, and that `_stopListeningAndRecording` clears pending auto-mode flags so the bloc re-validates mode state.
+- After implementation, run focused unit/integration tests with overlapping starts/stops to verify stale callbacks are ignored, and capture logs to confirm auto-mode flips occur strictly in sequence without the prior race symptoms.
