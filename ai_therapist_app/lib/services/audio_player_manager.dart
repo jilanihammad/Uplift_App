@@ -63,9 +63,12 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       StreamController<String?>.broadcast();
   final StreamController<bool> _muteStateController =
       StreamController<bool>.broadcast();
+  final StreamController<bool> _playbackActiveController =
+      StreamController<bool>.broadcast();
 
   // Track last emitted playing state to prevent duplicate broadcasts
   bool? _lastEmittedPlayingState;
+  bool _playbackActive = false;
 
   // DEBOUNCE FIX: Prevent rapid-fire identical state changes
   Timer? _stateDebounceTimer;
@@ -87,6 +90,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
   Stream<int> get queueLengthStream => _queueLengthController.stream;
   Stream<String?> get nowPlayingStream => _nowPlayingController.stream;
   Stream<bool> get muteStateStream => _muteStateController.stream;
+  Stream<bool> get playbackActiveStream => _playbackActiveController.stream;
 
   // Expose the audio player's processing state stream
   Stream<ProcessingState> get processingStateStream =>
@@ -102,6 +106,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
     // CRITICAL: Apply initial mute state
     _applyEffectiveVolume();
+    _setPlaybackActive(false);
   }
 
   void _onMuteChanged() {
@@ -133,6 +138,20 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       if (kDebugMode) {
         debugPrint('❌ AudioPlayerManager: Failed to set volume: $e');
       }
+    }
+  }
+
+  void _setPlaybackActive(bool active) {
+    if (_playbackActive == active) {
+      return;
+    }
+    _playbackActive = active;
+    if (!_playbackActiveController.isClosed) {
+      _playbackActiveController.add(active);
+    }
+    if (kDebugMode) {
+      debugPrint(
+          '🎬 AudioPlayerManager: Playback active state changed to $active');
     }
   }
 
@@ -229,10 +248,19 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         final isPlaying = playerState.playing;
         _emitPlayingState(isPlaying);
 
+        if (isPlaying &&
+            _audioPlayer.processingState == ProcessingState.ready) {
+          _setPlaybackActive(true);
+        }
+
         if (kDebugMode && isPlaying) {
           AppLogger.d('Audio playback started');
         } else if (kDebugMode && !isPlaying) {
           AppLogger.d('Audio playback paused/stopped');
+        }
+
+        if (!isPlaying) {
+          _setPlaybackActive(false);
         }
       });
 
@@ -248,6 +276,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
             if (kDebugMode) {
               debugPrint('🟡 ProcessingState.idle - Player is idle/stopped');
             }
+            _setPlaybackActive(false);
             break;
           case ProcessingState.loading:
             if (kDebugMode) {
@@ -264,12 +293,16 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
               debugPrint(
                   '🟢 ProcessingState.ready - Ready to play (playing: ${_audioPlayer.playing})');
             }
+            if (_audioPlayer.playing) {
+              _setPlaybackActive(true);
+            }
             break;
           case ProcessingState.completed:
             if (kDebugMode) {
               debugPrint(
                   '✅ ProcessingState.completed - Audio playback naturally completed');
             }
+            _setPlaybackActive(false);
             // Ensure we broadcast playback stopped when audio completes
             _emitPlayingState(false);
 
@@ -625,6 +658,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     return actualState;
   }
 
+  bool get isPlaybackActive => _playbackActive;
+
   /// Get the raw AudioPlayer instance for force completion operations
   /// Used by LiveTtsAudioSource to trigger immediate completion events
   AudioPlayer get audioPlayer => _audioPlayer;
@@ -818,6 +853,8 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         _errorController.close(),
         _queueLengthController.close(),
         _nowPlayingController.close(),
+        _muteStateController.close(),
+        _playbackActiveController.close(),
       ]);
 
       stopwatch.stop();

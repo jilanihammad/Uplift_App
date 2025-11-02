@@ -131,7 +131,7 @@ class ConfigService implements IConfigService {
         '[ConfigService] Initialized with BACKEND llmApiEndpoint: $_llmApiEndpoint');
     if (_directLLMMode) {
       debugPrint(
-          '[ConfigService] Initialized in DIRECT LLM MODE. Effective endpoint will be: ${llmApiEndpoint}');
+          '[ConfigService] Initialized in DIRECT LLM MODE. Effective endpoint will be: $llmApiEndpoint');
     }
     if (_geminiLiveDuplexEnabled) {
       debugPrint(

@@ -11,6 +11,7 @@ import '../blocs/voice_session_bloc.dart';
 import '../blocs/voice_session_state.dart';
 import '../blocs/voice_session_event.dart';
 import '../services/voice_service.dart';
+import '../services/facades/legacy_voice_facade.dart';
 import '../di/interfaces/i_therapy_service.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/i_progress_service.dart';
@@ -38,15 +39,28 @@ class ChatScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider<VoiceSessionBloc>(
-      create: (context) => VoiceSessionBloc(
-        // Phase 1B.2: Standardized DI - use DependencyContainer for UI layer
-        voiceService: DependencyContainer().get<VoiceService>(),
-        vadManager: DependencyContainer().vadManager,
-        therapyService: DependencyContainer().therapy,
-        interfaceVoiceService: DependencyContainer().voiceService,
-        progressService: DependencyContainer().progress,
-        navigationService: DependencyContainer().navigation,
-      ),
+      create: (context) {
+        final dependencyContainer = DependencyContainer();
+        final voiceService = dependencyContainer.get<VoiceService>();
+        final useFacade = FeatureFlags.isVoiceFacadeEnabled;
+        final sessionFacade = useFacade
+            ? dependencyContainer.voiceModeFacade
+            : LegacyVoiceFacade(
+                voiceService: voiceService,
+                therapyService: dependencyContainer.therapy,
+              );
+
+        return VoiceSessionBloc(
+          voiceFacade: sessionFacade,
+          // Phase 1B.2: Standardized DI - use DependencyContainer for UI layer
+          voiceService: voiceService,
+          vadManager: dependencyContainer.vadManager,
+          therapyService: dependencyContainer.therapy,
+          interfaceVoiceService: dependencyContainer.voiceService,
+          progressService: dependencyContainer.progress,
+          navigationService: dependencyContainer.navigation,
+        );
+      },
       child: _ChatScreenBody(
         sessionId: sessionId,
       ),
