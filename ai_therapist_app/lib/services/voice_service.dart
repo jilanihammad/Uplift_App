@@ -178,6 +178,7 @@ class VoiceService {
   // RACE CONDITION FIX: Track current TTS state to prevent duplicate calls
   bool _currentTtsState = false;
   int? _currentPlaybackToken;
+  int? _lastPlaybackToken;
   bool _ttsActive = false;
   bool _recordingActive = false;
   bool _playbackActive = false;
@@ -188,6 +189,8 @@ class VoiceService {
       _recordingActive ||
       _audioRecordingService.isRecording ||
       _autoListeningCoordinator.isRecording;
+  int? get currentPlaybackToken => _currentPlaybackToken;
+  int? get lastPlaybackToken => _lastPlaybackToken;
 
   /// Callback for the bloc to veto automatic listening restarts while deferrals
   /// (like `_pendingVoiceModeAutoEnable`) are in effect.
@@ -250,29 +253,115 @@ class VoiceService {
         .enableAutoModeWithAudioState(isAudioPlaying);
   }
 
-  Future<void> enableAutoModeWhenPlaybackCompletes() async {
+  Future<void> enableAutoModeWhenPlaybackCompletes({int? playbackToken}) async {
     if (_disposed) {
       return;
     }
 
+    final capturedGeneration = getCurrentGeneration?.call();
+    final expectedToken = playbackToken ?? _currentPlaybackToken ?? _lastPlaybackToken;
+
     if (kDebugMode) {
-      debugPrint('[VoiceService] enableAutoModeWhenPlaybackCompletes called');
+      debugPrint(
+          '[VoiceService] enableAutoModeWhenPlaybackCompletes called (generation=$capturedGeneration, token=$playbackToken, current=$_currentPlaybackToken, last=$_lastPlaybackToken)');
     }
 
-    if (_ttsActive) {
-      try {
-        await isTtsActuallySpeaking
-            .firstWhere((speaking) => speaking == false)
-            .timeout(const Duration(seconds: 5));
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] Waiting for TTS to finish timed out: $e (continuing)');
+    const retryDelay = Duration(milliseconds: 120);
+    const postClearDelay = Duration(milliseconds: 100);
+    const maxAttempts = 3;
+    var playbackCleared = false;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      if (_ttsActive) {
+        try {
+          await isTtsActuallySpeaking
+              .firstWhere((speaking) => speaking == false)
+              .timeout(const Duration(seconds: 5));
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint(
+                '[VoiceService] Waiting for TTS to finish timed out (attempt ${attempt + 1}): $e');
+          }
         }
       }
+
+      await _waitForPlaybackToFinish();
+      await Future.delayed(retryDelay);
+
+      final currentGeneration = getCurrentGeneration?.call();
+      final generationChanged = (capturedGeneration != null &&
+              currentGeneration != capturedGeneration) ||
+          (capturedGeneration == null && currentGeneration != null);
+
+      if (generationChanged) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceService] Generation changed during playback wait (was $capturedGeneration, now $currentGeneration) – aborting auto-mode enable');
+        }
+        return;
+      }
+
+      if (_ttsActive || _playbackActive) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceService] Playback still active after attempt ${attempt + 1}; rechecking after short delay');
+        }
+        continue;
+      }
+
+      if (expectedToken != null) {
+        final activeToken = _currentPlaybackToken;
+        final lastTokenSnapshot = _lastPlaybackToken;
+
+        if (activeToken != null && activeToken != expectedToken) {
+          if (kDebugMode) {
+            debugPrint(
+                '[VoiceService] New playback detected (expected $expectedToken, active $activeToken) – aborting auto-mode enable');
+          }
+          return;
+        }
+
+        if (activeToken == null &&
+            lastTokenSnapshot != null &&
+            lastTokenSnapshot != expectedToken) {
+          if (kDebugMode) {
+            debugPrint(
+                '[VoiceService] Playback token mismatch after wait (expected $expectedToken, last $lastTokenSnapshot) – aborting auto-mode enable');
+          }
+          return;
+        }
+      }
+
+      playbackCleared = true;
+      break;
     }
 
-    await _waitForPlaybackToFinish();
+    if (!playbackCleared) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] Playback or TTS still active after retries – skipping auto mode enable');
+      }
+      return;
+    }
+
+    await Future.delayed(postClearDelay);
+
+    final generationAfterDelay = getCurrentGeneration?.call();
+    if (capturedGeneration != null && generationAfterDelay != capturedGeneration) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] Generation changed during post-delay check (was $capturedGeneration, now $generationAfterDelay) – skipping auto mode enable');
+      }
+      return;
+    }
+
+    if (_ttsActive || _playbackActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] Playback resumed during post-delay check – skipping auto mode enable');
+      }
+      return;
+    }
 
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
       if (kDebugMode) {
@@ -1149,6 +1238,7 @@ class VoiceService {
     _ttsActive = false;
     _currentTtsState = false;
     _currentPlaybackToken = null;
+    _lastPlaybackToken = null;
     _recordingActive = false;
     _playbackActive = false;
     _playbackStartedForCurrentTts = false;
@@ -1319,6 +1409,7 @@ class VoiceService {
 
       if (isSpeaking && playbackToken != null) {
         _currentPlaybackToken = playbackToken;
+        _lastPlaybackToken = playbackToken;
       }
 
       _currentTtsState = isSpeaking; // Update tracked state
@@ -1410,6 +1501,10 @@ class VoiceService {
   }
 
   Future<void> _handleTtsCompletion() async {
+    final completedPlaybackToken = _currentPlaybackToken;
+    if (completedPlaybackToken != null) {
+      _lastPlaybackToken = completedPlaybackToken;
+    }
     _currentPlaybackToken = null;
 
     // BYPASS FIX: Check voice mode before re-arming VAD
@@ -1478,6 +1573,7 @@ class VoiceService {
     }
     _currentTtsState = false;
     _currentPlaybackToken = null;
+    _lastPlaybackToken = null;
     _setAiSpeaking(false);
   }
 
