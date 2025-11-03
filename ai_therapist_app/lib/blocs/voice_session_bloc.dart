@@ -349,7 +349,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
     _pendingVoiceModeAutoEnable = false;
     try {
-      await voiceService.enableAutoModeWhenPlaybackCompletes();
+      await voiceService.enableAutoModeWhenPlaybackCompletes(
+        playbackToken:
+            voiceService.currentPlaybackToken ?? voiceService.lastPlaybackToken,
+      );
       debugPrint('[VoiceSessionBloc] Auto mode enabled for voice session (deferred)');
       if (triggerListeningOnEnable) {
         _triggerListening();
@@ -467,7 +470,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         _pendingVoiceModeAutoEnable = true;
         debugPrint('[VoiceSessionBloc] Deferring auto mode enable until TTS/Audio idle');
       } else {
-        await voiceService.enableAutoModeWhenPlaybackCompletes();
+        await voiceService.enableAutoModeWhenPlaybackCompletes(
+          playbackToken: voiceService.currentPlaybackToken ??
+              voiceService.lastPlaybackToken,
+        );
         debugPrint('[VoiceSessionBloc] Auto mode enabled for voice session');
       }
 
@@ -1489,7 +1495,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         return;
       }
 
-      await voiceService.enableAutoModeWhenPlaybackCompletes();
+      await voiceService.enableAutoModeWhenPlaybackCompletes(
+        playbackToken:
+            voiceService.currentPlaybackToken ?? voiceService.lastPlaybackToken,
+      );
       emit(state.copyWith(isAutoListeningEnabled: true));
 
       // Phase 2.2.2: Use helper method for legacy AutoListeningCoordinator

@@ -953,6 +953,14 @@ class AutoListeningCoordinator with SessionDisposable {
       return;
     }
 
+    if (_voiceService.isTtsActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] ⚠️ _startListening blocked – TTS still active');
+      }
+      return;
+    }
+
     await _awaitVadTransition();
     final transitionLock = _beginVadTransition();
     final generation = generationOverride ?? _nextVadGeneration();
@@ -1394,12 +1402,12 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Disable automatic listening mode
   Future<void> disableAutoMode() async {
+    _cancelAllTimers(reason: 'disableAutoMode');
     if (_autoModeEnabled) {
       if (kDebugMode) {
         debugPrint('[AutoListeningCoordinator] [MODE] disableAutoMode called');
       }
       _setAutoModeEnabled(false, context: 'disableAutoMode');
-      _cancelAllTimers(reason: 'disableAutoMode');
       _invalidateVadGeneration();
       // Stop listening and recording
       await _stopListeningAndRecording();
