@@ -150,7 +150,7 @@ class VoiceControls extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: accentPrimary.withValues(
-                      theme.brightness == Brightness.light ? 0.12 : 0.18,
+                      alpha: theme.brightness == Brightness.light ? 0.12 : 0.18,
                     ),
                     borderRadius: BorderRadius.circular(20),
                   ),
