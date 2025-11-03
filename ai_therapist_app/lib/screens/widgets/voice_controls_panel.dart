@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lottie/lottie.dart';
+import 'package:ai_therapist_app/config/theme.dart';
 import '../../blocs/voice_session_bloc.dart';
 import '../../blocs/voice_session_state.dart';
 import '../../blocs/voice_session_event.dart';
@@ -267,7 +268,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -306,19 +307,26 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     required bool isToggleEnabled,
     required VoidCallback? onTap,
   }) {
-    final Color baseColor =
-        isMicEnabled ? Theme.of(context).primaryColor : Colors.grey;
-    final double opacity = isToggleEnabled ? 0.85 : 0.35;
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final activeColor = palette?.accentPrimary ?? theme.colorScheme.primary;
+    final inactiveColor = theme.colorScheme.outline;
+    final baseColor = isMicEnabled ? activeColor : inactiveColor;
+    final double opacity = isToggleEnabled ? 0.9 : 0.4;
+    final iconBrightness = ThemeData.estimateBrightnessForColor(baseColor);
+    final iconColor = iconBrightness == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
 
     return Container(
       width: 50,
       height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: baseColor.withOpacity(opacity),
+        color: baseColor.withValues(alpha: opacity),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -336,7 +344,8 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
             child: Center(
               child: Icon(
                 isMicEnabled ? Icons.mic : Icons.mic_off,
-                color: Colors.white.withOpacity(isToggleEnabled ? 1.0 : 0.6),
+                color: iconColor
+                    .withValues(alpha: isToggleEnabled ? 1.0 : 0.7),
               ),
             ),
           ),
@@ -349,17 +358,27 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     required bool isMuted,
     required VoidCallback onTap,
   }) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final activeColor = palette?.accentSecondary ?? theme.colorScheme.secondary;
+    final baseColor =
+        isMuted
+            ? theme.colorScheme.outline
+            : activeColor.withValues(alpha: 0.9);
+    final iconBrightness = ThemeData.estimateBrightnessForColor(activeColor);
+    final iconColor = iconBrightness == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+
     return Container(
       width: 50,
       height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: isMuted
-            ? Colors.grey
-            : Theme.of(context).primaryColor.withOpacity(0.85),
+        color: baseColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -375,7 +394,9 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
             child: Center(
               child: Icon(
                 isMuted ? Icons.volume_off : Icons.volume_up,
-                color: Colors.white,
+                color: isMuted
+                    ? theme.colorScheme.onSurface.withValues(alpha: 0.6)
+                    : iconColor,
               ),
             ),
           ),

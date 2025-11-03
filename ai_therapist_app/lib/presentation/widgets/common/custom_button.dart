@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:ai_therapist_app/config/theme.dart';
+
 /// A custom button widget that supports loading state
 ///
 /// This button has consistent styling and can show a loading indicator
@@ -47,39 +49,64 @@ class CustomButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final backgroundColor = color ??
+        palette?.accentPrimary ?? theme.colorScheme.primary;
+    final onColorBrightness =
+        ThemeData.estimateBrightnessForColor(backgroundColor);
+    final foregroundColor =
+        onColorBrightness == Brightness.dark ? Colors.white : Colors.black;
+
     return SizedBox(
       width: width,
       height: height,
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: color ?? Theme.of(context).primaryColor,
+          backgroundColor: backgroundColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           padding: padding ?? const EdgeInsets.symmetric(vertical: 12.0),
-          disabledBackgroundColor: color?.withOpacity(0.7) ??
-              Theme.of(context).primaryColor.withOpacity(0.7),
+          disabledBackgroundColor:
+              backgroundColor.withValues(alpha: isLoading ? 0.6 : 0.7),
         ),
         child: isLoading
             ? const SizedBox(
                 width: 24.0,
                 height: 24.0,
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  strokeWidth: 2.0,
-                ),
+                child: _LoadingSpinner(),
               )
             : Text(
                 label,
                 style: textStyle ??
-                    const TextStyle(
+                    TextStyle(
                       fontSize: 16.0,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: foregroundColor,
                     ),
               ),
       ),
+    );
+  }
+}
+
+class _LoadingSpinner extends StatelessWidget {
+  const _LoadingSpinner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final buttonColor = palette?.accentPrimary ?? theme.colorScheme.primary;
+    final brightness = ThemeData.estimateBrightnessForColor(buttonColor);
+    final spinnerColor =
+        brightness == Brightness.dark ? Colors.white : Colors.black;
+
+    return CircularProgressIndicator(
+      valueColor: AlwaysStoppedAnimation<Color>(spinnerColor),
+      strokeWidth: 2.0,
     );
   }
 }

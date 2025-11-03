@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:ai_therapist_app/config/theme.dart';
+
 class WelcomeFeatureCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -14,16 +16,21 @@ class WelcomeFeatureCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: palette?.surfaceHigh ?? theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
+              color: Colors.black.withValues(
+                alpha: theme.brightness == Brightness.light ? 0.05 : 0.2,
+              ),
               blurRadius: 5,
               offset: const Offset(0, 2),
             ),
@@ -34,7 +41,7 @@ class WelcomeFeatureCard extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFF4285F4),
+              color: palette?.accentPrimary ?? theme.colorScheme.secondary,
               size: 30,
             ),
             const SizedBox(width: 16),
@@ -44,20 +51,19 @@ class WelcomeFeatureCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: theme.textTheme.titleMedium?.copyWith(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                      fontFamily: 'Roboto',
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     description,
-                    style: const TextStyle(
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       fontSize: 14,
-                      color: Colors.black54,
-                      fontFamily: 'Roboto',
+                      color: theme.textTheme.bodyMedium?.color
+                          ?.withValues(alpha: 0.7),
                     ),
                   ),
                 ],

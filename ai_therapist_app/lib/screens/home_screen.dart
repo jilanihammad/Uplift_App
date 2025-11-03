@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
@@ -105,10 +106,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isLightTheme = theme.brightness == Brightness.light;
-
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) async {
@@ -224,7 +221,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isLightTheme = theme.brightness == Brightness.light;
 
     if (hour < 12) {
       greeting = 'Good Morning';
@@ -390,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   backgroundColor:
-                      Theme.of(context).primaryColor.withOpacity(0.1),
+                      Theme.of(context).primaryColor.withValues(alpha: 0.1),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
@@ -441,7 +437,7 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isSelected
-              ? Theme.of(context).primaryColor.withOpacity(0.1)
+              ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
               : Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
@@ -453,7 +449,7 @@ class _HomeScreenState extends State<HomeScreen> {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Theme.of(context).primaryColor.withOpacity(0.2),
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   )
@@ -488,7 +484,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: colorScheme.primary.withOpacity(0.12),
+                    color: colorScheme.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Icon(
@@ -622,11 +618,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   subtitle: Text(DateFormat.yMMMd().format(selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
+                    final now = DateTime.now();
+                    final firstDate =
+                        DateTime(now.year, now.month, now.day);
+                    final defaultLastDate =
+                        firstDate.add(const Duration(days: 90));
+                    final effectiveLastDate = selectedDate.isAfter(defaultLastDate)
+                        ? selectedDate.add(const Duration(days: 30))
+                        : defaultLastDate;
+                    final effectiveInitialDate = selectedDate.isBefore(firstDate)
+                        ? firstDate
+                        : selectedDate;
+
                     final date = await showDatePicker(
                       context: context,
-                      initialDate: selectedDate,
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 90)),
+                      initialDate: effectiveInitialDate,
+                      firstDate: firstDate,
+                      lastDate: effectiveLastDate,
                     );
                     if (date != null) {
                       setState(() {
@@ -755,7 +763,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Get consistency information from the progress service
     final consistencyStatus = _progressService.getConsistencyStatus();
-    final consistencyColor = _progressService.getConsistencyColor();
+    final consistencyColor = _progressService.getConsistencyColor(context);
 
     // Determine icon based on consistency status
     IconData consistencyIcon;
@@ -791,28 +799,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 12),
                       // Consistency badge
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: consistencyColor.withOpacity(0.1),
+                          color: consistencyColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: consistencyColor),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(consistencyIcon,
-                                color: consistencyColor, size: 16),
-                            const SizedBox(width: 4),
-                            Text(
-                              consistencyStatus,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: consistencyColor,
-                              ),
-                            ),
-                          ],
+                        child: Tooltip(
+                          message: consistencyStatus,
+                          child: Icon(
+                            consistencyIcon,
+                            color: consistencyColor,
+                            size: 16,
+                          ),
                         ),
                       ),
                     ],
@@ -873,27 +872,28 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildStatItem(String value, String label, IconData icon) {
-    // Define the soft colors for each icon
-    Color iconColor;
-    Color bgColor;
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final isLight = theme.brightness == Brightness.light;
 
-    if (icon == Icons.favorite) {
-      // Soft pink for heart icon
-      iconColor = const Color(0xFFFF80AB);
-      bgColor = const Color(0xFFFFEBEE);
-    } else if (icon == Icons.mood) {
-      // Soft green for smiley icon
-      iconColor = const Color(0xFF66BB6A);
-      bgColor = const Color(0xFFE8F5E9);
-    } else if (icon == Icons.local_fire_department) {
-      // Soft orange for fire icon
-      iconColor = const Color(0xFFFF9800);
-      bgColor = const Color(0xFFFFF3E0);
-    } else {
-      // Default colors for any other icons
-      iconColor = Theme.of(context).primaryColor;
-      bgColor = Theme.of(context).primaryColor.withOpacity(0.1);
+    Color resolveColor() {
+      if (icon == Icons.favorite) {
+        return palette?.accentPrimary ?? theme.colorScheme.secondary;
+      }
+      if (icon == Icons.mood) {
+        return palette?.accentSecondary ?? theme.colorScheme.tertiary;
+      }
+      if (icon == Icons.local_fire_department) {
+        return theme.colorScheme.primary;
+      }
+      return theme.colorScheme.primary;
     }
+
+    final iconColor = resolveColor();
+    final backgroundOpacity = isLight ? 0.14 : 0.22;
+    final bgColor = iconColor.withValues(alpha: backgroundOpacity);
+    final textColor =
+        theme.textTheme.bodyMedium?.color ?? theme.colorScheme.onSurface;
 
     return Column(
       children: [
@@ -911,9 +911,9 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 8),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 16,
+          style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
+            color: textColor,
           ),
         ),
         Text(

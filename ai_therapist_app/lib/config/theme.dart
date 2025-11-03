@@ -1,4 +1,61 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+@immutable
+class AppPalette extends ThemeExtension<AppPalette> {
+  final Color surfaceLow;
+  final Color surface;
+  final Color surfaceHigh;
+  final Color accentPrimary;
+  final Color accentSecondary;
+
+  const AppPalette({
+    required this.surfaceLow,
+    required this.surface,
+    required this.surfaceHigh,
+    required this.accentPrimary,
+    required this.accentSecondary,
+  });
+
+  @override
+  AppPalette copyWith({
+    Color? surfaceLow,
+    Color? surface,
+    Color? surfaceHigh,
+    Color? accentPrimary,
+    Color? accentSecondary,
+  }) {
+    return AppPalette(
+      surfaceLow: surfaceLow ?? this.surfaceLow,
+      surface: surface ?? this.surface,
+      surfaceHigh: surfaceHigh ?? this.surfaceHigh,
+      accentPrimary: accentPrimary ?? this.accentPrimary,
+      accentSecondary: accentSecondary ?? this.accentSecondary,
+    );
+  }
+
+  @override
+  AppPalette lerp(
+    covariant ThemeExtension<AppPalette>? other,
+    double t,
+  ) {
+    if (other is! AppPalette) {
+      return this;
+    }
+
+    return AppPalette(
+      surfaceLow: Color.lerp(surfaceLow, other.surfaceLow, t) ?? surfaceLow,
+      surface: Color.lerp(surface, other.surface, t) ?? surface,
+      surfaceHigh:
+          Color.lerp(surfaceHigh, other.surfaceHigh, t) ?? surfaceHigh,
+      accentPrimary:
+          Color.lerp(accentPrimary, other.accentPrimary, t) ?? accentPrimary,
+      accentSecondary:
+          Color.lerp(accentSecondary, other.accentSecondary, t) ??
+              accentSecondary,
+    );
+  }
+}
 
 // App theme configuration
 class AppTheme {
@@ -48,6 +105,22 @@ class AppTheme {
   static const Color darkTextPrimaryColor = Color(0xFFEAEAEA);
   static const Color darkTextSecondaryColor = Color(0xFFBBBBBB);
 
+  static const AppPalette lightPalette = AppPalette(
+    surfaceLow: Color(0xFFF3F5F8),
+    surface: Color(0xFFFAFBFD),
+    surfaceHigh: Colors.white,
+    accentPrimary: Color(0xFF4B6CB7),
+    accentSecondary: Color(0xFF86A6FF),
+  );
+
+  static const AppPalette darkPalette = AppPalette(
+    surfaceLow: Color(0xFF1A1C1E),
+    surface: darkSurfaceColor,
+    surfaceHigh: Color(0xFF26282B),
+    accentPrimary: buttonColor,
+    accentSecondary: Color(0xFF70C8FF),
+  );
+
   // Status colors
   static const Color successColor = Color(0xFF2DCE89);
   static const Color errorColor = Color(0xFFF5365C);
@@ -56,12 +129,44 @@ class AppTheme {
 
   // Get the light theme data
   static ThemeData get lightTheme {
+    final baseTextTheme = GoogleFonts.interTextTheme();
+    final appliedTextTheme = baseTextTheme.apply(
+      bodyColor: caldietTextPrimary,
+      displayColor: caldietTextPrimary,
+    );
+    final enrichedTextTheme = appliedTextTheme.copyWith(
+      displayLarge:
+          appliedTextTheme.displayLarge?.copyWith(fontWeight: FontWeight.w600),
+      displayMedium:
+          appliedTextTheme.displayMedium?.copyWith(fontWeight: FontWeight.w600),
+      displaySmall:
+          appliedTextTheme.displaySmall?.copyWith(fontWeight: FontWeight.w600),
+      headlineLarge:
+          appliedTextTheme.headlineLarge?.copyWith(fontWeight: FontWeight.w600),
+      headlineMedium:
+          appliedTextTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+      headlineSmall:
+          appliedTextTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+      titleLarge:
+          appliedTextTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+      titleMedium:
+          appliedTextTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      titleSmall:
+          appliedTextTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      labelLarge:
+          appliedTextTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      bodySmall:
+          appliedTextTheme.bodySmall?.copyWith(color: caldietTextSecondary),
+      labelSmall:
+          appliedTextTheme.labelSmall?.copyWith(color: caldietTextSecondary),
+    );
+
     return ThemeData(
       useMaterial3: true,
-      colorScheme: const ColorScheme.light(
+      colorScheme: const ColorScheme.light().copyWith(
         primary: caldietPrimaryColor,
-        secondary: caldietAccentBlue,
-        surface: Colors.white,
+        secondary: lightPalette.accentPrimary,
+        surface: lightPalette.surface,
         error: errorColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
@@ -69,13 +174,16 @@ class AppTheme {
         onError: Colors.white,
       ),
       primaryColor: caldietPrimaryColor,
-      scaffoldBackgroundColor: caldietBackgroundGray,
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      scaffoldBackgroundColor: lightPalette.surfaceLow,
+      extensions: const <ThemeExtension<dynamic>>[
+        lightPalette,
+      ],
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
         selectedItemColor: caldietPrimaryColor,
         unselectedItemColor: caldietTextSecondary,
-        backgroundColor: Colors.white,
+        backgroundColor: lightPalette.surfaceHigh,
         type: BottomNavigationBarType.fixed,
-        elevation: 1, // Lower elevation for cleaner look
+        elevation: 1,
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -83,14 +191,15 @@ class AppTheme {
         elevation: 0,
       ),
       cardTheme: CardThemeData(
-        color: Colors.white,
-        elevation: 1, // Lower elevation for cleaner look
+        color: lightPalette.surfaceHigh,
+        elevation: 1,
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)), // More rounded corners
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: caldietPrimaryColor,
+          backgroundColor: lightPalette.accentPrimary,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
@@ -101,7 +210,7 @@ class AppTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: caldietAccentBlue,
+          foregroundColor: lightPalette.accentPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -110,8 +219,8 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: caldietAccentBlue,
-          side: const BorderSide(color: caldietAccentBlue),
+          foregroundColor: lightPalette.accentPrimary,
+          side: BorderSide(color: lightPalette.accentPrimary),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
@@ -120,7 +229,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: lightPalette.surfaceHigh,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: textLightColor),
@@ -131,7 +240,8 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: caldietAccentBlue, width: 2),
+          borderSide:
+              BorderSide(color: lightPalette.accentPrimary, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -140,42 +250,15 @@ class AppTheme {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
-      textTheme: const TextTheme(
-        displayLarge:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        displayMedium:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        displaySmall:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        headlineLarge:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        headlineMedium:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        headlineSmall:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        titleLarge:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        titleMedium:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        titleSmall:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        bodyLarge: TextStyle(color: caldietTextPrimary),
-        bodyMedium: TextStyle(color: caldietTextPrimary),
-        bodySmall: TextStyle(color: caldietTextSecondary),
-        labelLarge:
-            TextStyle(color: caldietTextPrimary, fontWeight: FontWeight.w600),
-        labelMedium: TextStyle(color: caldietTextPrimary),
-        labelSmall: TextStyle(color: caldietTextSecondary),
-      ),
-      fontFamily: 'Poppins',
+      textTheme: enrichedTextTheme,
       dividerTheme: const DividerThemeData(
-        color: Color(0xFFEEEEEE), // Lighter divider for CalDiet style
+        color: Color(0xFFEEEEEE),
         space: 1,
         thickness: 1,
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: caldietTextPrimary.withOpacity(0.9),
+          color: caldietTextPrimary.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(4),
         ),
         textStyle: const TextStyle(color: Colors.white),
@@ -188,12 +271,11 @@ class AppTheme {
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.white,
-        titleTextStyle: const TextStyle(
+        backgroundColor: lightPalette.surfaceHigh,
+        titleTextStyle: GoogleFonts.inter(
           color: caldietTextPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          fontFamily: 'Poppins',
         ),
       ),
     );
@@ -201,12 +283,44 @@ class AppTheme {
 
   // Get the dark theme data
   static ThemeData get darkTheme {
+    final baseTextTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+    final appliedTextTheme = baseTextTheme.apply(
+      bodyColor: darkTextPrimaryColor,
+      displayColor: darkTextPrimaryColor,
+    );
+    final enrichedTextTheme = appliedTextTheme.copyWith(
+      displayLarge:
+          appliedTextTheme.displayLarge?.copyWith(fontWeight: FontWeight.w600),
+      displayMedium:
+          appliedTextTheme.displayMedium?.copyWith(fontWeight: FontWeight.w600),
+      displaySmall:
+          appliedTextTheme.displaySmall?.copyWith(fontWeight: FontWeight.w600),
+      headlineLarge:
+          appliedTextTheme.headlineLarge?.copyWith(fontWeight: FontWeight.w600),
+      headlineMedium:
+          appliedTextTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+      headlineSmall:
+          appliedTextTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+      titleLarge:
+          appliedTextTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+      titleMedium:
+          appliedTextTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      titleSmall:
+          appliedTextTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      labelLarge:
+          appliedTextTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      bodySmall:
+          appliedTextTheme.bodySmall?.copyWith(color: darkTextSecondaryColor),
+      labelSmall:
+          appliedTextTheme.labelSmall?.copyWith(color: darkTextSecondaryColor),
+    );
+
     return ThemeData(
       useMaterial3: true,
-      colorScheme: const ColorScheme.dark(
+      colorScheme: const ColorScheme.dark().copyWith(
         primary: primaryColor,
-        secondary: secondaryColor,
-        surface: darkSurfaceColor,
+        secondary: darkPalette.accentPrimary,
+        surface: darkPalette.surface,
         error: errorColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
@@ -215,6 +329,9 @@ class AppTheme {
       ),
       primaryColor: primaryColor,
       scaffoldBackgroundColor: darkBackgroundColor,
+      extensions: const <ThemeExtension<dynamic>>[
+        darkPalette,
+      ],
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         selectedItemColor: primaryColor,
         unselectedItemColor: darkTextSecondaryColor,
@@ -228,13 +345,13 @@ class AppTheme {
         elevation: 0,
       ),
       cardTheme: CardThemeData(
-        color: darkCardColor,
+        color: darkPalette.surfaceHigh,
         elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: buttonColor,
+          backgroundColor: darkPalette.accentPrimary,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
@@ -245,7 +362,7 @@ class AppTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: buttonColor,
+          foregroundColor: darkPalette.accentPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -254,8 +371,8 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: buttonColor,
-          side: const BorderSide(color: buttonColor),
+          foregroundColor: darkPalette.accentPrimary,
+          side: BorderSide(color: darkPalette.accentPrimary),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
@@ -264,14 +381,14 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: darkCardColor,
+        fillColor: darkPalette.surfaceHigh,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: textLightColor),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: textLightColor.withOpacity(0.3)),
+          borderSide: BorderSide(color: textLightColor.withValues(alpha: 0.3)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -284,34 +401,7 @@ class AppTheme {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
-      textTheme: const TextTheme(
-        displayLarge:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        displayMedium:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        displaySmall:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        headlineLarge:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        headlineMedium:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        headlineSmall:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        titleLarge:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        titleMedium:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        titleSmall:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        bodyLarge: TextStyle(color: darkTextPrimaryColor),
-        bodyMedium: TextStyle(color: darkTextPrimaryColor),
-        bodySmall: TextStyle(color: darkTextSecondaryColor),
-        labelLarge:
-            TextStyle(color: darkTextPrimaryColor, fontWeight: FontWeight.w600),
-        labelMedium: TextStyle(color: darkTextPrimaryColor),
-        labelSmall: TextStyle(color: darkTextSecondaryColor),
-      ),
-      fontFamily: 'Poppins',
+      textTheme: enrichedTextTheme,
       dividerTheme: const DividerThemeData(
         color: Color(0xFF3A3A3A),
         space: 1,
@@ -319,7 +409,7 @@ class AppTheme {
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: darkTextPrimaryColor.withOpacity(0.9),
+          color: darkTextPrimaryColor.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(4),
         ),
         textStyle: const TextStyle(color: darkBackgroundColor),
@@ -332,12 +422,11 @@ class AppTheme {
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: darkCardColor,
-        titleTextStyle: const TextStyle(
+        backgroundColor: darkPalette.surfaceHigh,
+        titleTextStyle: GoogleFonts.inter(
           color: darkTextPrimaryColor,
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          fontFamily: 'Poppins',
         ),
       ),
     );

@@ -21,7 +21,7 @@ abstract class IProgressService {
   // Progress metrics
   double getConsistencyRate();
   String getConsistencyStatus();
-  Color getConsistencyColor();
+  Color getConsistencyColor(BuildContext context);
   int getProgressMetric(String metric);
   Future<void> updateProgressMetric(String metric, int value);
   Future<void> incrementProgressMetric(String metric, [int amount = 1]);

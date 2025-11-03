@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:ai_therapist_app/config/theme.dart';
+
 class VoiceControls extends StatelessWidget {
   final bool isRecording;
   final bool isProcessing;
@@ -22,12 +24,30 @@ class VoiceControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final accentPrimary = palette?.accentPrimary ?? theme.colorScheme.primary;
+    final accentSecondary =
+        palette?.accentSecondary ?? theme.colorScheme.secondary;
+    final micBaseColor =
+        isRecording ? theme.colorScheme.error : accentPrimary;
+    final micTextColor = ThemeData.estimateBrightnessForColor(micBaseColor) ==
+            Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+    final speakerColor =
+        isSpeakerMuted ? theme.colorScheme.outline : accentSecondary;
+    final speakerIconColor = ThemeData.estimateBrightnessForColor(speakerColor) ==
+            Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+
     return Column(
       children: [
         Container(
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
+            color: theme.scaffoldBackgroundColor,
             // boxShadow: const [
             //   BoxShadow(
             //     offset: Offset(0, -2),
@@ -47,13 +67,10 @@ class VoiceControls extends StatelessWidget {
                     height: 50,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: (isRecording
-                              ? Colors.red
-                              : Theme.of(context).primaryColor)
-                          .withOpacity(0.85),
+                      color: micBaseColor.withValues(alpha: 0.9),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: Colors.black.withValues(alpha: 0.2),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
@@ -70,8 +87,8 @@ class VoiceControls extends StatelessWidget {
                           child: Center(
                             child: Text(
                               isRecording ? 'Stop' : 'Talk',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: micTextColor,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                               ),
@@ -87,11 +104,11 @@ class VoiceControls extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: isSpeakerMuted
-                          ? Colors.grey
-                          : Theme.of(context).primaryColor.withOpacity(0.85),
+                          ? theme.colorScheme.outline.withValues(alpha: 0.65)
+                          : speakerColor.withValues(alpha: 0.9),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: Colors.black.withValues(alpha: 0.2),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
@@ -106,16 +123,19 @@ class VoiceControls extends StatelessWidget {
                           customBorder: const CircleBorder(),
                           onTap: onSpeakerToggle,
                           child: Center(
-                            child: Icon(
-                              isSpeakerMuted
-                                  ? Icons.volume_off
-                                  : Icons.volume_up,
-                              color: Colors.white,
-                            ),
+                          child: Icon(
+                            isSpeakerMuted
+                                ? Icons.volume_off
+                                : Icons.volume_up,
+                            color: isSpeakerMuted
+                                ? theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.6)
+                                : speakerIconColor,
                           ),
                         ),
                       ),
                     ),
+                  ),
                   ),
                 ],
               ),
@@ -129,7 +149,9 @@ class VoiceControls extends StatelessWidget {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    color: accentPrimary.withValues(
+                      theme.brightness == Brightness.light ? 0.12 : 0.18,
+                    ),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
@@ -138,13 +160,13 @@ class VoiceControls extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.chat_bubble_outline,
-                        color: Theme.of(context).primaryColor,
+                        color: accentPrimary,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Switch to Chat Mode',
-                        style: TextStyle(
-                          color: Theme.of(context).primaryColor,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: accentPrimary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
