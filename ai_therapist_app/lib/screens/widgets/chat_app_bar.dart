@@ -40,10 +40,22 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<VoiceSessionBloc, VoiceSessionState>(
       builder: (context, state) {
+        final theme = Theme.of(context);
+
         return AppBar(
           title: Row(
             children: [
-              const Text('Ongoing Session'),
+              Expanded(
+                child: Text(
+                  'Ongoing Session',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
               if (therapistStyle != null)
                 Padding(
                   padding: const EdgeInsets.only(left: 8.0),

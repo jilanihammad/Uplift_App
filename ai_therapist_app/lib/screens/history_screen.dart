@@ -37,21 +37,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _sessionRepository =
         widget.sessionRepository ?? DependencyContainer().sessionRepository;
     _selectedDate = DateTime.now();
-    _generateWeekDates();
+    _generateWeekDates(_selectedDate);
     _loadSessions();
   }
 
-  void _generateWeekDates() {
-    // Get the current date
-    final now = DateTime.now();
+  void _generateWeekDates([DateTime? anchorDate]) {
+    final base = anchorDate ?? _selectedDate;
+    final normalized = DateTime(base.year, base.month, base.day);
 
-    // Calculate days from the start of the week (considering Sunday as first day)
-    final DateTime startOfWeek =
-        DateTime(now.year, now.month, now.day - now.weekday % 7);
+    // Treat Sunday as the first day of the week
+    final startOfWeek = normalized.subtract(
+      Duration(days: normalized.weekday % 7),
+    );
 
-    // Generate 7 days starting from the start of the week
     _weekDates = List.generate(7, (index) {
-      return startOfWeek.add(Duration(days: index));
+      final date = startOfWeek.add(Duration(days: index));
+      return DateTime(date.year, date.month, date.day);
     });
   }
 
@@ -112,6 +113,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void _selectDate(DateTime date) {
     setState(() {
       _selectedDate = date;
+      _generateWeekDates(date);
       _filterSessionsByDate();
     });
   }

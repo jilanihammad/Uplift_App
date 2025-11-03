@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/theme.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/i_api_client.dart';
@@ -722,11 +723,18 @@ class ProgressService implements IProgressService {
 
   // Get consistency color
   @override
-  Color getConsistencyColor() {
+  Color getConsistencyColor(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
     final rate = getConsistencyRate();
-    if (rate >= 0.75) return Colors.green;
-    if (rate >= 0.5) return Colors.orange;
-    return Colors.red;
+
+    if (rate >= 0.75) {
+      return palette?.accentPrimary ?? theme.colorScheme.secondary;
+    }
+    if (rate >= 0.5) {
+      return palette?.accentSecondary ?? theme.colorScheme.tertiary;
+    }
+    return theme.colorScheme.error;
   }
 
   // Log a mood entry

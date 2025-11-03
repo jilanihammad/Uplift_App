@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+
+import 'package:ai_therapist_app/config/theme.dart';
+
 import '../services/voice_service.dart';
 import '../services/auto_listening_coordinator.dart';
 
@@ -87,20 +90,21 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
     }
   }
 
-  Color _getStateColor() {
+  Color _getStateColor(ThemeData theme, AppPalette? palette) {
     switch (_currentState) {
       case AutoListeningState.idle:
-        return Colors.grey;
+        return theme.colorScheme.outline;
       case AutoListeningState.aiSpeaking:
-        return Colors.blue;
+        return palette?.accentSecondary ?? theme.colorScheme.secondary;
       case AutoListeningState.listening:
-        return Colors.amber;
+      case AutoListeningState.listeningForVoice:
+        return palette?.accentPrimary ?? theme.colorScheme.primary;
       case AutoListeningState.userSpeaking:
-        return Colors.red;
+        return theme.colorScheme.error;
       case AutoListeningState.processing:
-        return Colors.purple;
+        return theme.colorScheme.tertiary;
       default:
-        return Colors.grey;
+        return theme.colorScheme.outlineVariant;
     }
   }
 
@@ -122,12 +126,18 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
           '[AutoListeningToggle] State indicator: $_currentState (showListening=$showListening)');
     }
 
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final stateColor = _getStateColor(theme, palette);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: _getStateColor().withValues(alpha: 0.2),
+        color: stateColor.withValues(
+          alpha: theme.brightness == Brightness.light ? 0.16 : 0.24,
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _getStateColor(), width: 1),
+        border: Border.all(color: stateColor, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -136,7 +146,7 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: _getStateColor(),
+              color: stateColor,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -144,7 +154,7 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
           Text(
             _getStateText(),
             style: TextStyle(
-              color: _getStateColor(),
+              color: stateColor,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -155,33 +165,28 @@ class _AutoListeningToggleState extends State<AutoListeningToggle> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
+    final labelStyle = theme.textTheme.bodySmall?.copyWith(
+      fontWeight: FontWeight.w500,
+      color: theme.textTheme.bodySmall?.color,
+    );
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text(
-              'Manual',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text('Manual', style: labelStyle),
             const SizedBox(width: 8),
             Switch(
               value: _isAutoModeEnabled,
               onChanged: _toggleAutoMode,
-              activeColor: Theme.of(context).primaryColor,
+              activeColor: palette?.accentPrimary ?? theme.colorScheme.primary,
             ),
             const SizedBox(width: 8),
-            const Text(
-              'Automatic',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text('Automatic', style: labelStyle),
           ],
         ),
         const SizedBox(height: 8),

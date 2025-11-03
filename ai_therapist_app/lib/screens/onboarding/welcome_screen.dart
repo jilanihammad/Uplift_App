@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'package:ai_therapist_app/config/theme.dart';
+
 import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../widgets/welcome_feature_card.dart';
@@ -9,9 +12,11 @@ class WelcomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onboardingService = DependencyContainer().get<OnboardingService>();
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppPalette>();
 
     return Scaffold(
-      backgroundColor: Colors.white, // Clean white background
+      backgroundColor: palette?.surface ?? theme.colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -30,24 +35,21 @@ class WelcomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 40),
                 // Title with Google-inspired simplicity
-                const Text(
+                Text(
                   'Welcome to Uplift',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87, // Dark for readability
-                    fontFamily: 'Roboto',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
                 // Supportive description
-                const Text(
+                Text(
                   'Your companion for thoughtful conversations and personal growth, always here when you need it.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black54, // Subtle dark shade
-                    fontFamily: 'Roboto',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.textTheme.bodyMedium?.color
+                        ?.withValues(alpha: 0.72),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -58,11 +60,10 @@ class WelcomeScreen extends StatelessWidget {
                 // Encouraging message
                 Text(
                   "You're taking a positive step towards self-improvement. We're here to support you.",
-                  style: TextStyle(
-                    fontSize: 14,
+                  style: theme.textTheme.bodySmall?.copyWith(
                     fontStyle: FontStyle.italic,
-                    color: Colors.grey[600],
-                    fontFamily: 'Roboto',
+                    color: theme.textTheme.bodySmall?.color
+                        ?.withValues(alpha: 0.65),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -77,16 +78,21 @@ class WelcomeScreen extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
-                    backgroundColor: const Color(0xFF4285F4), // Google Blue
+                    backgroundColor:
+                        palette?.accentPrimary ?? theme.colorScheme.primary,
                     elevation: 3,
                   ),
-                  child: const Text(
+                  child: Text(
                     "Let's Begin",
-                    style: TextStyle(
+                    style: theme.textTheme.titleMedium?.copyWith(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white, // White text on button
-                      fontFamily: 'Roboto',
+                      color: ThemeData.estimateBrightnessForColor(
+                                  palette?.accentPrimary ??
+                                      theme.colorScheme.primary) ==
+                              Brightness.dark
+                          ? Colors.white
+                          : Colors.black,
                     ),
                   ),
                 ),
