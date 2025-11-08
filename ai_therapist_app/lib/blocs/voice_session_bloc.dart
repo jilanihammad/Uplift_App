@@ -91,6 +91,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   bool _welcomeAutoModeArmed = false;
   AutoListeningState Function()? _getAutoListeningState;
 
+  // Simple guard depth counter for mic control availability
+  int _micControlGuardDepth = 0;
+
   // Gate to prevent TTS from starting during atomic audio reset
   Completer<void>? _atomicResetCompleter;
 
@@ -293,9 +296,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     // TIMING FIX: Set up generation callback for VoiceService
     voiceService.getCurrentGeneration = () => _modeGeneration;
 
-      _subscribeToAutoListeningState();
-      _getAutoListeningState =
-          () => voiceService.autoListeningCoordinator.currentState;
+    _subscribeToAutoListeningState();
+    _getAutoListeningState =
+        () => voiceService.autoListeningCoordinator.currentState;
 
     if (_usesGeminiLive) {
       _geminiLiveSub = voiceService.geminiLiveEventStream
@@ -312,6 +315,56 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   bool get _shouldAbortVoicePrep => isClosed || !state.isVoiceMode;
+
+  void _guardMicControl({String reason = ''}) {
+    if (isClosed) {
+      return;
+    }
+    _micControlGuardDepth++;
+    if (state.isMicControlGuarded) {
+      if (kDebugMode && reason.isNotEmpty) {
+        debugPrint('[MicControl] Guard depth=$_micControlGuardDepth ($reason)');
+      }
+      return;
+    }
+    if (kDebugMode && reason.isNotEmpty) {
+      debugPrint('[MicControl] Guard engaged ($reason)');
+    }
+    emit(state.copyWith(isMicControlGuarded: true));
+  }
+
+  void _releaseMicControlGuard({String reason = ''}) {
+    if (_micControlGuardDepth > 0) {
+      _micControlGuardDepth--;
+    }
+    if (isClosed) {
+      return;
+    }
+    if (_micControlGuardDepth > 0) {
+      if (kDebugMode && reason.isNotEmpty) {
+        debugPrint('[MicControl] Guard depth=$_micControlGuardDepth ($reason)');
+      }
+      return;
+    }
+    if (!state.isMicControlGuarded) {
+      return;
+    }
+    if (kDebugMode && reason.isNotEmpty) {
+      debugPrint('[MicControl] Guard released ($reason)');
+    }
+    emit(state.copyWith(isMicControlGuarded: false));
+  }
+
+  void _forceReleaseMicControlGuard({String reason = ''}) {
+    _micControlGuardDepth = 0;
+    if (isClosed || !state.isMicControlGuarded) {
+      return;
+    }
+    if (kDebugMode && reason.isNotEmpty) {
+      debugPrint('[MicControl] Guard force released ($reason)');
+    }
+    emit(state.copyWith(isMicControlGuarded: false));
+  }
 
   Future<void> _cancelAutoListeningSubscription() async {
     await _autoListeningStateSub?.cancel();
@@ -369,19 +422,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     final pipelineReady =
         listening && isListeningState && state.isInitialGreetingPlayed;
-    final allowMic = pipelineReady &&
-        !state.isVoiceModeSwitching &&
-        !_pendingVoiceModeAutoEnable;
 
     final nextListening = listening;
     final nextAutoMode = listening;
     final nextPipelineReady = listening ? pipelineReady : false;
-    final nextMicToggle = listening ? allowMic : false;
 
     if (state.isListening == nextListening &&
         state.isAutoListeningEnabled == nextAutoMode &&
-        state.isVoicePipelineReady == nextPipelineReady &&
-        state.isMicToggleEnabled == nextMicToggle) {
+        state.isVoicePipelineReady == nextPipelineReady) {
       return;
     }
 
@@ -394,7 +442,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       isListening: nextListening,
       isAutoListeningEnabled: nextAutoMode,
       isVoicePipelineReady: nextPipelineReady,
-      isMicToggleEnabled: nextMicToggle,
     ));
   }
 
@@ -405,11 +452,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       attempts++;
     }
     if (voiceFacade.isTransitioning && kDebugMode) {
-      debugPrint('[VoiceSessionBloc] voiceFacade transition still in progress after wait window');
+      debugPrint(
+          '[VoiceSessionBloc] voiceFacade transition still in progress after wait window');
     }
   }
 
-  Future<void> _resumeDeferredVoiceAutoMode({bool triggerListeningOnEnable = true}) async {
+  Future<void> _resumeDeferredVoiceAutoMode(
+      {bool triggerListeningOnEnable = true}) async {
     if (!_pendingVoiceModeAutoEnable) {
       return;
     }
@@ -442,12 +491,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _pendingVoiceModeAutoEnable = false;
     try {
       await voiceService.enableAutoMode();
-      debugPrint('[VoiceSessionBloc] Auto mode enabled for voice session (deferred)');
+      debugPrint(
+          '[VoiceSessionBloc] Auto mode enabled for voice session (deferred)');
       if (triggerListeningOnEnable) {
         _triggerListening();
       }
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Failed to enable auto mode (deferred): $e');
+      debugPrint(
+          '[VoiceSessionBloc] Failed to enable auto mode (deferred): $e');
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
@@ -455,7 +506,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   Future<void> _syncEnhancedVADWorker(String contextLabel) async {
     try {
       if (AutoListeningCoordinator.isEnhancedVADEnabled) {
-        final enhancedVAD = _safeVoiceService.autoListeningCoordinator.vadManager;
+        final enhancedVAD =
+            _safeVoiceService.autoListeningCoordinator.vadManager;
         if (enhancedVAD != null && enhancedVAD is EnhancedVADManager) {
           await enhancedVAD.waitForWorkerExit();
           if (kDebugMode) {
@@ -472,8 +524,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
-  Future<void> _prepareForVoiceMode(
-      AudioPlayerManager audioPlayerManager, Emitter<VoiceSessionState> emit) async {
+  Future<void> _prepareForVoiceMode(AudioPlayerManager audioPlayerManager,
+      Emitter<VoiceSessionState> emit) async {
+    _guardMicControl(reason: 'Voice mode prep start');
+
     if (_voiceModeSwitchCompleter?.isCompleted == false) {
       await _voiceModeSwitchCompleter!.future;
     }
@@ -500,7 +554,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       if (isClosed) {
         if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Voice prep aborted before initial emit');
+          debugPrint(
+              '[VoiceSessionBloc] Voice prep aborted before initial emit');
         }
         return;
       }
@@ -511,14 +566,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         isAiSpeaking: false,
         ttsStatus: TtsStatus.idle,
         isAutoListeningEnabled: false,
-        isMicToggleEnabled: false,
         isVoicePipelineReady: false,
         isVoiceModeSwitching: true,
       ));
 
       if (_shouldAbortVoicePrep) {
         if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Voice prep aborted immediately after state emit');
+          debugPrint(
+              '[VoiceSessionBloc] Voice prep aborted immediately after state emit');
         }
         return;
       }
@@ -550,7 +605,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       if (_shouldAbortVoicePrep) {
         if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Voice prep aborted after settle delay');
+          debugPrint(
+              '[VoiceSessionBloc] Voice prep aborted after settle delay');
         }
         return;
       }
@@ -558,22 +614,24 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       await voiceService.enableAutoMode();
       debugPrint('[VoiceSessionBloc] Auto mode requested for voice session');
 
-      final shouldDeferAutoEnable =
-          !state.isInitialGreetingPlayed ||
-              isTtsActive ||
-              audioPlayerManager.isPlaybackActive;
+      final shouldDeferAutoEnable = !state.isInitialGreetingPlayed ||
+          isTtsActive ||
+          audioPlayerManager.isPlaybackActive;
 
       if (shouldDeferAutoEnable) {
         _pendingVoiceModeAutoEnable = true;
-        debugPrint('[VoiceSessionBloc] Deferring listening; awaiting welcome completion or idle audio');
+        debugPrint(
+            '[VoiceSessionBloc] Deferring listening; awaiting welcome completion or idle audio');
       } else {
         _triggerListening();
-        debugPrint('[VoiceSessionBloc] Auto mode active immediately; listening triggered');
+        debugPrint(
+            '[VoiceSessionBloc] Auto mode active immediately; listening triggered');
       }
 
       if (_shouldAbortVoicePrep) {
         if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Voice prep aborted post auto-mode enable');
+          debugPrint(
+              '[VoiceSessionBloc] Voice prep aborted post auto-mode enable');
         }
         return;
       }
@@ -592,7 +650,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       emit(state.copyWith(
         isAutoListeningEnabled: true,
-        isMicToggleEnabled: false,
         isVoicePipelineReady: pipelineReady,
         ttsStatus: TtsStatus.idle,
         isVoiceModeSwitching: false,
@@ -638,6 +695,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       if (identical(_voiceModeSwitchCompleter, transitionCompleter)) {
         _voiceModeSwitchCompleter = null;
       }
+      _releaseMicControlGuard(reason: 'Voice mode prep complete');
     }
   }
 
@@ -861,7 +919,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   void _onStartListening(
       StartListening event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      debugPrint('[VoiceSessionBloc] StartListening received – marking pipeline ready');
+      debugPrint(
+          '[VoiceSessionBloc] StartListening received – marking pipeline ready');
     }
     _updateListeningState(
       listening: true,
@@ -872,7 +931,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onStopListening(StopListening event, Emitter<VoiceSessionState> emit) {
     if (kDebugMode) {
-      debugPrint('[VoiceSessionBloc] StopListening received – guarding mic toggle');
+      debugPrint(
+          '[VoiceSessionBloc] StopListening received – guarding mic toggle');
     }
     _updateListeningState(
       listening: false,
@@ -933,10 +993,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           isVoiceMode: event.isVoiceMode,
           ttsAudible: false,
           isAiSpeaking: false,
-          isMicToggleEnabled: true,
           isVoicePipelineReady: true,
           isVoiceModeSwitching: false,
         ));
+        _forceReleaseMicControlGuard(reason: 'Switched to chat mode');
         _pendingVoiceModeAutoEnable = false;
 
         // PHASE 2B: Cancel any pending auto-enable operations
@@ -1441,10 +1501,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   }
 
   void _onToggleMicMute(ToggleMicMute event, Emitter<VoiceSessionState> emit) {
-    if (!state.isMicToggleEnabled || !state.isVoicePipelineReady) {
+    if (state.isMicControlGuarded) {
       if (kDebugMode) {
         debugPrint(
-            '[VoiceSessionBloc] Ignoring mic toggle while pipeline is guarded');
+            '[VoiceSessionBloc] Ignoring mic toggle while guard is active');
       }
       return;
     }
@@ -1469,9 +1529,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onEnsureMicToggleEnabled(
       EnsureMicToggleEnabled event, Emitter<VoiceSessionState> emit) {
-    if (!state.isMicToggleEnabled) {
-      emit(state.copyWith(isMicToggleEnabled: true));
-    }
+    _forceReleaseMicControlGuard(reason: 'EnsureMicToggleEnabled event');
   }
 
   void _onSetSpeakerMuted(
@@ -1603,7 +1661,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     debugPrint(
         '[VoiceSessionBloc] Playing welcome message TTS: ${event.welcomeMessage}');
 
-    if (!state.isMicToggleEnabled) {
+    if (state.isMicControlGuarded) {
       if (kDebugMode) {
         debugPrint(
             '[VoiceSessionBloc] Welcome TTS already guarded, skipping re-entry');
@@ -1611,7 +1669,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       return;
     }
 
-    emit(state.copyWith(isMicToggleEnabled: false));
+    _guardMicControl(reason: 'Welcome TTS');
 
     try {
       // Ensure any in-flight atomic reset has finished before starting TTS
@@ -1657,7 +1715,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       emit(state.copyWith(errorMessage: e.toString()));
     } finally {
       await Future.delayed(const Duration(milliseconds: 120));
-      emit(state.copyWith(isMicToggleEnabled: true));
+      _releaseMicControlGuard(reason: 'Welcome TTS complete');
     }
   }
 
@@ -1805,8 +1863,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       return;
     }
 
-    emit(state.copyWith(isMicToggleEnabled: false));
-    await _beginSessionIfNeeded(event.mood, emit);
+    _guardMicControl(reason: 'Initial mood selection');
+    try {
+      await _beginSessionIfNeeded(event.mood, emit);
+    } finally {
+      _releaseMicControlGuard(reason: 'Initial mood selection complete');
+    }
   }
 
   /// Reusable helper for session start with re-entrancy guard

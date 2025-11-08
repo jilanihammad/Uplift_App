@@ -60,7 +60,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       listenWhen: (previous, current) =>
           !previous.isInitialGreetingPlayed &&
           current.isInitialGreetingPlayed &&
-          !current.isMicToggleEnabled,
+          current.isMicControlGuarded,
       listener: (context, state) {
         context.read<VoiceSessionBloc>().add(const EnsureMicToggleEnabled());
       },
@@ -221,7 +221,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
         muted: state.isSpeakerMuted,
         listening: state.isListening,
         micEnabled: state.isMicEnabled,
-        toggleEnabled: state.isMicToggleEnabled,
+        toggleEnabled: !state.isMicControlGuarded,
       ),
       builder: (context, data) => Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -314,9 +314,8 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     final baseColor = isMicEnabled ? activeColor : inactiveColor;
     final double opacity = isToggleEnabled ? 0.9 : 0.4;
     final iconBrightness = ThemeData.estimateBrightnessForColor(baseColor);
-    final iconColor = iconBrightness == Brightness.dark
-        ? Colors.white
-        : Colors.black87;
+    final iconColor =
+        iconBrightness == Brightness.dark ? Colors.white : Colors.black87;
 
     return Container(
       width: 50,
@@ -344,8 +343,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
             child: Center(
               child: Icon(
                 isMicEnabled ? Icons.mic : Icons.mic_off,
-                color: iconColor
-                    .withValues(alpha: isToggleEnabled ? 1.0 : 0.7),
+                color: iconColor.withValues(alpha: isToggleEnabled ? 1.0 : 0.7),
               ),
             ),
           ),
@@ -361,14 +359,12 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     final theme = Theme.of(context);
     final palette = theme.extension<AppPalette>();
     final activeColor = palette?.accentSecondary ?? theme.colorScheme.secondary;
-    final baseColor =
-        isMuted
-            ? theme.colorScheme.outline
-            : activeColor.withValues(alpha: 0.9);
+    final baseColor = isMuted
+        ? theme.colorScheme.outline
+        : activeColor.withValues(alpha: 0.9);
     final iconBrightness = ThemeData.estimateBrightnessForColor(activeColor);
-    final iconColor = iconBrightness == Brightness.dark
-        ? Colors.white
-        : Colors.black87;
+    final iconColor =
+        iconBrightness == Brightness.dark ? Colors.white : Colors.black87;
 
     return Container(
       width: 50,
