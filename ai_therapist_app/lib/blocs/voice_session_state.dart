@@ -52,7 +52,7 @@ class VoiceSessionState extends Equatable {
   final String? transcribedText;
   final bool showMicButton;
   final bool showSendButton;
-  final bool isMicToggleEnabled;
+  final bool isMicControlGuarded;
   final bool isVoicePipelineReady;
   final bool isVoiceModeSwitching;
   final Duration? selectedDuration;
@@ -93,7 +93,7 @@ class VoiceSessionState extends Equatable {
     this.transcribedText,
     this.showMicButton = true, // Default to true, adjust based on mode
     this.showSendButton = false, // Default to false, adjust based on mode
-    this.isMicToggleEnabled = true,
+    this.isMicControlGuarded = false,
     this.isVoicePipelineReady = true,
     this.isVoiceModeSwitching = false,
     this.selectedDuration,
@@ -134,7 +134,7 @@ class VoiceSessionState extends Equatable {
       transcribedText: null,
       showMicButton: true, // Show mic button in initial voice mode
       showSendButton: false, // Don't show send in initial voice mode
-      isMicToggleEnabled: true,
+      isMicControlGuarded: false,
       isVoicePipelineReady: true,
       isVoiceModeSwitching: false,
       selectedDuration: null,
@@ -176,7 +176,7 @@ class VoiceSessionState extends Equatable {
     bool? clearTranscribedText,
     bool? showMicButton,
     bool? showSendButton,
-    bool? isMicToggleEnabled,
+    bool? isMicControlGuarded,
     bool? isVoicePipelineReady,
     bool? isVoiceModeSwitching,
     Duration? selectedDuration,
@@ -218,7 +218,7 @@ class VoiceSessionState extends Equatable {
           : transcribedText ?? this.transcribedText,
       showMicButton: showMicButton ?? this.showMicButton,
       showSendButton: showSendButton ?? this.showSendButton,
-      isMicToggleEnabled: isMicToggleEnabled ?? this.isMicToggleEnabled,
+      isMicControlGuarded: isMicControlGuarded ?? this.isMicControlGuarded,
       isVoicePipelineReady: isVoicePipelineReady ?? this.isVoicePipelineReady,
       isVoiceModeSwitching: isVoiceModeSwitching ?? this.isVoiceModeSwitching,
       selectedDuration: selectedDuration ?? this.selectedDuration,
@@ -277,7 +277,7 @@ class VoiceSessionState extends Equatable {
         amplitude,
         timerRemainingSeconds,
         autoEndTriggered,
-        isMicToggleEnabled,
+        isMicControlGuarded,
         isVoicePipelineReady,
         isVoiceModeSwitching,
         geminiLiveSessionId,
