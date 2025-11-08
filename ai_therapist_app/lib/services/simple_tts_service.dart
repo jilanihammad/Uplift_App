@@ -5,6 +5,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
+import '../utils/box_logger.dart';
+import '../utils/log_channels.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/tts_request.dart';
@@ -44,6 +46,14 @@ class SimpleTTSService implements ITTSService {
   /// Static flag to suppress repeated format mismatch logging
   static bool _formatMismatchLogged = false;
 
+  bool get _ttsTraceEnabled => kDebugMode && LogChannels.ttsTrace;
+
+  void _ttsTrace(String message) {
+    if (_ttsTraceEnabled) {
+      debugPrint(message);
+    }
+  }
+
   // -------- Public API -----------------------------------------------
 
   /// Speak text and return when playback is complete
@@ -55,40 +65,46 @@ class SimpleTTSService implements ITTSService {
     String format = 'auto', // Let negotiator determine optimal format
     bool makeBackupFile = true,
   }) async {
-    if (text.trim().isEmpty) {
-      if (kDebugMode) debugPrint('❌ [TTS] Empty text, skipping');
+    final trimmedText = text.trim();
+    if (trimmedText.isEmpty) {
+      if (kDebugMode) _ttsTrace('❌ [TTS] Empty text, skipping');
       return;
     }
 
     // 🔍 TTS DUPLICATION TRACKING
     final caller = _getCallerInfo();
     final selectedVoice = voice ?? LLMConfig.activeTTSVoice;
-
-    if (kDebugMode) {
-      // Log pending as the value after this request is added (prevents negative display)
-      final pendingDisplay = (_pendingStreams < 0 ? 0 : _pendingStreams) + 1;
-      debugPrint('🎯 [TTS-TRACK] speak() called by: $caller');
-      debugPrint(
-          '🎯 [TTS-TRACK] Text: "${text.substring(0, text.length.clamp(0, 50))}${text.length > 50 ? "..." : ""}"');
-      debugPrint('🎯 [TTS-TRACK] Voice: $selectedVoice, Format: $format');
-      debugPrint(
-          '🎯 [TTS-TRACK] Current queue size: ${_queue.length}, Pending: $pendingDisplay');
-    }
+    final pendingDisplay = (_pendingStreams < 0 ? 0 : _pendingStreams) + 1;
+    final upcomingQueueSize = _queue.length + 1;
 
     // Refresh negotiator with latest backend overrides (supports live/native toggles)
     AudioFormatNegotiator.updateFromConfig();
-
-    if (kDebugMode) {
-      debugPrint(
-          '🎯 [TTS] Active provider=${LLMConfig.activeTTSProvider.name}, mode=${LLMConfig.activeTTSMode}, formatPref=${AudioFormatNegotiator.getPreferredFormat().name}');
-    }
 
     // Determine optimal format - prefer backend negotiated option
     final optimalFormat =
         format == 'auto' ? AudioFormatNegotiator.getBackendFormat() : format;
 
+    final preview = trimmedText.length > 80
+        ? '${trimmedText.substring(0, 80)}...'
+        : trimmedText;
+    BoxLogger.debug(
+      '🎯',
+      'TTS',
+      'Starting playback',
+      details: {
+        'Text': preview,
+        'Voice': selectedVoice,
+        'Format': optimalFormat,
+        'Provider': LLMConfig.activeTTSProvider.name,
+        'Mode': LLMConfig.activeTTSMode,
+        'Queue(next)': '$upcomingQueueSize',
+        'Pending': '$pendingDisplay',
+        'Caller': caller,
+      },
+    );
+
     final req = TtsRequest(
-      text: text.trim(),
+      text: trimmedText,
       voice: selectedVoice,
       format: optimalFormat,
       makeBackupFile: makeBackupFile,
@@ -96,9 +112,17 @@ class SimpleTTSService implements ITTSService {
     _queue.add(req);
     _pendingStreams++; // Track this TTS request
 
-    if (kDebugMode) {
-      debugPrint(
-          '🔍 [TTS] Queued request: ${req.id} (queue length: ${_queue.length}, pending: $_pendingStreams, backup: ${req.makeBackupFile})');
+    if (_ttsTraceEnabled) {
+      BoxLogger.debug(
+        '🔍',
+        'TTS',
+        'Queued request ${req.id}',
+        details: {
+          'Queue length': '${_queue.length}',
+          'Pending': '$_pendingStreams',
+          'Backup': '${req.makeBackupFile}',
+        },
+      );
     }
 
     _pumpQueue(); // Fire-and-forget
@@ -192,7 +216,7 @@ class SimpleTTSService implements ITTSService {
 
     final req = _queue.removeFirst();
     if (kDebugMode) {
-      debugPrint('🔍 [TTS] Processing request: ${req.id}');
+      _ttsTrace('🔍 [TTS] Processing request: ${req.id}');
     }
 
     WebSocketChannel? ws;
@@ -206,7 +230,7 @@ class SimpleTTSService implements ITTSService {
       // Create fresh WebSocket for this request (simple pattern)
       final wsUrl = '$_backendUrl/ws/tts'.replaceFirst('http', 'ws');
       if (kDebugMode) {
-        debugPrint('🔍 [TTS] Creating WebSocket connection to: $wsUrl');
+        _ttsTrace('🔍 [TTS] Creating WebSocket connection to: $wsUrl');
       }
 
       ws = WebSocketChannel.connect(Uri.parse(wsUrl));
@@ -235,7 +259,7 @@ class SimpleTTSService implements ITTSService {
 
       req.complete();
       if (kDebugMode) {
-        debugPrint('✅ [TTS] Completed request: ${req.id}');
+        _ttsTrace('✅ [TTS] Completed request: ${req.id}');
       }
     } catch (e, stackTrace) {
       final ttsException = _convertToTtsException(e, 'TTS request processing');
@@ -253,7 +277,7 @@ class SimpleTTSService implements ITTSService {
           await ws.sink.close();
           // Wait for the TCP FIN to be observed (robust cleanup)
           await ws.sink.done;
-          if (kDebugMode) debugPrint('🔍 [TTS] WebSocket closed for ${req.id}');
+          if (kDebugMode) _ttsTrace('🔍 [TTS] WebSocket closed for ${req.id}');
         } catch (closeError) {
           // Guard against close() throwing on already-closed channels
           final ttsException =
@@ -272,7 +296,7 @@ class SimpleTTSService implements ITTSService {
         _pendingStreams = 0;
       }
       if (kDebugMode) {
-        debugPrint('🔍 [TTS] Pending streams decremented to: $_pendingStreams');
+        _ttsTrace('🔍 [TTS] Pending streams decremented to: $_pendingStreams');
       }
 
       // Only fire completion when ALL streams are done
@@ -353,6 +377,22 @@ class SimpleTTSService implements ITTSService {
     }
 
     final audioBuffer = <int>[];
+    const int progressLogStepBytes = 131072; // 128 KB
+    int progressLogCount = 0;
+    int lastProgressLogBytes = 0;
+    void logProgressIfNeeded() {
+      if (!kDebugMode) return;
+      final total = audioBuffer.length;
+      final delta = total - lastProgressLogBytes;
+      final shouldLogEarly = progressLogCount < 2;
+      if (!shouldLogEarly && delta < progressLogStepBytes) {
+        return;
+      }
+      _ttsTrace('🎯 [TTS] Streaming progress: $total bytes for ${req.id}');
+      progressLogCount++;
+      lastProgressLogBytes = total;
+    }
+
     bool gotHello = false;
     bool playbackStarted = false;
     StreamController<Uint8List>? audioStreamController;
@@ -414,7 +454,7 @@ class SimpleTTSService implements ITTSService {
           if (type == 'tts-hello') {
             gotHello = true;
             if (kDebugMode) {
-              debugPrint('🎯 [TTS] Got tts-hello for ${req.id} (streaming)');
+              _ttsTrace('🎯 [TTS] Got tts-hello for ${req.id} (streaming)');
             }
           } else if (type == 'tts-done') {
             final totalSize = data['total_size'] as int?;
@@ -605,7 +645,7 @@ class SimpleTTSService implements ITTSService {
                 // Mark player phase complete when playback finishes
                 completionTracker.markPlayerDone();
                 if (kDebugMode) {
-                  debugPrint('🎵 [TTS] Player phase completed for ${req.id}');
+                  _ttsTrace('🎵 [TTS] Player phase completed for ${req.id}');
                 }
               });
             }
@@ -622,7 +662,7 @@ class SimpleTTSService implements ITTSService {
                 }
               } catch (e) {
                 if (kDebugMode) {
-                  debugPrint('⚠️ [TTS] Error adding streaming chunk: $e');
+                  _ttsTrace('⚠️ [TTS] Error adding streaming chunk: $e');
                 }
               }
             }
@@ -631,10 +671,7 @@ class SimpleTTSService implements ITTSService {
           }
 
           // Log progress at meaningful intervals
-          if (kDebugMode && audioBuffer.length % 65536 == 0) {
-            debugPrint(
-                '🎯 [TTS] Streaming progress: ${audioBuffer.length} bytes for ${req.id}');
-          }
+          logProgressIfNeeded();
         }
       }
 
@@ -743,7 +780,7 @@ class SimpleTTSService implements ITTSService {
         // Try again with WAV format (same WebSocket if still connected)
         try {
           if (kDebugMode) {
-            debugPrint('🔄 [TTS] Retrying ${req.id} with WAV format');
+            _ttsTrace('🔄 [TTS] Retrying ${req.id} with WAV format');
           }
 
           // Create new WebSocket for retry
@@ -761,7 +798,7 @@ class SimpleTTSService implements ITTSService {
           await retryWs.sink.close();
 
           if (kDebugMode) {
-            debugPrint('✅ [TTS] WAV fallback succeeded for ${req.id}');
+            _ttsTrace('✅ [TTS] WAV fallback succeeded for ${req.id}');
           }
           return; // Success - don't rethrow
         } catch (fallbackError) {
@@ -853,7 +890,7 @@ class SimpleTTSService implements ITTSService {
     // For streaming, we don't need complete headers immediately
     // Just verify it's valid OPUS format
     if (kDebugMode) {
-      debugPrint('✅ [TTS] Valid OPUS format detected');
+      _ttsTrace('✅ [TTS] Valid OPUS format detected');
     }
     return true;
   }
@@ -883,7 +920,7 @@ class SimpleTTSService implements ITTSService {
           chunk[11] == 0x45; // E
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('❌ [TTS] Error validating WAV header: $e');
+        _ttsTrace('❌ [TTS] Error validating WAV header: $e');
       }
       return false;
     }
@@ -893,10 +930,26 @@ class SimpleTTSService implements ITTSService {
   Future<void> _processResponseFullBuffer(TtsRequest req, WebSocketChannel ws,
       TwoPhaseCompletion completionTracker) async {
     if (kDebugMode) {
-      debugPrint('🔄 [TTS] Using FULL-BUFFER path for ${req.id} (safe mode)');
+      _ttsTrace('🔄 [TTS] Using FULL-BUFFER path for ${req.id} (safe mode)');
     }
 
     final audioBuffer = <int>[];
+    const int progressLogStepBytes = 131072;
+    int progressLogCount = 0;
+    int lastProgressLogBytes = 0;
+    void logProgressIfNeeded() {
+      if (!kDebugMode) return;
+      final total = audioBuffer.length;
+      final delta = total - lastProgressLogBytes;
+      final shouldLogEarly = progressLogCount < 2;
+      if (!shouldLogEarly && delta < progressLogStepBytes) {
+        return;
+      }
+      _ttsTrace('🎯 [TTS] Streaming progress: $total bytes for ${req.id}');
+      progressLogCount++;
+      lastProgressLogBytes = total;
+    }
+
     bool gotHello = false;
 
     // Use the requested format directly (consistent with streaming path)
@@ -943,13 +996,13 @@ class SimpleTTSService implements ITTSService {
 
         if (type == 'tts-hello') {
           gotHello = true;
-          if (kDebugMode) debugPrint('🔍 [TTS] Got tts-hello for ${req.id}');
+          if (kDebugMode) _ttsTrace('🔍 [TTS] Got tts-hello for ${req.id}');
         } else if (type == 'tts-done') {
           final serverMime = data['mime_type'] as String?;
           if (serverMime != null && serverMime.isNotEmpty) {
             currentMimeType = serverMime;
           }
-          if (kDebugMode) debugPrint('🔍 [TTS] Got tts-done for ${req.id}');
+          if (kDebugMode) _ttsTrace('🔍 [TTS] Got tts-done for ${req.id}');
           break; // Exit the await for loop
         } else if (type == 'error') {
           final errorDetail = data['detail'] ?? 'TTS error';
@@ -958,10 +1011,7 @@ class SimpleTTSService implements ITTSService {
       } else if (message is List<int>) {
         audioBuffer.addAll(message);
         // LOG SPAM FIX: Only log at meaningful milestones (64KB intervals) instead of every 4KB
-        if (kDebugMode && audioBuffer.length % 65536 == 0) {
-          debugPrint(
-              '🔍 [TTS] Buffered ${audioBuffer.length} bytes for ${req.id}');
-        }
+        logProgressIfNeeded();
       }
     }
 
@@ -989,18 +1039,18 @@ class SimpleTTSService implements ITTSService {
 
       try {
         if (kDebugMode) {
-          debugPrint('🔍 [TTS] Starting backup file playback for ${req.id}');
+          _ttsTrace('🔍 [TTS] Starting backup file playback for ${req.id}');
         }
 
         // Wait for audio playback to completely finish
         await _audioPlayerManager.playAudio(audioFile.path);
 
         if (kDebugMode) {
-          debugPrint('✅ [TTS] Backup file playback completed for ${req.id}');
+          _ttsTrace('✅ [TTS] Backup file playback completed for ${req.id}');
         }
       } catch (audioError) {
         if (kDebugMode) {
-          debugPrint('❌ [TTS] Backup file playback failed: $audioError');
+          _ttsTrace('❌ [TTS] Backup file playback failed: $audioError');
         }
         rethrow;
       }
@@ -1021,7 +1071,7 @@ class SimpleTTSService implements ITTSService {
         );
 
         if (kDebugMode) {
-          debugPrint('✅ [TTS] In-memory playback completed for ${req.id}');
+          _ttsTrace('✅ [TTS] In-memory playback completed for ${req.id}');
         }
       } catch (audioError) {
         if (kDebugMode) {
@@ -1161,7 +1211,7 @@ class SimpleTTSService implements ITTSService {
   @override
   Future<void> cancelAllStreams() async {
     final stopwatch = Stopwatch()..start();
-    if (kDebugMode) debugPrint('🚨 [TTS] Starting stream cancellation...');
+    if (kDebugMode) _ttsTrace('🚨 [TTS] Starting stream cancellation...');
 
     try {
       await Future.any([
@@ -1172,7 +1222,7 @@ class SimpleTTSService implements ITTSService {
       ]);
 
       final elapsed = stopwatch.elapsedMilliseconds;
-      if (kDebugMode) debugPrint('✅ [TTS] Streams cancelled in ${elapsed}ms');
+      if (kDebugMode) _ttsTrace('✅ [TTS] Streams cancelled in ${elapsed}ms');
 
       // Log performance metrics for slow cancellations
       if (elapsed > 500) {
@@ -1184,7 +1234,7 @@ class SimpleTTSService implements ITTSService {
     } catch (e) {
       final elapsed = stopwatch.elapsedMilliseconds;
       if (kDebugMode) {
-        debugPrint('🛑 [TTS] Cancellation failed after ${elapsed}ms: $e');
+        _ttsTrace('🛑 [TTS] Cancellation failed after ${elapsed}ms: $e');
       }
 
       // Emergency cleanup: detach player from LiveTtsAudioSource
@@ -1226,7 +1276,7 @@ class SimpleTTSService implements ITTSService {
       _queue.clear();
       _pendingStreams = 0;
 
-      if (kDebugMode) debugPrint('✅ [TTS] Emergency cleanup completed');
+      if (kDebugMode) _ttsTrace('✅ [TTS] Emergency cleanup completed');
     } catch (e) {
       final ttsException = _convertToTtsException(e, 'Emergency cleanup');
       if (kDebugMode) {
@@ -1275,7 +1325,7 @@ class SimpleTTSService implements ITTSService {
       _activeLiveAudioSource?.dispose();
       _activeLiveAudioSource = null;
       if (kDebugMode) {
-        debugPrint('🔄 [TTS] Active LiveTtsAudioSource disposed');
+        _ttsTrace('🔄 [TTS] Active LiveTtsAudioSource disposed');
       }
     }
 
@@ -1329,7 +1379,7 @@ class SimpleTTSService implements ITTSService {
       if (!_speakingStateController.isClosed) {
         _speakingStateController.add(newState);
         if (kDebugMode) {
-          debugPrint('🎯 [TTS-TRACK] TTS state: $newState');
+          _ttsTrace('🎯 [TTS-TRACK] TTS state: $newState');
         }
       }
     }
@@ -1394,7 +1444,7 @@ class SimpleTTSService implements ITTSService {
         playbackStartTime?.difference(startTime).inMilliseconds;
 
     if (kDebugMode) {
-      debugPrint('📊 [TTS-METRICS] $requestId ($format):');
+      _ttsTrace('📊 [TTS-METRICS] $requestId ($format):');
       debugPrint('  Total duration: ${totalDuration}ms');
       if (timeToFirstAudio != null) {
         debugPrint('  Time to first audio: ${timeToFirstAudio}ms');
@@ -1445,7 +1495,7 @@ class SimpleTTSService implements ITTSService {
             }
           } catch (e) {
             if (kDebugMode) {
-              debugPrint('⚠️ [TTS] Error closing stream controller: $e');
+              _ttsTrace('⚠️ [TTS] Error closing stream controller: $e');
             }
           }
         }
@@ -1516,7 +1566,7 @@ class SimpleTTSService implements ITTSService {
     // Prevent overlapping dispose operations using mutex
     if (_disposeCompleter != null) {
       if (kDebugMode) {
-        debugPrint('🔄 [TTS] Dispose already in progress, waiting...');
+        _ttsTrace('🔄 [TTS] Dispose already in progress, waiting...');
       }
       return; // Another dispose is already running
     }
@@ -1542,11 +1592,11 @@ class SimpleTTSService implements ITTSService {
       try {
         _audioPlayerManager.disposeAsync();
         if (kDebugMode) {
-          debugPrint('🧹 [TTS] AudioPlayerManager disposal initiated');
+          _ttsTrace('🧹 [TTS] AudioPlayerManager disposal initiated');
         }
       } catch (e) {
         if (kDebugMode) {
-          debugPrint('⚠️ [TTS] AudioPlayerManager disposal error: $e');
+          _ttsTrace('⚠️ [TTS] AudioPlayerManager disposal error: $e');
         }
       }
 
@@ -1555,12 +1605,12 @@ class SimpleTTSService implements ITTSService {
         _speakingStateController.close();
       }
 
-      if (kDebugMode) debugPrint('🔍 [TTS] Service disposed');
+      if (kDebugMode) _ttsTrace('🔍 [TTS] Service disposed');
 
       // Complete the dispose operation
       _disposeCompleter?.complete();
     } catch (e) {
-      if (kDebugMode) debugPrint('❌ [TTS] Error during dispose: $e');
+      if (kDebugMode) _ttsTrace('❌ [TTS] Error during dispose: $e');
       _disposeCompleter?.completeError(e);
     }
   }

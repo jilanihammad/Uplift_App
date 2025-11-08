@@ -341,8 +341,6 @@ Future<void> setupServiceLocator(
         debugPrint('Creating MessageProcessor instance (lazy initialization)');
 
         final processor = MessageProcessor(
-          voiceSessionBloc:
-              null, // Will be set later to avoid circular dependency
           conversationHistory: serviceLocator<ConversationBufferMemory>(),
           configService: serviceLocator<ConfigService>(),
           groqService: serviceLocator<GroqService>(),

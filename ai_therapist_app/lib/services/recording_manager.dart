@@ -5,6 +5,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
 import 'package:ai_therapist_app/utils/app_logger.dart';
+import '../utils/box_logger.dart';
+import '../utils/log_channels.dart';
 import 'base_voice_service.dart';
 import 'path_manager.dart';
 
@@ -19,6 +21,18 @@ class SharedRecorderManager {
   bool _isInitialized = false;
   String? _currentUser; // Track which service is using the recorder
 
+  bool get _recordingTraceEnabled => kDebugMode && LogChannels.recordingTrace;
+
+  void _logRecorder(
+    String message, {
+    String emoji = '🎙️',
+    Map<String, String>? details,
+    bool trace = false,
+  }) {
+    if (trace && !_recordingTraceEnabled) return;
+    BoxLogger.debug(emoji, 'SharedRecorder', message, details: details);
+  }
+
   SharedRecorderManager._internal();
 
   /// Initialize the shared recorder
@@ -28,10 +42,7 @@ class SharedRecorderManager {
     _recorder = AudioRecorder();
     _isInitialized = true;
 
-    if (kDebugMode) {
-      debugPrint(
-          '🎙️ SharedRecorderManager: Initialized single AudioRecorder instance');
-    }
+    _logRecorder('Initialized AudioRecorder instance', trace: true);
   }
 
   /// Request exclusive access to the recorder
@@ -43,27 +54,23 @@ class SharedRecorderManager {
     // Check if already in use by someone else
     if (_currentUser != null && _currentUser != userId) {
       if (await _recorder.isRecording()) {
-        if (kDebugMode) {
-          debugPrint(
-              '🎙️ SharedRecorderManager: Recorder busy with $_currentUser, denying $userId');
-        }
+        _logRecorder(
+          'Recorder busy, denying $userId',
+          emoji: '⚠️',
+          details: {'currentUser': _currentUser ?? 'unknown'},
+        );
         return false;
       } else {
         // Previous user finished, allow new user
         _currentUser = userId;
-        if (kDebugMode) {
-          debugPrint(
-              '🎙️ SharedRecorderManager: Previous session ended, granting access to $userId');
-        }
+        _logRecorder('Granting access after idle', details: {'user': userId});
         return true;
       }
     }
 
     // Grant access
     _currentUser = userId;
-    if (kDebugMode) {
-      AppLogger.d(' SharedRecorderManager: Granted access to $userId');
-    }
+    _logRecorder('Granted access', details: {'user': userId});
     return true;
   }
 
@@ -71,19 +78,19 @@ class SharedRecorderManager {
   void releaseAccess(String userId) {
     if (_currentUser == userId) {
       _currentUser = null;
-      if (kDebugMode) {
-        AppLogger.d(' SharedRecorderManager: Released access from $userId');
-      }
+      _logRecorder('Released access', details: {'user': userId});
     }
   }
 
   /// Get the shared recorder instance (only if you have access)
   AudioRecorder? getRecorder(String userId) {
     if (_currentUser != userId) {
-      if (kDebugMode) {
-        debugPrint(
-            '🎙️ SharedRecorderManager: Access denied to $userId, current user: $_currentUser');
-      }
+      _logRecorder(
+        'Access denied',
+        emoji: '⚠️',
+        details: {'requested': userId, 'current': _currentUser ?? 'none'},
+        trace: true,
+      );
       return null;
     }
     return _recorder;
@@ -303,7 +310,8 @@ class RecordingManager {
       final String filePath = PathManager.instance.recordingFile(uuid);
 
       // 🚨 CORRUPTION DIAGNOSTIC - Verify path is still clean after PathManager
-      debugPrint('🛡️ RecordingManager.startRecording() received path: $filePath');
+      debugPrint(
+          '🛡️ RecordingManager.startRecording() received path: $filePath');
 
       // Configure recording: prefer mono 48 kHz to align with RNNoise
       // Fallback to 44.1 kHz on devices that don't support 48 kHz
@@ -608,7 +616,8 @@ class RecordingManager {
       _lastRecordedPath = null;
     }
     if (kDebugMode) {
-      debugPrint('🛡️ RecordingManager: Marked $filePath as pending transcription');
+      debugPrint(
+          '🛡️ RecordingManager: Marked $filePath as pending transcription');
     }
   }
 

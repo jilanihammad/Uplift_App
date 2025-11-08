@@ -9,6 +9,8 @@ import '../services/therapy_conversation_graph.dart';
 import '../di/interfaces/i_api_client.dart';
 import '../utils/logger_util.dart';
 import '../di/dependency_container.dart';
+import '../utils/box_logger.dart';
+import '../utils/log_channels.dart';
 import 'enhanced_vad_manager.dart';
 import '../di/interfaces/i_therapy_service.dart';
 import '../models/therapy_message.dart';
@@ -136,8 +138,11 @@ class TherapyService implements ITherapyService {
   final ConversationFlowManager _conversationFlowManager;
 
   // Enhanced VAD configuration
-  final bool _useEnhancedVAD = false; // Default to false for backwards compatibility
+  final bool _useEnhancedVAD =
+      false; // Default to false for backwards compatibility
   EnhancedVADManager? _enhancedVADManager;
+
+  bool get _therapyTraceEnabled => kDebugMode && LogChannels.therapyTrace;
 
   // Constructor with injected dependencies
   TherapyService({
@@ -447,32 +452,58 @@ class TherapyService implements ITherapyService {
   Future<String> processUserMessage(String userMessage,
       {List<Map<String, String>>? history}) async {
     try {
-      log.d('TherapyService.processUserMessage called with: "$userMessage"');
-
-      // Check if the message is empty
-      if (userMessage.trim().isEmpty) {
+      final trimmedMessage = userMessage.trim();
+      if (trimmedMessage.isEmpty) {
         log.w('Empty user message received');
         return "I didn't catch that. Could you please repeat?";
       }
 
-      log.d('Processing user input through conversation graph...');
-      // Process through conversation graph to get context
+      final preview = trimmedMessage.length > 80
+          ? '${trimmedMessage.substring(0, 80)}...'
+          : trimmedMessage;
+      BoxLogger.info(
+        '🧠',
+        'TherapyService',
+        'Processing user message',
+        details: {
+          'Text': preview,
+          'History size': '${history?.length ?? 0}',
+        },
+      );
+      final traceLogs = _therapyTraceEnabled;
+
+      if (traceLogs) {
+        BoxLogger.debug('🧠', 'TherapyService', 'Running conversation graph');
+      }
       final graphResult =
           await _conversationFlowManager.processUserInput(userMessage);
 
-      log.d(
-          'Graph analysis complete. State: ${graphResult['state'] ?? 'unknown'}');
+      if (traceLogs) {
+        BoxLogger.debug(
+          '🧠',
+          'TherapyService',
+          'Graph analysis complete',
+          details: {'state': '${graphResult['state'] ?? 'unknown'}'},
+        );
+      }
 
-      log.d('Getting memory context...');
-      // Get memory context
       final memoryContext = await _memoryManager.getMemoryContext();
-      log.d('Memory context retrieved: ${memoryContext.length} characters');
+      if (traceLogs) {
+        BoxLogger.debug(
+          '🧠',
+          'TherapyService',
+          'Memory context retrieved',
+          details: {'chars': '${memoryContext.length}'},
+        );
+      }
 
       final anchorGuidance =
           await _memoryManager.getAnchorGuidance(userMessage, graphResult);
 
-      log.d('Processing message through MessageProcessor...');
-      // Process message using the MessageProcessor
+      if (traceLogs) {
+        BoxLogger.debug(
+            '🧠', 'TherapyService', 'Processing via MessageProcessor');
+      }
       final aiResponse = await _messageProcessor.processMessage(
           userMessage,
           _buildSystemPromptWithContext(
@@ -484,15 +515,25 @@ class TherapyService implements ITherapyService {
           graphResult,
           history: history);
 
-      log.d(
-          'AI response received: "${aiResponse.substring(0, aiResponse.length > 50 ? 50 : aiResponse.length)}..."');
+      BoxLogger.info(
+        '💬',
+        'TherapyService',
+        'AI response ready',
+        details: {
+          'Preview': aiResponse.length > 80
+              ? '${aiResponse.substring(0, 80)}...'
+              : aiResponse,
+        },
+      );
 
-      // Process response insights and save to memory in background
       final responseMap = {'response': aiResponse};
       _memoryManager.processInsightsAndSaveMemory(
           userMessage, responseMap, graphResult);
 
-      log.d('TherapyService.processUserMessage completed successfully');
+      if (traceLogs) {
+        BoxLogger.debug(
+            '🧠', 'TherapyService', 'Message processed successfully');
+      }
       return aiResponse;
     } catch (e, stackTrace) {
       log.e('General error processing message', e, stackTrace);
