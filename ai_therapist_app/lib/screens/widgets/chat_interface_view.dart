@@ -136,7 +136,7 @@ class _ChatInterfaceViewState extends State<ChatInterfaceView> {
             ),
             onPressed: null,
           );
-        } else if (state.isRecording || state.isListeningForVoice) {
+        } else if (state.isRecording || state.isListening) {
           // Recording or listening: show active/recording mic
           return IconButton(
             icon: Icon(

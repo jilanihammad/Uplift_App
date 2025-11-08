@@ -769,6 +769,51 @@ class AutoListeningCoordinator with SessionDisposable {
     }
   }
 
+  Future<bool> _beginListeningIfAllowed({
+    required String context,
+    int? expectedGeneration,
+    Set<AutoListeningState>? allowedStates,
+    required Future<void> Function() onAllowed,
+  }) async {
+    final states =
+        allowedStates ?? {AutoListeningState.idle, AutoListeningState.aiSpeaking};
+
+    if (expectedGeneration != null && expectedGeneration != _vadGeneration) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] Listen start stale (context: $context, gen: $expectedGeneration vs $_vadGeneration)');
+      }
+      return false;
+    }
+
+    if (_voiceService.isTtsActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] Listen start blocked – TTS still active (context: $context)');
+      }
+      return false;
+    }
+
+    if (!_autoModeEnabled) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] Listen start blocked – auto mode disabled (context: $context)');
+      }
+      return false;
+    }
+
+    if (!states.contains(_currentState)) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] Listen start blocked – invalid state $_currentState (context: $context)');
+      }
+      return false;
+    }
+
+    await onAllowed();
+    return true;
+  }
+
   // Start VAD listening after a short delay
   Future<void> _startListeningAfterDelay() async {
     if (kDebugMode) {
@@ -779,89 +824,74 @@ class AutoListeningCoordinator with SessionDisposable {
     // BYPASS FIX: Check voice mode before starting
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) return;
 
-    await _awaitVadTransition();
-    final transitionLock = _beginVadTransition();
+    await _beginListeningIfAllowed(
+      context: 'deferred',
+      allowedStates: {
+        AutoListeningState.idle,
+        AutoListeningState.aiSpeaking,
+      },
+      onAllowed: () async {
+        await _awaitVadTransition();
+        final transitionLock = _beginVadTransition();
 
-    // Guard against duplicate calls
-    if (_isTransitionInProgress) {
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [VAD] Transition already in progress, ignoring duplicate call');
-      }
-      _endVadTransition(transitionLock);
-      return;
-    }
-
-    // Only allow transition from idle or aiSpeaking states to prevent infinite loops
-    if (!(_currentState == AutoListeningState.idle ||
-        _currentState == AutoListeningState.aiSpeaking)) {
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay ignored - already in state: $_currentState');
-      }
-      _endVadTransition(transitionLock);
-      return;
-    }
-
-    // Set transition flag
-    _isTransitionInProgress = true;
-    _cancelAllTimers(reason: 'startListeningAfterDelay');
-    final currentGeneration = _nextVadGeneration();
-
-    try {
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [TRACE] startListeningAfterDelay begin gen=$currentGeneration time=${DateTime.now().toIso8601String()} state=$_currentState');
-      }
-      // Update state - use different transition based on current state
-      if (_currentState == AutoListeningState.idle) {
-        // From idle, go directly to listening (more restrictive transition rules)
-        _updateState(AutoListeningState.listening);
-        // Start listening immediately without the intermediate listeningForVoice state
-        await _executeListeningStart(currentGeneration);
-        return;
-      } else {
-        // From aiSpeaking, we can use the intermediate listeningForVoice state
-        _updateState(AutoListeningState.listeningForVoice);
-      }
-
-      // Cancel any existing stuck state timer
-      _stuckStateTimer?.cancel();
-
-      // Set a timer to reset if we get stuck
-      _stuckStateTimer = Timer(const Duration(seconds: 1), () {
-        if (_currentState == AutoListeningState.listeningForVoice) {
+        if (_isTransitionInProgress) {
           if (kDebugMode) {
             debugPrint(
-                '[AutoListeningCoordinator] [VAD] Stuck in listeningForVoice state, resetting to idle');
+                '[AutoListeningCoordinator] [VAD] Transition already in progress, ignoring duplicate call');
           }
-          _updateState(AutoListeningState.idle);
-          // Try again
-          _startListeningAfterDelay();
+          _endVadTransition(transitionLock);
+          return;
         }
-      });
 
-      // Execute VAD start logic immediately (no Future.delayed)
-      if (!_autoModeEnabled) {
-        if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator] [VAD] Auto mode disabled, not starting listening');
+        _isTransitionInProgress = true;
+        _cancelAllTimers(reason: 'startListeningAfterDelay');
+        final currentGeneration = _nextVadGeneration();
+
+        try {
+          if (kDebugMode) {
+            debugPrint(
+                '[AutoListeningCoordinator] [TRACE] startListeningAfterDelay begin gen=$currentGeneration time=${DateTime.now().toIso8601String()} state=$_currentState');
+          }
+
+          if (_currentState == AutoListeningState.idle) {
+            _updateState(AutoListeningState.listening);
+            await _executeListeningStart(currentGeneration);
+            return;
+          }
+
+          _updateState(AutoListeningState.listeningForVoice);
+          _stuckStateTimer?.cancel();
+          _stuckStateTimer = Timer(const Duration(seconds: 1), () {
+            if (_currentState == AutoListeningState.listeningForVoice) {
+              if (kDebugMode) {
+                debugPrint(
+                    '[AutoListeningCoordinator] [VAD] Stuck in listeningForVoice state, resetting to idle');
+              }
+              _updateState(AutoListeningState.idle);
+              _startListeningAfterDelay();
+            }
+          });
+
+          if (!_autoModeEnabled) {
+            if (kDebugMode) {
+              debugPrint(
+                  '[AutoListeningCoordinator] [VAD] Auto mode disabled, not starting listening');
+            }
+            _stuckStateTimer?.cancel();
+            return;
+          }
+
+          await _executeListeningStart(currentGeneration);
+        } finally {
+          _isTransitionInProgress = false;
+          if (kDebugMode) {
+            debugPrint(
+                '[AutoListeningCoordinator] [TRACE] startListeningAfterDelay end gen=$currentGeneration time=${DateTime.now().toIso8601String()} state=$_currentState autoMode=$_autoModeEnabled');
+          }
+          _endVadTransition(transitionLock);
         }
-        _stuckStateTimer?.cancel();
-        return;
-      }
-
-      // Start listening immediately
-      await _executeListeningStart(currentGeneration);
-    } finally {
-      // Always reset the transition flag
-      _isTransitionInProgress = false;
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [TRACE] startListeningAfterDelay end gen=$currentGeneration time=${DateTime.now().toIso8601String()} state=$_currentState');
-      }
-      _endVadTransition(transitionLock);
-    }
+      },
+    );
   }
 
   // New method to handle the actual listening start
@@ -946,56 +976,50 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Start listening for voice activity
   Future<void> _startListening([int? generationOverride]) async {
-    // Cancel any post-audio delay when starting listening
-
-    if (!(_currentState == AutoListeningState.idle ||
-        _currentState == AutoListeningState.processing)) {
-      return;
-    }
-
-    if (_voiceService.isTtsActive) {
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] ⚠️ _startListening blocked – TTS still active');
-      }
-      return;
-    }
-
-    await _awaitVadTransition();
-    final transitionLock = _beginVadTransition();
-    final generation = generationOverride ?? _nextVadGeneration();
-    _cancelAllTimers(reason: 'startListening');
-    try {
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [TRACE] _startListening begin gen=$generation time=${DateTime.now().toIso8601String()} state=$_currentState autoMode=$_autoModeEnabled');
-      }
-      try {
-        // Use retry mechanism for VAD startup
-        final success = await _startVADWithRetry();
-        if (success && generation == _vadGeneration) {
-          _activeListeningGeneration = generation;
-          _updateState(AutoListeningState.listening);
+    await _beginListeningIfAllowed(
+      context: 'direct',
+      allowedStates: {
+        AutoListeningState.idle,
+        AutoListeningState.processing,
+      },
+      onAllowed: () async {
+        await _awaitVadTransition();
+        final transitionLock = _beginVadTransition();
+        final generation = generationOverride ?? _nextVadGeneration();
+        _cancelAllTimers(reason: 'startListening');
+        try {
           if (kDebugMode) {
-            debugPrint('🎤 AutoListening: Started listening for voice activity');
+            debugPrint(
+                '[AutoListeningCoordinator] [TRACE] _startListening begin gen=$generation time=${DateTime.now().toIso8601String()} state=$_currentState autoMode=$_autoModeEnabled');
           }
-        } else if (!success && kDebugMode) {
-          debugPrint(
-              '❌ AutoListening: VAD startup failed after retries, remaining in current state');
+          try {
+            final success = await _startVADWithRetry();
+            if (success && generation == _vadGeneration) {
+              _activeListeningGeneration = generation;
+              _updateState(AutoListeningState.listening);
+              if (kDebugMode) {
+                debugPrint(
+                    '🎤 AutoListening: Started listening for voice activity');
+              }
+            } else if (!success && kDebugMode) {
+              debugPrint(
+                  '❌ AutoListening: VAD startup failed after retries, remaining in current state');
+            }
+          } catch (e) {
+            _errorController.add('Failed to start VAD listening: $e');
+            if (kDebugMode) {
+              debugPrint('❌ AutoListening error: $e');
+            }
+          }
+        } finally {
+          _endVadTransition(transitionLock);
+          if (kDebugMode) {
+            debugPrint(
+                '[AutoListeningCoordinator] [TRACE] _startListening end gen=$generation time=${DateTime.now().toIso8601String()} state=$_currentState autoMode=$_autoModeEnabled');
+          }
         }
-      } catch (e) {
-        _errorController.add('Failed to start VAD listening: $e');
-        if (kDebugMode) {
-          debugPrint('❌ AutoListening error: $e');
-        }
-      }
-    } finally {
-      _endVadTransition(transitionLock);
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [TRACE] _startListening end gen=$generation time=${DateTime.now().toIso8601String()} state=$_currentState autoMode=$_autoModeEnabled');
-      }
-    }
+      },
+    );
   }
 
   // Start the audio recording
@@ -1489,11 +1513,12 @@ class AutoListeningCoordinator with SessionDisposable {
 
   /// Comprehensive state reset for clean mode transitions
   /// Call this during chat→voice switches to eliminate state contamination
-  void reset({bool full = false}) {
+  void reset({bool full = false, bool? preserveAutoMode}) {
     // ENGINEER FEEDBACK: Keep debug log of generation number for stray callback detection
     final int oldSeq = _speechSeq;
+    final bool shouldPreserveAutoMode = preserveAutoMode ?? !full;
     if (kDebugMode) {
-      AppLogger.d('🔄 [ALS] reset() full=$full '
+      AppLogger.d('🔄 [ALS] reset() full=$full preserveAutoMode=$shouldPreserveAutoMode '
           'seq=$_speechSeq->0 vadRestart=$_vadRestartScheduled '
           'burst=$_speechBurstCount inSession=$_inSpeechSession');
     }
@@ -1525,11 +1550,15 @@ class AutoListeningCoordinator with SessionDisposable {
     // Reset state to idle for clean start
     _updateState(AutoListeningState.idle);
 
+    if (!shouldPreserveAutoMode) {
+      _setAutoModeEnabled(false,
+          context: full ? 'reset(full)' : 'reset(partial)');
+    }
+
     // Full reset includes resource cleanup (for session disposal)
     if (full) {
       _isVadActive = false;
       _isRecordingActive = false;
-      _setAutoModeEnabled(false, context: 'reset(full)');
 
       // Clean up subscriptions
       _startListeningSub?.cancel();

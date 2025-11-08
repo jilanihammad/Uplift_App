@@ -86,7 +86,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                   selector: (blocState) => (
                     rec: blocState.isRecording,
                     amp: blocState.amplitude,
-                    listening: blocState.isListeningForVoice,
+                    listening: blocState.isListening,
                     processing: blocState.isProcessingAudio,
                     speaking: blocState.isAiSpeaking,
                     voiceMode: blocState.isVoiceMode,
@@ -162,7 +162,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                     })>(
                   selector: (blocState) => (
                     rec: blocState.isRecording,
-                    listening: blocState.isListeningForVoice,
+                    listening: blocState.isListening,
                     processing: blocState.isProcessingAudio,
                     speaking: blocState.isAiSpeaking,
                     voiceMode: blocState.isVoiceMode,
@@ -219,7 +219,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
         rec: state.isRecording,
         proc: state.isProcessing,
         muted: state.isSpeakerMuted,
-        listening: state.isListeningForVoice,
+        listening: state.isListening,
         micEnabled: state.isMicEnabled,
         toggleEnabled: state.isMicToggleEnabled,
       ),

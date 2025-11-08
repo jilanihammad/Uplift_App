@@ -34,3 +34,11 @@ Both issues let RNNoise listen to Maya’s own audio or leave the coordinator in
 - `_cancelSpeechEndTimer` already exists—reuse it with a descriptive reason.
 - Don’t block the UI thread; use `await Future.delayed` for the debounce.
 - After implementing, exercise both flows: welcome TTS → idle, and voice→chat mode switch. Confirm no VAD activity occurs while TTS is active and no duplicate recording shutdown happens on mode switch.
+
+## One More Fix
+To finish closing the loop we still have to guarantee the playback token is present before we arm the auto-mode wait. Do this in two steps:
+
+1. **Assign the token before scheduling the wait** – in the TTS start path (the `onPlaybackToken` callback inside `AudioPlayerManager.playLiveTtsStream` or wherever you receive it), set `_currentPlaybackToken = token` *then* call `enableAutoModeWhenPlaybackCompletes(playbackToken: token)`. Never call the helper with `null`.
+2. **Defensive check in helper** – at the top of `enableAutoModeWhenPlaybackCompletes(...)`, log and return immediately if `playbackToken == null`. That prevents us from queuing another wait that’s doomed to fail.
+
+Once both are in place we eliminate the last timing window: the helper always sees the real playback token, and auto mode only re-arms after the correct TTS cycle completes.
