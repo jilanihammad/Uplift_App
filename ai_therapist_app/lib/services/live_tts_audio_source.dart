@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../utils/opus_header_utils.dart';
 import '../utils/wav_header_utils.dart';
+import '../utils/log_channels.dart';
 
 /// Custom StreamAudioSource for true live TTS streaming
 ///
@@ -19,6 +20,14 @@ class LiveTtsAudioSource extends StreamAudioSource {
   final Stream<Uint8List> _dataStream;
   final String _contentType;
   final String? _debugName;
+
+  bool get _ttsTraceEnabled => kDebugMode && LogChannels.ttsTrace;
+
+  void _ttsLog(String message) {
+    if (_ttsTraceEnabled) {
+      debugPrint(message);
+    }
+  }
 
   // CRITICAL: Track WebSocket state for proper DataSource contract
   bool _webSocketClosed = false;
@@ -55,7 +64,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
   void attachPlaybackToken(int token) {
     _playbackToken = token;
     if (kDebugMode) {
-      debugPrint(
+      _ttsLog(
           '🎯 LiveTtsAudioSource: Attached playback token $token for ${_debugName ?? "TTS"}');
     }
   }
@@ -72,7 +81,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
     }
 
     if (kDebugMode) {
-      debugPrint(
+      _ttsLog(
           '🔌 LiveTtsAudioSource: WebSocket marked as closed for ${_debugName ?? "TTS"} (totalSize: $totalSize)');
     }
   }
@@ -81,7 +90,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
   void markStreamCompleted() {
     _streamCompleted = true;
     if (kDebugMode) {
-      debugPrint(
+      _ttsLog(
           '✅ LiveTtsAudioSource: Stream marked as completed for ${_debugName ?? "TTS"}');
     }
   }
@@ -117,9 +126,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
         contentType.toLowerCase().contains('opus');
 
     if (kDebugMode) {
-      debugPrint(
+      _ttsLog(
           '🎯 LiveTtsAudioSource: Created with direct stream access for $debugName (natural completion)');
-      debugPrint(
+      _ttsLog(
           '🎯 Format detection: contentType=$contentType, isOpus=$_isOpusFormat');
     }
 
@@ -138,22 +147,22 @@ class LiveTtsAudioSource extends StreamAudioSource {
       final now = DateTime.now().millisecondsSinceEpoch;
       if (_lastRequestTime != null) {
         final gap = now - _lastRequestTime!;
-        debugPrint('⚡ Request gap: ${gap}ms (Count: $_requestCount)');
+        _ttsLog('⚡ Request gap: ${gap}ms (Count: $_requestCount)');
       }
       _lastRequestTime = now;
 
-      debugPrint('🔍 LiveTtsAudioSource.request() called:');
-      debugPrint('  Request ID: $requestId');
-      debugPrint('  Request Count: $_requestCount');
-      debugPrint('  Debug Name: ${_debugName ?? "unknown"}');
-      debugPrint('  Playback Token: ${_playbackToken ?? 'none'}');
-      debugPrint('  Start: $start, End: $end');
-      debugPrint('  Content Type: $_contentType');
-      debugPrint(
+      _ttsLog('🔍 LiveTtsAudioSource.request() called:');
+      _ttsLog('  Request ID: $requestId');
+      _ttsLog('  Request Count: $_requestCount');
+      _ttsLog('  Debug Name: ${_debugName ?? "unknown"}');
+      _ttsLog('  Playback Token: ${_playbackToken ?? 'none'}');
+      _ttsLog('  Start: $start, End: $end');
+      _ttsLog('  Content Type: $_contentType');
+      _ttsLog(
           '  WebSocket State: closed=$_webSocketClosed, streamCompleted=$_streamCompleted');
-      debugPrint('  Buffer Size: ${_dataBuffer.length} bytes');
-      debugPrint('  Has Delivered Data: $_hasDeliveredData');
-      debugPrint('⏳ Waiting for content size from backend...');
+      _ttsLog('  Buffer Size: ${_dataBuffer.length} bytes');
+      _ttsLog('  Has Delivered Data: $_hasDeliveredData');
+      _ttsLog('⏳ Waiting for content size from backend...');
     }
 
     // Wait for content size from tts-done message (with timeout)
@@ -162,11 +171,11 @@ class LiveTtsAudioSource extends StreamAudioSource {
       contentSize = await _contentSizeCompleter.future
           .timeout(const Duration(seconds: 10), onTimeout: () => null);
       if (kDebugMode) {
-        debugPrint('✅ Received content size: $contentSize bytes');
+        _ttsLog('✅ Received content size: $contentSize bytes');
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('⚠️ Timeout waiting for content size, using null: $e');
+        _ttsLog('⚠️ Timeout waiting for content size, using null: $e');
       }
       contentSize = null;
     }
@@ -175,7 +184,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
     if (_currentSessionId == null) {
       _currentSessionId = 'session_${DateTime.now().microsecondsSinceEpoch}';
       if (kDebugMode) {
-        debugPrint(
+        _ttsLog(
             '🆔 LiveTtsAudioSource: Starting new playback session: $_currentSessionId');
       }
     }
@@ -186,7 +195,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
         _hasDeliveredData &&
         (start == null || start == 0)) {
       if (kDebugMode) {
-        debugPrint(
+        _ttsLog(
             '🚫 LiveTtsAudioSource: Preventing replay - session $_currentSessionId already completed');
       }
       throw UnsupportedError(
@@ -198,7 +207,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
       // Handle ExoPlayer's range requests by serving real data from buffer
       if (start != null && start > 0) {
         if (kDebugMode) {
-          debugPrint(
+          _ttsLog(
               '🔍 LiveTtsAudioSource: Range request for offset $start (buffer size: ${_dataBuffer.length}, contentSize: $contentSize)');
         }
 
@@ -208,7 +217,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
           final responseData = _dataBuffer.sublist(start);
 
           if (kDebugMode) {
-            debugPrint(
+            _ttsLog(
                 '✅ LiveTtsAudioSource: Serving $availableBytes bytes from offset $start');
           }
 
@@ -222,7 +231,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
         } else {
           // Offset beyond buffer - return empty response (EOF behavior)
           if (kDebugMode) {
-            debugPrint(
+            _ttsLog(
                 '✅ LiveTtsAudioSource: EOF request beyond buffer (start: $start >= ${_dataBuffer.length})');
           }
 
@@ -246,7 +255,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
       // This redundant check ensures we don't double-subscribe
       if (!_isListening) {
         if (kDebugMode) {
-          debugPrint(
+          _ttsLog(
               '⚠️ LiveTtsAudioSource: Late listener start - this should not happen with timing fix');
         }
         _startListening();
@@ -256,16 +265,16 @@ class LiveTtsAudioSource extends StreamAudioSource {
       final dataSourceStream = _createDataSourceStream();
 
       if (kDebugMode) {
-        debugPrint(
+        _ttsLog(
             '🎯 LiveTtsAudioSource: Creating DataSource-compliant stream response');
-        debugPrint('🎯 Content-Type: $_contentType');
-        debugPrint('🎯 Stream Configuration:');
-        debugPrint(
+        _ttsLog('🎯 Content-Type: $_contentType');
+        _ttsLog('🎯 Stream Configuration:');
+        _ttsLog(
             '  - sourceLength: ${contentSize ?? "null (unknown - streaming)"}');
-        debugPrint(
+        _ttsLog(
             '  - contentLength: ${contentSize ?? "null (unknown - streaming)"}');
-        debugPrint('  - offset: 0 (start from beginning)');
-        debugPrint(
+        _ttsLog('  - offset: 0 (start from beginning)');
+        _ttsLog(
             '  - DataSource contract: RESULT_NOTHING_READ when empty, END_OF_INPUT when closed');
       }
 
@@ -278,14 +287,14 @@ class LiveTtsAudioSource extends StreamAudioSource {
       );
 
       if (kDebugMode) {
-        debugPrint(
+        _ttsLog(
             '✅ LiveTtsAudioSource: Successfully created DataSource-compliant StreamAudioResponse');
       }
 
       return response;
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('❌ LiveTtsAudioSource: Error creating stream response: $e');
+        _ttsLog('❌ LiveTtsAudioSource: Error creating stream response: $e');
       }
       rethrow;
     }
@@ -297,7 +306,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
     _isListening = true;
     if (kDebugMode) {
-      debugPrint(
+      _ttsLog(
           '👂 LiveTtsAudioSource: Starting to listen to data stream (immediate capture mode)');
     }
 
@@ -310,9 +319,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
             final headerCheck = String.fromCharCodes(firstChunk.sublist(0, 4));
             if (headerCheck != 'OggS') {
               if (kDebugMode) {
-                debugPrint(
+                _ttsLog(
                     '⚠️ LiveTtsAudioSource: Invalid Ogg header detected. Expected "OggS", got "$headerCheck"');
-                debugPrint(
+                _ttsLog(
                     '🔧 LiveTtsAudioSource: Injecting cached BOS+tags headers for compatibility');
               }
 
@@ -321,12 +330,12 @@ class LiveTtsAudioSource extends StreamAudioSource {
               _dataBuffer.addAll(staticOpusHeaders);
 
               if (kDebugMode) {
-                debugPrint(
+                _ttsLog(
                     '✅ LiveTtsAudioSource: Injected ${staticOpusHeaders.length} bytes of static Opus headers');
               }
             } else {
               if (kDebugMode) {
-                debugPrint(
+                _ttsLog(
                     '✅ LiveTtsAudioSource: Valid Ogg header detected, proceeding normally');
               }
             }
@@ -342,20 +351,20 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
         // Throttled logging to prevent UI thread blocking (every 16 chunks ≈ 64KB)
         if (kDebugMode && ((_chunkCount++ & 0x0F) == 0)) {
-          debugPrint(
+          _ttsLog(
               '📊 LiveTtsAudioSource: Buffered ${_dataBuffer.length} bytes ($_chunkCount chunks, headersReady: $_headersReady)');
         }
       },
       onDone: () {
         _streamCompleted = true;
         if (kDebugMode) {
-          debugPrint(
+          _ttsLog(
               '✅ LiveTtsAudioSource: Stream completed (total: ${_dataBuffer.length} bytes)');
         }
       },
       onError: (error) {
         if (kDebugMode) {
-          debugPrint('❌ LiveTtsAudioSource: Stream error: $error');
+          _ttsLog('❌ LiveTtsAudioSource: Stream error: $error');
         }
         _streamCompleted = true;
       },
@@ -382,7 +391,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
     _headersReady = true;
 
     if (kDebugMode) {
-      debugPrint(
+      _ttsLog(
           '✅ LiveTtsAudioSource: OPUS format - headers ready for streaming (${_dataBuffer.length} bytes buffered)');
     }
   }
@@ -394,8 +403,8 @@ class LiveTtsAudioSource extends StreamAudioSource {
       _headersReady = true;
 
       if (kDebugMode) {
-        debugPrint('✅ LiveTtsAudioSource: WAV headers ready');
-        debugPrint('🎯 Header info: $wavInfo');
+        _ttsLog('✅ LiveTtsAudioSource: WAV headers ready');
+        _ttsLog('🎯 Header info: $wavInfo');
       }
     }
   }
@@ -462,7 +471,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
     if (kDebugMode) {
       final format = _isOpusFormat ? 'OPUS' : 'WAV';
-      debugPrint(
+      _ttsLog(
           '🏗️ LiveTtsAudioSource: Created $format DataSource stream with contract implementation');
     }
 
@@ -488,14 +497,14 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
         if (kDebugMode && chunk.isNotEmpty) {
           final dataType = _isOpusFormat ? 'OPUS' : 'WAV';
-          // debugPrint('📤 LiveTtsAudioSource: Yielding ${chunk.length} bytes of $dataType to ExoPlayer (position: $readPosition)');
+          // _ttsLog('📤 LiveTtsAudioSource: Yielding ${chunk.length} bytes of $dataType to ExoPlayer (position: $readPosition)');
         }
 
         yield chunk;
         _hasDeliveredData = true; // Mark that we've started delivering data
 
         if (kDebugMode && chunk.length < chunkSize) {
-          // debugPrint('📤 LiveTtsAudioSource: Delivered final partial chunk (${chunk.length} < $chunkSize) - stream ending soon');
+          // _ttsLog('📤 LiveTtsAudioSource: Delivered final partial chunk (${chunk.length} < $chunkSize) - stream ending soon');
         }
         continue;
       }
@@ -509,21 +518,21 @@ class LiveTtsAudioSource extends StreamAudioSource {
         // WebSocket is closed - no more data will arrive, end the stream
         if (kDebugMode) {
           final format = _isOpusFormat ? 'OPUS' : 'WAV';
-          debugPrint(
+          _ttsLog(
               '🏁 LiveTtsAudioSource: $format stream completed - ending stream (END_OF_INPUT)');
-          debugPrint(
+          _ttsLog(
               '🏁 Stream state: webSocketClosed=$_webSocketClosed, streamCompleted=$_streamCompleted, allDataConsumed=${readPosition >= _dataBuffer.length}');
         }
 
         // Natural completion - let ExoPlayer handle ProcessingState.completed event
         if (kDebugMode) {
           final format = _isOpusFormat ? 'OPUS' : 'WAV';
-          debugPrint(
+          _ttsLog(
               '🏁 LiveTtsAudioSource: $format stream completed - ending stream (END_OF_INPUT)');
-          debugPrint('🏁 Session: $_currentSessionId - marking as completed');
-          debugPrint(
+          _ttsLog('🏁 Session: $_currentSessionId - marking as completed');
+          _ttsLog(
               '🏁 Stream state: webSocketClosed=$_webSocketClosed, streamCompleted=$_streamCompleted, allDataConsumed=${readPosition >= _dataBuffer.length}');
-          debugPrint(
+          _ttsLog(
               '🎯 LiveTtsAudioSource: Natural completion - letting ExoPlayer fire ProcessingState.completed');
         }
 
@@ -536,7 +545,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
         if (!_isOpusFormat) {
           // If it's WAV format
           if (kDebugMode) {
-            debugPrint(
+            _ttsLog(
                 '🏁 LiveTtsAudioSource: WAV stream stalled/no data, ending stream (ExoPlayer will handle)');
           }
           _streamCompleted = true; // Mark as completed
@@ -546,7 +555,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
         } else {
           // If it's OPUS, continue waiting as before
           if (kDebugMode) {
-            debugPrint(
+            _ttsLog(
                 '⏳ LiveTtsAudioSource: No data available but WebSocket still open - waiting (RESULT_NOTHING_READ)');
           }
           await Future.delayed(const Duration(milliseconds: 10));
@@ -563,7 +572,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
     if (kDebugMode) {
       final format = _isOpusFormat ? 'OPUS' : 'WAV';
-      debugPrint(
+      _ttsLog(
           '🏁 LiveTtsAudioSource: $format DataSource stream ended (total read: $readPosition bytes)');
     }
   }
@@ -585,7 +594,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
     _sessionCompleted = true; // Ensure no future requests
 
     if (kDebugMode) {
-      debugPrint(
+      _ttsLog(
           '🧹 LiveTtsAudioSource: Disposed resources for ${_debugName ?? "TTS"} (session: $_currentSessionId)');
     }
   }

@@ -6,14 +6,14 @@ import '../data/datasources/remote/api_client.dart';
 import '../utils/logger_util.dart';
 import '../config/app_config.dart';
 import '../config/llm_config.dart'; // Import LLM Configuration
-import '../blocs/voice_session_bloc.dart' hide ConversationBufferMemory;
 import './langchain/custom_langchain.dart'; // Added for ConversationBufferMemory
 import './config_service.dart'; // Added for ConfigService
 import '../di/interfaces/i_groq_service.dart'; // Added for GroqService streaming
+import '../utils/box_logger.dart';
+import '../utils/log_channels.dart';
 
 /// Handles processing of user messages and generating AI responses
 class MessageProcessor {
-  final VoiceSessionBloc? _voiceSessionBloc;
   final ConversationBufferMemory _conversationHistory;
   final ConfigService _configService;
   final ApiClient apiClient;
@@ -61,12 +61,10 @@ class MessageProcessor {
   };
 
   MessageProcessor({
-    required VoiceSessionBloc? voiceSessionBloc,
     required ConversationBufferMemory conversationHistory,
     required ConfigService configService,
     required IGroqService groqService,
-  })  : _voiceSessionBloc = voiceSessionBloc,
-        _conversationHistory = conversationHistory,
+  })  : _conversationHistory = conversationHistory,
         _configService = configService,
         _groqService = groqService,
         apiClient = ApiClient(configService: configService) {
@@ -220,8 +218,22 @@ class MessageProcessor {
       };
 
       try {
-        log.d(
-            'Preparing to call API endpoint: /ai/response with payload: ${json.encode(payload)}');
+        final payloadPreview = json.encode({
+          'message': payload['message'],
+          'state': payload['conversation_state'],
+          'historyCount': (payload['history'] as List).length,
+        });
+        if (LogChannels.therapyTrace && kDebugMode) {
+          log.d(
+              'Preparing to call API endpoint: /ai/response with payload: ${json.encode(payload)}');
+        } else {
+          BoxLogger.debug(
+            '🌐',
+            'MessageProcessor',
+            'Calling /ai/response',
+            details: {'payload': payloadPreview},
+          );
+        }
         // The AppConfig().backendUrl might be slightly different from _configService.llmApiEndpoint
         // if directLLMMode is true, but for backend calls, this should be fine.
         // ApiClient will use the correct base URL from ConfigService.llmApiEndpoint getter.
@@ -244,11 +256,6 @@ class MessageProcessor {
   }
 
   /// Process parameters and generate a fallback response
-  Future<String> _generateFallbackResponse(String userMessage) async {
-    return await compute(_generateFallbackResponseStatic,
-        {'message': userMessage, 'templates': _responseTemplates});
-  }
-
   String _pickNonRepeating(List<String> options, int index) {
     if (options.isEmpty) {
       return '';
@@ -297,56 +304,6 @@ class MessageProcessor {
     ];
 
     return _pickNonRepeating(defaultResponses, seed);
-  }
-
-  /// Generate a fallback response in a separate compute isolate
-  static String _generateFallbackResponseStatic(Map<String, dynamic> params) {
-    final userMessage = params['message'] as String;
-    final responseTemplates = params['templates'] as Map<String, List<String>>;
-    final lowerMessage = userMessage.toLowerCase();
-
-    // Generate a seed for consistent but varied responses
-    int seed = 0;
-    for (int i = 0; i < userMessage.length; i++) {
-      seed += userMessage.codeUnitAt(i);
-    }
-
-    // Find matching keywords
-    List<String> matchedKeywords = [];
-    for (final keyword in responseTemplates.keys) {
-      if (lowerMessage.contains(keyword)) {
-        matchedKeywords.add(keyword);
-      }
-    }
-
-    // If we found matches, select from matching templates
-    if (matchedKeywords.isNotEmpty) {
-      // Get a random response from each matched category
-      List<String> possibleResponses = [];
-      for (final keyword in matchedKeywords) {
-        final responses = responseTemplates[keyword]!;
-        final randomIndex = (seed + keyword.length) % responses.length;
-        possibleResponses.add(responses[randomIndex]);
-      }
-
-      final responseIndex = seed % possibleResponses.length;
-      return possibleResponses[responseIndex];
-    }
-
-    // Default responses when no keywords match
-    List<String> defaultResponses = [
-      "Thank you for sharing that with me. Can you tell me more about how that makes you feel?",
-      "I appreciate you opening up. How long have you been experiencing this?",
-      "I'm listening and I'm here to support you. What strategies have you tried so far?",
-      "That sounds challenging. Could you elaborate on what aspects are most difficult for you?",
-      "I understand. How have these feelings been affecting your daily life and relationships?",
-      "I'm curious to know more about when you first noticed this pattern.",
-      "That's an important insight. How would you like things to be different?",
-      "Thank you for trusting me with this. What would be most helpful for you right now?",
-    ];
-
-    final randomIndex = seed % defaultResponses.length;
-    return defaultResponses[randomIndex];
   }
 
   /// Build system prompt based on graph analysis results
@@ -542,11 +499,10 @@ $conversationText''';
 
       final response = await apiClient.post('/therapy/end_session', payload);
 
-      log.i(
-          'Received response from end_session API: ${json.encode(response)}');
+      log.i('Received response from end_session API: ${json.encode(response)}');
       log.i('Session summary generated successfully');
       return response;
-        } catch (e) {
+    } catch (e) {
       log.e('Backend API error in generateSessionSummary', e);
       _logDetailedError(e);
       return _generateFallbackSummary(messages);
@@ -588,7 +544,10 @@ $conversationText''';
         }
       }
 
-      final summary = 'Thank you for your session today. ' 'We discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, ' 'and explored ways to approach these areas in your life. ' 'Remember that personal growth takes time, and it\'s important to be patient with yourself.';
+      final summary = 'Thank you for your session today. '
+          'We discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, '
+          'and explored ways to approach these areas in your life. '
+          'Remember that personal growth takes time, and it\'s important to be patient with yourself.';
 
       final actionItems = [
         'Take time for self-reflection',
@@ -632,7 +591,7 @@ $conversationText''';
 
         log.d('Service status response: $response');
         return response;
-            } catch (e) {
+      } catch (e) {
         log.e('Error checking service status', e);
         _logDetailedError(e);
 
