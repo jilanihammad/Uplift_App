@@ -137,6 +137,29 @@ class _DebugDrawerState extends State<DebugDrawer> {
                           ),
                         ),
 
+                        Card(
+                          child: ListTile(
+                            title: const Text('Coordinator Voice Guard'),
+                            subtitle: Text(
+                              _flags[FeatureFlags
+                                          .coordinatorVoiceGuardEnabled] ==
+                                      true
+                                  ? '✅ New guard active'
+                                  : '⚪️ Using legacy guard',
+                            ),
+                            trailing: Switch(
+                              value: _flags[FeatureFlags
+                                      .coordinatorVoiceGuardEnabled] ??
+                                  false,
+                              onChanged: (_) => _toggleFlag(
+                                  FeatureFlags
+                                      .coordinatorVoiceGuardEnabled),
+                            ),
+                            onTap: () => _toggleFlag(
+                                FeatureFlags.coordinatorVoiceGuardEnabled),
+                          ),
+                        ),
+
                         const SizedBox(height: 16),
 
                         // Reset Button

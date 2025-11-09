@@ -13,6 +13,7 @@ import '../utils/logging_config.dart';
 import '../utils/disposable.dart';
 import '../utils/box_logger.dart';
 import '../utils/log_channels.dart';
+import '../utils/feature_flags.dart';
 
 /// Coordinates automatic voice detection and recording
 ///
@@ -29,8 +30,18 @@ class AutoListeningCoordinator with SessionDisposable {
   final VoiceService _voiceService;
 
   // NEW: Combined stream for robust AI audio state tracking
-  late Stream<bool> _aiAudioActiveStream;
+  late final Stream<bool> _aiAudioActiveStream;
+  final BehaviorSubject<bool> _aiAudioActivitySubject =
+      BehaviorSubject<bool>.seeded(false);
+  StreamSubscription<bool>? _aiAudioSourceSub;
   StreamSubscription<bool>? _startListeningSub;
+  StreamSubscription<String>? _vadErrorSub;
+  Completer<void>? _pendingDisableCompleter;
+  bool _aiAudioActive = false;
+  bool _autoModeEnabledDuringAiAudio = false;
+  Timer? _aiAudioGuardTimer;
+  static const Duration _aiAudioGuardTimeout = Duration(seconds: 10);
+  final bool _voiceGuardEnabled;
 
   // Unified TTS activity stream (set after initialization if available)
   Stream<bool>? _ttsActivityStream;
@@ -41,6 +52,7 @@ class AutoListeningCoordinator with SessionDisposable {
   late final dynamic _vadManager; // Can be VADManager or EnhancedVADManager
 
   bool get _vadTraceEnabled => kDebugMode && LogChannels.vadTrace;
+  bool get _isPipelineIdle => !_isRecordingActive && !_isVadActive && !_aiAudioActive;
 
   void _logAutoEvent(
     String message, {
@@ -219,6 +231,95 @@ class AutoListeningCoordinator with SessionDisposable {
     _pendingSpeechEndTimer = null;
     _stuckStateTimer?.cancel();
     _stuckStateTimer = null;
+    _cancelAiAudioGuardTimer();
+  }
+
+  void _markAutoModeAwaitingAiSilence() {
+    if (!_voiceGuardEnabled || !_autoModeEnabled) {
+      return;
+    }
+    _autoModeEnabledDuringAiAudio = true;
+    _startAiAudioGuardTimer();
+  }
+
+  void _clearAutoModeAwaitingAiSilence({bool cancelTimer = true}) {
+    if (!_voiceGuardEnabled) {
+      return;
+    }
+    _autoModeEnabledDuringAiAudio = false;
+    if (cancelTimer) {
+      _cancelAiAudioGuardTimer();
+    }
+  }
+
+  void _startAiAudioGuardTimer() {
+    if (!_voiceGuardEnabled) {
+      return;
+    }
+    _aiAudioGuardTimer?.cancel();
+    _aiAudioGuardTimer = Timer(_aiAudioGuardTimeout, () {
+      if (!_autoModeEnabledDuringAiAudio || !_autoModeEnabled) {
+        return;
+      }
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] [GUARD] AI audio timeout hit; forcing listening restart');
+      }
+      _autoModeEnabledDuringAiAudio = false;
+      _aiAudioActive = false;
+      unawaited(_startListeningAfterDelay());
+    });
+  }
+
+  void _cancelAiAudioGuardTimer() {
+    if (!_voiceGuardEnabled) {
+      return;
+    }
+    _aiAudioGuardTimer?.cancel();
+    _aiAudioGuardTimer = null;
+  }
+
+  void _forceAiAudioIdle() {
+    _aiAudioActive = false;
+    _clearAutoModeAwaitingAiSilence();
+    _cancelAiAudioGuardTimer();
+    if (!_aiAudioActivitySubject.isClosed) {
+      _aiAudioActivitySubject.add(false);
+    }
+  }
+
+  Future<void> _waitForAiAudioSilence() async {
+    if (!_aiAudioActive) {
+      return;
+    }
+
+    if (kDebugMode) {
+      debugPrint(
+          '[AutoListeningCoordinator] Waiting for AI audio to go idle before disabling auto mode');
+    }
+
+    try {
+      await _aiAudioActiveStream
+          .firstWhere((active) => !active)
+          .timeout(const Duration(seconds: 2));
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] Timed out waiting for AI audio to idle: $e');
+      }
+    }
+  }
+
+  void _completeDisableIfIdle() {
+    final completer = _pendingDisableCompleter;
+    if (completer == null || completer.isCompleted) {
+      return;
+    }
+    if (!_isPipelineIdle) {
+      return;
+    }
+    completer.complete();
+    _pendingDisableCompleter = null;
   }
 
   void _setAutoModeEnabled(bool value, {String context = ''}) {
@@ -226,6 +327,9 @@ class AutoListeningCoordinator with SessionDisposable {
       return;
     }
     _autoModeEnabled = value;
+    if (!value) {
+      _clearAutoModeAwaitingAiSilence();
+    }
     _logAutoEvent(
       'Auto mode ${value ? 'enabled' : 'disabled'}'
       '${context.isNotEmpty ? ' ($context)' : ''}',
@@ -240,24 +344,33 @@ class AutoListeningCoordinator with SessionDisposable {
     required RecordingManager recordingManager,
     required VoiceService voiceService,
     Stream<bool>? ttsActivityStream, // Optional unified TTS state stream
+    dynamic vadManager,
   })  : _audioPlayerManager = audioPlayerManager,
         _recordingManager = recordingManager,
-        _voiceService = voiceService {
-    // Initialize appropriate VAD manager based on configuration
-    if (_useEnhancedVAD) {
-      _vadManager = EnhancedVADManager();
-      _logAutoEvent('Using Enhanced VAD Manager', trace: true);
-    } else {
-      _vadManager = VADManager();
-      _logAutoEvent('Using Standard VAD Manager', trace: true);
+        _voiceService = voiceService,
+        _voiceGuardEnabled = FeatureFlags.isCoordinatorVoiceGuardEnabled {
+    _vadManager = vadManager ??
+        (_useEnhancedVAD ? EnhancedVADManager() : VADManager());
+    if (kDebugMode) {
+      _logAutoEvent(
+        vadManager != null
+            ? 'Using injected VAD Manager for testing'
+            : 'Using ${_useEnhancedVAD ? 'Enhanced' : 'Standard'} VAD Manager',
+        trace: true,
+      );
     }
 
     // Store the initial TTS activity stream if provided
     _ttsActivityStream = ttsActivityStream;
+    _aiAudioActiveStream = _aiAudioActivitySubject.stream;
 
     // NEW: Create combined stream that tracks if AI is making ANY sound
     // This fixes race conditions between TTS generation and audio playback
     _rebuildAiAudioActiveStream();
+    _aiAudioActive = _voiceGuardEnabled
+        ? (_audioPlayerManager.isPlaybackActive || _voiceService.isTtsActive)
+        : false;
+    _aiAudioActivitySubject.add(_aiAudioActive);
 
     if (kDebugMode) {
       AppLogger.d(' AutoListeningCoordinator: Set up combined AI audio stream');
@@ -279,7 +392,8 @@ class AutoListeningCoordinator with SessionDisposable {
 
   /// Rebuild the combined AI audio stream with current TTS stream
   void _rebuildAiAudioActiveStream() {
-    _aiAudioActiveStream = Rx.combineLatest2<bool, bool, bool>(
+    _aiAudioSourceSub?.cancel();
+    final combined = Rx.combineLatest2<bool, bool, bool>(
       _audioPlayerManager
           .isPlayingStream, // true while audio player outputs sound
       // Use unified TTS activity stream if available, otherwise fallback to polling VoiceService
@@ -288,6 +402,13 @@ class AutoListeningCoordinator with SessionDisposable {
               (_) => _voiceService.isAiSpeaking).distinct(),
       (playing, speaking) => playing || speaking,
     ).distinct();
+
+    _aiAudioSourceSub = combined.listen((isActive) {
+      if (_aiAudioActivitySubject.isClosed) {
+        return;
+      }
+      _aiAudioActivitySubject.add(isActive);
+    });
   }
 
   // Safe VAD management with resource tracking and native crash protection
@@ -476,47 +597,8 @@ class AutoListeningCoordinator with SessionDisposable {
       }
     });
 
-    // ENGINEER FEEDBACK: Event-driven VAD using unified TTS activity stream from PR-A
     // Subscribe to the combined AI audio stream (includes both TTS and audio playback)
-    _startListeningSub = _aiAudioActiveStream.listen((aiAudioActive) {
-      if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active: $aiAudioActive | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
-      }
-      if (!_autoModeEnabled) {
-        // Reduce log noise: ignore state changes when auto mode is disabled
-        return;
-      }
-
-      if (aiAudioActive) {
-        // AI is making sound (TTS streaming or audio playing) - clear any scheduled VAD restart
-        _vadRestartScheduled = false;
-        if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active, stopping listening/recording');
-        }
-        // Force state to aiSpeaking every time AI audio starts
-        _updateState(AutoListeningState.aiSpeaking);
-        _stopListeningAndRecording();
-      } else {
-        // AI audio stopped - trigger VAD restart with debouncing for speaker ring-down
-        if ((_currentState == AutoListeningState.aiSpeaking ||
-                _currentState == AutoListeningState.idle) &&
-            !_vadRestartScheduled) {
-          if (kDebugMode) {
-            debugPrint(
-                '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio complete - scheduling VAD restart with 100ms debounce');
-          }
-          _vadRestartScheduled = true;
-          _enterAiSpeakingCompleteWithDebounce();
-        } else {
-          if (kDebugMode) {
-            debugPrint(
-                '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio stopped but restart already scheduled or inappropriate state ($_currentState)');
-          }
-        }
-      }
-    });
+    _subscribeToAiAudioActivity();
 
     // Listen for VAD speech start events
     _vadManager.onSpeechStart.listen((_) {
@@ -666,12 +748,79 @@ class AutoListeningCoordinator with SessionDisposable {
     });
 
     // Error handling
-    _vadManager.onError.listen((error) {
+    _vadErrorSub = _vadManager.onError.listen((error) {
       _errorController.add('VAD error: $error');
       if (kDebugMode) {
         _trace('[AutoListeningCoordinator] [VAD] ERROR: $error');
       }
     });
+  }
+
+  void _subscribeToAiAudioActivity() {
+    if (_aiAudioActivitySubject.isClosed) {
+      return;
+    }
+    _startListeningSub?.cancel();
+    _startListeningSub =
+        _aiAudioActiveStream.listen(_handleAiAudioActivityChange);
+  }
+
+  void _handleAiAudioActivityChange(bool aiAudioActive) {
+    _aiAudioActive = aiAudioActive;
+    if (kDebugMode) {
+      debugPrint(
+          '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active: $aiAudioActive | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+    }
+    if (!_autoModeEnabled) {
+      _clearAutoModeAwaitingAiSilence();
+      return;
+    }
+
+    if (!_voiceGuardEnabled) {
+      if (aiAudioActive) {
+        _updateState(AutoListeningState.aiSpeaking);
+        _stopListeningAndRecording();
+      } else if ((_currentState == AutoListeningState.aiSpeaking ||
+              _currentState == AutoListeningState.idle) &&
+          !_vadRestartScheduled) {
+        _vadRestartScheduled = true;
+        _enterAiSpeakingCompleteWithDebounce();
+      }
+      return;
+    }
+
+    if (aiAudioActive) {
+      _markAutoModeAwaitingAiSilence();
+      _vadRestartScheduled = false;
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio active, stopping listening/recording');
+      }
+      _updateState(AutoListeningState.aiSpeaking);
+      _stopListeningAndRecording();
+    } else {
+      _cancelAiAudioGuardTimer();
+      if (!_autoModeEnabledDuringAiAudio) {
+        if (kDebugMode) {
+          debugPrint(
+              '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio stopped but no pending auto-mode restart');
+        }
+        return;
+      }
+      if ((_currentState == AutoListeningState.aiSpeaking ||
+              _currentState == AutoListeningState.idle) &&
+          !_vadRestartScheduled) {
+        if (kDebugMode) {
+          debugPrint(
+              '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio complete - scheduling VAD restart');
+        }
+        _vadRestartScheduled = true;
+        _enterAiSpeakingCompleteWithDebounce();
+      } else if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio stopped but restart already scheduled or inappropriate state ($_currentState)');
+      }
+    }
   }
 
   // ENGINEER FEEDBACK: Event-driven VAD restart with 100ms debounce for speaker ring-down
@@ -752,9 +901,6 @@ class AutoListeningCoordinator with SessionDisposable {
     }
     _awaitingPlaybackEnd = true;
 
-    // Cancel any previous subscription to prevent race conditions
-    _startListeningSub?.cancel();
-
     try {
       // Use await with firstWhere - this returns a Future<bool>, not a StreamSubscription
       await _aiAudioActiveStream.firstWhere((busy) => !busy);
@@ -814,10 +960,11 @@ class AutoListeningCoordinator with SessionDisposable {
       return false;
     }
 
-    if (_voiceService.isTtsActive) {
+    if (_aiAudioActive) {
+      _markAutoModeAwaitingAiSilence();
       if (kDebugMode) {
         debugPrint(
-            '[AutoListeningCoordinator] Listen start blocked – TTS still active (context: $context)');
+            '[AutoListeningCoordinator] Listen start blocked – AI audio active (context: $context)');
       }
       return false;
     }
@@ -846,6 +993,16 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<void> _startListeningAfterDelay() async {
     _trace(
         '[AutoListeningCoordinator] [VAD] _startListeningAfterDelay called | autoModeEnabled=$_autoModeEnabled | currentState=$_currentState');
+
+    if (_aiAudioActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] [VAD] Deferred listening restart – AI audio still active');
+      }
+      _markAutoModeAwaitingAiSilence();
+      return;
+    }
+    _clearAutoModeAwaitingAiSilence();
 
     // BYPASS FIX: Check voice mode before starting
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) return;
@@ -916,6 +1073,15 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<void> _executeListeningStart(int generation) async {
     _trace(
         '[AutoListeningCoordinator] [VAD] Starting listening (VAD should be active) | currentState=$_currentState');
+
+    if (_aiAudioActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] [VAD] _executeListeningStart aborted – AI audio detected');
+      }
+      _markAutoModeAwaitingAiSilence();
+      return;
+    }
 
     // Only stop playback if something is actually playing
     if (_audioPlayerManager.isPlaybackActive) {
@@ -990,6 +1156,16 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Start listening for voice activity
   Future<void> _startListening([int? generationOverride]) async {
+    if (_aiAudioActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] [VAD] _startListening blocked – AI audio active');
+      }
+      _markAutoModeAwaitingAiSilence();
+      return;
+    }
+    _clearAutoModeAwaitingAiSilence();
+
     await _beginListeningIfAllowed(
       context: 'direct',
       allowedStates: {
@@ -1041,6 +1217,14 @@ class AutoListeningCoordinator with SessionDisposable {
     // PHASE 3: Safety gate - check if we're still in voice mode
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
       _logAutoEvent('Start recording blocked - not in voice mode', emoji: '⚠️');
+      return;
+    }
+    if (_aiAudioActive) {
+      if (kDebugMode) {
+        debugPrint(
+            '[AutoListeningCoordinator] [RECORDING] Start recording blocked - AI audio active');
+      }
+      _markAutoModeAwaitingAiSilence();
       return;
     }
 
@@ -1357,18 +1541,21 @@ class AutoListeningCoordinator with SessionDisposable {
               'enableAutoModeWithAudioState(isAudioPlaying=$isAudioPlaying)');
 
       // Use the audio state provided by the Bloc instead of checking AudioPlayerManager
-      if (!isAudioPlaying) {
+      final shouldDefer = isAudioPlaying || _aiAudioActive;
+      if (shouldDefer) {
+        _markAutoModeAwaitingAiSilence();
         if (kDebugMode) {
           debugPrint(
-              '[AutoListeningCoordinator] [MODE] Bloc says audio not playing, calling _startListening()');
-        }
-        await _startListening();
-      } else {
-        if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator] [MODE] Bloc says audio is playing, setting state to aiSpeaking');
+              '[AutoListeningCoordinator] [MODE] Audio active (bloc signal), setting state to aiSpeaking');
         }
         _updateState(AutoListeningState.aiSpeaking);
+      } else {
+        _clearAutoModeAwaitingAiSilence();
+        if (kDebugMode) {
+          debugPrint(
+              '[AutoListeningCoordinator] [MODE] Bloc says audio idle, calling _startListening()');
+        }
+        await _startListening();
       }
     } else if (kDebugMode) {
       debugPrint(
@@ -1380,11 +1567,18 @@ class AutoListeningCoordinator with SessionDisposable {
   Future<void> enableAutoMode() async {
     // STATE VALIDATION: Guard against unexpected state
     if (_currentState != AutoListeningState.idle) {
-      if (kDebugMode) {
+      final shouldResetState =
+          !_voiceGuardEnabled || _currentState != AutoListeningState.aiSpeaking;
+      if (shouldResetState) {
+        if (kDebugMode) {
+          AppLogger.w(
+              '🚨 [ALS] enableAutoMode called in unexpected state=$_currentState - resetting to idle');
+        }
+        _updateState(AutoListeningState.idle);
+      } else if (kDebugMode) {
         AppLogger.w(
-            '🚨 [ALS] enableAutoMode called in unexpected state=$_currentState - resetting to idle');
+            '⚪️ [ALS] enableAutoMode called while aiSpeaking; guard will handle restart');
       }
-      _updateState(AutoListeningState.idle);
     }
 
     // CONTAMINATION CHECK: Warn about stale state that should have been reset
@@ -1401,28 +1595,27 @@ class AutoListeningCoordinator with SessionDisposable {
       }
       _setAutoModeEnabled(true, context: 'enableAutoMode');
 
-      // Check audio playing state with detailed logging
-      final isAudioPlaying = _audioPlayerManager.isPlaybackActive;
+      final isAudioPlaying =
+          _audioPlayerManager.isPlaybackActive || _aiAudioActive || _voiceService.isTtsActive;
       if (kDebugMode) {
         debugPrint(
-            '[AutoListeningCoordinator] [MODE] Audio playing state check: isPlaying=$isAudioPlaying');
-        debugPrint(
-            '[AutoListeningCoordinator] [MODE] AudioPlayerManager internal state check...');
+            '[AutoListeningCoordinator] [MODE] Audio active during enable: $isAudioPlaying');
       }
 
-      // If AI is not currently speaking, start listening
-      if (!isAudioPlaying) {
-        if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator] [MODE] Not playing audio, calling _startListening()');
-        }
-        await _startListening();
-      } else {
+      if (isAudioPlaying) {
+        _markAutoModeAwaitingAiSilence();
         if (kDebugMode) {
           debugPrint(
               '[AutoListeningCoordinator] [MODE] Audio is playing, setting state to aiSpeaking');
         }
         _updateState(AutoListeningState.aiSpeaking);
+      } else {
+        _clearAutoModeAwaitingAiSilence();
+        if (kDebugMode) {
+          debugPrint(
+              '[AutoListeningCoordinator] [MODE] Audio idle, calling _startListening()');
+        }
+        await _startListening();
       }
     } else if (kDebugMode) {
       debugPrint(
@@ -1431,21 +1624,54 @@ class AutoListeningCoordinator with SessionDisposable {
   }
 
   // Disable automatic listening mode
-  Future<void> disableAutoMode() async {
-    _cancelAllTimers(reason: 'disableAutoMode');
-    if (_autoModeEnabled) {
-      if (kDebugMode) {
-        _trace('[AutoListeningCoordinator] [MODE] disableAutoMode called');
-      }
-      _setAutoModeEnabled(false, context: 'disableAutoMode');
-      _invalidateVadGeneration();
-      // Stop listening and recording
-      await _stopListeningAndRecording();
-      _updateState(AutoListeningState.idle);
-    } else if (kDebugMode) {
-      debugPrint(
-          '[AutoListeningCoordinator] [MODE] disableAutoMode called, but autoModeEnabled already false');
+  Future<void> disableAutoMode() {
+    final existing = _pendingDisableCompleter;
+    if (existing != null) {
+      return existing.future;
     }
+
+    final completer = Completer<void>();
+    _pendingDisableCompleter = completer;
+
+    () async {
+      try {
+        _cancelAllTimers(reason: 'disableAutoMode');
+        final wasEnabled = _autoModeEnabled;
+        if (wasEnabled) {
+          if (kDebugMode) {
+            _trace('[AutoListeningCoordinator] [MODE] disableAutoMode called');
+          }
+        } else if (kDebugMode) {
+          debugPrint(
+              '[AutoListeningCoordinator] [MODE] disableAutoMode called, but autoModeEnabled already false');
+        }
+
+        await _stopListeningAndRecording();
+        await _waitForAiAudioSilence();
+
+        if (wasEnabled && _autoModeEnabled) {
+          _setAutoModeEnabled(false, context: 'disableAutoMode');
+        }
+
+        _invalidateVadGeneration();
+        _forceAiAudioIdle();
+        _updateState(AutoListeningState.idle);
+        _completeDisableIfIdle();
+      } catch (error, stack) {
+        if (!completer.isCompleted) {
+          completer.completeError(error, stack);
+        }
+        _pendingDisableCompleter = null;
+        return;
+      }
+
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+      _pendingDisableCompleter = null;
+    }();
+
+    return completer.future;
   }
 
   // Validate state transitions to prevent race conditions
@@ -1540,7 +1766,10 @@ class AutoListeningCoordinator with SessionDisposable {
     }
 
     _cancelAllTimers(reason: 'reset');
+    _autoModeEnabledDuringAiAudio = false;
     _invalidateVadGeneration();
+    _forceAiAudioIdle();
+    _subscribeToAiAudioActivity();
 
     // Reset speech sequence and timing state
     _speechSeq = 0;
@@ -1591,6 +1820,13 @@ class AutoListeningCoordinator with SessionDisposable {
   void performDisposal() {
     // Use comprehensive reset with full cleanup
     reset(full: true);
+    _aiAudioSourceSub?.cancel();
+    _aiAudioSourceSub = null;
+    _startListeningSub?.cancel();
+    _startListeningSub = null;
+    _vadErrorSub?.cancel();
+    _vadErrorSub = null;
+    _aiAudioActivitySubject.close();
 
     // Close controllers (fire and forget)
     _autoModeEnabledController.close();
