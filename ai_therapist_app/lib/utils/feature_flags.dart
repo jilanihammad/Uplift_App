@@ -10,6 +10,8 @@ class FeatureFlags {
   static const String memoryPersistenceEnabled = 'memoryPersistenceEnabled';
   static const String moodPersistenceEnabled = 'moodPersistenceEnabled';
   static const String voiceFacadeEnabled = 'voiceFacadeEnabled';
+  static const String coordinatorVoiceGuardEnabled =
+      'coordinatorVoiceGuardEnabled';
 
   // Default values
   static const Map<String, bool> _defaults = {
@@ -19,6 +21,7 @@ class FeatureFlags {
         true, // Always keep memory persistence enabled by default
     moodPersistenceEnabled: true, // Mood logging sync enabled across the board
     voiceFacadeEnabled: true,
+    coordinatorVoiceGuardEnabled: true,
   };
 
   static SharedPreferences? _prefs;
@@ -74,6 +77,9 @@ class FeatureFlags {
 
   /// Check if the new voice facade orchestration should be used
   static bool get isVoiceFacadeEnabled => isEnabled(voiceFacadeEnabled);
+
+  static bool get isCoordinatorVoiceGuardEnabled =>
+      isEnabled(coordinatorVoiceGuardEnabled);
 
   /// Toggle the refactored voice pipeline flag
   static Future<void> toggleRefactoredVoicePipeline() async {

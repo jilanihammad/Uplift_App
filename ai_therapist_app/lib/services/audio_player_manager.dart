@@ -591,6 +591,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
 
       // Step 1: Stop current playback and await completion
       await _audioPlayer.stop();
+      _setPlaybackActive(false);
 
       // Step 2: Seek to beginning to reset position
       await _audioPlayer.seek(Duration.zero);
@@ -736,6 +737,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     try {
       // Step 1: Stop player immediately
       await _audioPlayer.stop();
+      _setPlaybackActive(false);
       if (kDebugMode) {
         debugPrint('🧹 Step 1: Player stopped');
       }
@@ -749,6 +751,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
       // Step 3: Signal TTS completion and cancel all watchdogs
       _forceIsPlayingState = false;
       _emitPlayingStateImmediate(false);
+      _setPlaybackActive(false);
 
       // Cancel all timers and subscriptions
       _stateDebounceTimer?.cancel();
@@ -789,6 +792,7 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
         debugPrint('🧹 Step 1: Stopping playback and clearing queue');
       }
       await _audioPlayer.stop();
+      _setPlaybackActive(false);
 
       // Step 2: Clear queue and complete all pending items
       clearQueue();
@@ -899,6 +903,9 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     clearQueue();
     _stateDebounceTimer?.cancel();
     _muteDebounceTimer?.cancel();
+    _forceIsPlayingState = false;
+    _emitPlayingStateImmediate(false);
+    _setPlaybackActive(false);
 
     // Note: We don't dispose the player here to avoid MediaCodec issues
     // The async version should be used for proper cleanup

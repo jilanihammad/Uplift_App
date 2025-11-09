@@ -194,7 +194,7 @@ class VoiceService {
   int? get lastPlaybackToken => _lastPlaybackToken;
 
   /// Callback for the bloc to veto automatic listening restarts while deferrals
-  /// (like `_pendingVoiceModeAutoEnable`) are in effect.
+  /// (like the initial welcome guard) are in effect.
   bool Function()? canStartListeningCallback;
 
   // BYPASS FIX: Callback to check if we're in voice mode
