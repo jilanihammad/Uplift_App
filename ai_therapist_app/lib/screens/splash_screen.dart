@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart'; // Import GoRouter
 import '../config/routes.dart'; // Import route constants
 import '../services/config_service.dart';
 import '../data/datasources/remote/api_client.dart';
+import '../utils/feature_flags.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -79,7 +80,11 @@ class _SplashScreenState extends State<SplashScreen>
 
       // Ensure service locator is initialized - using fallback approach
       try {
-        await setupServiceLocator();
+        await setupServiceLocator(
+          useRefactoredVoicePipeline: FeatureFlags.useNewVoicePipeline,
+          enableVoicePipelineController:
+              FeatureFlags.isVoicePipelineControllerEnabled,
+        );
       } catch (e) {
         if (kDebugMode) {
           debugPrint("SplashScreen: Service locator setup had issues: $e");

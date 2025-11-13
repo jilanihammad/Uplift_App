@@ -72,6 +72,18 @@ class AutoListeningCoordinator with SessionDisposable {
     }
   }
 
+  void _traceEntryPoint(String method) {
+    if (!kDebugMode) {
+      return;
+    }
+    if (FeatureFlags.isVoicePipelineControllerEnabled) {
+      return;
+    }
+    debugPrint(
+        '[AutoListeningCoordinator] $method called while controller flag disabled');
+    debugPrint(StackTrace.current.toString());
+  }
+
   // Configuration method to enable/disable Enhanced VAD
   static void setEnhancedVAD(bool enabled) {
     _useEnhancedVAD = enabled;
@@ -1529,6 +1541,7 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Enable automatic listening mode with explicit audio state from Bloc
   Future<void> enableAutoModeWithAudioState(bool isAudioPlaying) async {
+    _traceEntryPoint('enableAutoModeWithAudioState');
     // Cancel any post-audio delay when manually enabling auto mode
 
     if (!_autoModeEnabled) {
@@ -1565,6 +1578,7 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Enable automatic listening mode (original method using AudioPlayerManager)
   Future<void> enableAutoMode() async {
+    _traceEntryPoint('enableAutoMode');
     // STATE VALIDATION: Guard against unexpected state
     if (_currentState != AutoListeningState.idle) {
       final shouldResetState =
@@ -1625,6 +1639,7 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Disable automatic listening mode
   Future<void> disableAutoMode() {
+    _traceEntryPoint('disableAutoMode');
     final existing = _pendingDisableCompleter;
     if (existing != null) {
       return existing.future;
@@ -1755,6 +1770,7 @@ class AutoListeningCoordinator with SessionDisposable {
   /// Comprehensive state reset for clean mode transitions
   /// Call this during chat→voice switches to eliminate state contamination
   void reset({bool full = false, bool? preserveAutoMode}) {
+    _traceEntryPoint('reset(full: $full, preserveAutoMode: $preserveAutoMode)');
     // ENGINEER FEEDBACK: Keep debug log of generation number for stray callback detection
     final int oldSeq = _speechSeq;
     final bool shouldPreserveAutoMode = preserveAutoMode ?? !full;
@@ -1836,6 +1852,7 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // Initialize the coordinator
   Future<void> initialize() async {
+    _traceEntryPoint('initialize');
     try {
       // Initialize components that need it
       await _vadManager.initialize();

@@ -44,6 +44,12 @@ import 'package:flutter/widgets.dart';
 import '../widgets/mood_selector.dart'; // For Mood enum
 import '../utils/amplitude_utils.dart';
 import '../services/gemini_live_duplex_controller.dart';
+import '../services/pipeline/voice_pipeline_controller.dart';
+import '../services/pipeline/voice_pipeline_dependencies.dart';
+import '../services/pipeline/audio_capture.dart';
+import '../services/pipeline/audio_playback.dart';
+import '../services/pipeline/ai_gateway.dart';
+import '../services/pipeline/mic_auto_mode_controller.dart';
 
 // Phase 1.1.4: Import new managers
 import 'managers/session_state_manager.dart';
@@ -60,11 +66,20 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   // Phase 1B.1: Standardized service injection
   final IProgressService? progressService;
   final INavigationService? navigationService;
+  final VoicePipelineControllerFactory? _voicePipelineControllerFactory;
+  VoicePipelineController? _voicePipelineController;
+  bool get _pipelineControlsAutoMode =>
+      _voicePipelineController?.supportsAutoMode == true;
+  bool get _pipelineControlsRecording =>
+      _voicePipelineController?.supportsRecording == true;
+  bool get _pipelineControlsPlayback =>
+      _voicePipelineController?.supportsPlayback == true;
   StreamSubscription? _recordingStateSub;
   StreamSubscription? _audioPlaybackSub;
   StreamSubscription? _ttsStateSub;
   StreamSubscription? _amplitudeSub;
   StreamSubscription<AutoListeningState>? _autoListeningStateSub;
+  StreamSubscription<VoicePipelineSnapshot>? _pipelineSnapshotSub;
   Completer<void>? _voiceModeSwitchCompleter;
 
   // Amplitude smoothing state
@@ -136,7 +151,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     // Phase 1B.1: Standardized service injection
     this.progressService,
     this.navigationService,
+    VoicePipelineControllerFactory? voicePipelineControllerFactory,
   })  : _usesGeminiLive = voiceService.geminiLiveEnabled,
+        _voicePipelineControllerFactory = voicePipelineControllerFactory,
         super(VoiceSessionState.initial()) {
     assert(
       voiceFacade.voiceService == null ||
@@ -196,6 +213,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<StartSessionRequested>(_onStartSessionRequested);
     on<InitialMoodSelected>(_onInitialMoodSelected);
     on<GeminiLiveEventReceived>(_onGeminiLiveEventReceived);
+    on<VoicePipelineSnapshotUpdated>(_onVoicePipelineSnapshotUpdated);
 
     // Phase 2.2.5: Optimized streams with distinct/shareReplay to eliminate spam
     if (interfaceVoiceService != null) {
@@ -489,8 +507,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     const settleDelay = Duration(milliseconds: 150);
     final bool aiSpeakingBeforeSwitch = state.isAiSpeaking;
     final bool ttsActiveBeforeSwitch = isTtsActive;
-    final bool wasAiSpeaking =
-        aiSpeakingBeforeSwitch || ttsActiveBeforeSwitch;
+    final bool wasAiSpeaking = aiSpeakingBeforeSwitch || ttsActiveBeforeSwitch;
     final hadMessages = state.messages.isNotEmpty;
     final bool isInitialVoicePrep = !state.isInitialGreetingPlayed;
     final bool shouldTriggerListeningOnEnable = !isInitialVoicePrep;
@@ -767,8 +784,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   // Phase 2.2.2: Temporary helpers for AutoListeningCoordinator methods not yet in interface
   void _triggerListening() {
-    // TODO: Add triggerListening() to IVoiceService interface
-    voiceService.autoListeningCoordinator.triggerListening();
+    voiceService.triggerListening();
   }
 
   void _onProcessingComplete() {
@@ -802,6 +818,35 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // Get fresh session-scoped services
       final voiceCoordinator = _scopeManager.get<VoiceSessionCoordinator>();
       final autoListening = _scopeManager.get<AutoListeningCoordinator>();
+      final sessionAudioPlayer = _scopeManager.get<AudioPlayerManager>();
+      final recordingManager = DependencyContainer().recordingManager;
+
+      AudioCapture? audioCapture;
+      AudioPlayback? audioPlayback;
+      AiGateway? aiGateway;
+      MicAutoModeController? micController;
+      if (_voicePipelineControllerFactory != null) {
+        audioCapture = RecordingManagerAudioCapture(recordingManager);
+        audioPlayback = AudioPlayerManagerPlayback(sessionAudioPlayer);
+        aiGateway = VoiceCoordinatorAiGateway(voiceCoordinator);
+        micController = AutoListeningMicController(autoListening);
+      }
+
+      if (_voicePipelineControllerFactory != null) {
+        _attachPipelineController(
+          VoicePipelineDependencies(
+            voiceService: voiceService,
+            autoListening: autoListening,
+            audioPlayerManager: sessionAudioPlayer,
+            recordingManager: recordingManager,
+            sessionCoordinator: voiceCoordinator,
+            audioCapture: audioCapture,
+            audioPlayback: audioPlayback,
+            aiGateway: aiGateway,
+            micController: micController,
+          ),
+        );
+      }
 
       // Initialize session services
       await voiceCoordinator.initialize();
@@ -834,6 +879,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
 
       emit(newState);
+      await _voicePipelineController?.startSession(
+        VoiceSessionConfig(
+          sessionId: newState.currentSessionId,
+          targetDuration: newState.selectedDuration,
+        ),
+      );
     } catch (e) {
       debugPrint('[VoiceSessionBloc] Error starting session: $e');
       await _awaitVoiceFacadeStable();
@@ -871,6 +922,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       await _awaitVoiceFacadeStable();
       await voiceFacade.endSession();
+      await _voicePipelineController?.teardown();
+      await _detachPipelineController();
 
       if (_usesGeminiLive) {
         await voiceService.stopGeminiLiveSession();
@@ -1491,6 +1544,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     final newMicEnabledState = !state.isMicEnabled;
     debugPrint('[VoiceSessionBloc] Toggle mic enabled: $newMicEnabledState');
     emit(state.copyWith(isMicEnabled: newMicEnabledState));
+    _voicePipelineController?.updateExternalMicState(!newMicEnabledState);
 
     if (newMicEnabledState) {
       // Unmuted: only re-enable auto mode if in voice mode and not speaking
@@ -1556,6 +1610,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       return;
     }
 
+    if (_pipelineControlsAutoMode) {
+      await _voicePipelineController?.requestEnableAutoMode();
+      emit(state.copyWith(isAutoListeningEnabled: true));
+      return;
+    }
+
     try {
       await _safeVoiceService.stopAudio();
       debugPrint('[VoiceSessionBloc] Audio stopped successfully');
@@ -1600,6 +1660,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     debugPrint('[VoiceSessionBloc] Disabling auto mode...');
 
     try {
+      if (_pipelineControlsAutoMode) {
+        await _voicePipelineController?.requestDisableAutoMode();
+        emit(state.copyWith(isAutoListeningEnabled: false));
+        return;
+      }
       // Phase 2.2.2: Use interface when available
       await _safeVoiceService.disableAutoMode();
       emit(state.copyWith(isAutoListeningEnabled: false));
@@ -2219,6 +2284,67 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
+  void _attachPipelineController(VoicePipelineDependencies dependencies) {
+    if (_voicePipelineControllerFactory == null) {
+      return;
+    }
+    _pipelineSnapshotSub?.cancel();
+    _voicePipelineController?.performDisposal();
+    final controller = _voicePipelineControllerFactory!(
+      dependencies: dependencies,
+      micMutedGetter: () => !state.isMicEnabled,
+    );
+    _voicePipelineController = controller;
+    voiceService.attachPipelineController(controller);
+    _pipelineSnapshotSub = controller.snapshots.listen((snapshot) {
+      add(VoicePipelineSnapshotUpdated(snapshot));
+    });
+  }
+
+  Future<void> _detachPipelineController() async {
+    await _pipelineSnapshotSub?.cancel();
+    _pipelineSnapshotSub = null;
+    _voicePipelineController?.performDisposal();
+    voiceService.attachPipelineController(null);
+    _voicePipelineController = null;
+  }
+
+  Future<void> _onVoicePipelineSnapshotUpdated(
+      VoicePipelineSnapshotUpdated event,
+      Emitter<VoiceSessionState> emit) async {
+    final snapshot = event.snapshot;
+    final listeningExpected = snapshot.phase == VoicePipelinePhase.listening;
+    final recordingExpected = snapshot.phase == VoicePipelinePhase.recording;
+    final speakingExpected =
+        snapshot.phase == VoicePipelinePhase.speaking || snapshot.isTtsActive;
+    if (kDebugMode &&
+        (listeningExpected != state.isListening ||
+            recordingExpected != state.isRecording ||
+            speakingExpected != state.isAiSpeaking)) {
+      debugPrint('[VoiceSessionBloc][PipelineParity] phase='
+          '${snapshot.phase.name} listen=$listeningExpected/${state.isListening} '
+          'record=$recordingExpected/${state.isRecording} '
+          'speak=$speakingExpected/${state.isAiSpeaking}');
+    }
+    final bool phaseListening =
+        snapshot.phase == VoicePipelinePhase.listening;
+    final bool phaseRecording =
+        snapshot.phase == VoicePipelinePhase.recording;
+    final bool phaseSpeaking =
+        snapshot.phase == VoicePipelinePhase.speaking || snapshot.isTtsActive;
+
+    emit(state.copyWith(
+      pipelinePhase: snapshot.phase,
+      pipelineMicMuted: snapshot.micMuted,
+      pipelineAutoModeEnabled: snapshot.autoModeEnabled,
+      isAutoListeningEnabled:
+          _pipelineControlsAutoMode ? snapshot.autoModeEnabled : null,
+      isListening: _pipelineControlsAutoMode ? phaseListening : null,
+      isRecording: _pipelineControlsRecording ? phaseRecording : null,
+      isAiSpeaking: _pipelineControlsPlayback ? phaseSpeaking : null,
+    ));
+  }
+
   @override
   Future<void> close() async {
     // Cleanup any active session before closing bloc
@@ -2234,6 +2360,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _ttsStateSub?.cancel();
     _amplitudeSub?.cancel();
     await _cancelAutoListeningSubscription();
+    await _detachPipelineController();
     await _geminiLiveSub?.cancel();
     _geminiLiveSub = null;
 

@@ -27,6 +27,7 @@ import 'package:ai_therapist_app/screens/widgets/chat_interface_view.dart';
 import '../widgets/debug_drawer.dart';
 import '../utils/app_logger.dart';
 import '../utils/feature_flags.dart';
+import '../services/pipeline/voice_pipeline_controller.dart';
 
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
@@ -50,6 +51,15 @@ class ChatScreen extends StatelessWidget {
                 therapyService: dependencyContainer.therapy,
               );
 
+        VoicePipelineControllerFactory? pipelineFactory;
+        final controllerFlag = FeatureFlags.isVoicePipelineControllerEnabled;
+        if (controllerFlag &&
+            dependencyContainer
+                .isRegistered<VoicePipelineControllerFactory>()) {
+          pipelineFactory =
+              dependencyContainer.get<VoicePipelineControllerFactory>();
+        }
+
         return VoiceSessionBloc(
           voiceFacade: sessionFacade,
           // Phase 1B.2: Standardized DI - use DependencyContainer for UI layer
@@ -59,6 +69,7 @@ class ChatScreen extends StatelessWidget {
           interfaceVoiceService: dependencyContainer.voiceService,
           progressService: dependencyContainer.progress,
           navigationService: dependencyContainer.navigation,
+          voicePipelineControllerFactory: pipelineFactory,
         );
       },
       child: _ChatScreenBody(

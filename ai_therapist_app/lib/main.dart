@@ -179,13 +179,21 @@ Future<void> setupCoreServices() async {
   }
 
   final useNewVoicePipeline = FeatureFlags.useNewVoicePipeline;
+  final enableVoicePipelineController =
+      FeatureFlags.isVoicePipelineControllerEnabled;
   debugPrint('[main.dart] useRefactoredVoicePipeline = $useNewVoicePipeline');
   logger.info(
       '[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
+  debugPrint('[main.dart] voicePipelineControllerEnabled = '
+      '$enableVoicePipelineController');
+  logger.info('[Main] Feature flag voicePipelineControllerEnabled = '
+      '$enableVoicePipelineController');
 
   try {
     await setupServiceLocator(
-        useRefactoredVoicePipeline: useNewVoicePipeline);
+      useRefactoredVoicePipeline: useNewVoicePipeline,
+      enableVoicePipelineController: enableVoicePipelineController,
+    );
     debugPrint('[main.dart] Service locator setup complete.');
     logger.info('[Main] Service locator setup complete.');
   } catch (e) {
