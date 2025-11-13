@@ -139,14 +139,6 @@ class InitializeService extends VoiceSessionEvent {
   const InitializeService();
 }
 
-class EnableAutoMode extends VoiceSessionEvent {
-  const EnableAutoMode();
-}
-
-class DisableAutoMode extends VoiceSessionEvent {
-  const DisableAutoMode();
-}
-
 class StopAudio extends VoiceSessionEvent {
   const StopAudio();
 }

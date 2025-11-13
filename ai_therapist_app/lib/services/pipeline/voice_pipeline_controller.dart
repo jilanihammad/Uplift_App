@@ -276,6 +276,7 @@ class VoicePipelineController with SessionDisposable {
       return;
     }
     await _enqueue(() async {
+      await _awaitPlaybackIdle();
       await _micController!.enableAutoMode();
       _updateSnapshot(
         autoModeEnabled: true,
@@ -310,6 +311,19 @@ class VoicePipelineController with SessionDisposable {
         reason: 'requestTriggerListening',
       );
     });
+  }
+
+  Future<void> _awaitPlaybackIdle() async {
+    if (_audioPlayback == null || _audioPlayerManager == null) {
+      return;
+    }
+    try {
+      await _audioPlayerManager!.playbackActiveStream
+          .firstWhere((active) => !active)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // timeout - proceed anyway
+    }
   }
 
   void _wireMirrors() {

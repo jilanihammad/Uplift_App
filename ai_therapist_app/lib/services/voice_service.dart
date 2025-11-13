@@ -223,6 +223,7 @@ class VoiceService {
       _autoListeningCoordinator.autoModeEnabledStream;
   AutoListeningCoordinator get autoListeningCoordinator =>
       _autoListeningCoordinator;
+
   bool get geminiLiveEnabled => _useGeminiLive;
 
   // Passthrough methods for auto mode control

@@ -64,8 +64,6 @@ abstract class VoiceSessionEventContract {
 
   // Service Control Events
   static const Type initializeService = InitializeService;
-  static const Type enableAutoMode = EnableAutoMode;
-  static const Type disableAutoMode = DisableAutoMode;
   static const Type setSpeakerMuted = SetSpeakerMuted;
   static const Type toggleMicMute = ToggleMicMute;
 
