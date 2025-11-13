@@ -7,6 +7,7 @@ import 'package:equatable/equatable.dart';
 import '../models/therapy_message.dart';
 import '../models/therapist_style.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
+import '../services/pipeline/voice_pipeline_controller.dart';
 
 enum VoiceSessionStatus {
   initial,
@@ -75,6 +76,9 @@ class VoiceSessionState extends Equatable {
   final int timerRemainingSeconds;
   // Flag indicating time limit reached and auto end flow should trigger
   final bool autoEndTriggered;
+  final VoicePipelinePhase? pipelinePhase;
+  final bool? pipelineMicMuted;
+  final bool? pipelineAutoModeEnabled;
 
   const VoiceSessionState({
     required this.status,
@@ -112,6 +116,9 @@ class VoiceSessionState extends Equatable {
     this.amplitude = 0.0,
     this.timerRemainingSeconds = 0,
     this.autoEndTriggered = false,
+    this.pipelinePhase,
+    this.pipelineMicMuted,
+    this.pipelineAutoModeEnabled,
   });
 
   factory VoiceSessionState.initial({
@@ -153,6 +160,9 @@ class VoiceSessionState extends Equatable {
       amplitude: 0.0,
       timerRemainingSeconds: 0,
       autoEndTriggered: false,
+      pipelinePhase: null,
+      pipelineMicMuted: null,
+      pipelineAutoModeEnabled: null,
     );
   }
 
@@ -195,6 +205,9 @@ class VoiceSessionState extends Equatable {
     double? amplitude,
     int? timerRemainingSeconds,
     bool? autoEndTriggered,
+    VoicePipelinePhase? pipelinePhase,
+    bool? pipelineMicMuted,
+    bool? pipelineAutoModeEnabled,
   }) {
     return VoiceSessionState(
       status: status ?? this.status,
@@ -242,6 +255,10 @@ class VoiceSessionState extends Equatable {
       timerRemainingSeconds:
           timerRemainingSeconds ?? this.timerRemainingSeconds,
       autoEndTriggered: autoEndTriggered ?? this.autoEndTriggered,
+      pipelinePhase: pipelinePhase ?? this.pipelinePhase,
+      pipelineMicMuted: pipelineMicMuted ?? this.pipelineMicMuted,
+      pipelineAutoModeEnabled:
+          pipelineAutoModeEnabled ?? this.pipelineAutoModeEnabled,
     );
   }
 
@@ -282,6 +299,9 @@ class VoiceSessionState extends Equatable {
         isVoiceModeSwitching,
         geminiLiveSessionId,
         geminiLivePartialText,
+        pipelinePhase,
+        pipelineMicMuted,
+        pipelineAutoModeEnabled,
       ];
 
   bool get canSend {

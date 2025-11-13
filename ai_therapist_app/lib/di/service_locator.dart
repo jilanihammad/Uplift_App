@@ -61,6 +61,8 @@ import '../blocs/voice_session_bloc.dart';
 import '../services/audio_format_negotiator.dart';
 import '../services/facades/chat_voice_facade.dart';
 import '../services/facades/voice_mode_facade.dart';
+import '../services/pipeline/voice_pipeline_controller.dart';
+import '../services/pipeline/voice_pipeline_dependencies.dart';
 
 /// Global GetIt instance for dependency injection
 final serviceLocator = GetIt.instance;
@@ -196,8 +198,10 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
 /// - Firebase-dependent services (complex async initialization)
 ///
 /// @param useRefactoredVoicePipeline Feature flag to control voice service registration
-Future<void> setupServiceLocator(
-    {bool useRefactoredVoicePipeline = false}) async {
+Future<void> setupServiceLocator({
+  bool useRefactoredVoicePipeline = false,
+  bool enableVoicePipelineController = false,
+}) async {
   // Phase 2.2.5: Sync-once pattern prevents race conditions and duplicate logging
   if (_setupCompleter.isCompleted) {
     return _setupCompleter.future; // Return existing completion
@@ -213,6 +217,8 @@ Future<void> setupServiceLocator(
     debugPrint('Starting core service registration...');
     debugPrint(
         'Feature flag useRefactoredVoicePipeline: $useRefactoredVoicePipeline');
+    debugPrint(
+        'Feature flag voicePipelineControllerEnabled: $enableVoicePipelineController');
 
     // Register utilities first
     if (!serviceLocator.isRegistered<DatabaseOperationManager>()) {
@@ -467,6 +473,30 @@ Future<void> setupServiceLocator(
         debugPrint(
             '✅ Registered legacy VoiceService with true lazy initialization');
       }
+    }
+
+    // === VOICE PIPELINE CONTROLLER REGISTRATION (Mirror mode) ===
+    if (enableVoicePipelineController &&
+        !serviceLocator.isRegistered<VoicePipelineControllerFactory>()) {
+      serviceLocator.registerFactory<VoicePipelineControllerFactory>(() {
+        bool defaultMicGetter() {
+          if (!serviceLocator.isRegistered<IAudioSettings>()) {
+            return false;
+          }
+          return serviceLocator<IAudioSettings>().isMuted;
+        }
+
+        return ({
+          required VoicePipelineDependencies dependencies,
+          bool Function()? micMutedGetter,
+        }) {
+          return VoicePipelineController(
+            dependencies: dependencies,
+            micMutedGetter: micMutedGetter ?? defaultMicGetter,
+          );
+        };
+      });
+      debugPrint('✅ Registered VoicePipelineController factory (mirror mode)');
     }
 
     // === SESSION FACADE REGISTRATIONS ===

@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart'; // Import AppConfig
 import 'package:audio_session/audio_session.dart';
 import 'auto_listening_coordinator.dart';
+import '../services/pipeline/voice_pipeline_controller.dart';
 import 'vad_manager.dart';
 import '../utils/app_logger.dart';
 import 'audio_player_manager.dart';
@@ -101,8 +102,6 @@ class PlaybackException implements Exception {
 class VoiceService {
   // Singleton instance
   static VoiceService? _instance;
-
-  // WebSocket functionality removed - now handled by WebSocketAudioManager
 
   // Mutex to prevent concurrent TTS operations
   final Mutex _ttsLock = Mutex();
@@ -232,11 +231,19 @@ class VoiceService {
       debugPrint(
           '[VoiceService] enableAutoMode called (using AudioPlayerManager state)');
     }
+    if (_controllerAutoModeEnabled) {
+      await _voicePipelineController?.requestEnableAutoMode();
+      return;
+    }
     await _autoListeningCoordinator.enableAutoMode();
   }
 
   Future<void> disableAutoMode() async {
     if (kDebugMode) debugPrint('[VoiceService] disableAutoMode() called');
+    if (_controllerAutoModeEnabled) {
+      await _voicePipelineController?.requestDisableAutoMode();
+      return;
+    }
     await _autoListeningCoordinator.disableAutoMode();
     if (kDebugMode) {
       debugPrint(
@@ -250,11 +257,28 @@ class VoiceService {
       debugPrint(
           '[VoiceService] enableAutoModeWithAudioState called with isAudioPlaying=$isAudioPlaying');
     }
+    if (_controllerAutoModeEnabled) {
+      await _voicePipelineController?.requestEnableAutoMode();
+      return;
+    }
     await _autoListeningCoordinator
         .enableAutoModeWithAudioState(isAudioPlaying);
   }
 
+  void triggerListening() {
+    if (_controllerAutoModeEnabled) {
+      _voicePipelineController?.requestTriggerListening();
+      return;
+    }
+    _autoListeningCoordinator.triggerListening();
+  }
+
   Future<void> enableAutoModeWhenPlaybackCompletes({int? playbackToken}) async {
+    if (_controllerAutoModeEnabled) {
+      await _voicePipelineController?.requestEnableAutoMode();
+      return;
+    }
+
     if (playbackToken == null) {
       if (kDebugMode) {
         debugPrint(
@@ -391,7 +415,8 @@ class VoiceService {
 
       if (_autoListeningCoordinator.autoModeEnabled) {
         if (kDebugMode) {
-          debugPrint('[VoiceService] Auto mode already enabled – no action needed');
+          debugPrint(
+              '[VoiceService] Auto mode already enabled – no action needed');
         }
         return;
       }
@@ -465,6 +490,19 @@ class VoiceService {
           '[VoiceService] AutoListeningCoordinator initialized. Forcing auto mode enabled.');
     }
   }
+
+  void attachPipelineController(VoicePipelineController? controller) {
+    _voicePipelineController = controller;
+  }
+
+  VoicePipelineController? _voicePipelineController;
+
+  bool get _controllerRecordingEnabled =>
+      _voicePipelineController?.supportsRecording == true;
+  bool get _controllerPlaybackEnabled =>
+      _voicePipelineController?.supportsPlayback == true;
+  bool get _controllerAutoModeEnabled =>
+      _voicePipelineController?.supportsAutoMode == true;
 
   // Check if service is initialized
   bool get isInitialized => _isInitialized;
@@ -589,7 +627,12 @@ class VoiceService {
       // AudioRecordingService will handle web mode appropriately
     }
 
-    // Phase 2.1.1: Delegate to AudioRecordingService
+    // Phase 3A: delegate to pipeline controller when enabled
+    if (_controllerRecordingEnabled) {
+      await _voicePipelineController?.requestStartRecording();
+    }
+
+    // Phase 2.1.1: Delegate to AudioRecordingService (legacy path)
     await _audioRecordingService.startRecording();
     _recordingActive = true;
 
@@ -639,8 +682,14 @@ class VoiceService {
 
     if (!_isWeb) {
       try {
+        if (_controllerRecordingEnabled) {
+          recordedFilePath =
+              await _voicePipelineController?.requestStopRecording();
+        }
+
         // Phase 2.1.1: Delegate to AudioRecordingService
-        recordedFilePath = await _audioRecordingService.stopRecording();
+        recordedFilePath =
+            recordedFilePath ?? await _audioRecordingService.stopRecording();
         _recordingPath = recordedFilePath;
         _recordingActive = false;
       } on NotRecordingException catch (e) {
@@ -656,9 +705,8 @@ class VoiceService {
         rethrow;
       }
     }
-    _recordingActive =
-        _audioRecordingService.isRecording ||
-            _autoListeningCoordinator.isRecording;
+    _recordingActive = _audioRecordingService.isRecording ||
+        _autoListeningCoordinator.isRecording;
     return recordedFilePath;
   }
 
@@ -690,9 +738,8 @@ class VoiceService {
       recordedFilePath = await _audioRecordingService.tryStopRecording();
       _recordingPath = recordedFilePath;
     }
-    _recordingActive =
-        _audioRecordingService.isRecording ||
-            _autoListeningCoordinator.isRecording;
+    _recordingActive = _audioRecordingService.isRecording ||
+        _autoListeningCoordinator.isRecording;
     return recordedFilePath;
   }
 
@@ -916,6 +963,11 @@ class VoiceService {
   Future<void> playAudio(String audioPath) async {
     _audioPlaybackController.add(true);
 
+    if (_controllerPlaybackEnabled) {
+      await _voicePipelineController!.requestPlayAudio(audioPath);
+      return;
+    }
+
     try {
       if (kDebugMode) {
         debugPrint('🔊 VoiceService: Beginning audio playback of $audioPath');
@@ -1037,6 +1089,11 @@ class VoiceService {
 
   // Stop any ongoing audio playback
   Future<void> stopAudio() async {
+    if (_controllerPlaybackEnabled) {
+      _audioPlaybackController.add(false);
+      await _voicePipelineController!.requestStopAudio(clearQueue: true);
+      return;
+    }
     try {
       if (kDebugMode) {
         debugPrint('Stopping any ongoing audio playback');
@@ -1457,7 +1514,8 @@ class VoiceService {
 
   Future<void> _drainRecordingBeforePlayback() async {
     if (kDebugMode) {
-      debugPrint('[VoiceService] Playback lock acquired – preparing for TTS start');
+      debugPrint(
+          '[VoiceService] Playback lock acquired – preparing for TTS start');
     }
 
     _playbackStartedForCurrentTts = false;
@@ -1482,7 +1540,8 @@ class VoiceService {
 
     autoListeningCoordinator.stopListening();
     if (kDebugMode) {
-      debugPrint('[VoiceService] updateTTSSpeakingState: TTS started, listening stopped');
+      debugPrint(
+          '[VoiceService] updateTTSSpeakingState: TTS started, listening stopped');
     }
   }
 

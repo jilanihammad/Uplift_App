@@ -5,6 +5,7 @@ library;
 import '../widgets/mood_selector.dart';
 import '../models/therapy_message.dart';
 import '../services/gemini_live_duplex_controller.dart';
+import '../services/pipeline/voice_pipeline_controller.dart';
 
 abstract class VoiceSessionEvent {
   const VoiceSessionEvent();
@@ -126,6 +127,11 @@ class EnsureMicToggleEnabled extends VoiceSessionEvent {
 class GeminiLiveEventReceived extends VoiceSessionEvent {
   final GeminiLiveEvent event;
   const GeminiLiveEventReceived(this.event);
+}
+
+class VoicePipelineSnapshotUpdated extends VoiceSessionEvent {
+  final VoicePipelineSnapshot snapshot;
+  const VoicePipelineSnapshotUpdated(this.snapshot);
 }
 
 // Phase 3: New events for service calls
