@@ -223,6 +223,13 @@ class VoiceService {
       _autoListeningCoordinator.autoModeEnabledStream;
   AutoListeningCoordinator get autoListeningCoordinator =>
       _autoListeningCoordinator;
+  AutoListeningCoordinator createAutoListeningCoordinator() {
+    return AutoListeningCoordinator(
+      audioPlayerManager: _audioPlayerManager,
+      recordingManager: _recordingManager,
+      voiceService: this,
+    );
+  }
 
   bool get geminiLiveEnabled => _useGeminiLive;
 

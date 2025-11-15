@@ -386,16 +386,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       // Initialize services through Bloc
       context.read<VoiceSessionBloc>().add(const InitializeService());
 
-      // Set up callback for recording completion
-      _voiceService.autoListeningCoordinator.onRecordingCompleteCallback =
-          (String audioPath) {
-        debugPrint(
-            '[ChatScreen] Recording complete callback triggered with path: $audioPath');
-        if (mounted) {
-          context.read<VoiceSessionBloc>().add(ProcessAudio(audioPath));
-        }
-      };
-
       debugPrint('[ChatScreen] Services initialized successfully');
     } catch (e) {
       debugPrint('[ChatScreen] Service initialization failed: $e');
