@@ -91,6 +91,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   // Session scope management for clean resource disposal
   final SessionScopeManager _scopeManager = SessionScopeManager();
+  AutoListeningCoordinator? _activeAutoListeningCoordinator;
 
   // Lifecycle management for app backgrounding/resuming (using WidgetsBindingObserver)
   late WidgetsBindingObserver _lifecycleObserver;
@@ -227,7 +228,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         // NATURAL UX: Auto-enable voice mode when TTS naturally finishes
         if (!isSpeaking && _deferAutoMode) {
           _deferAutoMode = false;
-          _enableAutoModeIfGenerationMatches();
+          unawaited(_enableAutoModeIfGenerationMatches(context: 'ControllerSnapshot'));
         }
       });
 
@@ -316,6 +317,36 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   IVoiceService get _safeVoiceService {
     // If we have the interface service, use it; otherwise cast legacy service to interface
     return interfaceVoiceService ?? voiceService as IVoiceService;
+  }
+
+  void _wireAutoListeningCallbacks(AutoListeningCoordinator coordinator) {
+    _activeAutoListeningCoordinator = coordinator;
+    coordinator.onRecordingCompleteCallback = (audioPath) {
+      if (audioPath.isEmpty) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceSessionBloc] Ignoring empty recording path from AutoListeningCoordinator');
+        }
+        return;
+      }
+      if (isClosed || !state.isVoiceMode) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceSessionBloc] Dropping auto-recording callback (closed=${isClosed}, voiceMode=${state.isVoiceMode})');
+        }
+        return;
+      }
+      add(ProcessAudio(audioPath));
+    };
+  }
+
+  void _clearAutoListeningCallbacks() {
+    final coordinator = _activeAutoListeningCoordinator;
+    if (coordinator != null) {
+      coordinator.onRecordingCompleteCallback = null;
+      coordinator.onSpeechDetectedCallback = null;
+    }
+    _activeAutoListeningCoordinator = null;
   }
 
   bool get _shouldAbortVoicePrep => isClosed || !state.isVoiceMode;
@@ -682,7 +713,41 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
   }
 
-  void _enableAutoModeIfGenerationMatches() {}
+  Future<void> _enableAutoModeIfGenerationMatches({String context = ''}) async {
+    if (!state.isVoiceMode || state.isAutoListeningEnabled || state.isRecording) {
+      return;
+    }
+
+    if (_pipelineControlsAutoMode) {
+      await _voicePipelineController?.requestEnableAutoMode();
+      emit(state.copyWith(isAutoListeningEnabled: true));
+      _triggerListening();
+      return;
+    }
+
+    final gen = _modeGeneration;
+    try {
+      await _safeVoiceService.stopAudio();
+      if (gen != _modeGeneration || !state.isVoiceMode) {
+        return;
+      }
+
+      _safeVoiceService.resetTTSState();
+      await _waitForTtsCompletion();
+      if (gen != _modeGeneration || !state.isVoiceMode) {
+        return;
+      }
+
+      await _safeVoiceService.enableAutoMode();
+      emit(state.copyWith(isAutoListeningEnabled: true));
+      _triggerListening();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionBloc] Failed to enable auto mode ($context): $e');
+      }
+      emit(state.copyWith(errorMessage: e.toString()));
+    }
+  }
 
   // Phase 6B-3: Helper for legacy-only methods that haven't migrated to interface yet
 
@@ -719,7 +784,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       // Get fresh session-scoped services
       final voiceCoordinator = _scopeManager.get<VoiceSessionCoordinator>();
-      final autoListening = _scopeManager.get<AutoListeningCoordinator>();
+      final autoListening = _safeVoiceService.autoListeningCoordinator;
+      _wireAutoListeningCallbacks(autoListening);
       final sessionAudioPlayer = _scopeManager.get<AudioPlayerManager>();
       final recordingManager = DependencyContainer().recordingManager;
 
@@ -820,6 +886,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       debugPrint('[VoiceSessionBloc] Session services stopped gracefully');
 
       // Destroy entire session scope (automatic disposal)
+      _clearAutoListeningCallbacks();
       await _scopeManager.destroySessionScope();
 
       await _awaitVoiceFacadeStable();
@@ -1447,15 +1514,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _voicePipelineController?.updateExternalMicState(!newMicEnabledState);
 
     if (newMicEnabledState) {
-      // Unmuted: only re-enable auto mode if in voice mode and not speaking
-      if (state.isVoiceMode && !isTtsActive && !state.isRecording) {
-        if (_pipelineControlsAutoMode) {
-          _voicePipelineController?.requestEnableAutoMode();
-        } else {
-          _safeVoiceService.enableAutoMode();
-        }
+      if (state.isVoiceMode && !state.isRecording) {
+        unawaited(_enableAutoModeIfGenerationMatches(context: 'MicToggle'));
+      } else {
+        _deferAutoMode = true;
       }
-      _deferAutoMode = true;
     } else {
       // Muted: stop listening safely via bloc event; underlying coordinator will pause VAD/recording
       if (_pipelineControlsAutoMode) {
@@ -1609,12 +1672,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           '[VoiceSessionBloc] TTS transition detected (true -> false), initial TTS has completed');
       emit(state.copyWith(isInitialGreetingPlayed: true));
       _welcomeAutoModeArmed = true;
-      _enableAutoModeIfGenerationMatches();
+      unawaited(_enableAutoModeIfGenerationMatches(context: 'InitialGreeting'));
     }
 
     if (!event.isSpeaking && _deferAutoMode) {
       _deferAutoMode = false;
-      _enableAutoModeIfGenerationMatches();
+      unawaited(_enableAutoModeIfGenerationMatches(context: 'DeferredAuto'));
     }
   }
 
@@ -1626,7 +1689,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     _welcomeAutoModeArmed = true;
     if (!isClosed) {
-      _enableAutoModeIfGenerationMatches();
+      unawaited(_enableAutoModeIfGenerationMatches(context: 'WelcomeCompletion'));
     }
   }
 
@@ -1769,7 +1832,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       // Get fresh session-scoped services
       final voiceCoordinator = _scopeManager.get<VoiceSessionCoordinator>();
-      final autoListening = _scopeManager.get<AutoListeningCoordinator>();
+      final autoListening = _safeVoiceService.autoListeningCoordinator;
+      _wireAutoListeningCallbacks(autoListening);
 
       // Initialize session services (AUDIO/VAD INITIALIZATION)
       await voiceCoordinator.initialize();
@@ -1979,12 +2043,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   /// Cleanup after failed session initialization
   Future<void> _cleanupFailedSession() async {
     _welcomeAutoModeArmed = false;
+    _clearAutoListeningCallbacks();
     await _scopeManager.destroySessionScope();
   }
 
   /// Force cleanup for emergency situations
   Future<void> _forceSessionCleanup() async {
     _welcomeAutoModeArmed = false;
+    _clearAutoListeningCallbacks();
     await _scopeManager.destroySessionScope();
     await _awaitVoiceFacadeStable();
     await voiceFacade.endSession();

@@ -513,7 +513,7 @@ Future<void> setupServiceLocator({
           ttsService: simpleTtsService,
           therapyService: serviceLocator<ITherapyService>(),
           coordinatorFactory: ({required voiceService}) =>
-              voiceService.autoListeningCoordinator,
+              voiceService.createAutoListeningCoordinator(),
         );
       });
       debugPrint('✅ Registered VoiceModeFacade factory');

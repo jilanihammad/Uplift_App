@@ -85,7 +85,8 @@ class VoiceModeFacade implements SessionVoiceFacade {
     final generation = ++_sessionGeneration;
     try {
       if (kDebugMode) {
-        debugPrint('[VoiceModeFacade] Initializing voice pipeline (gen $generation)');
+        debugPrint(
+            '[VoiceModeFacade] Initializing voice pipeline (gen $generation)');
       }
 
       await _voiceService.initializeOnlyIfNeeded();
@@ -99,14 +100,16 @@ class VoiceModeFacade implements SessionVoiceFacade {
         _voiceService.updateTTSSpeakingState,
       );
 
-      _ttsSpeakingSub = _voiceService.isTtsActuallySpeaking.listen(_handleTtsState);
+      _ttsSpeakingSub =
+          _voiceService.isTtsActuallySpeaking.listen(_handleTtsState);
       if (_ttsSpeakingSub != null) {
         _sessionSubscriptions.add(_ttsSpeakingSub!);
       }
 
       _activeGeneration = generation;
       if (kDebugMode) {
-        debugPrint('[VoiceModeFacade] voice pipeline ready (gen $_activeGeneration)');
+        debugPrint(
+            '[VoiceModeFacade] voice pipeline ready (gen $_activeGeneration)');
       }
     } catch (error) {
       if (kDebugMode) {
@@ -125,7 +128,8 @@ class VoiceModeFacade implements SessionVoiceFacade {
       return;
     }
     if (kDebugMode) {
-      debugPrint('[VoiceModeFacade] TTS speaking: $isSpeaking (gen $generation)');
+      debugPrint(
+          '[VoiceModeFacade] TTS speaking: $isSpeaking (gen $generation)');
     }
   }
 
