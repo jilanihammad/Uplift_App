@@ -9,9 +9,9 @@ class AudioFormatConfig {
   /// Master feature flag for OPUS support
   /// OPUS provides 60-70% size reduction for faster TTS streaming
   /// Set to false to force WAV format if OPUS encounters issues
-  /// NOTE: Backend must be configured to return OPUS format - currently returns WAV
+  /// Backend supports OPUS via response_format parameter in llm_manager.py
   static bool get enableOpusFormat =>
-      false; // WAV mode - backend not configured for OPUS response format
+      true; // OPUS mode - backend configured and ready
 
   /// Feature flag for OPUS header buffering
   /// Controls whether we wait for complete OPUS headers before playback
@@ -43,7 +43,7 @@ class AudioFormatConfig {
 
   /// OPUS rollout percentage (0-100)
   static int get opusRolloutPercentage =>
-      _getEnvInt('TTS_OPUS_ROLLOUT_PCT', 0); // 0% - OPUS disabled until backend configured
+      _getEnvInt('TTS_OPUS_ROLLOUT_PCT', 100); // 100% - tested and working well
 
   /// OPUS header buffer timeout (milliseconds)
   /// How long to wait for complete OPUS headers before giving up

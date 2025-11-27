@@ -130,8 +130,9 @@ class LoggingService {
   }
 
   /// Standard format for log messages in debug mode
+  /// Uses UTC timestamps to match backend logging format
   void _printLog(String level, String? tag, String message) {
-    final timestamp = DateTime.now().toIso8601String();
+    final timestamp = DateTime.now().toUtc().toIso8601String();
     final tagStr = tag != null ? '[$tag] ' : '';
     debugPrint('$timestamp | $level | $tagStr$message');
   }
