@@ -140,6 +140,9 @@ class SimpleTTSService implements ITTSService {
   // TIMING FIX: Callback to get current generation for completion checks
   int Function()? _getCurrentGenerationCallback;
 
+  // BATCH 1 PHASE 1: Callback to check if current session is still valid
+  bool Function()? _isSessionValidCallback;
+
   // Production-grade completion tracking
   int _pendingStreams = 0; // Monotonic counter for overlapping instances
 
@@ -314,12 +317,38 @@ class SimpleTTSService implements ITTSService {
     }
   }
 
+  /// BATCH 1 PHASE 1: Set the session validity callback (for cleanup guards)
+  @override
+  void setSessionValidityCallback(bool Function()? callback) {
+    _isSessionValidCallback = callback;
+    if (kDebugMode) {
+      debugPrint(
+          '🔍 [TTS] Session validity callback ${callback != null ? 'set' : 'cleared'}');
+    }
+  }
+
   Future<void> _pumpQueue() async {
     if (_state != _State.idle || _queue.isEmpty || _disposed) return;
 
     final req = _queue.removeFirst();
     if (kDebugMode) {
       _ttsTrace('🔍 [TTS] Processing request: ${req.id}');
+    }
+
+    // CRITICAL FIX: Check session validity before processing TTS request
+    // This prevents TTS from starting after session ends or mode switches to chat
+    if (_isSessionValidCallback != null && !_isSessionValidCallback!()) {
+      if (kDebugMode) {
+        debugPrint(
+            '🛡️ [TTS] Rejecting request ${req.id} - session ended or not in voice mode');
+      }
+      _pendingStreams--;
+      _updateSpeakingState(false);
+      // Process next request in queue if any
+      if (_queue.isNotEmpty) {
+        _pumpQueue();
+      }
+      return;
     }
 
     WebSocketChannel? ws;
@@ -564,6 +593,17 @@ class SimpleTTSService implements ITTSService {
 
       // Listen for response (streaming pattern)
       await for (final message in ws.stream) {
+        // BATCH 1 PHASE 2: Check session validity on each WebSocket message
+        if (_isSessionValidCallback != null && !_isSessionValidCallback!()) {
+          if (kDebugMode) {
+            debugPrint(
+                '🛡️ [TTS] Session ended during streaming - aborting WebSocket loop for ${req.id}');
+          }
+          // Mark WebSocket phase complete
+          completionTracker.markWebSocketDone();
+          break; // Exit loop early
+        }
+
         if (message is String) {
           final data = jsonDecode(message);
           final type = data['type'];
@@ -717,6 +757,18 @@ class SimpleTTSService implements ITTSService {
               // TIMING FIX: Capture generation when TTS starts (not when it completes)
               final genAtStart = _getCurrentGenerationCallback?.call() ?? -1;
 
+              // BATCH 1 PHASE 2: Check session validity before starting playback
+              if (_isSessionValidCallback != null && !_isSessionValidCallback!()) {
+                if (kDebugMode) {
+                  debugPrint(
+                      '🛡️ [TTS] Session ended mid-stream - aborting playback for ${req.id}');
+                }
+                // Mark phases complete to allow cleanup
+                completionTracker.markWebSocketDone();
+                completionTracker.markPlayerDone();
+                break; // Exit WebSocket loop early
+              }
+
               // NOW start live TTS streaming setup (ExoPlayer will find data ready)
               playbackFuture = _audioPlayerManager.playLiveTtsStream(
                 liveAudioSource, // Pass the LiveTtsAudioSource object for proper lifecycle management
@@ -729,6 +781,15 @@ class SimpleTTSService implements ITTSService {
                   );
                 },
                 onNaturalCompletion: (playbackToken) {
+                  // BATCH 1 PHASE 2: Check session validity before firing completion
+                  if (_isSessionValidCallback != null && !_isSessionValidCallback!()) {
+                    if (kDebugMode) {
+                      debugPrint(
+                          '🛡️ [TTS] Session ended - skipping completion callback for ${req.id}');
+                    }
+                    return; // Don't trigger listening restart if session ended
+                  }
+
                   // ALWAYS notify VoiceService of TTS completion for state cleanup.
                   // The controller (when active) or VoiceService._handleTtsCompletion
                   // will decide whether to restart listening based on its own guards.
@@ -1392,6 +1453,23 @@ class SimpleTTSService implements ITTSService {
   Future<void> _actualCancellation() async {
     // Stop audio playback immediately
     await _audioPlayerManager.stopAudio();
+
+    // BATCH 2 PHASE 5: Dispose active LiveTtsAudioSource and completion tracker
+    if (_activeLiveAudioSource != null) {
+      if (kDebugMode) {
+        debugPrint('🧹 [TTS] Disposing active LiveTtsAudioSource during cancellation');
+      }
+      _activeLiveAudioSource?.dispose();
+      _activeLiveAudioSource = null;
+    }
+
+    if (_activeCompletionTracker != null) {
+      if (kDebugMode) {
+        debugPrint('🧹 [TTS] Disposing active completion tracker during cancellation');
+      }
+      _activeCompletionTracker?.dispose();
+      _activeCompletionTracker = null;
+    }
 
     // Clear the request queue to prevent new TTS requests
     _queue.clear();
