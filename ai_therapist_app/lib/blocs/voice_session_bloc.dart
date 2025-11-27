@@ -303,6 +303,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     voiceService.canStartListeningCallback = () =>
         state.isVoiceMode &&
         state.isInitialGreetingPlayed &&
+        state.isMicEnabled && // CRITICAL: Include mic state to handle toggles during TTS
         !state.isVoiceModeSwitching;
 
     // TIMING FIX: Set up generation callback for VoiceService
@@ -769,6 +770,20 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     final gen = _modeGeneration;
     try {
+      // RACE CONDITION FIX: Don't stop audio or reset TTS if new TTS is already in progress
+      // This prevents killing the AI response TTS when the welcome TTS completion triggers this method
+      if (_safeVoiceService.hasPendingOrActiveTts) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceSessionBloc] Skipping stopAudio/resetTTS - active TTS in progress ($context)');
+        }
+        // Still enable auto mode but skip the destructive operations
+        await _safeVoiceService.enableAutoMode();
+        emit(state.copyWith(isAutoListeningEnabled: true));
+        _triggerListening();
+        return;
+      }
+
       await _safeVoiceService.stopAudio();
       if (gen != _modeGeneration || !state.isVoiceMode) {
         return;
@@ -1733,6 +1748,21 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     if (!event.isSpeaking && _deferAutoMode) {
       _deferAutoMode = false;
       unawaited(_enableAutoModeIfGenerationMatches(context: 'DeferredAuto'));
+    }
+
+    // CRITICAL FIX: When TTS finishes mid-session in voice mode with mic enabled,
+    // re-enable auto mode regardless of _deferAutoMode state.
+    // This handles the case where mic was toggled during TTS (which disabled auto mode)
+    // but user still wants Maya to resume listening.
+    if (wasSpeaking &&
+        !event.isSpeaking &&
+        state.isInitialGreetingPlayed &&
+        state.isVoiceMode &&
+        state.isMicEnabled &&
+        !state.isAutoListeningEnabled) {
+      debugPrint(
+          '[VoiceSessionBloc] TTS finished mid-session with mic enabled, re-enabling auto mode');
+      unawaited(_enableAutoModeIfGenerationMatches(context: 'TtsCompletionRestore'));
     }
   }
 

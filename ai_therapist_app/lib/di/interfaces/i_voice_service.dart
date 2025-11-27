@@ -38,6 +38,7 @@ abstract class IVoiceService {
   // TTS State Management (for auto-listening coordination)
   void updateTTSSpeakingState(bool isSpeaking, {int? playbackToken});
   Stream<bool> get isTtsActuallySpeaking;
+  bool get hasPendingOrActiveTts; // Race condition guard for reset operations
   void resetTTSState();
 
   // Audio processing
