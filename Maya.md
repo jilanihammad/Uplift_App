@@ -41,11 +41,12 @@ Communication flow: mobile captures audio → backend transcription + LLM genera
 
 ### 3.2 Voice & Session Pipeline
 Key components (all under `lib/services/`):
-1. **VoiceSessionBloc** (`voice_session_bloc.dart`) – central coordinator handling events for session lifecycle, mode switching, TTS playback, and amplitude smoothing. Interfaces with legacy `VoiceService` and the new `IVoiceService` facade (Phase 6 hybrid architecture).
-2. **VoiceService** (`voice_service.dart`) – orchestrates recording (`AudioRecordingService`), RNNoise-based VAD, backend API calls, playback via `AudioPlayerManager`, file cleanup, and interaction with `SimpleTTSService`.
-3. **VoiceSessionCoordinator & AutoListeningCoordinator** – provide modular control of auto-listen, generation counters, and streaming callbacks.
-4. **MessageProcessor + TherapyService** – determine whether to call backend endpoints or direct LLM providers (controlled by config service and feature flags).
-5. **SimpleTTSService & WebSocketAudioManager** – manage buffered streaming audio, interplay with just_audio, and VAD gating using generation callbacks.
+1. **VoiceSessionBloc** (`voice_session_bloc.dart`) – central coordinator handling events for session lifecycle, mode switching, TTS playback, and amplitude smoothing. It listens to `VoicePipelineController` snapshots whenever the `voicePipelineControllerAuthoritative` flag is enabled, and falls back to the legacy path otherwise.
+2. **VoicePipelineController** (`lib/services/pipeline/voice_pipeline_controller.dart`) – authoritative state machine for recording, VAD, auto-mode, and playback orchestration. It emits `VoicePipelineSnapshot`s that drive the bloc/UI and exposes `requestEnableAutoMode`, `requestStartRecording`, and recording-complete callbacks.
+3. **VoiceService** (`voice_service.dart`) – DI wrapper that wires either the controller path or the legacy `AutoListeningCoordinator`/`AudioRecordingService` pipeline depending on feature flags, handles backend API calls, and bridges to `SimpleTTSService`.
+4. **VoiceSessionCoordinator & AutoListeningCoordinator** – legacy orchestration layer used only when the controller flag is disabled; slated for removal once the takeover in `takeover.md` is complete.
+5. **MessageProcessor + TherapyService** – determine whether to call backend endpoints or direct LLM providers (controlled by config service and feature flags).
+6. **SimpleTTSService & WebSocketAudioManager** – manage buffered streaming audio, interplay with just_audio, and VAD gating using generation callbacks.
 
 Supporting utilities:
 - `AudioProcessingService`, `RNNoiseService`, and `EnhancedVADManager` for noise suppression and speech detection.
@@ -161,6 +162,7 @@ Supporting utilities:
 - MemoryService now syncs profile basics and anchors with the backend when `memory_persistence_enabled` is enabled; ChatScreen pushes session summaries via `/session_summaries:upsert` after local save.
 - MemoryService queues profile/anchor updates locally (SharedPreferences) and flushes them once network sync succeeds, improving offline resilience of personalization.
 - Mood persistence MVP shipped: Cloud SQL `user_mood_entries` table + Flutter SQLite cache with `mood_persistence_enabled` feature flag, batched sync, and 60-day retention.
+- Voice pipeline takeover in progress: `voicePipelineControllerAuthoritative` flag routes the bloc/UI through `VoicePipelineController`, `takeover.md` tracks the remaining steps to deprecate `AutoListeningCoordinator`, and controller-driven recording callbacks are already live.
 
 ---
 
@@ -172,7 +174,7 @@ Supporting utilities:
 3. **Run Baseline Tests**: `flutter test`, `pytest`, streaming smoke tests.
 4. **Understand Voice Pipeline**: Review `voice_session_bloc.dart`, `voice_service.dart`, `websocket_audio_manager.dart`, `SimpleTTSService`, and `message_processor.dart`.
 5. **Explore Backend Services**: Step through `app/services/llm_manager.py`, `app/api/endpoints/voice.py`, and `app/core` modules.
-6. **Check Feature Flags**: Evaluate `FeatureFlags` defaults and toggles when working on voice pipeline or direct LLM access.
+6. **Check Feature Flags**: Evaluate `FeatureFlags` defaults and toggles—especially `voicePipelineControllerEnabled`, `voicePipelineControllerAuthoritative`, and `memory_persistence_enabled`—when working on voice pipeline or direct LLM access.
 7. **Coordinate Deployments**: Familiarize yourself with Cloud Run scripts and App Check considerations before shipping.
 8. **Security & Compliance**: Adhere to secret management, logging hygiene, and release gating items captured in `Before-Release.md`.
 
@@ -181,7 +183,12 @@ Supporting utilities:
 ## 9. Additional Resources
 - **Troubleshooting**: `fix.md`, `improvements.md`, `streaming.md`, `TTS_STREAMING_IMPLEMENTATION.md`, `verbose_logging_fix_summary.md`.
 - **Migration Notes**: `backendRefactor.md`, `PHASE_6_MIGRATION_STATUS.md`, `refactor_progress.md`.
+- **Voice Pipeline Takeover**: `takeover.md` (detailed plan for finishing the controller migration and deleting the legacy AutoListeningCoordinator path).
 - **Testing Guides**: `test_bulletproof_completion.md`, `test_dark_mode_persistence.dart`, `test_wav_header_fix.dart`.
 - **Deployment Helpers**: `deploy_to_cloud.sh`, `deploy_to_cloud.ps1`, `build_*` scripts for Flutter builds.
 
 Stay aligned with the hybrid architecture vision: maintain compatibility while gradually shifting to the interface-driven voice pipeline and modular backend services. When in doubt, review existing documentation and follow the safety-first release process.
+#### Voice Pipeline Status & Flags
+- `voicePipelineControllerEnabled`: mirrors controller state without taking over. Keep this on in all builds so we exercise snapshot wiring.
+- `voicePipelineControllerAuthoritative`: when true, bloc/UI rely solely on `VoicePipelineController` for auto-mode, recording, and mic state. The legacy AutoListeningCoordinator path is still present for fallback but guarded behind this flag while the takeover is completed (see `takeover.md`).
+- Legacy AutoListeningCoordinator remains the source of truth if the authoritative flag is off or when testing regressions; remove it only after Stage 4 of the takeover plan.

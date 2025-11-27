@@ -11,7 +11,8 @@ import '../di/interfaces/i_audio_file_manager.dart';
 import '../utils/disposable.dart';
 import 'base_voice_service.dart';
 import 'voice_service.dart';
-import 'auto_listening_coordinator.dart';
+import 'auto_listening_coordinator.dart' show AutoListeningState;
+import 'auto_listening_snapshot_source.dart';
 import '../config/llm_config.dart';
 // Future enhancement: Direct AutoListeningCoordinator integration
 // import 'vad_manager.dart';
@@ -447,26 +448,38 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     }
   }
 
-  @override
-  Future<void> enableAutoMode() async {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Enabling auto-listening mode');
-    }
-    // For now, delegate to legacy VoiceService for auto-listening
+  VoiceService? _resolveLegacyVoiceService() {
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        await legacyVoiceService.enableAutoMode();
-        return;
+        return serviceLocator<VoiceService>();
       }
     } catch (e) {
       if (kDebugMode) {
         debugPrint(
-            '[VoiceSessionCoordinator] Error delegating enableAutoMode: $e');
+            '[VoiceSessionCoordinator] Error resolving legacy VoiceService: $e');
       }
     }
+    return null;
+  }
 
+  @override
+  Future<void> enableAutoMode() async {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    if (legacyVoiceService != null) {
+      if (legacyVoiceService.controllerAutoModeEnabled) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceSessionCoordinator] Skipping enableAutoMode – controller manages auto mode');
+        }
+        return;
+      }
+      if (kDebugMode) {
+        debugPrint('[VoiceSessionCoordinator] Enabling auto-listening mode');
+      }
+      await legacyVoiceService.enableAutoMode();
+      return;
+    }
     if (kDebugMode) {
       debugPrint(
           '[VoiceSessionCoordinator] Auto-listening not yet implemented');
@@ -475,24 +488,21 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
 
   @override
   Future<void> disableAutoMode() async {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Disabling auto-listening mode');
-    }
-    // For now, delegate to legacy VoiceService for auto-listening
-    try {
-      final serviceLocator = GetIt.instance;
-      if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        await legacyVoiceService.autoListeningCoordinator.disableAutoMode();
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    if (legacyVoiceService != null) {
+      if (legacyVoiceService.controllerAutoModeEnabled) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceSessionCoordinator] Skipping disableAutoMode – controller manages auto mode');
+        }
         return;
       }
-    } catch (e) {
       if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionCoordinator] Error delegating disableAutoMode: $e');
+        debugPrint('[VoiceSessionCoordinator] Disabling auto-listening mode');
       }
+      await legacyVoiceService.disableAutoMode();
+      return;
     }
-
     if (kDebugMode) {
       debugPrint(
           '[VoiceSessionCoordinator] Auto-listening not yet implemented');
@@ -516,23 +526,79 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
     _ttsService.resetTTSState();
   }
 
-  /// Get AutoListeningCoordinator from legacy VoiceService
   @override
-  AutoListeningCoordinator get autoListeningCoordinator {
-    try {
-      final serviceLocator = GetIt.instance;
-      if (serviceLocator.isRegistered<VoiceService>()) {
-        final legacyVoiceService = serviceLocator<VoiceService>();
-        return legacyVoiceService.autoListeningCoordinator;
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionCoordinator] Error accessing autoListeningCoordinator: $e');
-      }
+  Future<void> initializeAutoListening() async {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    if (legacyVoiceService != null) {
+      await legacyVoiceService.initializeAutoListening();
+      return;
     }
+    if (kDebugMode) {
+      debugPrint(
+          '[VoiceSessionCoordinator] Auto-listening initialization not yet available');
+    }
+  }
 
-    throw UnsupportedError(
-        'AutoListeningCoordinator not available - legacy VoiceService not registered');
+  @override
+  void resetAutoListening({bool full = false, bool? preserveAutoMode}) {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    legacyVoiceService?.resetAutoListening(
+        full: full, preserveAutoMode: preserveAutoMode);
+  }
+
+  @override
+  void setAutoListeningRecordingCallback(
+      void Function(String audioPath)? callback) {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    legacyVoiceService?.setAutoListeningRecordingCallback(callback);
+  }
+
+  @override
+  void setAutoListeningTtsActivityStream(Stream<bool> stream) {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    legacyVoiceService?.setAutoListeningTtsActivityStream(stream);
+  }
+
+  @override
+  AutoListeningState get autoListeningState {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    return legacyVoiceService?.autoListeningState ?? AutoListeningState.idle;
+  }
+
+  @override
+  Stream<AutoListeningState> get autoListeningStateStream {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    return legacyVoiceService?.autoListeningStateStream ?? const Stream.empty();
+  }
+
+  @override
+  Stream<bool> get autoListeningModeEnabledStream {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    return legacyVoiceService?.autoListeningModeEnabledStream ??
+        const Stream.empty();
+  }
+
+  @override
+  bool get isAutoModeEnabled {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    return legacyVoiceService?.isAutoModeEnabled ?? false;
+  }
+
+  @override
+  AutoListeningSnapshotSource? get autoListeningSnapshotSource {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    return legacyVoiceService?.autoListeningSnapshotSource;
+  }
+
+  @override
+  dynamic get autoListeningVadManager {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    return legacyVoiceService?.autoListeningVadManager;
+  }
+
+  @override
+  void triggerListening() {
+    final legacyVoiceService = _resolveLegacyVoiceService();
+    legacyVoiceService?.triggerListening();
   }
 }

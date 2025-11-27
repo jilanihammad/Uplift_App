@@ -184,7 +184,7 @@ Internally, keep a `StateMachine<VoicePipelinePhase>` that enforces valid transi
 
 ---
 
-## Phase 5 – Retire Legacy Components ⏳ (in progress)
+## Phase 5 – Retire Legacy Components ⏳ (done)
 **Goal**: Delete unused code paths so future fixes stay simple.
 
 1. Remove `AutoListeningCoordinator` once its logic is absorbed.
@@ -236,3 +236,99 @@ Internally, keep a `StateMachine<VoicePipelinePhase>` that enforces valid transi
 - [ ] Comprehensive test suite + feature-flag rollout plan
 
 Follow this plan to converge on a deterministic voice pipeline architecture and permanently eliminate the recurring race conditions.
+
+## Remaining Implmentation - Next Steps
+**Plan Overview**
+- Organize work into three tracks that can be delivered sequentially (or in parallel if multiple engineers are available). Each track ends with explicit validation so we know the fixes are complete.
+- Keep `voicePipelineControllerEnabled` guarding the new path until all three tracks are finished and parity validated.
+
+**1. Retire Legacy AutoListeningCoordinator/VoiceService Paths**
+- **Inventory & flag removal**
+  - Search for `AutoListeningCoordinator` imports/usages (`ai_therapist_app/lib/blocs/voice_session_bloc.dart:20`, `ai_therapist_app/lib/services/voice_service.dart:213`, `service_locator.dart`, tests) and note dependencies.
+  - Add TODO markers where controller already covers the behavior so reviewers can track deletions per file.
+- **Controller as single authority**
+  - Extend `VoicePipelineController` with any missing affordances (e.g., amplitude stream passthrough, teardown hooks).
+  - Update `VoiceService` to stop exposing coordinator streams; instead, inject controller-ready dependencies via `VoicePipelineDependencies`.
+  - Example DI patch (`ai_therapist_app/lib/di/service_locator.dart`):
+    ```dart
+    registerLazySingleton<VoicePipelineControllerFactory>(() {
+      final deps = VoicePipelineDependencies(
+        capture: RecordingManager(...),
+        playback: AudioPlayerManager(...),
+        aiGateway: TherapyService(...),
+      );
+      return () => VoicePipelineController(deps);
+    });
+    ```
+- **Bloc & UI adjustments**
+  - Remove `_modeGeneration`, `_welcomeAutoModeArmed`, `_micControlGuardDepth` once controller snapshots fully drive state (see next section).
+  - Delete `EnableAutoMode`/`DisableAutoMode` events and all coordinator helper methods; replace call sites with controller requests (`requestEnableAutoMode`, `notifyListeningReady`).
+- **VoiceService simplification**
+  - Strip out `_autoListeningCoordinator`, `autoListeningStateStream`, related helpers.
+  - Keep only the minimal functionality needed for chat mode or DI fallback until controller pipeline is default.
+- **Testing/telemetry**
+  - Add FSM unit tests for controller transitions (Phase‑6 requirement from `FullRefactor.md:200`).
+  - Update integration tests (`integration_test/voice_session_toggle_test.dart`, `_welcome_test.dart`) to exercise both flag states; once green, delete legacy-specific expectations.
+- **Validation**
+  - Ensure `FullRefactor.md` deliverables checklist now has Phase‑5 items checked.
+  - Confirm no `AutoListeningCoordinator` references remain outside mocks/docs.
+
+**2. Finish Mic-Guard Refactor & Remove Legacy State**
+- **State cleanup**
+  - Delete `isAutoListeningEnabled`, `isVoicePipelineReady`, `isMicControlGuarded` guard depth logic, `_welcomeAutoModeArmed`, `_modeGeneration` from `VoiceSessionState` and bloc.
+  - Keep UI booleans by deriving them from controller snapshot fields in `_onVoicePipelineSnapshotUpdated`:
+    ```dart
+    emit(state.copyWith(
+      isListening: snapshot.phase == VoicePipelinePhase.listening,
+      isRecording: snapshot.phase == VoicePipelinePhase.recording,
+      isAiSpeaking: snapshot.isTtsActive,
+      isMicEnabled: !snapshot.micMuted,
+    ));
+    ```
+- **Mic toggle logic**
+  - Rewrite `_onToggleMicMute` to only consult `state.pipelineMicMuted` (or derived mic flag) and send `pipeline.toggleMic()`:
+    ```dart
+    void _onToggleMicMute(...) {
+      final controller = _voicePipelineController;
+      if (controller == null) return;
+      controller.toggleMic(); // controller handles guards internally
+    }
+    ```
+  - Remove `_guardMicControl`/`_releaseMicControl` helpers and `EnsureMicToggleEnabled` event; controller phases like `cooldown` should dictate when UI disables the button.
+- **UI wiring**
+  - Update `VoiceControlsPanel` to read `state.pipelinePhase`/`state.pipelineMicMuted` exclusively.
+  - If temporary guard visuals are still needed, derive them from controller cooldown state instead of bloc counters.
+- **Tests**
+  - Add focused bloc tests verifying:
+    - Snapshot → state mapping (listening/recording/tts/mic flags).
+    - Mic toggle dispatch calls `VoicePipelineController.toggleMic`.
+  - Remove/mock legacy tests referencing coordinator state streams.
+- **Validation**
+  - Run widget/integration tests to ensure the UI stays responsive; confirm telemetry parity (mic latency, listening resume metrics).
+
+**3. Harden Playback-Token Workflow & Complete Listening Animation Task**
+- **Token capture**
+  - In `SimpleTTSService`, after `onPlaybackToken` fires, store the token inside `VoiceService` before scheduling auto-mode enable:
+    ```dart
+    onPlaybackToken: (token) {
+      _voiceServiceUpdateCallback?.call(true, playbackToken: token);
+      voiceService.setCurrentPlaybackToken(token);
+      voiceService.enableAutoModeWhenPlaybackCompletes(playbackToken: token);
+    }
+    ```
+  - Add `setCurrentPlaybackToken(int token)` to `VoiceService` (or expose setter) so `_currentPlaybackToken` is populated immediately.
+- **VoiceService guards**
+  - In `enableAutoModeWhenPlaybackCompletes`, keep the existing generation checks but remove the optional token path—treat `playbackToken` as required.
+  - Ensure `_currentPlaybackToken` resets only in `_handleTtsCompletion`/`resetTTSState`; `_lastPlaybackToken` should capture the previous value when completion fires.
+  - Update `updateTTSSpeakingState` to assume `_currentPlaybackToken` is valid whenever `isSpeaking` becomes true, so token comparisons work.
+- **Animation verification**
+  - Since `VoiceControlsPanel` now uses `state.isListening`, add a bloc test ensuring snapshot updates flip the animation selector values.
+  - Add a UI smoke test (Golden or integration) for “welcome → listening” and “chat ↔ voice toggle” to confirm animation state matches `isListening`.
+- **Docs & telemetry**
+  - Mark `listenIssue.md` tasks complete with a short summary of the new token flow.
+  - Update troubleshooting docs to reference controller-based auto-mode rearm logic.
+- **Validation**
+  - Tail logs to confirm each playback token yields exactly one “enableAutoModeWhenPlaybackCompletes” entry, and that mismatched token warnings disappear.
+  - Manually reproduce the bug scenarios (chat→voice while AI speaks, welcome TTS) and ensure listening restarts only after TTS truly ends.
+
+Following these steps will eliminate the remaining legacy coordination code, simplify mic handling around the controller snapshots, and close the TTS/listening race for good—all while keeping the implementation aligned with `FullRefactor.md` and associated task docs.

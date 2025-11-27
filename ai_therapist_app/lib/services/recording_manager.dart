@@ -126,11 +126,15 @@ class RecordingManager {
       StreamController<RecordingState>.broadcast();
   final StreamController<String?> _errorController =
       StreamController<String?>.broadcast();
+  final StreamController<String> _recordingCompleteController =
+      StreamController<String>.broadcast();
 
   // Streams for external components to listen to
   Stream<RecordingState> get recordingStateStream =>
       _recordingStateController.stream;
   Stream<String?> get errorStream => _errorController.stream;
+  Stream<String> get recordingCompleteStream =>
+      _recordingCompleteController.stream;
 
   // Current recording state
   RecordingState _currentState = RecordingState.stopped;
@@ -581,6 +585,14 @@ class RecordingManager {
             '⏹️ Recording stopped successfully, file saved at: $completedFile');
       }
 
+      if (completedFile != null && !_recordingCompleteController.isClosed) {
+        if (kDebugMode) {
+          debugPrint(
+              '[RecordingManager] Emitting recording complete: $completedFile');
+        }
+        _recordingCompleteController.add(completedFile);
+      }
+
       return completedFile;
     } catch (e) {
       _errorController.add('Error stopping recording: $e');
@@ -672,5 +684,6 @@ class RecordingManager {
 
     await _recordingStateController.close();
     await _errorController.close();
+    await _recordingCompleteController.close();
   }
 }

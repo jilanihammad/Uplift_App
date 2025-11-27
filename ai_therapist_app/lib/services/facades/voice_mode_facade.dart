@@ -8,14 +8,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../di/interfaces/i_therapy_service.dart';
-import '../auto_listening_coordinator.dart';
 import '../simple_tts_service.dart';
 import '../voice_service.dart';
 import 'session_voice_facade.dart';
-
-typedef AutoListeningCoordinatorFactory = AutoListeningCoordinator Function({
-  required VoiceService voiceService,
-});
 
 /// Concrete facade for live voice sessions. Lazily boots the voice pipeline
 /// and ensures teardown happens in a controlled order.
@@ -24,18 +19,13 @@ class VoiceModeFacade implements SessionVoiceFacade {
     required VoiceService voiceService,
     required SimpleTTSService ttsService,
     required ITherapyService therapyService,
-    required AutoListeningCoordinatorFactory coordinatorFactory,
   })  : _voiceService = voiceService,
         _ttsService = ttsService,
-        _therapyService = therapyService,
-        _coordinatorFactory = coordinatorFactory;
+        _therapyService = therapyService;
 
   final VoiceService _voiceService;
   final SimpleTTSService _ttsService;
   final ITherapyService _therapyService;
-  final AutoListeningCoordinatorFactory _coordinatorFactory;
-
-  AutoListeningCoordinator? _autoCoordinator;
   StreamSubscription<bool>? _ttsSpeakingSub;
   final List<StreamSubscription<dynamic>> _sessionSubscriptions = [];
   Completer<void>? _transitionCompleter;
@@ -45,7 +35,6 @@ class VoiceModeFacade implements SessionVoiceFacade {
   int? _activeGeneration;
 
   SimpleTTSService get rawTtsService => _ttsService;
-  AutoListeningCoordinator? get autoListeningCoordinator => _autoCoordinator;
   int? get activeGeneration => _activeGeneration;
 
   @override
@@ -71,7 +60,7 @@ class VoiceModeFacade implements SessionVoiceFacade {
   @override
   Future<void> startSession() async {
     await _awaitTransition();
-    if (_autoCoordinator != null) {
+    if (_activeGeneration != null) {
       if (kDebugMode) {
         debugPrint('[VoiceModeFacade] startSession skipped - already active');
       }
@@ -91,14 +80,16 @@ class VoiceModeFacade implements SessionVoiceFacade {
 
       await _voiceService.initializeOnlyIfNeeded();
 
-      _autoCoordinator = _coordinatorFactory(voiceService: _voiceService);
-      _autoCoordinator?.isVoiceModeCallback = () => true;
-      await _autoCoordinator?.initialize();
-
       _voiceService.isVoiceModeCallback = () => true;
+      _voiceService.resetAutoListening(full: true, preserveAutoMode: false);
+      await _voiceService.initializeAutoListening();
       _ttsService.setVoiceServiceUpdateCallback(
         _voiceService.updateTTSSpeakingState,
       );
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceModeFacade] TTS→VoiceService callback wired for TTS completion handling');
+      }
 
       _ttsSpeakingSub =
           _voiceService.isTtsActuallySpeaking.listen(_handleTtsState);
@@ -136,7 +127,7 @@ class VoiceModeFacade implements SessionVoiceFacade {
   @override
   Future<void> endSession() async {
     await _awaitTransition();
-    if (_autoCoordinator == null &&
+    if (_activeGeneration == null &&
         _ttsSpeakingSub == null &&
         _sessionSubscriptions.isEmpty) {
       return;
@@ -151,10 +142,8 @@ class VoiceModeFacade implements SessionVoiceFacade {
 
       _ttsService.setVoiceServiceUpdateCallback(null);
 
-      await _autoCoordinator?.disableAutoMode();
-      _autoCoordinator?.reset(full: true);
-      _autoCoordinator?.isVoiceModeCallback = null;
-      _autoCoordinator = null;
+      await _voiceService.disableAutoMode();
+      _voiceService.resetAutoListening(full: true);
 
       _voiceService.isVoiceModeCallback = null;
       _voiceService.canStartListeningCallback = null;
@@ -207,16 +196,14 @@ class VoiceModeFacade implements SessionVoiceFacade {
   Future<void> _rollbackInitialization() async {
     await _disposeSubscriptions();
     _ttsService.setVoiceServiceUpdateCallback(null);
-    _autoCoordinator?.reset(full: true);
-    _autoCoordinator?.isVoiceModeCallback = null;
-    _autoCoordinator = null;
+    _voiceService.resetAutoListening(full: true);
     _voiceService.canStartListeningCallback = null;
     _voiceService.isVoiceModeCallback = null;
     _activeGeneration = null;
   }
 
   Future<void> _rollbackTeardown() async {
-    _autoCoordinator?.reset(full: true);
+    _voiceService.resetAutoListening(full: true);
     _voiceService.canStartListeningCallback = null;
     _voiceService.isVoiceModeCallback = null;
     _activeGeneration = null;

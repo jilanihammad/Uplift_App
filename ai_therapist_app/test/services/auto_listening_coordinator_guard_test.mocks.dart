@@ -3,22 +3,24 @@
 // Do not manually edit this file.
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
-import 'dart:async' as _i6;
-import 'dart:typed_data' as _i7;
+import 'dart:async' as _i5;
+import 'dart:typed_data' as _i6;
 
-import 'package:ai_therapist_app/services/audio_player_manager.dart' as _i4;
+import 'package:ai_therapist_app/services/audio_player_manager.dart' as _i3;
 import 'package:ai_therapist_app/services/auto_listening_coordinator.dart'
-    as _i3;
-import 'package:ai_therapist_app/services/base_voice_service.dart' as _i8;
-import 'package:ai_therapist_app/services/enhanced_vad_manager.dart' as _i13;
+    as _i11;
+import 'package:ai_therapist_app/services/base_voice_service.dart' as _i7;
+import 'package:ai_therapist_app/services/enhanced_vad_manager.dart' as _i14;
 import 'package:ai_therapist_app/services/gemini_live_duplex_controller.dart'
     as _i12;
-import 'package:ai_therapist_app/services/recording_manager.dart' as _i5;
-import 'package:ai_therapist_app/services/voice_service.dart' as _i10;
+import 'package:ai_therapist_app/services/pipeline/voice_pipeline_controller.dart'
+    as _i13;
+import 'package:ai_therapist_app/services/recording_manager.dart' as _i4;
+import 'package:ai_therapist_app/services/voice_service.dart' as _i9;
 import 'package:just_audio/just_audio.dart' as _i2;
 import 'package:mockito/mockito.dart' as _i1;
-import 'package:mockito/src/dummies.dart' as _i11;
-import 'package:record/record.dart' as _i9;
+import 'package:mockito/src/dummies.dart' as _i10;
+import 'package:record/record.dart' as _i8;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -54,9 +56,9 @@ class _FakeDuration_1 extends _i1.SmartFake implements Duration {
         );
 }
 
-class _FakeAutoListeningCoordinator_2 extends _i1.SmartFake
-    implements _i3.AutoListeningCoordinator {
-  _FakeAutoListeningCoordinator_2(
+class _FakeAudioPlayerManager_2 extends _i1.SmartFake
+    implements _i3.AudioPlayerManager {
+  _FakeAudioPlayerManager_2(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -65,20 +67,9 @@ class _FakeAutoListeningCoordinator_2 extends _i1.SmartFake
         );
 }
 
-class _FakeAudioPlayerManager_3 extends _i1.SmartFake
-    implements _i4.AudioPlayerManager {
-  _FakeAudioPlayerManager_3(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeRecordingManager_4 extends _i1.SmartFake
-    implements _i5.RecordingManager {
-  _FakeRecordingManager_4(
+class _FakeRecordingManager_3 extends _i1.SmartFake
+    implements _i4.RecordingManager {
+  _FakeRecordingManager_3(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -91,53 +82,53 @@ class _FakeRecordingManager_4 extends _i1.SmartFake
 ///
 /// See the documentation for Mockito's code generation for more information.
 class MockAudioPlayerManager extends _i1.Mock
-    implements _i4.AudioPlayerManager {
+    implements _i3.AudioPlayerManager {
   MockAudioPlayerManager() {
     _i1.throwOnMissingStub(this);
   }
 
   @override
-  _i6.Stream<bool> get isPlayingStream => (super.noSuchMethod(
+  _i5.Stream<bool> get isPlayingStream => (super.noSuchMethod(
         Invocation.getter(#isPlayingStream),
-        returnValue: _i6.Stream<bool>.empty(),
-      ) as _i6.Stream<bool>);
+        returnValue: _i5.Stream<bool>.empty(),
+      ) as _i5.Stream<bool>);
 
   @override
-  _i6.Stream<String?> get errorStream => (super.noSuchMethod(
+  _i5.Stream<String?> get errorStream => (super.noSuchMethod(
         Invocation.getter(#errorStream),
-        returnValue: _i6.Stream<String?>.empty(),
-      ) as _i6.Stream<String?>);
+        returnValue: _i5.Stream<String?>.empty(),
+      ) as _i5.Stream<String?>);
 
   @override
-  _i6.Stream<int> get queueLengthStream => (super.noSuchMethod(
+  _i5.Stream<int> get queueLengthStream => (super.noSuchMethod(
         Invocation.getter(#queueLengthStream),
-        returnValue: _i6.Stream<int>.empty(),
-      ) as _i6.Stream<int>);
+        returnValue: _i5.Stream<int>.empty(),
+      ) as _i5.Stream<int>);
 
   @override
-  _i6.Stream<String?> get nowPlayingStream => (super.noSuchMethod(
+  _i5.Stream<String?> get nowPlayingStream => (super.noSuchMethod(
         Invocation.getter(#nowPlayingStream),
-        returnValue: _i6.Stream<String?>.empty(),
-      ) as _i6.Stream<String?>);
+        returnValue: _i5.Stream<String?>.empty(),
+      ) as _i5.Stream<String?>);
 
   @override
-  _i6.Stream<bool> get muteStateStream => (super.noSuchMethod(
+  _i5.Stream<bool> get muteStateStream => (super.noSuchMethod(
         Invocation.getter(#muteStateStream),
-        returnValue: _i6.Stream<bool>.empty(),
-      ) as _i6.Stream<bool>);
+        returnValue: _i5.Stream<bool>.empty(),
+      ) as _i5.Stream<bool>);
 
   @override
-  _i6.Stream<bool> get playbackActiveStream => (super.noSuchMethod(
+  _i5.Stream<bool> get playbackActiveStream => (super.noSuchMethod(
         Invocation.getter(#playbackActiveStream),
-        returnValue: _i6.Stream<bool>.empty(),
-      ) as _i6.Stream<bool>);
+        returnValue: _i5.Stream<bool>.empty(),
+      ) as _i5.Stream<bool>);
 
   @override
-  _i6.Stream<_i2.ProcessingState> get processingStateStream =>
+  _i5.Stream<_i2.ProcessingState> get processingStateStream =>
       (super.noSuchMethod(
         Invocation.getter(#processingStateStream),
-        returnValue: _i6.Stream<_i2.ProcessingState>.empty(),
-      ) as _i6.Stream<_i2.ProcessingState>);
+        returnValue: _i5.Stream<_i2.ProcessingState>.empty(),
+      ) as _i5.Stream<_i2.ProcessingState>);
 
   @override
   bool get isPlaying => (super.noSuchMethod(
@@ -185,10 +176,10 @@ class MockAudioPlayerManager extends _i1.Mock
       ) as bool);
 
   @override
-  _i6.Future<void> get disposalComplete => (super.noSuchMethod(
+  _i5.Future<void> get disposalComplete => (super.noSuchMethod(
         Invocation.getter(#disposalComplete),
-        returnValue: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   bool get canOperate => (super.noSuchMethod(
@@ -197,35 +188,35 @@ class MockAudioPlayerManager extends _i1.Mock
       ) as bool);
 
   @override
-  _i6.Future<void> playAudio(String? audioPath) => (super.noSuchMethod(
+  _i5.Future<void> playAudio(String? audioPath) => (super.noSuchMethod(
         Invocation.method(
           #playAudio,
           [audioPath],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> stopAudio({bool? clearQueue = true}) => (super.noSuchMethod(
+  _i5.Future<void> stopAudio({bool? clearQueue = true}) => (super.noSuchMethod(
         Invocation.method(
           #stopAudio,
           [],
           {#clearQueue: clearQueue},
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> lightweightReset() => (super.noSuchMethod(
+  _i5.Future<void> lightweightReset() => (super.noSuchMethod(
         Invocation.method(
           #lightweightReset,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void forceStopState() => super.noSuchMethod(
@@ -237,14 +228,14 @@ class MockAudioPlayerManager extends _i1.Mock
       );
 
   @override
-  _i6.Future<void> skipCurrent() => (super.noSuchMethod(
+  _i5.Future<void> skipCurrent() => (super.noSuchMethod(
         Invocation.method(
           #skipCurrent,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void clearQueue() => super.noSuchMethod(
@@ -256,24 +247,24 @@ class MockAudioPlayerManager extends _i1.Mock
       );
 
   @override
-  _i6.Future<void> sessionEndCleanup() => (super.noSuchMethod(
+  _i5.Future<void> sessionEndCleanup() => (super.noSuchMethod(
         Invocation.method(
           #sessionEndCleanup,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> performAsyncDisposal() => (super.noSuchMethod(
+  _i5.Future<void> performAsyncDisposal() => (super.noSuchMethod(
         Invocation.method(
           #performAsyncDisposal,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void performDisposal() => super.noSuchMethod(
@@ -285,14 +276,14 @@ class MockAudioPlayerManager extends _i1.Mock
       );
 
   @override
-  _i6.Future<void> setVolume(double? volume) => (super.noSuchMethod(
+  _i5.Future<void> setVolume(double? volume) => (super.noSuchMethod(
         Invocation.method(
           #setVolume,
           [volume],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void mute(bool? muted) => super.noSuchMethod(
@@ -304,7 +295,7 @@ class MockAudioPlayerManager extends _i1.Mock
       );
 
   @override
-  _i6.Future<void> playLiveTtsStream(
+  _i5.Future<void> playLiveTtsStream(
     dynamic audioSourceOrStream, {
     String? debugName,
     String? contentType = 'audio/wav',
@@ -322,13 +313,13 @@ class MockAudioPlayerManager extends _i1.Mock
             #onNaturalCompletion: onNaturalCompletion,
           },
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> playAudioBytes(
-    _i7.Uint8List? audioBytes, {
+  _i5.Future<void> playAudioBytes(
+    _i6.Uint8List? audioBytes, {
     String? debugName,
     String? mimeType,
   }) =>
@@ -341,19 +332,19 @@ class MockAudioPlayerManager extends _i1.Mock
             #mimeType: mimeType,
           },
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> disposeAsync() => (super.noSuchMethod(
+  _i5.Future<void> disposeAsync() => (super.noSuchMethod(
         Invocation.method(
           #disposeAsync,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void dispose() => super.noSuchMethod(
@@ -377,29 +368,29 @@ class MockAudioPlayerManager extends _i1.Mock
 /// A class which mocks [RecordingManager].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockRecordingManager extends _i1.Mock implements _i5.RecordingManager {
+class MockRecordingManager extends _i1.Mock implements _i4.RecordingManager {
   MockRecordingManager() {
     _i1.throwOnMissingStub(this);
   }
 
   @override
-  _i6.Stream<_i8.RecordingState> get recordingStateStream =>
+  _i5.Stream<_i7.RecordingState> get recordingStateStream =>
       (super.noSuchMethod(
         Invocation.getter(#recordingStateStream),
-        returnValue: _i6.Stream<_i8.RecordingState>.empty(),
-      ) as _i6.Stream<_i8.RecordingState>);
+        returnValue: _i5.Stream<_i7.RecordingState>.empty(),
+      ) as _i5.Stream<_i7.RecordingState>);
 
   @override
-  _i6.Stream<String?> get errorStream => (super.noSuchMethod(
+  _i5.Stream<String?> get errorStream => (super.noSuchMethod(
         Invocation.getter(#errorStream),
-        returnValue: _i6.Stream<String?>.empty(),
-      ) as _i6.Stream<String?>);
+        returnValue: _i5.Stream<String?>.empty(),
+      ) as _i5.Stream<String?>);
 
   @override
-  _i8.RecordingState get currentState => (super.noSuchMethod(
+  _i7.RecordingState get currentState => (super.noSuchMethod(
         Invocation.getter(#currentState),
-        returnValue: _i8.RecordingState.stopped,
-      ) as _i8.RecordingState);
+        returnValue: _i7.RecordingState.stopped,
+      ) as _i7.RecordingState);
 
   @override
   bool get isStreaming => (super.noSuchMethod(
@@ -423,17 +414,17 @@ class MockRecordingManager extends _i1.Mock implements _i5.RecordingManager {
       ) as Set<String>);
 
   @override
-  _i6.Future<void> initialize() => (super.noSuchMethod(
+  _i5.Future<void> initialize() => (super.noSuchMethod(
         Invocation.method(
           #initialize,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<_i6.Stream<_i7.Uint8List>> startStreaming({
+  _i5.Future<_i5.Stream<_i6.Uint8List>> startStreaming({
     int? sampleRate = 24000,
     int? numChannels = 1,
   }) =>
@@ -446,56 +437,56 @@ class MockRecordingManager extends _i1.Mock implements _i5.RecordingManager {
             #numChannels: numChannels,
           },
         ),
-        returnValue: _i6.Future<_i6.Stream<_i7.Uint8List>>.value(
-            _i6.Stream<_i7.Uint8List>.empty()),
-      ) as _i6.Future<_i6.Stream<_i7.Uint8List>>);
+        returnValue: _i5.Future<_i5.Stream<_i6.Uint8List>>.value(
+            _i5.Stream<_i6.Uint8List>.empty()),
+      ) as _i5.Future<_i5.Stream<_i6.Uint8List>>);
 
   @override
-  _i6.Future<bool> requestPermissions() => (super.noSuchMethod(
+  _i5.Future<bool> requestPermissions() => (super.noSuchMethod(
         Invocation.method(
           #requestPermissions,
           [],
         ),
-        returnValue: _i6.Future<bool>.value(false),
-      ) as _i6.Future<bool>);
+        returnValue: _i5.Future<bool>.value(false),
+      ) as _i5.Future<bool>);
 
   @override
-  _i6.Future<void> startRecording() => (super.noSuchMethod(
+  _i5.Future<void> startRecording() => (super.noSuchMethod(
         Invocation.method(
           #startRecording,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> stopStreaming() => (super.noSuchMethod(
+  _i5.Future<void> stopStreaming() => (super.noSuchMethod(
         Invocation.method(
           #stopStreaming,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<String?> stopRecording() => (super.noSuchMethod(
+  _i5.Future<String?> stopRecording() => (super.noSuchMethod(
         Invocation.method(
           #stopRecording,
           [],
         ),
-        returnValue: _i6.Future<String?>.value(),
-      ) as _i6.Future<String?>);
+        returnValue: _i5.Future<String?>.value(),
+      ) as _i5.Future<String?>);
 
   @override
-  _i6.Future<String?> tryStopRecording() => (super.noSuchMethod(
+  _i5.Future<String?> tryStopRecording() => (super.noSuchMethod(
         Invocation.method(
           #tryStopRecording,
           [],
         ),
-        returnValue: _i6.Future<String?>.value(),
-      ) as _i6.Future<String?>);
+        returnValue: _i5.Future<String?>.value(),
+      ) as _i5.Future<String?>);
 
   @override
   void markFileAsPendingTranscription(String? filePath) => super.noSuchMethod(
@@ -516,29 +507,29 @@ class MockRecordingManager extends _i1.Mock implements _i5.RecordingManager {
       );
 
   @override
-  _i6.Future<_i9.Amplitude?> getCurrentAmplitude() => (super.noSuchMethod(
+  _i5.Future<_i8.Amplitude?> getCurrentAmplitude() => (super.noSuchMethod(
         Invocation.method(
           #getCurrentAmplitude,
           [],
         ),
-        returnValue: _i6.Future<_i9.Amplitude?>.value(),
-      ) as _i6.Future<_i9.Amplitude?>);
+        returnValue: _i5.Future<_i8.Amplitude?>.value(),
+      ) as _i5.Future<_i8.Amplitude?>);
 
   @override
-  _i6.Future<void> dispose() => (super.noSuchMethod(
+  _i5.Future<void> dispose() => (super.noSuchMethod(
         Invocation.method(
           #dispose,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 }
 
 /// A class which mocks [VoiceService].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
+class MockVoiceService extends _i1.Mock implements _i9.VoiceService {
   MockVoiceService() {
     _i1.throwOnMissingStub(this);
   }
@@ -550,31 +541,31 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       ) as bool);
 
   @override
-  _i6.Stream<_i8.RecordingState> get recordingState => (super.noSuchMethod(
+  _i5.Stream<_i7.RecordingState> get recordingState => (super.noSuchMethod(
         Invocation.getter(#recordingState),
-        returnValue: _i6.Stream<_i8.RecordingState>.empty(),
-      ) as _i6.Stream<_i8.RecordingState>);
+        returnValue: _i5.Stream<_i7.RecordingState>.empty(),
+      ) as _i5.Stream<_i7.RecordingState>);
 
   @override
   String get apiUrl => (super.noSuchMethod(
         Invocation.getter(#apiUrl),
-        returnValue: _i11.dummyValue<String>(
+        returnValue: _i10.dummyValue<String>(
           this,
           Invocation.getter(#apiUrl),
         ),
       ) as String);
 
   @override
-  _i6.Stream<bool> get audioPlaybackStream => (super.noSuchMethod(
+  _i5.Stream<bool> get audioPlaybackStream => (super.noSuchMethod(
         Invocation.getter(#audioPlaybackStream),
-        returnValue: _i6.Stream<bool>.empty(),
-      ) as _i6.Stream<bool>);
+        returnValue: _i5.Stream<bool>.empty(),
+      ) as _i5.Stream<bool>);
 
   @override
-  _i6.Stream<bool> get isTtsActuallySpeaking => (super.noSuchMethod(
+  _i5.Stream<bool> get isTtsActuallySpeaking => (super.noSuchMethod(
         Invocation.getter(#isTtsActuallySpeaking),
-        returnValue: _i6.Stream<bool>.empty(),
-      ) as _i6.Stream<bool>);
+        returnValue: _i5.Stream<bool>.empty(),
+      ) as _i5.Stream<bool>);
 
   @override
   bool get isTtsActive => (super.noSuchMethod(
@@ -589,27 +580,29 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       ) as bool);
 
   @override
-  _i6.Stream<_i3.AutoListeningState> get autoListeningStateStream =>
+  _i5.Stream<_i11.AutoListeningState> get autoListeningStateStream =>
       (super.noSuchMethod(
         Invocation.getter(#autoListeningStateStream),
-        returnValue: _i6.Stream<_i3.AutoListeningState>.empty(),
-      ) as _i6.Stream<_i3.AutoListeningState>);
+        returnValue: _i5.Stream<_i11.AutoListeningState>.empty(),
+      ) as _i5.Stream<_i11.AutoListeningState>);
 
   @override
-  _i6.Stream<bool> get autoListeningModeEnabledStream => (super.noSuchMethod(
+  _i5.Stream<bool> get autoListeningModeEnabledStream => (super.noSuchMethod(
         Invocation.getter(#autoListeningModeEnabledStream),
-        returnValue: _i6.Stream<bool>.empty(),
-      ) as _i6.Stream<bool>);
+        returnValue: _i5.Stream<bool>.empty(),
+      ) as _i5.Stream<bool>);
 
   @override
-  _i3.AutoListeningCoordinator get autoListeningCoordinator =>
-      (super.noSuchMethod(
-        Invocation.getter(#autoListeningCoordinator),
-        returnValue: _FakeAutoListeningCoordinator_2(
-          this,
-          Invocation.getter(#autoListeningCoordinator),
-        ),
-      ) as _i3.AutoListeningCoordinator);
+  _i11.AutoListeningState get autoListeningState => (super.noSuchMethod(
+        Invocation.getter(#autoListeningState),
+        returnValue: _i11.AutoListeningState.idle,
+      ) as _i11.AutoListeningState);
+
+  @override
+  bool get isAutoModeEnabled => (super.noSuchMethod(
+        Invocation.getter(#isAutoModeEnabled),
+        returnValue: false,
+      ) as bool);
 
   @override
   bool get geminiLiveEnabled => (super.noSuchMethod(
@@ -624,11 +617,11 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       ) as bool);
 
   @override
-  _i6.Stream<_i12.GeminiLiveEvent> get geminiLiveEventStream =>
+  _i5.Stream<_i12.GeminiLiveEvent> get geminiLiveEventStream =>
       (super.noSuchMethod(
         Invocation.getter(#geminiLiveEventStream),
-        returnValue: _i6.Stream<_i12.GeminiLiveEvent>.empty(),
-      ) as _i6.Stream<_i12.GeminiLiveEvent>);
+        returnValue: _i5.Stream<_i12.GeminiLiveEvent>.empty(),
+      ) as _i5.Stream<_i12.GeminiLiveEvent>);
 
   @override
   set isAiSpeaking(bool? _isAiSpeaking) => super.noSuchMethod(
@@ -650,16 +643,6 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       );
 
   @override
-  set isVoiceModeCallback(bool Function()? _isVoiceModeCallback) =>
-      super.noSuchMethod(
-        Invocation.setter(
-          #isVoiceModeCallback,
-          _isVoiceModeCallback,
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
   set getCurrentGeneration(int Function()? _getCurrentGeneration) =>
       super.noSuchMethod(
         Invocation.setter(
@@ -670,120 +653,197 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       );
 
   @override
-  _i6.Future<void> enableAutoMode() => (super.noSuchMethod(
+  set isVoiceModeCallback(bool Function()? callback) => super.noSuchMethod(
+        Invocation.setter(
+          #isVoiceModeCallback,
+          callback,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  _i5.Future<void> enableAutoMode() => (super.noSuchMethod(
         Invocation.method(
           #enableAutoMode,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> disableAutoMode() => (super.noSuchMethod(
+  _i5.Future<void> disableAutoMode() => (super.noSuchMethod(
         Invocation.method(
           #disableAutoMode,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> enableAutoModeWithAudioState(bool? isAudioPlaying) =>
+  _i5.Future<void> enableAutoModeWithAudioState(bool? isAudioPlaying) =>
       (super.noSuchMethod(
         Invocation.method(
           #enableAutoModeWithAudioState,
           [isAudioPlaying],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> enableAutoModeWhenPlaybackCompletes({int? playbackToken}) =>
+  _i5.Future<void> initializeAutoListening() => (super.noSuchMethod(
+        Invocation.method(
+          #initializeAutoListening,
+          [],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  void resetAutoListening({
+    bool? full = false,
+    bool? preserveAutoMode,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #resetAutoListening,
+          [],
+          {
+            #full: full,
+            #preserveAutoMode: preserveAutoMode,
+          },
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void setAutoListeningRecordingCallback(void Function(String)? callback) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #setAutoListeningRecordingCallback,
+          [callback],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void setAutoListeningTtsActivityStream(_i5.Stream<bool>? stream) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #setAutoListeningTtsActivityStream,
+          [stream],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void triggerListening() => super.noSuchMethod(
+        Invocation.method(
+          #triggerListening,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  _i5.Future<void> enableAutoModeWhenPlaybackCompletes({
+    required int playbackToken,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
           #enableAutoModeWhenPlaybackCompletes,
           [],
           {#playbackToken: playbackToken},
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> initializeOnlyIfNeeded() => (super.noSuchMethod(
+  void attachPipelineController(_i13.VoicePipelineController? controller) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #attachPipelineController,
+          [controller],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  _i5.Future<void> initializeOnlyIfNeeded() => (super.noSuchMethod(
         Invocation.method(
           #initializeOnlyIfNeeded,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> initialize() => (super.noSuchMethod(
+  _i5.Future<void> initialize() => (super.noSuchMethod(
         Invocation.method(
           #initialize,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> startRecording() => (super.noSuchMethod(
+  _i5.Future<void> startRecording() => (super.noSuchMethod(
         Invocation.method(
           #startRecording,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<String?> stopRecording() => (super.noSuchMethod(
+  _i5.Future<String?> stopRecording() => (super.noSuchMethod(
         Invocation.method(
           #stopRecording,
           [],
         ),
-        returnValue: _i6.Future<String?>.value(),
-      ) as _i6.Future<String?>);
+        returnValue: _i5.Future<String?>.value(),
+      ) as _i5.Future<String?>);
 
   @override
-  _i6.Future<String?> tryStopRecording() => (super.noSuchMethod(
+  _i5.Future<String?> tryStopRecording() => (super.noSuchMethod(
         Invocation.method(
           #tryStopRecording,
           [],
         ),
-        returnValue: _i6.Future<String?>.value(),
-      ) as _i6.Future<String?>);
+        returnValue: _i5.Future<String?>.value(),
+      ) as _i5.Future<String?>);
 
   @override
-  _i6.Future<void> startGeminiLiveSession({String? userId}) =>
+  _i5.Future<void> startGeminiLiveSession({String? userId}) =>
       (super.noSuchMethod(
         Invocation.method(
           #startGeminiLiveSession,
           [],
           {#userId: userId},
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> stopGeminiLiveSession() => (super.noSuchMethod(
+  _i5.Future<void> stopGeminiLiveSession() => (super.noSuchMethod(
         Invocation.method(
           #stopGeminiLiveSession,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> sendGeminiLiveText(
+  _i5.Future<void> sendGeminiLiveText(
     String? text, {
     bool? turnComplete = false,
   }) =>
@@ -793,64 +853,64 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
           [text],
           {#turnComplete: turnComplete},
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<String> processRecordedAudioFile(String? recordedFilePath) =>
+  _i5.Future<String> processRecordedAudioFile(String? recordedFilePath) =>
       (super.noSuchMethod(
         Invocation.method(
           #processRecordedAudioFile,
           [recordedFilePath],
         ),
-        returnValue: _i6.Future<String>.value(_i11.dummyValue<String>(
+        returnValue: _i5.Future<String>.value(_i10.dummyValue<String>(
           this,
           Invocation.method(
             #processRecordedAudioFile,
             [recordedFilePath],
           ),
         )),
-      ) as _i6.Future<String>);
+      ) as _i5.Future<String>);
 
   @override
-  _i6.Future<void> playAudio(String? audioPath) => (super.noSuchMethod(
+  _i5.Future<void> playAudio(String? audioPath) => (super.noSuchMethod(
         Invocation.method(
           #playAudio,
           [audioPath],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> stopAudio() => (super.noSuchMethod(
+  _i5.Future<void> stopAudio() => (super.noSuchMethod(
         Invocation.method(
           #stopAudio,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> playStreamingAudio(String? audioUrl) => (super.noSuchMethod(
+  _i5.Future<void> playStreamingAudio(String? audioUrl) => (super.noSuchMethod(
         Invocation.method(
           #playStreamingAudio,
           [audioUrl],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<bool> isPlaying() => (super.noSuchMethod(
+  _i5.Future<bool> isPlaying() => (super.noSuchMethod(
         Invocation.method(
           #isPlaying,
           [],
         ),
-        returnValue: _i6.Future<bool>.value(false),
-      ) as _i6.Future<bool>);
+        returnValue: _i5.Future<bool>.value(false),
+      ) as _i5.Future<bool>);
 
   @override
   void dispose() => super.noSuchMethod(
@@ -862,37 +922,37 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       );
 
   @override
-  _i4.AudioPlayerManager getAudioPlayerManager() => (super.noSuchMethod(
+  _i3.AudioPlayerManager getAudioPlayerManager() => (super.noSuchMethod(
         Invocation.method(
           #getAudioPlayerManager,
           [],
         ),
-        returnValue: _FakeAudioPlayerManager_3(
+        returnValue: _FakeAudioPlayerManager_2(
           this,
           Invocation.method(
             #getAudioPlayerManager,
             [],
           ),
         ),
-      ) as _i4.AudioPlayerManager);
+      ) as _i3.AudioPlayerManager);
 
   @override
-  _i5.RecordingManager getRecordingManager() => (super.noSuchMethod(
+  _i4.RecordingManager getRecordingManager() => (super.noSuchMethod(
         Invocation.method(
           #getRecordingManager,
           [],
         ),
-        returnValue: _FakeRecordingManager_4(
+        returnValue: _FakeRecordingManager_3(
           this,
           Invocation.method(
             #getRecordingManager,
             [],
           ),
         ),
-      ) as _i5.RecordingManager);
+      ) as _i4.RecordingManager);
 
   @override
-  _i6.Future<void> playAudioWithCallbacks(
+  _i5.Future<void> playAudioWithCallbacks(
     String? filePath, {
     void Function()? onDone,
     void Function(String)? onError,
@@ -906,9 +966,9 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
             #onError: onError,
           },
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void updateTTSSpeakingState(
@@ -925,24 +985,24 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       );
 
   @override
-  _i6.Future<void> pauseVAD() => (super.noSuchMethod(
+  _i5.Future<void> pauseVAD() => (super.noSuchMethod(
         Invocation.method(
           #pauseVAD,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> resumeVAD() => (super.noSuchMethod(
+  _i5.Future<void> resumeVAD() => (super.noSuchMethod(
         Invocation.method(
           #resumeVAD,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void resetTTSState() => super.noSuchMethod(
@@ -954,77 +1014,77 @@ class MockVoiceService extends _i1.Mock implements _i10.VoiceService {
       );
 
   @override
-  _i6.Future<void> setSpeakerMuted(bool? muted) => (super.noSuchMethod(
+  _i5.Future<void> setSpeakerMuted(bool? muted) => (super.noSuchMethod(
         Invocation.method(
           #setSpeakerMuted,
           [muted],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 }
 
 /// A class which mocks [EnhancedVADManager].
 ///
 /// See the documentation for Mockito's code generation for more information.
 class MockEnhancedVADManager extends _i1.Mock
-    implements _i13.EnhancedVADManager {
+    implements _i14.EnhancedVADManager {
   MockEnhancedVADManager() {
     _i1.throwOnMissingStub(this);
   }
 
   @override
-  _i6.Stream<void> get onSpeechStart => (super.noSuchMethod(
+  _i5.Stream<void> get onSpeechStart => (super.noSuchMethod(
         Invocation.getter(#onSpeechStart),
-        returnValue: _i6.Stream<void>.empty(),
-      ) as _i6.Stream<void>);
+        returnValue: _i5.Stream<void>.empty(),
+      ) as _i5.Stream<void>);
 
   @override
-  _i6.Stream<void> get onSpeechEnd => (super.noSuchMethod(
+  _i5.Stream<void> get onSpeechEnd => (super.noSuchMethod(
         Invocation.getter(#onSpeechEnd),
-        returnValue: _i6.Stream<void>.empty(),
-      ) as _i6.Stream<void>);
+        returnValue: _i5.Stream<void>.empty(),
+      ) as _i5.Stream<void>);
 
   @override
-  _i6.Stream<String> get onError => (super.noSuchMethod(
+  _i5.Stream<String> get onError => (super.noSuchMethod(
         Invocation.getter(#onError),
-        returnValue: _i6.Stream<String>.empty(),
-      ) as _i6.Stream<String>);
+        returnValue: _i5.Stream<String>.empty(),
+      ) as _i5.Stream<String>);
 
   @override
-  _i6.Stream<double> get amplitudeStream => (super.noSuchMethod(
+  _i5.Stream<double> get amplitudeStream => (super.noSuchMethod(
         Invocation.getter(#amplitudeStream),
-        returnValue: _i6.Stream<double>.empty(),
-      ) as _i6.Stream<double>);
+        returnValue: _i5.Stream<double>.empty(),
+      ) as _i5.Stream<double>);
 
   @override
-  _i6.Future<void> initialize() => (super.noSuchMethod(
+  _i5.Future<void> initialize() => (super.noSuchMethod(
         Invocation.method(
           #initialize,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<bool> startListening() => (super.noSuchMethod(
+  _i5.Future<bool> startListening() => (super.noSuchMethod(
         Invocation.method(
           #startListening,
           [],
         ),
-        returnValue: _i6.Future<bool>.value(false),
-      ) as _i6.Future<bool>);
+        returnValue: _i5.Future<bool>.value(false),
+      ) as _i5.Future<bool>);
 
   @override
-  _i6.Future<void> stopListening() => (super.noSuchMethod(
+  _i5.Future<void> stopListening() => (super.noSuchMethod(
         Invocation.method(
           #stopListening,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
   void setSpeechThreshold(double? threshold) => super.noSuchMethod(
@@ -1045,22 +1105,22 @@ class MockEnhancedVADManager extends _i1.Mock
       ) as Map<String, dynamic>);
 
   @override
-  _i6.Future<void> dispose() => (super.noSuchMethod(
+  _i5.Future<void> dispose() => (super.noSuchMethod(
         Invocation.method(
           #dispose,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 
   @override
-  _i6.Future<void> waitForWorkerExit() => (super.noSuchMethod(
+  _i5.Future<void> waitForWorkerExit() => (super.noSuchMethod(
         Invocation.method(
           #waitForWorkerExit,
           [],
         ),
-        returnValue: _i6.Future<void>.value(),
-        returnValueForMissingStub: _i6.Future<void>.value(),
-      ) as _i6.Future<void>);
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 }

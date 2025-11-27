@@ -512,8 +512,6 @@ Future<void> setupServiceLocator({
           voiceService: serviceLocator<VoiceService>(),
           ttsService: simpleTtsService,
           therapyService: serviceLocator<ITherapyService>(),
-          coordinatorFactory: ({required voiceService}) =>
-              voiceService.createAutoListeningCoordinator(),
         );
       });
       debugPrint('✅ Registered VoiceModeFacade factory');

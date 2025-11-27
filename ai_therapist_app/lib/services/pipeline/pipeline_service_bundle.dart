@@ -1,5 +1,5 @@
 import '../voice_service.dart';
-import '../auto_listening_coordinator.dart';
+import '../auto_listening_snapshot_source.dart';
 import '../audio_player_manager.dart';
 import '../recording_manager.dart';
 import '../voice_session_coordinator.dart';
@@ -10,7 +10,7 @@ import 'mic_auto_mode_controller.dart';
 
 class VoicePipelineDependencies {
   final VoiceService voiceService;
-  final AutoListeningCoordinator autoListening;
+  final AutoListeningSnapshotSource autoListening;
   final AudioPlayerManager? audioPlayerManager;
   final RecordingManager? recordingManager;
   final VoiceSessionCoordinator? sessionCoordinator;

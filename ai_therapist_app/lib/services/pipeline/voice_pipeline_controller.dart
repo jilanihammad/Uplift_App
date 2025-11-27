@@ -4,7 +4,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
-import '../auto_listening_coordinator.dart';
+import '../auto_listening_coordinator.dart' show AutoListeningState;
+import '../auto_listening_snapshot_source.dart';
 import '../voice_service.dart';
 import '../voice_session_coordinator.dart';
 import '../audio_player_manager.dart';
@@ -89,7 +90,7 @@ class AudioPlan {
   const AudioPlan({this.description, this.expectedDuration});
 }
 
-class VoicePipelineController with SessionDisposable {
+class VoicePipelineController with SessionDisposable implements AsyncDisposable {
   VoicePipelineController({
     required VoicePipelineDependencies dependencies,
     bool Function()? micMutedGetter,
@@ -117,6 +118,10 @@ class VoicePipelineController with SessionDisposable {
       onListen: () => _snapshotController.add(_snapshot),
     );
     _wireMirrors();
+    if (_audioCapture != null) {
+      _recordingCompleteSub =
+          _audioCapture!.recordingCompleted.listen(_handleRecordingComplete);
+    }
     if (kDebugMode) {
       debugPrint('[VoicePipelineController] Mirror mode active '
           '(legacy=${_legacyCoordinator != null} '
@@ -125,12 +130,11 @@ class VoicePipelineController with SessionDisposable {
     }
   }
 
-  final AutoListeningCoordinator _autoListening;
+  final AutoListeningSnapshotSource _autoListening;
   final VoiceService _voiceService;
   final VoiceSessionCoordinator? _legacyCoordinator;
   final AudioPlayerManager? _audioPlayerManager;
   final RecordingManager? _recordingManager;
-  // ignore: unused_field
   final AudioCapture? _audioCapture;
   // ignore: unused_field
   final AudioPlayback? _audioPlayback;
@@ -138,6 +142,8 @@ class VoicePipelineController with SessionDisposable {
   final AiGateway? _aiGateway;
   final MicAutoModeController? _micController;
   final bool Function() _micMutedGetter;
+  StreamSubscription<String>? _recordingCompleteSub;
+  void Function(String path)? _recordingCompleteCallback;
 
   late VoicePipelineSnapshot _snapshot;
   late StreamController<VoicePipelineSnapshot> _snapshotController;
@@ -147,6 +153,8 @@ class VoicePipelineController with SessionDisposable {
   StreamSubscription<bool>? _ttsSub;
   bool _disposed = false;
   bool _welcomeInProgress = false;
+  bool _listeningRestartPending = false;
+  bool _listeningRestartArmed = false;
 
   VoicePipelineSnapshot get current => _snapshot;
   Stream<VoicePipelineSnapshot> get snapshots => _snapshotController.stream;
@@ -213,6 +221,12 @@ class VoicePipelineController with SessionDisposable {
 
   void updateExternalMicState(bool micMuted) {
     _updateSnapshot(micMuted: micMuted, reason: 'externalMicUpdate');
+  }
+
+  void setRecordingCompleteCallback(
+    void Function(String path)? callback,
+  ) {
+    _recordingCompleteCallback = callback;
   }
 
   Future<void> requestStartRecording() async {
@@ -301,15 +315,26 @@ class VoicePipelineController with SessionDisposable {
   }
 
   void requestTriggerListening() {
+    notifyListeningReady(context: 'requestTrigger');
+  }
+
+  void notifyListeningReady({String context = 'manual'}) {
     if (_micController == null) {
       return;
     }
     _enqueue(() async {
-      _micController!.triggerListening();
-      _updateSnapshot(
-        phase: VoicePipelinePhase.listening,
-        reason: 'requestTriggerListening',
-      );
+      if (_disposed) {
+        return;
+      }
+      _listeningRestartArmed = true;
+      if (kDebugMode) {
+        debugPrint('[VoicePipelineController][AutoMode] Listening ready '
+            '(context=$context, ttsActive=${_snapshot.isTtsActive}, '
+            'autoMode=${_autoListening.autoModeEnabled})');
+      }
+      if (!_snapshot.isTtsActive) {
+        await _scheduleListeningRestart(reason: 'notify:$context');
+      }
     });
   }
 
@@ -324,6 +349,96 @@ class VoicePipelineController with SessionDisposable {
     } catch (_) {
       // timeout - proceed anyway
     }
+  }
+
+  Future<void> _scheduleListeningRestart(
+      {String reason = 'listeningRestart'}) async {
+    // Early exit if disposed - prevents stale operations after cleanup
+    if (_disposed) {
+      if (kDebugMode) {
+        debugPrint('[VoicePipelineController][AutoMode] Restart aborted '
+            '(disposed)');
+      }
+      return;
+    }
+    if (_micController == null) {
+      if (kDebugMode) {
+        debugPrint('[VoicePipelineController][AutoMode] Restart aborted '
+            '(no mic controller)');
+      }
+      return;
+    }
+    if (!_listeningRestartArmed || _listeningRestartPending) {
+      if (kDebugMode) {
+        debugPrint('[VoicePipelineController][AutoMode] Restart aborted '
+            '(armed=$_listeningRestartArmed, pending=$_listeningRestartPending)');
+      }
+      return;
+    }
+    if (!_autoListening.autoModeEnabled) {
+      if (kDebugMode) {
+        debugPrint('[VoicePipelineController][AutoMode] Restart aborted '
+            '(autoMode disabled)');
+      }
+      return;
+    }
+
+    _listeningRestartPending = true;
+    try {
+      await _awaitPlaybackIdle();
+
+      // Re-check disposed after async operation
+      if (_disposed) {
+        if (kDebugMode) {
+          debugPrint('[VoicePipelineController][AutoMode] Restart aborted '
+              'after await (disposed)');
+        }
+        return;
+      }
+
+      if (_snapshot.isTtsActive) {
+        if (kDebugMode) {
+          debugPrint('[VoicePipelineController][AutoMode] Restart deferred '
+              '(tts still active, reason=$reason)');
+        }
+        return;
+      }
+
+      if (!_isListeningRestartAllowed()) {
+        if (kDebugMode) {
+          debugPrint('[VoicePipelineController][AutoMode] Restart deferred '
+              '(canStartListening=false, reason=$reason)');
+        }
+        return;
+      }
+
+      if (kDebugMode) {
+        debugPrint('[VoicePipelineController][AutoMode] Triggering listening '
+            '(reason=$reason)');
+      }
+      _micController!.triggerListening();
+      _updateSnapshot(
+        phase: VoicePipelinePhase.listening,
+        reason: reason,
+      );
+      _listeningRestartArmed = false;
+    } finally {
+      _listeningRestartPending = false;
+      if (_listeningRestartArmed) {
+        _enqueue(() async {
+          await Future.delayed(const Duration(milliseconds: 150));
+          await _scheduleListeningRestart(reason: 'retry');
+        });
+      }
+    }
+  }
+
+  bool _isListeningRestartAllowed() {
+    final callback = _voiceService.canStartListeningCallback;
+    if (callback == null) {
+      return true;
+    }
+    return callback();
   }
 
   void _wireMirrors() {
@@ -347,7 +462,8 @@ class VoicePipelineController with SessionDisposable {
     });
 
     _ttsSub = _voiceService.isTtsActuallySpeaking.listen((isSpeaking) {
-      _enqueue(() {
+      _enqueue(() async {
+        final wasSpeaking = _snapshot.isTtsActive;
         final nextPhase = isSpeaking
             ? VoicePipelinePhase.speaking
             : _phaseFromState(_snapshot.coordinatorState, isSpeaking);
@@ -356,8 +472,45 @@ class VoicePipelineController with SessionDisposable {
           phase: nextPhase,
           reason: 'tts:$isSpeaking',
         );
+
+        if (_micController == null) {
+          if (kDebugMode && !isSpeaking && wasSpeaking) {
+            debugPrint('[VoicePipelineController] TTS completed but no mic controller');
+          }
+          return;
+        }
+
+        if (isSpeaking) {
+          // TTS started - disarm any pending restart
+          _listeningRestartArmed = false;
+          _listeningRestartPending = false;
+          if (kDebugMode) {
+            debugPrint('[VoicePipelineController] TTS started - restart disarmed');
+          }
+        } else if (wasSpeaking && !isSpeaking) {
+          // TTS completed - arm restart and schedule
+          _listeningRestartArmed = true;
+          if (kDebugMode) {
+            debugPrint('[VoicePipelineController] TTS completed - scheduling listening restart');
+          }
+          await _scheduleListeningRestart(reason: 'ttsComplete');
+        }
       });
     });
+  }
+
+  void _handleRecordingComplete(String path) {
+    if (_disposed) {
+      return;
+    }
+    if (kDebugMode) {
+      debugPrint('[VoicePipelineController] Recording complete: $path');
+    }
+    _updateSnapshot(
+      phase: VoicePipelinePhase.transcribing,
+      reason: 'recordingComplete',
+    );
+    _recordingCompleteCallback?.call(path);
   }
 
   VoicePipelinePhase _phaseFromState(
@@ -431,14 +584,41 @@ class VoicePipelineController with SessionDisposable {
   }
 
   @override
-  void performDisposal() {
+  Future<void> performAsyncDisposal() async {
     if (_disposed) {
       return;
     }
     _disposed = true;
+
+    // Wait for any pending operations to complete before cleaning up.
+    // This prevents stale callbacks from firing on disposed resources.
+    try {
+      await _operationTail.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          if (kDebugMode) {
+            debugPrint('[VoicePipelineController] Disposal timeout waiting for pending operations');
+          }
+        },
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[VoicePipelineController] Error during disposal await: $e');
+      }
+    }
+
     _autoStateSub?.cancel();
     _autoModeSub?.cancel();
     _ttsSub?.cancel();
+    _recordingCompleteSub?.cancel();
     _snapshotController.close();
+    _autoStateSub = null;
+    _autoModeSub = null;
+    _ttsSub = null;
+    _recordingCompleteSub = null;
+
+    if (kDebugMode) {
+      debugPrint('[VoicePipelineController] Async disposal completed');
+    }
   }
 }

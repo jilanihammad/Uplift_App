@@ -2,7 +2,9 @@
 
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:ai_therapist_app/services/auto_listening_coordinator.dart';
+import 'package:ai_therapist_app/services/auto_listening_coordinator.dart'
+    show AutoListeningState;
+import 'package:ai_therapist_app/services/auto_listening_snapshot_source.dart';
 
 /// Interface for voice service operations
 /// Provides contract for all voice-related functionality
@@ -61,7 +63,18 @@ abstract class IVoiceService {
   // Auto-listening mode
   Future<void> enableAutoMode();
   Future<void> disableAutoMode();
-  AutoListeningCoordinator get autoListeningCoordinator;
+  Future<void> initializeAutoListening();
+  void resetAutoListening({bool full = false, bool? preserveAutoMode});
+  void setAutoListeningRecordingCallback(
+      void Function(String audioPath)? callback);
+  void setAutoListeningTtsActivityStream(Stream<bool> stream);
+  AutoListeningState get autoListeningState;
+  Stream<AutoListeningState> get autoListeningStateStream;
+  Stream<bool> get autoListeningModeEnabledStream;
+  bool get isAutoModeEnabled;
+  AutoListeningSnapshotSource? get autoListeningSnapshotSource;
+  dynamic get autoListeningVadManager;
+  void triggerListening();
 
   // Lifecycle
   Future<void> initialize();
