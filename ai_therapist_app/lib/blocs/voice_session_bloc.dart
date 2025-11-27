@@ -129,6 +129,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   /// Current generation counter for TTS callback wiring
   int get currentGeneration => _modeGeneration;
 
+  /// Session validity check for TTS service guards
+  /// Returns true if session is active, not ending, AND in voice mode
+  /// This prevents TTS from playing in chat mode or after session ends
+  bool _isSessionValid() {
+    return inSession &&
+        _sessionManager.state.status != VoiceSessionStatus.ended &&
+        state.isVoiceMode; // CRITICAL: Must be in voice mode for TTS
+  }
+
   /// Single source of truth for TTS activity across all components
   /// Returns true if TTS is actively streaming or playing
   bool get isTtsActive =>
@@ -308,6 +317,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     // TIMING FIX: Set up generation callback for VoiceService
     voiceService.getCurrentGeneration = () => _modeGeneration;
+
+    // BATCH 1 PHASE 1: Wire session validity callback to TTS service
+    DependencyContainer().ttsService.setSessionValidityCallback(_isSessionValid);
+
+    // BATCH 2 PHASE 7: Wire session validity callback to VoiceService
+    voiceService.isSessionValidCallback = _isSessionValid;
 
     if (_usesGeminiLive) {
       _geminiLiveSub = voiceService.geminiLiveEventStream
@@ -662,7 +677,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
 
       if (isInitialVoicePrep) {
-        if (!pipelineReady) {
+        // CRITICAL FIX: Don't start listening if we deferred for welcome TTS
+        if (_deferAutoMode) {
+          if (kDebugMode) {
+            debugPrint(
+                '[VoiceSessionBloc] Skipping triggerListening - deferred for welcome TTS');
+          }
+        } else if (!pipelineReady) {
           _triggerListening();
           if (kDebugMode) {
             debugPrint(_pipelineControlsAutoMode
@@ -942,6 +963,14 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         '[VoiceSessionBloc] Ending session - cleaning up audio and resources...');
 
     try {
+      // BATCH 2 PHASE 4: Force-cancel TTS before cleanup to prevent late playback
+      if (_safeVoiceService.hasPendingOrActiveTts) {
+        debugPrint(
+            '[VoiceSessionBloc] Force-cancelling active TTS before session cleanup');
+        await DependencyContainer().ttsService.cancelAllStreams();
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
       // Async teardown order - stop services gracefully first
       await _safeVoiceService.stopAudio(); // Await playback completion
       debugPrint('[VoiceSessionBloc] Audio stopped successfully');
@@ -1053,11 +1082,17 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         await _voiceModeSwitchCompleter!.future;
       }
       debugPrint(
-          '[VoiceSessionBloc] Switching to chat mode (will mute TTS stream)');
+          '[VoiceSessionBloc] Switching to chat mode (will cancel TTS)');
       try {
-        // Mute audio but keep stream alive
-        audioPlayerManager.mute(true);
-        debugPrint('[VoiceSessionBloc] Audio muted for chat mode');
+        // BATCH 2 PHASE 3: Cancel TTS immediately instead of just muting
+        if (_safeVoiceService.hasPendingOrActiveTts) {
+          debugPrint(
+              '[VoiceSessionBloc] Force-cancelling TTS for chat mode switch');
+          await DependencyContainer().ttsService.cancelAllStreams();
+        }
+        await _safeVoiceService.stopAudio();
+        audioPlayerManager.mute(true); // Backup safety
+        debugPrint('[VoiceSessionBloc] TTS cancelled for chat mode');
 
         emit(state.copyWith(
           isVoiceMode: event.isVoiceMode,

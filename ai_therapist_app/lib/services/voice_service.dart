@@ -209,6 +209,12 @@ class VoiceService {
   // TIMING FIX: Callback to get current generation for TTS completion checks
   int Function()? getCurrentGeneration;
 
+  // BATCH 2 PHASE 7: VoiceSessionBloc reference for session validity checks
+  bool Function()? _isSessionValidCallback;
+  set isSessionValidCallback(bool Function()? callback) {
+    _isSessionValidCallback = callback;
+  }
+
   // Add coordinator and VAD manager
   late final VADManager _vadManager;
   late final AutoListeningCoordinator _autoListeningCoordinator;
@@ -1656,6 +1662,15 @@ class VoiceService {
       _lastPlaybackToken = completedPlaybackToken;
     }
     _currentPlaybackToken = null;
+
+    // BATCH 2 PHASE 6: Guard against late TTS completion after session end
+    if (_isSessionValidCallback != null && !_isSessionValidCallback!()) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] TTS completion after session ended - skipping listening restart');
+      }
+      return;
+    }
 
     // CONTROLLER PATH: When controller is active, it handles TTS→listening
     // transition via its own _ttsSub listener. We only do token cleanup above.

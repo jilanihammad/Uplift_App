@@ -48,6 +48,9 @@ abstract class ITTSService {
   void setVoiceSettings(String voice, double speed, double pitch);
   void setAudioFormat(String format);
 
+  // BATCH 1 PHASE 1: Session validity callback
+  void setSessionValidityCallback(bool Function()? callback);
+
   // State control
   void resetTTSState();
   void setAiSpeaking(bool speaking);
