@@ -21,6 +21,7 @@ import 'package:ai_therapist_app/services/onboarding_service.dart';
 import 'package:ai_therapist_app/services/auth_coordinator.dart';
 import 'package:ai_therapist_app/services/memory_service.dart';
 import 'package:ai_therapist_app/services/voice_service.dart';
+import 'package:ai_therapist_app/services/audio_player_manager.dart';
 import 'package:ai_therapist_app/utils/app_logger.dart';
 import 'package:ai_therapist_app/services/conversation_flow_manager.dart';
 import 'package:ai_therapist_app/services/remote_config_service.dart';
@@ -143,9 +144,11 @@ Future<void> setupCoreServices() async {
     logger.info(
         '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
 
-    await RemoteConfigService().initialize();
-    debugPrint('[main.dart] Remote config fetched and applied');
-    logger.info('[Main] Remote config fetched and applied.');
+    // NOTE: RemoteConfigService().initialize() moved to background init
+    // to avoid blocking startup with network calls. Cached overrides from
+    // preloadCachedOverrides() above provide immediate defaults.
+    debugPrint('[main.dart] Remote config network fetch deferred to background');
+    logger.info('[Main] Remote config network fetch deferred to background.');
   } else {
     debugPrint(
         '[main.dart] Could not initialize Firebase via ensureFirebaseInitialized()');
@@ -218,8 +221,30 @@ Future<void> _startBackgroundInitialization() async {
   DependencyContainer.resetReady();
   final bgStopwatch = Stopwatch()..start();
   try {
+    // Deferred RemoteConfig network fetch (moved from critical startup path)
+    try {
+      await RemoteConfigService().initialize();
+      debugPrint('[main.dart] Remote config fetched in background');
+      logger.info('[Main] Remote config fetched and applied in background.');
+    } catch (e) {
+      logger.warning('[Main] Remote config background fetch failed: $e');
+      // Non-fatal - app continues with cached values
+    }
+
     await _initializeFirebaseServices();
     await _initializeConfigAndApi();
+
+    // Pre-warm audio player to avoid cold-start latency on first TTS
+    try {
+      if (serviceLocator.isRegistered<AudioPlayerManager>()) {
+        final audioPlayer = serviceLocator<AudioPlayerManager>();
+        await audioPlayer.prewarmPlayer();
+        debugPrint('[main.dart] Audio player pre-warmed');
+      }
+    } catch (e) {
+      logger.warning('[Main] Audio player prewarm failed (non-fatal): $e');
+    }
+
     bgStopwatch.stop();
     logger.info('[Startup] Background init pipeline finished in '
         '${bgStopwatch.elapsedMilliseconds}ms');
@@ -1032,9 +1057,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
 // Add helper method for Firebase services initialization
 Future<void> _initializeFirebaseServices() async {
   try {
-    // Wait briefly to prevent startup slowdown from multiple async operations
-    await Future.delayed(const Duration(milliseconds: 50));
-
     // Log entry
     logger.debug(
         'Initializing FirebaseService with existing Firebase instance...');
@@ -1081,9 +1103,6 @@ Future<void> _initializeConfigAndApi() async {
       // Check and repair database health
       await dbOpManager.checkAndRepairDatabaseHealth(appDatabase);
       logger.debug('[Main] Database health check complete');
-
-      // Small delay to allow any pending database operations to complete
-      await Future.delayed(const Duration(milliseconds: 200));
     } catch (e) {
       logger.error('[Main] Error checking database health', error: e);
     }
@@ -1100,9 +1119,6 @@ Future<void> _initializeConfigAndApi() async {
           VoiceService>(); // Keep legacy VoiceService for initialization
       await voiceService.initialize();
       logger.debug('[Main] VoiceService initialized ✓');
-
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
       logger.error('[Main] Error initializing VoiceService', error: e);
     }
@@ -1128,10 +1144,6 @@ Future<void> _initializeConfigAndApi() async {
       final memoryService = serviceLocator<MemoryService>();
       await memoryService.init();
       logger.debug('[Main] MemoryService initialized ✓');
-
-      // Important: Add a delay after MemoryService initialization
-      // to allow database operations to complete
-      await Future.delayed(const Duration(milliseconds: 300));
     } catch (e) {
       logger.error('[Main] Error initializing MemoryService', error: e);
     }
@@ -1142,9 +1154,6 @@ Future<void> _initializeConfigAndApi() async {
       final memoryManager = DependencyContainer().memoryManagerConcrete;
       await memoryManager.init();
       logger.debug('[Main] MemoryManager initialized ✓');
-
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
       logger.error('[Main] Error initializing MemoryManager', error: e);
     }
@@ -1154,9 +1163,6 @@ Future<void> _initializeConfigAndApi() async {
       final conversationFlowManager = serviceLocator<ConversationFlowManager>();
       await conversationFlowManager.init();
       logger.debug('[Main] ConversationFlowManager initialized ✓');
-
-      // Small delay between service initializations
-      await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
       logger.error('[Main] Error initializing ConversationFlowManager',
           error: e);

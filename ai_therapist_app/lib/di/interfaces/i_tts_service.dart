@@ -40,6 +40,7 @@ abstract class ITTSService {
   // State management
   bool get isPlaying;
   bool get isSpeaking;
+  bool get hasPendingOrActiveTts; // Race condition guard for reset operations
   Stream<bool> get playbackStateStream;
   Stream<bool> get speakingStateStream;
 

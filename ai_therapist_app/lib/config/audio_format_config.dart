@@ -7,9 +7,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 /// encounters issues in production.
 class AudioFormatConfig {
   /// Master feature flag for OPUS support
-  /// Set to false to force WAV format for all TTS requests
+  /// OPUS provides 60-70% size reduction for faster TTS streaming
+  /// Set to false to force WAV format if OPUS encounters issues
+  /// NOTE: Backend must be configured to return OPUS format - currently returns WAV
   static bool get enableOpusFormat =>
-      false; // Force WAV format - OPUS disabled for streaming compatibility
+      false; // WAV mode - backend not configured for OPUS response format
 
   /// Feature flag for OPUS header buffering
   /// Controls whether we wait for complete OPUS headers before playback
@@ -41,7 +43,7 @@ class AudioFormatConfig {
 
   /// OPUS rollout percentage (0-100)
   static int get opusRolloutPercentage =>
-      _getEnvInt('TTS_OPUS_ROLLOUT_PCT', 0); // 0% default
+      _getEnvInt('TTS_OPUS_ROLLOUT_PCT', 0); // 0% - OPUS disabled until backend configured
 
   /// OPUS header buffer timeout (milliseconds)
   /// How long to wait for complete OPUS headers before giving up

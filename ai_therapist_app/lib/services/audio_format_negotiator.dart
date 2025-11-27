@@ -18,26 +18,29 @@ class AudioFormatNegotiator {
   static AudioFormat _currentFormat = AudioFormat.wav;
 
   /// Get the preferred format for new TTS requests
+  /// Priority: native mode > client OPUS preference > backend format > WAV fallback
   static AudioFormat getPreferredFormat() {
     final backendFormat =
         LLMConfig.activeTTSResponseFormat.toLowerCase().trim();
     final backendMode = LLMConfig.activeTTSMode.toLowerCase().trim();
 
+    // 1. Native mode takes highest priority (Gemini Live)
     if (backendMode == 'live' || backendFormat == 'native') {
       return AudioFormat.native;
     }
 
+    // 2. Client-side OPUS preference (from AudioFormatConfig)
+    // This allows the app to prefer OPUS regardless of backend default
+    if (AudioFormatConfig.shouldUseOpus && _isOpusSupported()) {
+      return AudioFormat.opus;
+    }
+
+    // 3. Backend explicitly requested OPUS
     if (backendFormat == 'opus' && _isOpusSupported()) {
       return AudioFormat.opus;
     }
 
-    if (backendFormat == 'wav') {
-      return AudioFormat.wav;
-    }
-
-    if (AudioFormatConfig.shouldUseOpus && _isOpusSupported()) {
-      return AudioFormat.opus;
-    }
+    // 4. Default to WAV
     return AudioFormat.wav;
   }
 

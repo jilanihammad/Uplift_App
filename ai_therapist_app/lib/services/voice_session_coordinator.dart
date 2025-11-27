@@ -142,6 +142,9 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   bool get isPlaying => _ttsService.isPlaying;
 
   @override
+  bool get hasPendingOrActiveTts => _ttsService.hasPendingOrActiveTts;
+
+  @override
   Future<String> generateSpeech(String text, {String? voice}) async {
     final selectedVoice = voice ?? LLMConfig.activeTTSVoice;
     return await _ttsService.generateSpeech(text, voice: selectedVoice);

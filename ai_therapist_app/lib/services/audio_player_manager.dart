@@ -109,6 +109,29 @@ class AudioPlayerManager with SessionDisposable implements AsyncDisposable {
     _setPlaybackActive(false);
   }
 
+  /// Pre-warm the audio player to avoid cold-start latency on first playback.
+  /// Call this during app initialization before the first TTS is needed.
+  Future<void> prewarmPlayer() async {
+    if (_disposed) return;
+    try {
+      // Touch the audio session to trigger native initialization
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.speech());
+
+      // Pre-set volume to trigger player initialization without playing
+      await _audioPlayer.setVolume(0.0);
+      await _audioPlayer.setVolume(1.0);
+
+      if (kDebugMode) {
+        debugPrint('🔥 AudioPlayerManager: Player pre-warmed for fast playback');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ AudioPlayerManager: Prewarm failed (non-fatal): $e');
+      }
+    }
+  }
+
   void _onMuteChanged() {
     if (_disposed) return; // Guard against post-dispose callbacks
     _applyEffectiveVolume();

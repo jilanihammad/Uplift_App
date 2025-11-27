@@ -26,6 +26,7 @@ import 'path_manager.dart';
 import '../di/interfaces/i_audio_settings.dart';
 import 'config_service.dart';
 import 'gemini_live_duplex_controller.dart';
+import '../di/dependency_container.dart';
 
 /// File cleanup manager to prevent race conditions from multiple deletion attempts
 class FileCleanupManager {
@@ -1696,6 +1697,23 @@ class VoiceService {
     }
 
     if (!_autoListeningCoordinator.autoModeEnabled) {
+      // CRITICAL FIX: If auto mode is disabled but the bloc says we CAN listen
+      // (mic enabled, voice mode, greeting played), re-enable auto mode.
+      // This handles mic toggle during TTS causing desync between bloc and coordinator.
+      if (canStartListeningCallback != null && canStartListeningCallback!()) {
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceService] TTS done – autoMode disabled but bloc allows listening, re-enabling');
+        }
+        _autoListeningCoordinator.enableAutoMode();
+        _autoListeningCoordinator.startListening();
+        if (kDebugMode) {
+          debugPrint(
+              '[VoiceService] updateTTSSpeakingState: TTS done, auto mode re-enabled and listening restarted');
+        }
+        return;
+      }
+
       if (kDebugMode) {
         debugPrint(
             '[VoiceService] TTS done but autoMode disabled – skipping listening restart');
@@ -1723,6 +1741,17 @@ class VoiceService {
     if (kDebugMode) {
       debugPrint(
           '[VoiceService] resumeVAD: Legacy method - no action needed with new TTS architecture');
+    }
+  }
+
+  /// Check if there are any pending or active TTS requests
+  /// Used to prevent race conditions when resetting/stopping TTS
+  bool get hasPendingOrActiveTts {
+    try {
+      return DependencyContainer().ttsService.hasPendingOrActiveTts;
+    } catch (e) {
+      // Fallback if TTS service not available
+      return _currentTtsState;
     }
   }
 
