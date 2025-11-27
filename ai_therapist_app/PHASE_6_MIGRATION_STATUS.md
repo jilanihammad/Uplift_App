@@ -55,10 +55,13 @@ Future<void> disableAutoMode();
 - Maintains backward compatibility
 
 ## Legacy Dependencies (Still Using Concrete Service)
-1. **autoListeningCoordinator** - Direct property access
-2. **recordingState** - Stream subscription
-3. **getAudioPlayerManager()** - Method call
-4. **isTtsActuallySpeaking** - Stream subscription (constructor)
+1. **recordingState** - Stream subscription
+2. **getAudioPlayerManager()** - Method call
+3. **isTtsActuallySpeaking** - Stream subscription (constructor)
+
+_Update_: `autoListeningCoordinator` is no longer exposed publicly; callers now use
+`initializeAutoListening`, `resetAutoListening`, `setAutoListeningRecordingCallback`,
+and the snapshot source APIs introduced in Phase 5.
 
 These require deeper architectural changes and will be addressed in future phases.
 

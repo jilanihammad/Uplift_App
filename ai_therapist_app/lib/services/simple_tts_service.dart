@@ -145,6 +145,7 @@ class SimpleTTSService implements ITTSService {
 
   // Active LiveTtsAudioSource for emergency cleanup
   LiveTtsAudioSource? _activeLiveAudioSource;
+  TwoPhaseCompletion? _activeCompletionTracker;
 
   // Phase 1: Event-driven speaking state stream
   late final StreamController<bool> _speakingStateController;
@@ -220,6 +221,7 @@ class SimpleTTSService implements ITTSService {
     }
 
     WebSocketChannel? ws;
+    TwoPhaseCompletion? completionTracker;
     try {
       _state = _State.connecting;
 
@@ -236,18 +238,24 @@ class SimpleTTSService implements ITTSService {
       ws = WebSocketChannel.connect(Uri.parse(wsUrl));
       _state = _State.streaming;
 
+      // Dispose any previous completion tracker before wiring a new one
+      _activeCompletionTracker?.dispose();
+      _activeCompletionTracker = null;
+
       // Create event-driven completion tracker for this request
-      final completionTracker = TwoPhaseCompletion();
+      completionTracker = TwoPhaseCompletion();
+      final tracker = completionTracker;
+      _activeCompletionTracker = tracker;
 
       // Initialize with audio player for event-driven completion
-      completionTracker.initializeWithPlayer(_audioPlayerManager.audioPlayer);
+      tracker.initializeWithPlayer(_audioPlayerManager.audioPlayer);
 
       // Set up callbacks
-      completionTracker.setStopPlayerCallback(() async {
+      tracker.setStopPlayerCallback(() async {
         await _audioPlayerManager.stopAudio();
       });
 
-      completionTracker.setPlaybackFinishedCallback(() {
+      tracker.setPlaybackFinishedCallback(() {
         _notifyTTSEnd(); // Signal TTS completion
         _fireCompletionSafely(false); // Reset speaking state
       });
@@ -255,7 +263,7 @@ class SimpleTTSService implements ITTSService {
       // Note: VAD restart will be handled by VoiceSessionBloc when it receives TTS completion
 
       // Process TTS request with fresh connection
-      await _processResponse(req, ws, completionTracker);
+      await _processResponse(req, ws, tracker);
 
       req.complete();
       if (kDebugMode) {
@@ -287,6 +295,14 @@ class SimpleTTSService implements ITTSService {
                 '⚠️ [TTS] WebSocket close error (already closed?): ${ttsException.message}');
           }
         }
+      }
+
+      // Dispose completion tracker for this request
+      if (completionTracker != null) {
+        if (identical(_activeCompletionTracker, completionTracker)) {
+          _activeCompletionTracker = null;
+        }
+        completionTracker.dispose();
       }
 
       // Decrement when done (success or error) and clamp to zero
@@ -612,34 +628,29 @@ class SimpleTTSService implements ITTSService {
                   );
                 },
                 onNaturalCompletion: (playbackToken) {
-                  // TIMING FIX: Check if mode changed since TTS started
-                  if (_getCurrentGenerationCallback?.call() != genAtStart) {
-                    // Allow welcome messages (generation -1) to complete regardless
-                    if (genAtStart != -1) {
-                      if (kDebugMode) {
-                        debugPrint(
-                            '[TTS] Generation mismatch – ignoring completion (was $genAtStart, now ${_getCurrentGenerationCallback?.call()})');
-                      }
-                      return; // ⛔ don't re-arm VAD
-                    }
-                    // Welcome messages (genAtStart == -1) are allowed through
-                    if (kDebugMode) {
-                      debugPrint(
-                          '[TTS] Welcome message completion allowed despite generation change (was $genAtStart, now ${_getCurrentGenerationCallback?.call()})');
-                    }
-                  }
+                  // ALWAYS notify VoiceService of TTS completion for state cleanup.
+                  // The controller (when active) or VoiceService._handleTtsCompletion
+                  // will decide whether to restart listening based on its own guards.
+                  //
+                  // Previously this had a generation mismatch guard that would silently
+                  // drop the callback, breaking the TTS→listening transition chain.
+                  // That guard is no longer needed because:
+                  // 1. Controller path: VoicePipelineController._ttsSub handles rearm
+                  // 2. Legacy path: VoiceService._handleTtsCompletion has its own guards
+                  final currentGen = _getCurrentGenerationCallback?.call() ?? -1;
+                  final genMismatch = currentGen != genAtStart && genAtStart != -1;
 
-                  // Natural ExoPlayer completion - trigger VAD state transition immediately
                   if (kDebugMode) {
                     debugPrint(
-                        '🎯 [TTS] Natural completion callback fired for ${req.id} - notifying VoiceService');
+                        '🎯 [TTS] Natural completion for ${req.id} '
+                        '(genAtStart=$genAtStart, current=$currentGen, mismatch=$genMismatch)');
                   }
-                  // ONLY notify VoiceService (VoiceSessionCoordinator or legacy VoiceService)
-                  // This triggers VAD state transition - _onTTSComplete is for AudioGenerator, not VAD
+
+                  // ALWAYS fire the callback - downstream handlers decide on rearm
                   _voiceServiceUpdateCallback?.call(
                     false,
                     playbackToken: playbackToken,
-                  ); // Update VoiceService state for VAD coordination
+                  );
                 },
               ).then((_) {
                 // Mark player phase complete when playback finishes
@@ -1320,6 +1331,10 @@ class SimpleTTSService implements ITTSService {
           '🔄 [TTS] Starting TTS state reset - cleaning WebSocket, timers, and resources');
     }
 
+    // Cancel any active completion tracker to prevent stale callbacks
+    _activeCompletionTracker?.dispose();
+    _activeCompletionTracker = null;
+
     // Cancel any active LiveTtsAudioSource and clear reference
     if (_activeLiveAudioSource != null) {
       _activeLiveAudioSource?.dispose();
@@ -1587,6 +1602,9 @@ class SimpleTTSService implements ITTSService {
       // Reset TTS state on disposal
       _notifyTTSEnd();
       _fireCompletionSafely(false);
+
+      _activeCompletionTracker?.dispose();
+      _activeCompletionTracker = null;
 
       // CRITICAL: Dispose AudioPlayerManager to release audio resources
       try {

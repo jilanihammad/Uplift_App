@@ -1,4 +1,4 @@
-import '../auto_listening_coordinator.dart';
+import '../../di/interfaces/i_voice_service.dart';
 
 abstract class MicAutoModeController {
   Future<void> enableAutoMode();
@@ -7,20 +7,20 @@ abstract class MicAutoModeController {
   bool get isAutoModeEnabled;
 }
 
-class AutoListeningMicController implements MicAutoModeController {
-  final AutoListeningCoordinator coordinator;
+class VoiceServiceMicController implements MicAutoModeController {
+  final IVoiceService voiceService;
 
-  AutoListeningMicController(this.coordinator);
-
-  @override
-  Future<void> enableAutoMode() => coordinator.enableAutoMode();
+  VoiceServiceMicController(this.voiceService);
 
   @override
-  Future<void> disableAutoMode() => coordinator.disableAutoMode();
+  Future<void> enableAutoMode() => voiceService.enableAutoMode();
 
   @override
-  void triggerListening() => coordinator.triggerListening();
+  Future<void> disableAutoMode() => voiceService.disableAutoMode();
 
   @override
-  bool get isAutoModeEnabled => coordinator.autoModeEnabled;
+  void triggerListening() => voiceService.triggerListening();
+
+  @override
+  bool get isAutoModeEnabled => voiceService.isAutoModeEnabled;
 }

@@ -1083,8 +1083,9 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // New method to handle the actual listening start
   Future<void> _executeListeningStart(int generation) async {
-    _trace(
-        '[AutoListeningCoordinator] [VAD] Starting listening (VAD should be active) | currentState=$_currentState');
+    _trace('[AutoListeningCoordinator] [VAD] Starting listening '
+        '(generation=$generation, currentState=$_currentState, '
+        'autoMode=$_autoModeEnabled, aiAudio=$_aiAudioActive)');
 
     if (_aiAudioActive) {
       if (kDebugMode) {
@@ -1162,8 +1163,9 @@ class AutoListeningCoordinator with SessionDisposable {
             '[AutoListeningCoordinator] [VAD] CRITICAL: Error in VAD startup sequence (native crash protection): $e');
       }
     }
-    _trace(
-        '[AutoListeningCoordinator] [TRACE] _executeListeningStart completed gen=$generation state=$_currentState time=${DateTime.now().toIso8601String()}');
+    _trace('[AutoListeningCoordinator] [TRACE] _executeListeningStart completed '
+        'gen=$generation state=$_currentState autoMode=$_autoModeEnabled '
+        'time=${DateTime.now().toIso8601String()}');
   }
 
   // Start listening for voice activity

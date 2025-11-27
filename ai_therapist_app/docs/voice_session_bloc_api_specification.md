@@ -188,10 +188,11 @@ bool isListeningForVoice         => isVADActive && !isRecording && !isProcessing
 
 #### To Voice Mode:
 1. Stop any playing audio
-2. Reset TTS state
-3. Wait 200ms (audio cleanup)
-4. Enable auto-mode
-5. Trigger listening if appropriate
+2. Reset TTS state and call `resetAutoListening(full: true)`
+3. Wait 200 ms (audio cleanup)
+4. Call `initializeAutoListening()` and re-register callbacks/streams
+5. Enable auto-mode via `voiceService.enableAutoMode()`
+6. Trigger listening when welcome/audio guards allow
 
 #### To Chat Mode:
 1. Disable auto-mode
@@ -200,10 +201,10 @@ bool isListeningForVoice         => isVADActive && !isRecording && !isProcessing
 4. Update UI state
 
 ### 4.4 Auto-Listening Coordination
-- 125ms buffer after TTS stops (prevents self-detection)
+- 125 ms buffer after TTS stops (prevents self-detection)
 - Triggered after welcome message in voice mode
 - Skipped if already enabled
-- Coordinates with autoListeningCoordinator
+- Uses IVoiceService auto-listening APIs (`initializeAutoListening`, `resetAutoListening`, `setAutoListeningRecordingCallback`, `triggerListening`) plus pipeline snapshots; no direct coordinator access.
 
 ### 4.5 Error Handling
 - Service errors propagated to errorMessage

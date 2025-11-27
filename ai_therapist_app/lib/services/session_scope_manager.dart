@@ -13,7 +13,6 @@ import '../di/interfaces/i_audio_settings.dart';
 
 // Service implementations
 import 'voice_session_coordinator.dart';
-import 'auto_listening_coordinator.dart';
 import 'audio_player_manager.dart';
 import 'voice_service.dart';
 import 'recording_manager.dart';
@@ -225,19 +224,6 @@ class SessionScopeManager {
           );
       _sessionServices[AudioPlayerManager] = audioPlayerManager;
       _disposableServices.add(audioPlayerManager);
-
-      // AutoListeningCoordinator - VAD and auto-listening management
-      if (kDebugMode) {
-        debugPrint('[SessionScope] Creating AutoListeningCoordinator');
-      }
-
-      final autoListeningCoordinator = AutoListeningCoordinator(
-        audioPlayerManager: audioPlayerManager, // session-scoped
-        recordingManager: serviceLocator<RecordingManager>(), // app-scoped
-        voiceService: serviceLocator<VoiceService>(), // app-scoped
-      );
-      _sessionServices[AutoListeningCoordinator] = autoListeningCoordinator;
-      _disposableServices.add(autoListeningCoordinator);
 
       // VoiceSessionCoordinator - main voice session orchestrator
       if (kDebugMode) {

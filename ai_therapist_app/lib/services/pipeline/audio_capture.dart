@@ -7,6 +7,7 @@ import '../base_voice_service.dart';
 
 abstract class AudioCapture {
   bool get isRecording;
+  Stream<String> get recordingCompleted;
   Future<void> start();
   Future<String?> stop();
 }
@@ -19,6 +20,10 @@ class RecordingManagerAudioCapture implements AudioCapture {
   @override
   bool get isRecording =>
       recordingManager.currentState == RecordingState.recording;
+
+  @override
+  Stream<String> get recordingCompleted =>
+      recordingManager.recordingCompleteStream;
 
   @override
   Future<void> start() => recordingManager.startRecording();

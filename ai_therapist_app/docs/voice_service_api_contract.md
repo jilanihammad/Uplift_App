@@ -221,19 +221,30 @@ Future<void> pauseVAD();
 Future<void> resumeVAD();
 ```
 
-## Component Access - DIRECT SERVICE REFERENCES
-
-### 1. Auto-Listening Coordinator
+## Auto-Listening Orchestration API
 
 ```dart
-/// Direct access to auto-listening coordinator
-/// @returns AutoListeningCoordinator instance
-/// @usage Complex auto-listening operations requiring direct control
-/// @example voiceService.autoListeningCoordinator.triggerListening()
-AutoListeningCoordinator get autoListeningCoordinator;
+// Initialize/reset lifecycle
+await voiceService.initializeAutoListening();
+voiceService.resetAutoListening(full: true, preserveAutoMode: false);
+
+// Hook bloc callbacks and shared streams
+voiceService.setAutoListeningRecordingCallback((path) => add(ProcessAudio(path)));
+voiceService.setAutoListeningTtsActivityStream(isTtsActiveStream);
+
+// State inspection + read-only mirrors
+final AutoListeningState current = voiceService.autoListeningState;
+final Stream<AutoListeningState> states = voiceService.autoListeningStateStream;
+final Stream<bool> autoMode = voiceService.autoListeningModeEnabledStream;
+final snapshot = voiceService.autoListeningSnapshotSource; // exposes streams only
+
+// Explicit control
+await voiceService.enableAutoMode();
+await voiceService.disableAutoMode();
+voiceService.triggerListening();
 ```
 
-### 2. Manager Component Access
+### Manager Component Access
 
 ```dart
 /// Get audio player manager instance
@@ -365,13 +376,13 @@ voiceService.autoListeningStateStream.listen((AutoListeningState state) {
 ### 2. Auto-Listening Coordination - COMPLEX INTEGRATION
 
 ```dart
-// Direct coordinator access for complex operations
-await voiceService.autoListeningCoordinator.disableAutoMode();
-voiceService.autoListeningCoordinator.triggerListening();
-voiceService.autoListeningCoordinator.onProcessingComplete();
-
-// Explicit audio state coordination
-await voiceService.enableAutoModeWithAudioState(isAudioPlaying);
+// Explicit auto-mode coordination via new helpers
+await voiceService.disableAutoMode();
+await voiceService.enableAutoMode();
+voiceService.triggerListening();
+voiceService.resetAutoListening(full: true, preserveAutoMode: false);
+voiceService.setAutoListeningRecordingCallback(_handleRecordingComplete);
+voiceService.setAutoListeningTtsActivityStream(isTtsActiveStream);
 ```
 
 ### 3. Audio Lifecycle Management - PRECISE TIMING

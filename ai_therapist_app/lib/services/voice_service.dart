@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart'; // Import AppConfig
 import 'package:audio_session/audio_session.dart';
 import 'auto_listening_coordinator.dart';
+import 'auto_listening_snapshot_source.dart';
 import '../services/pipeline/voice_pipeline_controller.dart';
 import 'vad_manager.dart';
 import '../utils/app_logger.dart';
@@ -196,8 +197,13 @@ class VoiceService {
   /// (like the initial welcome guard) are in effect.
   bool Function()? canStartListeningCallback;
 
-  // BYPASS FIX: Callback to check if we're in voice mode
-  bool Function()? isVoiceModeCallback;
+  // BYPASS FIX: Callback to check if we're in voice mode and keep coordinator in sync
+  bool Function()? _isVoiceModeCallback;
+  bool Function()? get isVoiceModeCallback => _isVoiceModeCallback;
+  set isVoiceModeCallback(bool Function()? callback) {
+    _isVoiceModeCallback = callback;
+    _autoListeningCoordinator.isVoiceModeCallback = callback;
+  }
 
   // TIMING FIX: Callback to get current generation for TTS completion checks
   int Function()? getCurrentGeneration;
@@ -205,6 +211,7 @@ class VoiceService {
   // Add coordinator and VAD manager
   late final VADManager _vadManager;
   late final AutoListeningCoordinator _autoListeningCoordinator;
+  AutoListeningSnapshotSource? _autoListeningSnapshot;
   late final AudioPlayerManager _audioPlayerManager;
   late final RecordingManager _recordingManager;
   late final AudioRecordingService _audioRecordingService;
@@ -221,15 +228,13 @@ class VoiceService {
       _autoListeningCoordinator.stateStream;
   Stream<bool> get autoListeningModeEnabledStream =>
       _autoListeningCoordinator.autoModeEnabledStream;
-  AutoListeningCoordinator get autoListeningCoordinator =>
-      _autoListeningCoordinator;
-  AutoListeningCoordinator createAutoListeningCoordinator() {
-    return AutoListeningCoordinator(
-      audioPlayerManager: _audioPlayerManager,
-      recordingManager: _recordingManager,
-      voiceService: this,
-    );
-  }
+  AutoListeningState get autoListeningState =>
+      _autoListeningCoordinator.currentState;
+  bool get isAutoModeEnabled => _autoListeningCoordinator.autoModeEnabled;
+  AutoListeningSnapshotSource? get autoListeningSnapshotSource =>
+      _autoListeningSnapshot ??=
+          AutoListeningCoordinatorSnapshotSource(_autoListeningCoordinator);
+  dynamic get autoListeningVadManager => _autoListeningCoordinator.vadManager;
 
   bool get geminiLiveEnabled => _useGeminiLive;
 
@@ -273,6 +278,43 @@ class VoiceService {
         .enableAutoModeWithAudioState(isAudioPlaying);
   }
 
+  Future<void> initializeAutoListening() async {
+    if (_controllerAutoModeEnabled) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] initializeAutoListening skipped (controller auto mode active)');
+      }
+      return;
+    }
+    await _autoListeningCoordinator.initialize();
+  }
+
+  void resetAutoListening({bool full = false, bool? preserveAutoMode}) {
+    if (_controllerAutoModeEnabled) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] resetAutoListening skipped (controller auto mode active)');
+      }
+      return;
+    }
+    _autoListeningCoordinator.reset(
+        full: full, preserveAutoMode: preserveAutoMode);
+  }
+
+  void setAutoListeningRecordingCallback(
+      void Function(String audioPath)? callback) {
+    // NOTE: Even when controller is "authoritative" for auto-mode, the
+    // AutoListeningCoordinator still manages recordings. The callback must
+    // be wired so recording completions reach the bloc.
+    _autoListeningCoordinator.onRecordingCompleteCallback = callback;
+  }
+
+  void setAutoListeningTtsActivityStream(Stream<bool> stream) {
+    // NOTE: Even when controller is active, AutoListeningCoordinator needs
+    // the TTS stream to know when AI is speaking (for state machine transitions).
+    _autoListeningCoordinator.setTtsActivityStream(stream);
+  }
+
   void triggerListening() {
     if (_controllerAutoModeEnabled) {
       _voicePipelineController?.requestTriggerListening();
@@ -281,19 +323,14 @@ class VoiceService {
     _autoListeningCoordinator.triggerListening();
   }
 
-  Future<void> enableAutoModeWhenPlaybackCompletes({int? playbackToken}) async {
+  Future<void> enableAutoModeWhenPlaybackCompletes({
+    required int playbackToken,
+  }) async {
     if (_controllerAutoModeEnabled) {
       await _voicePipelineController?.requestEnableAutoMode();
       return;
     }
 
-    if (playbackToken == null) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] enableAutoModeWhenPlaybackCompletes skipped – no playback token provided');
-      }
-      return;
-    }
     if (_disposed) {
       return;
     }
@@ -308,7 +345,6 @@ class VoiceService {
 
     try {
       final capturedGeneration = getCurrentGeneration?.call();
-      final expectedToken = playbackToken;
 
       if (kDebugMode) {
         debugPrint(
@@ -358,27 +394,25 @@ class VoiceService {
           continue;
         }
 
-        if (expectedToken != null) {
-          final activeToken = _currentPlaybackToken;
-          final lastTokenSnapshot = _lastPlaybackToken;
+        final activeToken = _currentPlaybackToken;
+        final lastTokenSnapshot = _lastPlaybackToken;
 
-          if (activeToken != null && activeToken != expectedToken) {
-            if (kDebugMode) {
-              debugPrint(
-                  '[VoiceService] New playback detected (expected $expectedToken, active $activeToken) – aborting auto-mode enable');
-            }
-            return;
+        if (activeToken != null && activeToken != playbackToken) {
+          if (kDebugMode) {
+            debugPrint(
+                '[VoiceService] New playback detected (expected $playbackToken, active $activeToken) – aborting auto-mode enable');
           }
+          return;
+        }
 
-          if (activeToken == null &&
-              lastTokenSnapshot != null &&
-              lastTokenSnapshot != expectedToken) {
-            if (kDebugMode) {
-              debugPrint(
-                  '[VoiceService] Playback token mismatch after wait (expected $expectedToken, last $lastTokenSnapshot) – aborting auto-mode enable');
-            }
-            return;
+        if (activeToken == null &&
+            lastTokenSnapshot != null &&
+            lastTokenSnapshot != playbackToken) {
+          if (kDebugMode) {
+            debugPrint(
+                '[VoiceService] Playback token mismatch after wait (expected $playbackToken, last $lastTokenSnapshot) – aborting auto-mode enable');
           }
+          return;
         }
 
         playbackCleared = true;
@@ -745,6 +779,17 @@ class VoiceService {
       // Phase 2.1.1: Delegate to AudioRecordingService (idempotent version)
       recordedFilePath = await _audioRecordingService.tryStopRecording();
       _recordingPath = recordedFilePath;
+      if (recordedFilePath != null && recordedFilePath.isNotEmpty) {
+        try {
+          _autoListeningCoordinator.onRecordingCompleteCallback
+              ?.call(recordedFilePath);
+        } catch (error, stack) {
+          if (kDebugMode) {
+            debugPrint('[VoiceService] Error forwarding recording completion: '
+                '$error\n$stack');
+          }
+        }
+      }
     }
     _recordingActive = _audioRecordingService.isRecording ||
         _autoListeningCoordinator.isRecording;
@@ -1400,6 +1445,8 @@ class VoiceService {
     return _recordingManager;
   }
 
+  bool get controllerAutoModeEnabled => _controllerAutoModeEnabled;
+
   // CRITICAL FIX: Method to play audio with debounce to prevent duplicate calls
   Future<void> playAudioWithCallbacks(
     String filePath, {
@@ -1470,6 +1517,10 @@ class VoiceService {
   /// Update TTS speaking state for auto-listening coordination
   /// This is the clean interface for external TTS state updates
   void updateTTSSpeakingState(bool isSpeaking, {int? playbackToken}) {
+    if (kDebugMode) {
+      debugPrint(
+          '[VoiceService] updateTTSSpeakingState: isSpeaking=$isSpeaking, token=$playbackToken');
+    }
     final guarded = _ttsLock.protect(() async {
       final tokenChanged =
           playbackToken != null && playbackToken != _currentPlaybackToken;
@@ -1483,6 +1534,19 @@ class VoiceService {
         return;
       }
 
+      if (isSpeaking && playbackToken != null) {
+        if (kDebugMode) {
+          debugPrint('[VoiceService] Tracking playback token '
+              '$playbackToken for auto-mode guard');
+        }
+        _currentPlaybackToken = playbackToken;
+        if (!_autoModeWaitTokens.contains(playbackToken)) {
+          unawaited(enableAutoModeWhenPlaybackCompletes(
+            playbackToken: playbackToken,
+          ));
+        }
+      }
+
       if (!isSpeaking && playbackToken != null) {
         if (_currentPlaybackToken != null &&
             playbackToken != _currentPlaybackToken) {
@@ -1492,14 +1556,6 @@ class VoiceService {
           }
           return;
         }
-      }
-
-      if (isSpeaking && playbackToken != null) {
-        _currentPlaybackToken = playbackToken;
-        _lastPlaybackToken = playbackToken;
-        unawaited(enableAutoModeWhenPlaybackCompletes(
-          playbackToken: playbackToken,
-        ));
       }
 
       _currentTtsState = isSpeaking; // Update tracked state
@@ -1546,7 +1602,7 @@ class VoiceService {
       }
     }
 
-    autoListeningCoordinator.stopListening();
+    _autoListeningCoordinator.stopListening();
     if (kDebugMode) {
       debugPrint(
           '[VoiceService] updateTTSSpeakingState: TTS started, listening stopped');
@@ -1593,11 +1649,24 @@ class VoiceService {
   }
 
   Future<void> _handleTtsCompletion() async {
+    // Always update token state for cleanup
     final completedPlaybackToken = _currentPlaybackToken;
     if (completedPlaybackToken != null) {
       _lastPlaybackToken = completedPlaybackToken;
     }
     _currentPlaybackToken = null;
+
+    // CONTROLLER PATH: When controller is active, it handles TTS→listening
+    // transition via its own _ttsSub listener. We only do token cleanup above.
+    if (_controllerAutoModeEnabled) {
+      if (kDebugMode) {
+        debugPrint(
+            '[VoiceService] _handleTtsCompletion: Controller handles listening restart (skipping legacy path)');
+      }
+      return;
+    }
+
+    // LEGACY PATH: Manual TTS completion handling for AutoListeningCoordinator
 
     // BYPASS FIX: Check voice mode before re-arming VAD
     if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
@@ -1634,10 +1703,10 @@ class VoiceService {
       return;
     }
 
-    autoListeningCoordinator.startListening(); // guarantees VAD on
+    _autoListeningCoordinator.startListening(); // guarantees VAD on
     if (kDebugMode) {
       debugPrint(
-          '[VoiceService] updateTTSSpeakingState: TTS done, listening restarted');
+          '[VoiceService] updateTTSSpeakingState: TTS done, listening restarted (legacy path)');
     }
   }
 
