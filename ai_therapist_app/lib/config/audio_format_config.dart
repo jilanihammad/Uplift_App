@@ -11,7 +11,7 @@ class AudioFormatConfig {
   /// Set to false to force WAV format if OPUS encounters issues
   /// Backend supports OPUS via response_format parameter in llm_manager.py
   static bool get enableOpusFormat =>
-      true; // OPUS mode - backend configured and ready
+      false; // Force WAV in simulator to avoid OPUS/WAV header mismatches
 
   /// Feature flag for OPUS header buffering
   /// Controls whether we wait for complete OPUS headers before playback
