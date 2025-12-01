@@ -51,7 +51,7 @@ class AutoListeningCoordinator with SessionDisposable {
 
   // VAD configuration - can switch between regular and enhanced VAD
   static bool _useEnhancedVAD =
-      true; // Configuration flag - ENABLED for RNNoise integration
+      false; // Disabled for simulator runs to avoid mic-permission hard fails
   late final dynamic _vadManager; // Can be VADManager or EnhancedVADManager
 
   bool get _vadTraceEnabled => kDebugMode && LogChannels.vadTrace;
