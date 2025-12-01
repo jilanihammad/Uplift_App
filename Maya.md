@@ -38,6 +38,7 @@ Communication flow: mobile captures audio → backend transcription + LLM genera
 - Routing: `ai_therapist_app/lib/config/routes.dart` with `GoRouter` guards for auth/onboarding.
 - Dependency Injection: GetIt via `ai_therapist_app/lib/di/service_locator.dart` and `dependency_container.dart`; feature flags in `lib/utils/feature_flags.dart` toggle hybrid pipelines.
 - State Management: Primary BLoC (`lib/blocs`) plus helper managers for timers, session scope, and message orchestration.
+- Observability: Crashlytics is wired in `main.dart` and `logging_service.dart` so release builds automatically report Flutter/Platform errors once `_configureCrashlytics()` runs; keep `--split-debug-info` artifacts for symbolication and remember Crashlytics stays disabled in debug builds.
 
 ### 3.2 Voice & Session Pipeline
 Key components (all under `lib/services/`):
@@ -59,13 +60,14 @@ Supporting utilities:
 - `MemoryManager`, `MemoryService`, and `ConversationMemory` to persist session anchors and insights.
 
 ### 3.3 Data Layer
-- **Remote**: `lib/data/datasources/remote/api_client.dart` handles REST/WebSocket interactions with token injection and request logging.
+- **Remote**: `lib/data/datasources/remote/api_client.dart` handles REST/WebSocket interactions with token injection, `_resolveUrl()` routing all REST calls through `/api/v1` automatically, and graceful fallbacks for optional endpoints (e.g., `/system/tts-config`, `/mood_entries` 404s don’t block startup).
 - **Local**: `lib/data/datasources/local` (`DatabaseProvider`, `AppDatabase`, `PrefsManager`) for SQLite via Drift and shared preferences.
 - **Repositories**: Auth, session, message, and user repositories under `lib/data/repositories` wrap data sources for testability.
+- **Timestamp normalization**: `lib/utils/date_time_utils.dart` parses backend ISO-8601 strings (fixes `+00:00Z` issues) and every model/entity now funnels through it; the backend mirrors this via `app/core/datetime_utils.py` so responses always emit RFC 3339 (`serialize_datetime`, `utcnow_isoformat`).
 
 ### 3.4 Configuration & Feature Flags
 - `.env` managed via `lib/config/app_config.dart`; defaults to production backend Cloud Run URL. `ttsStreamingEnabled` and other toggles read from env to control pipeline behavior.
-- `FeatureFlags` (shared prefs-backed) manage runtime switches like the refactored voice pipeline.
+- `FeatureFlags` (shared prefs-backed) manage runtime switches like the refactored voice pipeline. Always call `FeatureFlags.init()` before applying cached Remote Config overrides—writes are now deferred/queued until prefs are ready to avoid the “not initialized” errors seen previously.
 - Firebase initialization handled by `lib/utils/firebase_init.dart`; logging via `utils/logging_service.dart` and `AppLogger`.
 
 ### 3.5 Presentation Layer
@@ -151,6 +153,7 @@ Supporting utilities:
 
 ## 7. Release & Compliance
 - **Android Play Store**: Follow `Before-Release.md` to re-enable App Check, tighten network security, remove debug dependencies, validate permissions, scrub secrets, and execute new automated tests.
+- **Crash Reporting**: Release builds must ship with Crashlytics enabled (see `_configureCrashlytics()` in `main.dart`) and include uploaded `--split-debug-info` symbols so Firebase can de-obfuscate stack traces.
 - **Data Safety**: Ensure declarations cover audio capture, transcript storage, and analytics usage. Provide privacy policy links inside the app (Settings/About).
 - **Build Artifacts**: Prefer `flutter build appbundle` for release; backend deployed via Cloud Run (continuous or manual using `deploy_to_cloud.sh`).
 - **Observability Post-Launch**: Monitor error logs (App Logger, backend structured logs), TTS latency metrics, and rate limit dashboards.
@@ -159,6 +162,9 @@ Supporting utilities:
 ---
 
 ## Recently Logged Updates
+- Crashlytics instrumentation shipped (Dec 2025): `logging_service.dart` and `main.dart` gate collection on release builds, wire global/zoned handlers, and require uploading Flutter symbol info alongside Play releases.
+- Feature flag initialization order hardened: cached Remote Config overrides run after `FeatureFlags.init()`, with queued writes while SharedPreferences spins up—eliminates the startup “[FeatureFlags] Not initialized” spam.
+- New ISO8601 normalization: `lib/utils/date_time_utils.dart` plus backend `app/core/datetime_utils.py` ensure timestamps parse/serialize cleanly (no more `+00:00Z`); every model/entity and API response uses the helpers.
 - **Lazy TTS Config Initialization (2025-12)**: Implemented gold-standard two-layer defense for TTS config loading with zero startup blocking. Opportunistic prefetch runs in background at startup, lazy fetch fallback on first TTS request (5s timeout). Eliminates previous 15s blocking delay during app init. Added `setCachedTTSConfig()` to `ITTSService`, `fetchTtsConfig()` to `IApiClient`, state tracking in `SimpleTTSService`. Fixed zone mismatch warning by moving `WidgetsFlutterBinding.ensureInitialized()` inside zone.
 - Backend now connects to Cloud SQL (instance `jilaniuplift` in `us-central1`) and runs migrations automatically via `scripts/entrypoint.sh` on Cloud Run startup.
 - New Alembic revision adds `user_profiles`, `session_anchors`, and `session_summaries` with UUID primary keys and soft-delete semantics; migration stamped head and tested against Cloud SQL.
@@ -186,7 +192,98 @@ Supporting utilities:
 
 ---
 
-## 9. Additional Resources
+## 9. Critical Gotchas & Best Practices
+
+### 9.1 Performance Targets
+- **Audio Latency**: <100ms for VAD speech detection
+- **TTS First Byte**: <500ms (target), ~150ms saved via WebSocket pooling
+- **Startup**: Core services in ~800ms, background init completes independently
+- **TTS Config**: Zero blocking (opportunistic prefetch + lazy fallback)
+
+### 9.2 Common Pitfalls & Solutions
+
+#### Don't Do This ❌
+```dart
+// Don't await subscription cancel on Android (blocks on AudioRecord.read)
+await _audioSubscription!.cancel();
+
+// Don't reset TTS without checking for active playback
+_ttsService.resetTTSState(); // May kill active AI response!
+
+// Don't disable auto mode without considering TTS state
+disableAutoMode(); // May prevent listening restart after TTS
+
+// Don't ignore generation counters in async callbacks
+await longOperation();
+emit(state); // State may have changed during operation!
+```
+
+#### Do This Instead ✅
+```dart
+// Use unawaited for subscription cancel
+unawaited(_audioSubscription!.cancel());
+
+// Check for active TTS before reset
+if (!_ttsService.hasPendingOrActiveTts) {
+  _ttsService.resetTTSState();
+}
+
+// Check canStartListeningCallback for current bloc state
+if (canStartListeningCallback?.call() ?? false) {
+  _autoListeningCoordinator.enableAutoMode();
+}
+
+// Use generation counters to detect stale state
+final gen = _generation;
+await longOperation();
+if (gen != _generation) return; // Abort if state changed
+```
+
+### 9.3 Critical Race Conditions (Fixed)
+1. **TTS Reset During Active Playback**: `resetTTSState()` was killing AI response when welcome message completed.
+   - **Fix**: Check `hasPendingOrActiveTts` before any TTS reset/stop operations.
+
+2. **Auto Mode Desync During Mic Toggle**: Toggling mic during TTS caused `autoModeEnabled` to desync from bloc state.
+   - **Fix A**: Include `isMicEnabled` in `canStartListeningCallback`.
+   - **Fix B**: Re-enable auto mode on TTS completion if bloc allows.
+
+3. **VAD Worker Thread Blocking**: `AudioRecord.read()` blocked on Android causing 500ms timeouts.
+   - **Fix**: Non-blocking shutdown with immediate flag setting, don't await worker completion.
+
+4. **Zone Mismatch Warning**: `WidgetsFlutterBinding` called outside zone.
+   - **Fix**: Move `ensureInitialized()` inside `runZonedGuarded` in main.dart.
+
+### 9.4 Startup Initialization Sequence
+1. **Zone Setup**: `runZonedGuarded` with error handlers
+2. **Flutter Bindings**: `WidgetsFlutterBinding.ensureInitialized()` (inside zone)
+3. **Core Services**: PathManager, AppLogger, FeatureFlags
+4. **Firebase**: Initialization with error recovery
+5. **Service Registration**: DI container setup via ServiceLocator
+6. **Background Init** (non-blocking):
+   - TTS config prefetch (fire-and-forget)
+   - Remote config fetch (deferred)
+   - AudioPlayerManager pre-warming
+
+### 9.5 Debugging Quick Reference
+**Useful Log Patterns**:
+```
+🎯 [TTS] Starting playback        - TTS request started
+✅ [TTS] Natural completion        - Playback finished normally
+🛡️ [TTS] Skipping reset           - Race condition guard triggered
+🛑 Enhanced VAD: Shutdown flags set - VAD stopping (non-blocking)
+[TTS Config] Prefetch started      - Background config fetch started
+[TTS Config] Marked as cached      - Prefetch succeeded, lazy fetch skipped
+```
+
+**Debug Tools**:
+- `lib/debug_app.dart` - Debug UI for inspecting voice pipeline
+- `monitor_logs.sh` - Real-time log filtering
+- `flutter analyze` - Static analysis before commits
+- Feature flags in SharedPreferences for runtime toggles
+
+---
+
+## 10. Additional Resources
 - **Troubleshooting**: `fix.md`, `improvements.md`, `streaming.md`, `TTS_STREAMING_IMPLEMENTATION.md`, `verbose_logging_fix_summary.md`.
 - **Migration Notes**: `backendRefactor.md`, `PHASE_6_MIGRATION_STATUS.md`, `refactor_progress.md`.
 - **Voice Pipeline Takeover**: `takeover.md` (detailed plan for finishing the controller migration and deleting the legacy AutoListeningCoordinator path).
