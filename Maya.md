@@ -47,6 +47,11 @@ Key components (all under `lib/services/`):
 4. **VoiceSessionCoordinator & AutoListeningCoordinator** – legacy orchestration layer used only when the controller flag is disabled; slated for removal once the takeover in `takeover.md` is complete.
 5. **MessageProcessor + TherapyService** – determine whether to call backend endpoints or direct LLM providers (controlled by config service and feature flags).
 6. **SimpleTTSService & WebSocketAudioManager** – manage buffered streaming audio, interplay with just_audio, and VAD gating using generation callbacks.
+   - **Lazy TTS Config Initialization** (Gold Standard): Two-layer defense for zero startup blocking:
+     - **Layer 1 (Opportunistic Prefetch)**: Non-blocking background fetch at startup via `service_locator.dart:_prefetchTTSConfigNonBlocking()`. If successful, calls `setCachedTTSConfig()` to mark config ready.
+     - **Layer 2 (Lazy Fetch)**: On-demand fetch in `speak()` method via `_ensureTTSConfig()` if prefetch missed (5s timeout with fallback to defaults).
+     - **Benefits**: Eliminates 15s blocking delay, request deduplication, instant TTS when prefetch succeeds.
+     - **Debug Logs**: `[TTS Config] Prefetch started (non-blocking)`, `[TTS Config] Marked as cached from prefetch`, `[TTS Config] Lazy fetch triggered`.
 
 Supporting utilities:
 - `AudioProcessingService`, `RNNoiseService`, and `EnhancedVADManager` for noise suppression and speech detection.
@@ -154,6 +159,7 @@ Supporting utilities:
 ---
 
 ## Recently Logged Updates
+- **Lazy TTS Config Initialization (2025-12)**: Implemented gold-standard two-layer defense for TTS config loading with zero startup blocking. Opportunistic prefetch runs in background at startup, lazy fetch fallback on first TTS request (5s timeout). Eliminates previous 15s blocking delay during app init. Added `setCachedTTSConfig()` to `ITTSService`, `fetchTtsConfig()` to `IApiClient`, state tracking in `SimpleTTSService`. Fixed zone mismatch warning by moving `WidgetsFlutterBinding.ensureInitialized()` inside zone.
 - Backend now connects to Cloud SQL (instance `jilaniuplift` in `us-central1`) and runs migrations automatically via `scripts/entrypoint.sh` on Cloud Run startup.
 - New Alembic revision adds `user_profiles`, `session_anchors`, and `session_summaries` with UUID primary keys and soft-delete semantics; migration stamped head and tested against Cloud SQL.
 - Personalization API exposed at `/api/v1/profile`, `/api/v1/anchors`, `/api/v1/session_summaries`; all require Firebase JWT and support idempotent updates.

@@ -12,6 +12,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/tts_request.dart';
 import '../di/interfaces/i_tts_service.dart';
 import '../di/interfaces/i_audio_settings.dart';
+import '../di/dependency_container.dart';
 import 'audio_player_manager.dart';
 import 'path_manager.dart';
 import '../config/app_config.dart';
@@ -70,6 +71,11 @@ class SimpleTTSService implements ITTSService {
       if (kDebugMode) _ttsTrace('❌ [TTS] Empty text, skipping');
       return;
     }
+
+    // GOLD STANDARD: Ensure TTS config is available before speaking
+    // Fast path: Returns immediately if prefetch succeeded
+    // Slow path: Lazy fetch if prefetch missed (5s timeout, silent failure)
+    await _ensureTTSConfig();
 
     // 🔍 TTS DUPLICATION TRACKING
     final caller = _getCallerInfo();
@@ -142,6 +148,11 @@ class SimpleTTSService implements ITTSService {
 
   // BATCH 1 PHASE 1: Callback to check if current session is still valid
   bool Function()? _isSessionValidCallback;
+
+  // GOLD STANDARD: Lazy TTS config initialization
+  // Prefetch fills this cache opportunistically, lazy fetch ensures it's always available
+  bool _ttsConfigFetched = false; // True if we've attempted fetch (success or failure)
+  Future<void>? _configFetchInProgress; // Deduplication for concurrent speak() calls
 
   // Production-grade completion tracking
   int _pendingStreams = 0; // Monotonic counter for overlapping instances
@@ -260,6 +271,91 @@ class SimpleTTSService implements ITTSService {
       _prewarmedConnection = null;
       _prewarmedConnectionCreatedAt = null;
       _prewarmedConnectionUrl = null;
+    }
+  }
+
+  // -------- GOLD STANDARD: Lazy TTS Config Initialization ---------------
+
+  /// Ensures TTS config is available before speaking
+  /// Fast path: Returns immediately if config already fetched (prefetch succeeded)
+  /// Slow path: Performs lazy fetch if prefetch missed or failed
+  /// Deduplicates concurrent calls to prevent multiple fetches
+  Future<void> _ensureTTSConfig() async {
+    // Fast path - config already fetched (either prefetch succeeded or lazy fetch completed)
+    if (_ttsConfigFetched) return;
+
+    // Deduplicate concurrent calls - if another speak() is already fetching, wait for it
+    if (_configFetchInProgress != null) {
+      if (kDebugMode) {
+        debugPrint('[TTS Config] Deduplicating concurrent fetch request');
+      }
+      return await _configFetchInProgress!;
+    }
+
+    // Lazy fetch - prefetch missed or failed
+    if (kDebugMode) {
+      debugPrint('[TTS Config] Lazy fetch triggered (prefetch didn\'t complete)');
+    }
+
+    _configFetchInProgress = _fetchConfigWithFallback();
+    try {
+      await _configFetchInProgress!;
+      _ttsConfigFetched = true;
+    } finally {
+      _configFetchInProgress = null;
+    }
+  }
+
+  /// Fetches TTS config from backend with fallback to defaults
+  /// Silent failure - uses fallback config already in LLMConfig
+  Future<void> _fetchConfigWithFallback() async {
+    try {
+      // Import DependencyContainer to get ApiClient
+      final apiClient = DependencyContainer().apiClient;
+
+      final config = await apiClient.fetchTtsConfig()
+          .timeout(const Duration(seconds: 5));
+
+      if (config != null && config.provider.isNotEmpty) {
+        // Apply remote config
+        LLMConfig.applyRemoteTtsConfig(
+          provider: config.provider,
+          model: config.model,
+          voice: config.voice,
+          sampleRateHz: config.sampleRateHz,
+          audioEncoding: config.audioEncoding,
+          responseFormat: config.responseFormat,
+          supportsStreaming: config.supportsStreaming,
+          mode: config.mode,
+          mimeType: config.mimeType,
+        );
+
+        // Refresh audio negotiation with new config
+        AudioFormatNegotiator.updateFromConfig(log: true);
+
+        if (kDebugMode) {
+          debugPrint('[TTS Config] Lazy fetch succeeded and applied');
+        }
+      } else {
+        if (kDebugMode) {
+          debugPrint('[TTS Config] Lazy fetch returned null/empty, using fallback');
+        }
+      }
+    } catch (e) {
+      // Silent failure - fallback config already in LLMConfig from defaults
+      if (kDebugMode) {
+        debugPrint('[TTS Config] Lazy fetch failed, using fallback config: $e');
+      }
+    }
+  }
+
+  /// Marks TTS config as cached (called by prefetch when successful)
+  /// Prevents lazy fetch on first speak() if prefetch succeeded
+  @override
+  void setCachedTTSConfig() {
+    _ttsConfigFetched = true;
+    if (kDebugMode) {
+      debugPrint('[TTS Config] Marked as cached from prefetch');
     }
   }
 

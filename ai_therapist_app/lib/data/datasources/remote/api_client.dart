@@ -159,6 +159,7 @@ class ApiClient implements IApiClient {
     }
   }
 
+  @override
   Future<TtsConfigDto?> fetchTtsConfig() async {
     try {
       final response = await get('/system/tts-config');

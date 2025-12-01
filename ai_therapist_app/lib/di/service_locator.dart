@@ -676,27 +676,9 @@ Future<void> registerApiDependentServices(
       debugPrint('Registered ApiClient');
     }
 
-    try {
-      final TtsConfigDto? remoteTtsConfig = await apiClient.fetchTtsConfig();
-      if (remoteTtsConfig != null && remoteTtsConfig.provider.isNotEmpty) {
-        LLMConfig.applyRemoteTtsConfig(
-          provider: remoteTtsConfig.provider,
-          model: remoteTtsConfig.model,
-          voice: remoteTtsConfig.voice,
-          sampleRateHz: remoteTtsConfig.sampleRateHz,
-          audioEncoding: remoteTtsConfig.audioEncoding,
-          responseFormat: remoteTtsConfig.responseFormat,
-          supportsStreaming: remoteTtsConfig.supportsStreaming,
-          mode: remoteTtsConfig.mode,
-          mimeType: remoteTtsConfig.mimeType,
-        );
-
-        // Refresh audio negotiation now that we have runtime overrides
-        AudioFormatNegotiator.updateFromConfig(log: true);
-      }
-    } catch (e) {
-      debugPrint('Warning: Failed to fetch remote TTS config: $e');
-    }
+    // GOLD STANDARD: Opportunistic prefetch (non-blocking)
+    // Fire-and-forget TTS config prefetch - doesn't block startup
+    _prefetchTTSConfigNonBlocking(apiClient);
 
     // Register interface mapping for ApiClient
     if (!serviceLocator.isRegistered<IApiClient>()) {
@@ -800,6 +782,55 @@ Future<void> registerApiDependentServices(
     DependencyContainer.markFailed(e, stackTrace);
     rethrow;
   }
+}
+
+/// GOLD STANDARD: Opportunistic TTS config prefetch (non-blocking)
+///
+/// Fires-and-forgets a TTS config fetch at startup. If it completes before
+/// first TTS request, config is ready. If not, lazy fetch handles it.
+/// This approach gives us zero startup blocking with best-case instant TTS.
+void _prefetchTTSConfigNonBlocking(ApiClient apiClient) {
+  unawaited(() async {
+    try {
+      debugPrint('[TTS Config] Prefetch started (non-blocking)');
+
+      final TtsConfigDto? remoteTtsConfig = await apiClient.fetchTtsConfig();
+
+      if (remoteTtsConfig != null && remoteTtsConfig.provider.isNotEmpty) {
+        // Apply config to LLMConfig
+        LLMConfig.applyRemoteTtsConfig(
+          provider: remoteTtsConfig.provider,
+          model: remoteTtsConfig.model,
+          voice: remoteTtsConfig.voice,
+          sampleRateHz: remoteTtsConfig.sampleRateHz,
+          audioEncoding: remoteTtsConfig.audioEncoding,
+          responseFormat: remoteTtsConfig.responseFormat,
+          supportsStreaming: remoteTtsConfig.supportsStreaming,
+          mode: remoteTtsConfig.mode,
+          mimeType: remoteTtsConfig.mimeType,
+        );
+
+        // Refresh audio negotiation with new config
+        AudioFormatNegotiator.updateFromConfig(log: true);
+
+        // Mark config as cached in TTS service to skip lazy fetch
+        try {
+          final ttsService = DependencyContainer().ttsService;
+          ttsService.setCachedTTSConfig();
+        } catch (e) {
+          debugPrint('[TTS Config] Warning: Could not mark config as cached: $e');
+          // Non-fatal - lazy fetch will still work
+        }
+
+        debugPrint('[TTS Config] Prefetch succeeded and applied');
+      } else {
+        debugPrint('[TTS Config] Prefetch returned null/empty config');
+      }
+    } catch (e) {
+      // Silent failure - lazy load will handle it on first TTS request
+      debugPrint('[TTS Config] Prefetch failed (will lazy load on first TTS): $e');
+    }
+  }());
 }
 
 /// Check if all required dependencies are registered

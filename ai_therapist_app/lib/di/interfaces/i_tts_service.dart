@@ -62,4 +62,7 @@ abstract class ITTSService {
   // Audio utilities
   Future<String?> downloadAndCacheAudio(String url);
   Future<void> cleanupAudioFiles();
+
+  // TTS config initialization (GOLD STANDARD lazy loading)
+  void setCachedTTSConfig();
 }

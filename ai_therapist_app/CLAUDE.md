@@ -169,6 +169,58 @@ void resetTTSState() {
 }
 ```
 
+**Lazy TTS Config Initialization** (GOLD STANDARD):
+Two-layer defense for TTS config loading with zero startup blocking:
+
+```dart
+// State variables (lines 146-149)
+bool _ttsConfigFetched = false;           // True if config fetch attempted
+Future<void>? _configFetchInProgress;     // Deduplication for concurrent calls
+
+// Layer 1: Opportunistic prefetch (service_locator.dart:787-825)
+void _prefetchTTSConfigNonBlocking(ApiClient apiClient) {
+  unawaited(() async {
+    // Fire-and-forget background fetch at startup
+    final config = await apiClient.fetchTtsConfig();
+    if (config != null) {
+      LLMConfig.applyRemoteTtsConfig(...);
+      ttsService.setCachedTTSConfig();  // Mark config ready
+    }
+  }());
+}
+
+// Layer 2: Lazy initialization (lines 271-354)
+Future<void> _ensureTTSConfig() async {
+  if (_ttsConfigFetched) return;  // Fast path - already cached
+
+  if (_configFetchInProgress != null) {
+    return await _configFetchInProgress!;  // Deduplicate concurrent calls
+  }
+
+  // Lazy fetch with 5s timeout + fallback to defaults
+  _configFetchInProgress = _fetchConfigWithFallback();
+  await _configFetchInProgress!;
+  _ttsConfigFetched = true;
+}
+
+// Called before every TTS request (line 78)
+await _ensureTTSConfig();  // Ensures config ready before speak()
+```
+
+**Benefits**:
+- Zero startup blocking (prefetch runs in background)
+- Instant TTS if prefetch succeeds before first request
+- Resilient fallback if prefetch fails
+- Request deduplication prevents multiple fetches
+- 5s timeout with graceful fallback to defaults
+
+**Debug Logs**:
+```
+[TTS Config] Prefetch started (non-blocking)
+[TTS Config] Marked as cached from prefetch  ← Success!
+[TTS Config] Prefetch succeeded and applied
+```
+
 ---
 
 ## VAD (Voice Activity Detection)
@@ -363,6 +415,9 @@ if (gen != _generation) return;
 🛡️ [TTS] Skipping reset       - Race condition guard triggered
 🛑 Enhanced VAD: Shutdown flags set - VAD stopping (non-blocking)
 [VoiceService] TTS done – autoMode disabled but bloc allows listening, re-enabling
+[TTS Config] Prefetch started (non-blocking) - Background config fetch started
+[TTS Config] Marked as cached from prefetch - Prefetch succeeded, lazy fetch skipped
+[TTS Config] Lazy fetch triggered - Prefetch missed, fetching on-demand
 ```
 
 ---
@@ -396,13 +451,19 @@ lib/
 
 ---
 
-## Recent Updates (2025-11)
+## Recent Updates (2025-12)
 
 ### Performance Optimizations
+- **Lazy TTS Config Initialization** (Gold Standard): Two-layer defense with zero startup blocking
+  - Opportunistic prefetch runs in background (non-blocking)
+  - Lazy fetch fallback on first TTS request (5s timeout)
+  - Request deduplication prevents multiple fetches
+  - Eliminates 15s blocking delay during app startup
 - WebSocket connection pooling saves ~150ms per TTS request
 - Reduced TTS buffer from 32KB to 4KB for faster time-to-first-audio
 - AudioPlayerManager pre-warming on app startup
 - Deferred RemoteConfigService initialization
+- Fixed zone mismatch warning (moved WidgetsFlutterBinding initialization inside zone)
 
 ### Bug Fixes
 - VAD worker thread no longer blocks on `AudioRecord.read()` (non-blocking shutdown)
@@ -411,6 +472,10 @@ lib/
 - Generation counter pattern prevents stale async callbacks
 
 ### Architecture Changes
+- **SimpleTTSService**: Added lazy config initialization with state tracking (`_ttsConfigFetched`, `_configFetchInProgress`)
+- **ITTSService**: Added `setCachedTTSConfig()` method for prefetch coordination
+- **IApiClient**: Added `fetchTtsConfig()` method to interface for type safety
+- **Service Locator**: Prefetch calls `setCachedTTSConfig()` on success to mark config ready
 - `canStartListeningCallback` now includes `isMicEnabled` state
 - VoiceService re-enables auto mode on TTS completion if bloc allows
 - Enhanced VAD uses immediate shutdown flags instead of waiting for blocked threads

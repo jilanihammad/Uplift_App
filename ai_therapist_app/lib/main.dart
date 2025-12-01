@@ -125,10 +125,10 @@ Future<void> setupCoreServices() async {
     BindingBase.debugZoneErrorsAreFatal = false;
   }
 
-  WidgetsFlutterBinding.ensureInitialized();
-  debugPrint('[main.dart] Flutter bindings initialized');
-  logger.info(
-      '[Main] Flutter bindings initialized in the same zone as runApp.');
+  // Note: WidgetsFlutterBinding.ensureInitialized() now called in main()
+  // before setupCoreServices() to ensure single zone initialization
+  debugPrint('[main.dart] Setting up core services...');
+  logger.info('[Main] Setting up core services...');
 
   await AppConfig.initialize();
   AppConfig().logConfig();
@@ -280,12 +280,13 @@ Future<void> _startBackgroundInitialization() async {
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  AppLogger.initialize();
-  await PathManager.instance.init();
-
   runZonedGuarded(() async {
+    // CRASH-SAFE: Initialize bindings inside the zone to avoid zone mismatch
+    WidgetsFlutterBinding.ensureInitialized();
+
+    AppLogger.initialize();
+    await PathManager.instance.init();
+
     _initializeLogging();
 
     final coreStopwatch = Stopwatch()..start();

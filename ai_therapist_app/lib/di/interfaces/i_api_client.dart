@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:typed_data';
+import '../../models/tts_config.dart';
 
 /// Interface for API client operations
 /// Provides contract for backend communication
@@ -51,6 +52,7 @@ abstract class IApiClient {
   String get baseUrl;
   void setBaseUrl(String url);
   void setTimeout(Duration timeout);
+  Future<TtsConfigDto?> fetchTtsConfig();
 
   // Connection management
   Future<bool> checkConnection();

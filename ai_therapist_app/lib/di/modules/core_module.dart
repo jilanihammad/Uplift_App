@@ -12,6 +12,7 @@ import '../../data/datasources/local/database_provider.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../utils/database_helper.dart';
 import '../interfaces/i_audio_settings.dart';
+import '../../models/tts_config.dart';
 
 /// Core dependency module
 /// Registers fundamental services that other services depend on
@@ -271,6 +272,12 @@ class _MockApiClient implements IApiClient {
 
   @override
   void setTimeout(Duration timeout) {}
+
+  @override
+  Future<TtsConfigDto?> fetchTtsConfig() async {
+    // Return mock TTS config for testing
+    return null;
+  }
 
   @override
   Future<bool> checkConnection() async => true;
