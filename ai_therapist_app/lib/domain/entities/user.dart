@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class User extends Equatable {
   final String id;
@@ -53,7 +54,7 @@ class User extends Equatable {
       profileImage: json['profile_image'],
       photoUrl: json['photo_url'],
       phoneNumber: json['phone_number'],
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: parseBackendDateTime(json['created_at'] as String),
       preferences: json['preferences'],
     );
   }

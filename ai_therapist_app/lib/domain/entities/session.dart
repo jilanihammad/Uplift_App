@@ -1,5 +1,6 @@
 // lib/domain/entities/session.dart
 import 'dart:convert';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class Session {
   final String id;
@@ -55,8 +56,10 @@ class Session {
       title: json['title'],
       summary: json['summary'] ?? '',
       actionItems: actionItems,
-      createdAt: DateTime.parse(json['created_at']).toUtc(),
-      lastModified: DateTime.parse(json['last_modified']).toUtc(),
+      createdAt:
+          parseBackendDateTimeToUtc(json['created_at'] as String),
+      lastModified:
+          parseBackendDateTimeToUtc(json['last_modified'] as String),
     );
   }
 

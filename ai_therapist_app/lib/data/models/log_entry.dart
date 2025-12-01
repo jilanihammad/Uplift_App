@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 enum LogLevel { debug, info, warning, error, critical }
 
@@ -33,7 +34,7 @@ class LogEntry {
   factory LogEntry.fromJson(Map<String, dynamic> json) {
     return LogEntry(
       id: json['id'],
-      timestamp: DateTime.parse(json['timestamp']),
+      timestamp: parseBackendDateTime(json['timestamp'] as String),
       level: _stringToLogLevel(json['level']),
       message: json['message'],
       source: json['source'],

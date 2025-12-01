@@ -15,6 +15,7 @@ import 'enhanced_vad_manager.dart';
 import '../di/interfaces/i_therapy_service.dart';
 import '../models/therapy_message.dart';
 import '../models/user_profile.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 enum TherapyMood {
   veryHappy,
@@ -66,8 +67,10 @@ class TherapySession {
   factory TherapySession.fromJson(Map<String, dynamic> json) {
     return TherapySession(
       id: json['id'],
-      startTime: DateTime.parse(json['startTime']),
-      endTime: json['endTime'] != null ? DateTime.parse(json['endTime']) : null,
+      startTime: parseBackendDateTime(json['startTime'] as String),
+      endTime: json['endTime'] != null
+          ? parseBackendDateTime(json['endTime'] as String)
+          : null,
       messages: (json['messages'] as List)
           .map((m) => TherapyServiceMessage.fromJson(m))
           .toList(),
@@ -117,7 +120,7 @@ class TherapyServiceMessage {
       id: json['id'],
       content: json['content'],
       isUser: json['isUser'],
-      timestamp: DateTime.parse(json['timestamp']),
+      timestamp: parseBackendDateTime(json['timestamp'] as String),
       audioUrl: json['audioUrl'],
     );
   }

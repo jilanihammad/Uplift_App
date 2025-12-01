@@ -677,8 +677,8 @@ Future<void> registerApiDependentServices(
     }
 
     try {
-      final TtsConfigDto remoteTtsConfig = await apiClient.fetchTtsConfig();
-      if (remoteTtsConfig.provider.isNotEmpty) {
+      final TtsConfigDto? remoteTtsConfig = await apiClient.fetchTtsConfig();
+      if (remoteTtsConfig != null && remoteTtsConfig.provider.isNotEmpty) {
         LLMConfig.applyRemoteTtsConfig(
           provider: remoteTtsConfig.provider,
           model: remoteTtsConfig.model,

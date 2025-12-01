@@ -1,4 +1,6 @@
 // lib/domain/entities/message.dart
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
+
 class Message {
   final String id;
   final String sessionId;
@@ -22,7 +24,7 @@ class Message {
       sessionId: json['session_id'],
       content: json['content'],
       isUser: json['is_user'] ?? false,
-      timestamp: DateTime.parse(json['timestamp']),
+      timestamp: parseBackendDateTime(json['timestamp'] as String),
     );
   }
 

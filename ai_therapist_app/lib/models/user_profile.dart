@@ -1,4 +1,4 @@
-
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 enum TherapyExperience {
   none,
   positiveExperience,
@@ -175,10 +175,10 @@ class UserProfile {
               orElse: () => CBTFamiliarity.notFamiliar)
           : CBTFamiliarity.notFamiliar,
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+          ? parseBackendDateTime(json['createdAt'] as String)
           : DateTime.now(),
       updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
+          ? parseBackendDateTime(json['updatedAt'] as String)
           : DateTime.now(),
     );
   }

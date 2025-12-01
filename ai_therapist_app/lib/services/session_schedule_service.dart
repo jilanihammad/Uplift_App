@@ -6,6 +6,7 @@ import '../data/datasources/local/prefs_manager.dart';
 import '../di/interfaces/i_api_client.dart';
 import '../di/interfaces/i_session_schedule_service.dart';
 import '../models/session_reminder.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class SessionScheduleService implements ISessionScheduleService {
   static const String _prefsKeyNextSession = 'next_session_timestamp';
@@ -54,7 +55,7 @@ class SessionScheduleService implements ISessionScheduleService {
     }
 
     try {
-      final timestamp = DateTime.parse(stored).toLocal();
+      final timestamp = parseBackendDateTime(stored).toLocal();
       return SessionReminder(
         scheduledTime: timestamp,
         title: _currentReminder?.title ?? _defaultReminderTitle,

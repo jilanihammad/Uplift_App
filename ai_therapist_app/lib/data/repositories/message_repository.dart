@@ -6,6 +6,7 @@ import '../../di/interfaces/i_api_client.dart';
 import '../../di/interfaces/i_app_database.dart';
 import 'dart:collection';
 import '../../services/user_context_service.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class MessageRepository implements IMessageRepository {
   final IApiClient apiClient;
@@ -268,7 +269,8 @@ class MessageRepository implements IMessageRepository {
                 sessionId: data['session_id'] as String,
                 content: data['content'] as String,
                 isUser: (data['is_user'] as int) == 1,
-                timestamp: DateTime.parse(data['timestamp'] as String),
+                timestamp:
+                    parseBackendDateTime(data['timestamp'] as String),
                 isSynced: (data['is_synced'] as int) == 1,
               ))
           .toList();

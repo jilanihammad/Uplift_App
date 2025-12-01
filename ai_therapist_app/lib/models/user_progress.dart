@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class UserProgress {
   final int currentStreak;
@@ -64,10 +65,10 @@ class UserProgress {
         (json['sessionHistory'] as Map<String, dynamic>?) ?? {};
 
     // Convert string dates back to DateTime
-    final moodHistory = moodHistoryMap
-        .map((key, value) => MapEntry(DateTime.parse(key), value as int));
-    final sessionHistory = sessionHistoryMap
-        .map((key, value) => MapEntry(DateTime.parse(key), value as int));
+    final moodHistory = moodHistoryMap.map(
+        (key, value) => MapEntry(parseBackendDateTime(key).toUtc(), value as int));
+    final sessionHistory = sessionHistoryMap.map(
+        (key, value) => MapEntry(parseBackendDateTime(key).toUtc(), value as int));
 
     return UserProgress(
       currentStreak: json['currentStreak'] ?? 0,
@@ -203,7 +204,7 @@ class Achievement {
       description: json['description'],
       icon: Icons.emoji_events,
       pointValue: json['pointValue'],
-      earnedDate: DateTime.parse(json['earnedDate']),
+      earnedDate: parseBackendDateTime(json['earnedDate'] as String),
     );
   }
 

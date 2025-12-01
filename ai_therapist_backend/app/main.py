@@ -17,6 +17,7 @@ import uuid
 import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from app.core.datetime_utils import serialize_datetime, utcnow_isoformat
 import traceback
 import base64
 from sqlalchemy.orm import Session as DBSession
@@ -1153,7 +1154,7 @@ async def get_sessions(
                     logger.error(traceback.format_exc())
                     # If we can't create sessions, return mock data
                     logger.warning("Falling back to mock data due to database error")
-                    now = datetime.utcnow().isoformat() + 'Z'
+                    now = utcnow_isoformat()
                     return [
                         {
                             "id": str(uuid.uuid4()),
@@ -1177,7 +1178,7 @@ async def get_sessions(
             logger.error(traceback.format_exc())
             # If database operations fail, return mock data as fallback
             logger.warning("Falling back to mock data due to database error")
-            now = datetime.utcnow().isoformat() + 'Z'
+            now = utcnow_isoformat()
             return [
                 {
                     "id": str(uuid.uuid4()),
@@ -1207,8 +1208,10 @@ async def get_sessions(
                 "title": session.title or f"Session {session.id}",
                 "summary": session.summary or "No summary available",
                 "action_items": session.action_items or [],
-                "created_at": session.start_time.isoformat() + 'Z',
-                "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
+                "created_at": serialize_datetime(session.start_time),
+                "last_modified": serialize_datetime(session.end_time)
+                if session.end_time
+                else serialize_datetime(session.start_time),
                 "isSynced": True
             })
             
@@ -1217,7 +1220,7 @@ async def get_sessions(
         logger.error(f"Unhandled error in get_sessions: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         # Return a user-friendly error response
-        now = datetime.utcnow().isoformat() + 'Z'
+        now = utcnow_isoformat()
         return [
             {
                 "id": str(uuid.uuid4()),
@@ -1255,8 +1258,8 @@ async def create_session(
             "id": str(session.id),
             "title": request.title or f"Session {session.id}",
             "summary": session.summary or "",
-            "created_at": session.start_time.isoformat() + 'Z',
-            "last_modified": session.start_time.isoformat() + 'Z',
+            "created_at": serialize_datetime(session.start_time),
+            "last_modified": serialize_datetime(session.start_time),
             "isSynced": True
         }
     except Exception as e:
@@ -1287,8 +1290,10 @@ async def get_session(
             "title": f"Session {session.id}" if not hasattr(session, 'title') or not session.title else session.title,
             "summary": session.summary or "",
             "action_items": session.action_items or [],
-            "created_at": session.start_time.isoformat() + 'Z',
-            "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
+            "created_at": serialize_datetime(session.start_time),
+            "last_modified": serialize_datetime(session.end_time)
+            if session.end_time
+            else serialize_datetime(session.start_time),
             "isSynced": True
         }
     except HTTPException:
@@ -1345,8 +1350,10 @@ async def update_session(
                 "id": str(session.id),
                 "title": session.title or f"Session {session.id}",
                 "summary": session.summary or "",
-                "created_at": session.start_time.isoformat() + 'Z',
-                "last_modified": (session.end_time.isoformat() + 'Z') if session.end_time else (session.start_time.isoformat() + 'Z'),
+                "created_at": serialize_datetime(session.start_time),
+                "last_modified": serialize_datetime(session.end_time)
+                if session.end_time
+                else serialize_datetime(session.start_time),
                 "isSynced": True
             }
             
@@ -1357,7 +1364,7 @@ async def update_session(
             logger.error(traceback.format_exc())
             
             # Return a mock response as fallback
-            now = datetime.utcnow().isoformat() + 'Z'
+            now = utcnow_isoformat()
             return {
                 "id": session_id,
                 "title": request.title or f"Session {session_id}",
@@ -1373,7 +1380,7 @@ async def update_session(
         logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Return a response rather than an error for better user experience
-        now = datetime.utcnow().isoformat() + 'Z'
+        now = utcnow_isoformat()
         return {
             "id": session_id,
             "title": request.title or f"Session {session_id}",

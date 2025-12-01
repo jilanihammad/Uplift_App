@@ -1,3 +1,5 @@
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
+
 class UserTask {
   final String id;
   final String text;
@@ -49,10 +51,10 @@ class UserTask {
       id: json['id'],
       text: json['text'],
       sessionId: json['sessionId'],
-      dateAdded: DateTime.parse(json['dateAdded']),
+      dateAdded: parseBackendDateTime(json['dateAdded'] as String),
       isCompleted: json['isCompleted'] ?? false,
       completedDate: json['completedDate'] != null
-          ? DateTime.parse(json['completedDate'])
+          ? parseBackendDateTime(json['completedDate'] as String)
           : null,
     );
   }

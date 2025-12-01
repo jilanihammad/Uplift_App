@@ -6,6 +6,7 @@ import '../../di/interfaces/i_api_client.dart';
 import '../../di/interfaces/i_app_database.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/user_context_service.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class SessionRepository implements ISessionRepository {
   final IApiClient apiClient;
@@ -62,9 +63,9 @@ class SessionRepository implements ISessionRepository {
             title: data['title'] as String,
             summary: data['summary'] as String,
             actionItems: _parseActionItems(data['action_items']),
-            createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
+            createdAt: parseBackendDateTimeToUtc(data['created_at'] as String),
             lastModified:
-                DateTime.parse(data['last_modified'] as String).toUtc(),
+                parseBackendDateTimeToUtc(data['last_modified'] as String),
             isSynced: (data['is_synced'] as int) == 1,
           );
         }
@@ -201,9 +202,10 @@ class SessionRepository implements ISessionRepository {
                 title: data['title'] as String,
                 summary: data['summary'] as String,
                 actionItems: _parseActionItems(data['action_items']),
-                createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
+                createdAt:
+                    parseBackendDateTimeToUtc(data['created_at'] as String),
                 lastModified:
-                    DateTime.parse(data['last_modified'] as String).toUtc(),
+                    parseBackendDateTimeToUtc(data['last_modified'] as String),
                 isSynced: (data['is_synced'] as int) == 1,
               ))
           .toList();
@@ -271,8 +273,8 @@ class SessionRepository implements ISessionRepository {
         title: data['title'] as String,
         summary: data['summary'] as String,
         actionItems: _parseActionItems(data['action_items']),
-        createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
-        lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
+        createdAt: parseBackendDateTimeToUtc(data['created_at'] as String),
+        lastModified: parseBackendDateTimeToUtc(data['last_modified'] as String),
         isSynced: (data['is_synced'] as int) == 1,
       );
     }
@@ -347,8 +349,8 @@ class SessionRepository implements ISessionRepository {
         title: data['title'] as String,
         summary: data['summary'] as String,
         actionItems: _parseActionItems(data['action_items']),
-        createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
-        lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
+        createdAt: parseBackendDateTimeToUtc(data['created_at'] as String),
+        lastModified: parseBackendDateTimeToUtc(data['last_modified'] as String),
         isSynced: false,
       );
     }
@@ -457,8 +459,8 @@ class SessionRepository implements ISessionRepository {
         title: data['title'] as String,
         summary: data['summary'] as String,
         actionItems: sessionActionItems,
-        createdAt: DateTime.parse(data['created_at'] as String).toUtc(),
-        lastModified: DateTime.parse(data['last_modified'] as String).toUtc(),
+        createdAt: parseBackendDateTimeToUtc(data['created_at'] as String),
+        lastModified: parseBackendDateTimeToUtc(data['last_modified'] as String),
         isSynced: (data['is_synced'] as int) == 1,
       );
     } catch (e) {

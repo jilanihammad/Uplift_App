@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:ai_therapist_app/data/models/log_entry.dart';
 import 'package:ai_therapist_app/data/datasources/local/app_database.dart';
 import 'package:ai_therapist_app/services/user_context_service.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class LogRepository {
   final AppDatabase _database;
@@ -129,7 +130,7 @@ class LogRepository {
       return logs.map((log) {
         return LogEntry(
           id: log['id'] as String,
-          timestamp: DateTime.parse(log['timestamp'] as String),
+          timestamp: parseBackendDateTime(log['timestamp'] as String),
           level: LogLevel.values.firstWhere(
             (l) => l.toString().split('.').last == log['level'],
             orElse: () => LogLevel.info,

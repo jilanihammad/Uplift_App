@@ -915,8 +915,9 @@ class AppDatabase implements IAppDatabase {
                 'wal') {
           debugPrint('PRAGMA journal_mode is WAL.');
         } else {
-          await db.execute('PRAGMA journal_mode = WAL;');
-          debugPrint('Attempted to set PRAGMA journal_mode = WAL explicitly.');
+          final applied = await db.rawQuery('PRAGMA journal_mode = WAL;');
+          debugPrint(
+              'Attempted to set PRAGMA journal_mode = WAL explicitly: $applied');
           final List<Map<String, dynamic>> journalModeResultAfterSet =
               await db.rawQuery('PRAGMA journal_mode');
           debugPrint(

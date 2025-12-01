@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 // User preferences model for storing app settings
 class UserPreferences {
@@ -111,7 +112,7 @@ class UserPreferences {
       fontSizeLevel: json['fontSizeLevel'] ?? 2,
       aiVoiceId: json['aiVoiceId'],
       lastUpdated: json['lastUpdated'] != null
-          ? DateTime.parse(json['lastUpdated'])
+          ? parseBackendDateTime(json['lastUpdated'] as String)
           : null,
       goals:
           json['goals'] != null ? List<String>.from(json['goals']) : const [],

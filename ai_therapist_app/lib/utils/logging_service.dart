@@ -1,9 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'dart:developer' as developer;
-
-// Optional Firebase imports - add if using Firebase Crashlytics
-// import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-// import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 /// A centralized logging service that properly handles
 /// logging based on build mode (debug vs release)
@@ -139,40 +136,36 @@ class LoggingService {
 
   /// Helper to log to Firebase Crashlytics
   void _logToCrashlytics(String message) {
-    if (!_isDebugBuild && _crashlyticsEnabled) {
-      // Example Firebase Crashlytics integration
-      // This is left as a commented example - uncomment if Crashlytics is added
-      /*
-      try {
-        FirebaseCrashlytics.instance.log(message);
-      } catch (e) {
-        // Fallback if Crashlytics fails
-        developer.log('Failed to log to Crashlytics: $e', name: 'CRASHLYTICS_ERROR');
-      }
-      */
+    if (_isDebugBuild || !_crashlyticsEnabled) {
+      return;
+    }
+
+    try {
+      FirebaseCrashlytics.instance.log(message);
+    } catch (e) {
+      developer.log('Failed to log to Crashlytics: $e',
+          name: 'CRASHLYTICS_ERROR');
     }
   }
 
   /// Helper to record an error to Firebase Crashlytics
   void _recordError(String message, dynamic error, StackTrace? stackTrace) {
-    if (!_isDebugBuild && _crashlyticsEnabled) {
-      // Example Firebase Crashlytics integration for errors
-      // This is left as a commented example - uncomment if Crashlytics is added
-      /*
-      try {
-        final nonNullError = error ?? message;
-        final nonNullStack = stackTrace ?? StackTrace.current;
-        FirebaseCrashlytics.instance.recordError(
-          nonNullError, 
-          nonNullStack,
-          reason: message,
-          fatal: false
-        );
-      } catch (e) {
-        // Fallback if Crashlytics fails
-        developer.log('Failed to record error to Crashlytics: $e', name: 'CRASHLYTICS_ERROR');
-      }
-      */
+    if (_isDebugBuild || !_crashlyticsEnabled) {
+      return;
+    }
+
+    try {
+      final nonNullError = error ?? message;
+      final nonNullStack = stackTrace ?? StackTrace.current;
+      FirebaseCrashlytics.instance.recordError(
+        nonNullError,
+        nonNullStack,
+        reason: message,
+        fatal: false,
+      );
+    } catch (e) {
+      developer.log('Failed to record error to Crashlytics: $e',
+          name: 'CRASHLYTICS_ERROR');
     }
   }
 }

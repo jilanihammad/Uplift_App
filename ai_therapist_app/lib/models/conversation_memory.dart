@@ -1,5 +1,6 @@
 // lib/models/conversation_memory.dart
 import 'dart:convert';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 /// Represents a single memory in a conversation between the user and the AI.
 class ConversationMemory {
@@ -64,7 +65,7 @@ class ConversationMemory {
       aiResponse:
           json['ai_response'] as String? ?? json['aiResponse'] as String,
       metadata: metadataMap,
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      timestamp: parseBackendDateTime(json['timestamp'] as String),
     );
   }
 
@@ -107,7 +108,7 @@ class TherapyInsight {
     return TherapyInsight(
       insight: json['insight'] as String,
       source: json['source'] as String,
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      timestamp: parseBackendDateTime(json['timestamp'] as String),
     );
   }
 }
@@ -150,7 +151,7 @@ class EmotionalState {
       emotion: json['emotion'] as String,
       intensity: json['intensity'] as double,
       trigger: json['trigger'] as String?,
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      timestamp: parseBackendDateTime(json['timestamp'] as String),
     );
   }
 }
@@ -263,16 +264,16 @@ class UserAnchor {
       anchorType: json['anchor_type'] as String?,
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
       mentionCount: json['mention_count'] as int? ?? 1,
-      firstSeenAt: DateTime.parse(json['first_seen_at'] as String),
-      lastSeenAt: DateTime.parse(json['last_seen_at'] as String),
+      firstSeenAt: parseBackendDateTime(json['first_seen_at'] as String),
+      lastSeenAt: parseBackendDateTime(json['last_seen_at'] as String),
       firstSessionIndex: json['first_session_index'] as int? ?? 0,
       lastSessionIndex: json['last_session_index'] as int? ?? 0,
       lastPromptedSession: json['last_prompted_session'] as int? ?? -1,
       serverId: json['server_id'] as String?,
       clientAnchorId: json['client_anchor_id'] as String?,
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
-          : DateTime.parse(json['last_seen_at'] as String),
+          ? parseBackendDateTime(json['updated_at'] as String)
+          : parseBackendDateTime(json['last_seen_at'] as String),
       isDeleted: (json['is_deleted'] as int? ?? 0) == 1,
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 /// TTS Streaming Monitor
 ///
@@ -284,7 +285,7 @@ class TTSStreamingMonitor {
     final bool recentErrors = _recentErrors.length > 10 &&
         _recentErrors.skip(_recentErrors.length - 10).any((error) =>
             DateTime.now()
-                .difference(DateTime.parse(error.split(':')[0]))
+                .difference(parseBackendDateTime(error.split(':')[0]))
                 .inMinutes <
             5);
 

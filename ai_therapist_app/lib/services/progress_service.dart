@@ -12,6 +12,7 @@ import '../config/theme.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../di/dependency_container.dart';
 import '../di/interfaces/i_api_client.dart';
+import '../data/datasources/remote/api_client.dart' show ApiException;
 import '../di/interfaces/i_progress_service.dart';
 import '../models/mood_entry_record.dart';
 import '../models/user_progress.dart';
@@ -19,6 +20,7 @@ import '../services/notification_service.dart';
 import '../widgets/mood_selector.dart';
 import '../utils/feature_flags.dart';
 import '../utils/connectivity_checker.dart';
+import '../utils/date_time_utils.dart';
 
 class ProgressService implements IProgressService {
   static const String _progressKey = 'user_progress';
@@ -442,12 +444,12 @@ class ProgressService implements IProgressService {
       };
 
       if (updatedAtIso != null) {
-        updateValues['updated_at'] =
-            DateTime.parse(updatedAtIso).toUtc().toIso8601String();
+        updateValues['updated_at'] = parseBackendDateTimeToUtc(updatedAtIso)
+            .toIso8601String();
       }
       if (loggedAtIso != null) {
         updateValues['logged_at'] =
-            DateTime.parse(loggedAtIso).toUtc().toIso8601String();
+            parseBackendDateTimeToUtc(loggedAtIso).toIso8601String();
       }
       if (moodValue != null) {
         updateValues['mood'] = moodValue;
@@ -469,11 +471,11 @@ class ProgressService implements IProgressService {
           mood: moodValue ?? 0,
           notes: notesValue,
           loggedAt: loggedAtIso != null
-              ? DateTime.parse(loggedAtIso).toUtc()
+              ? parseBackendDateTimeToUtc(loggedAtIso)
               : DateTime.now().toUtc(),
           serverId: serverId,
           updatedAt: updatedAtIso != null
-              ? DateTime.parse(updatedAtIso).toUtc()
+              ? parseBackendDateTimeToUtc(updatedAtIso)
               : DateTime.now().toUtc(),
           isPending: false,
           lastSyncedAt: syncMoment,
@@ -527,10 +529,21 @@ class ProgressService implements IProgressService {
         queryParams['before'] = beforeToken;
       }
 
-      final response = await apiClient.get(
-        '/mood_entries',
-        queryParams: queryParams,
-      );
+      Map<String, dynamic> response;
+      try {
+        response = await apiClient.get(
+          '/mood_entries',
+          queryParams: queryParams,
+        );
+      } on ApiException catch (e) {
+        if (e.statusCode == 404) {
+          if (kDebugMode) {
+            debugPrint('Mood entries endpoint unavailable (404); skipping');
+          }
+          return;
+        }
+        rethrow;
+      }
 
       final results = (response['results'] as List<dynamic>? ?? const [])
           .cast<Map<String, dynamic>>();
@@ -574,10 +587,10 @@ class ProgressService implements IProgressService {
     final loggedAtIso = data['logged_at'] as String?;
     final updatedAtIso = data['updated_at'] as String?;
     final loggedAt = loggedAtIso != null
-        ? DateTime.parse(loggedAtIso).toUtc()
+        ? parseBackendDateTimeToUtc(loggedAtIso)
         : DateTime.now().toUtc();
     final updatedAt = updatedAtIso != null
-        ? DateTime.parse(updatedAtIso).toUtc()
+        ? parseBackendDateTimeToUtc(updatedAtIso)
         : DateTime.now().toUtc();
 
     return MoodEntryRecord(
@@ -612,7 +625,7 @@ class ProgressService implements IProgressService {
     final lastSyncIso = prefs.getString(_lastMoodSyncKey);
     if (lastSyncIso != null && lastSyncIso.isNotEmpty) {
       try {
-        _lastMoodSyncAt = DateTime.parse(lastSyncIso).toUtc();
+        _lastMoodSyncAt = parseBackendDateTimeToUtc(lastSyncIso);
       } catch (e) {
         debugPrint('Error parsing last mood sync timestamp: $e');
         _lastMoodSyncAt = null;

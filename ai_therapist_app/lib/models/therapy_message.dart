@@ -1,4 +1,6 @@
 // Model class for chat messages in therapy sessions
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
+
 class TherapyMessage {
   final String id;
   final String content;
@@ -53,7 +55,7 @@ class TherapyMessage {
       id: json['id'],
       content: json['content'],
       isUser: json['isUser'],
-      timestamp: DateTime.parse(json['timestamp']),
+      timestamp: parseBackendDateTime(json['timestamp'] as String),
       audioUrl: json['audioUrl'],
       sequence: json['sequence'],
     );

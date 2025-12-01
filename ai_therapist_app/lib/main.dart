@@ -4,9 +4,10 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter/foundation.dart' show BindingBase, kDebugMode;
+import 'package:flutter/foundation.dart' show BindingBase, kDebugMode, kReleaseMode;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:ai_therapist_app/config/routes.dart';
@@ -55,12 +56,13 @@ import 'utils/feature_flags.dart';
 // Global variables for crucial service references
 ConfigService? _configService;
 ApiClient? _apiClient;
+bool _crashlyticsEnabled = false;
 
 // Firebase messaging background handler
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // This handler runs in its own isolate, so we need to re-initialize Firebase
-  await Firebase.initializeApp();
+  await ensureFirebaseInitialized();
 
   // Safe logging since we can't use our LoggingService in this isolate
   try {
@@ -108,6 +110,11 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
 
   // Log the user-facing error message
   logger.warning('Error message for user: $errorMessage', tag: 'USER_ERROR');
+
+  if (_crashlyticsEnabled) {
+    FirebaseCrashlytics.instance
+        .recordError(error, stack, reason: 'Global error', fatal: false);
+  }
 }
 
 Future<void> setupCoreServices() async {
@@ -128,14 +135,14 @@ Future<void> setupCoreServices() async {
   debugPrint('[main.dart] AppConfig initialized');
   logger.info('[Main] AppConfig initialized with environment variables.');
 
-  await RemoteConfigService().preloadCachedOverrides();
-  debugPrint('[main.dart] Remote config cached overrides applied');
-  logger.info('[Main] Applied cached remote-config overrides.');
-
   await FeatureFlags.init();
   FeatureFlags.debugPrintFlags();
   debugPrint('[main.dart] FeatureFlags initialized');
   logger.info('[Main] FeatureFlags initialized with SharedPreferences.');
+
+  await RemoteConfigService().preloadCachedOverrides();
+  debugPrint('[main.dart] Remote config cached overrides applied');
+  logger.info('[Main] Applied cached remote-config overrides.');
 
   final firebaseApp = await ensureFirebaseInitialized();
   if (firebaseApp != null) {
@@ -143,6 +150,8 @@ Future<void> setupCoreServices() async {
         '[main.dart] Firebase initialized successfully via ensureFirebaseInitialized()');
     logger.info(
         '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
+
+    await _configureCrashlytics();
 
     // NOTE: RemoteConfigService().initialize() moved to background init
     // to avoid blocking startup with network calls. Cached overrides from
@@ -171,7 +180,20 @@ Future<void> setupCoreServices() async {
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    _handleGlobalError(details.exception, details.stack ?? StackTrace.current);
+    final stack = details.stack ?? StackTrace.current;
+    _handleGlobalError(details.exception, stack);
+    if (_crashlyticsEnabled) {
+      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+    }
+  };
+
+  WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+    _handleGlobalError(error, stack);
+    if (_crashlyticsEnabled) {
+      FirebaseCrashlytics.instance
+          .recordError(error, stack, fatal: true, reason: 'Platform error');
+    }
+    return false;
   };
   debugPrint('[main.dart] Error handlers configured.');
 
@@ -285,6 +307,10 @@ Future<void> main() async {
     debugPrint('[main.dart] Stack trace: $stack');
     logger.error('[Main] Uncaught error in runZonedGuarded');
     _handleGlobalError(error, stack);
+    if (_crashlyticsEnabled) {
+      FirebaseCrashlytics.instance
+          .recordError(error, stack, fatal: true, reason: 'Zone error');
+    }
   });
 
   if (kDebugMode) {
@@ -318,8 +344,25 @@ void _initializeLogging() {
     debugPrint(
         '- Debug logs: ${loggingConfig.isDebugEnabled ? 'ENABLED' : 'DISABLED'}');
     debugPrint('- Analytics logging: ${kDebugMode ? 'ENABLED' : 'DISABLED'}');
-    debugPrint('- Crashlytics: ${!kDebugMode ? 'ENABLED' : 'DISABLED'}');
+    debugPrint('- Crashlytics: ${kReleaseMode ? 'ENABLED' : 'DISABLED (debug build)'}');
     debugPrint('==============================');
+  }
+}
+
+Future<void> _configureCrashlytics() async {
+  final shouldEnable = kReleaseMode;
+  try {
+    await FirebaseCrashlytics.instance
+        .setCrashlyticsCollectionEnabled(shouldEnable);
+    _crashlyticsEnabled = shouldEnable;
+    logger.setCrashlyticsEnabled(shouldEnable);
+    if (kDebugMode) {
+      debugPrint('[Main] Crashlytics collection set to $shouldEnable');
+    }
+  } catch (e) {
+    _crashlyticsEnabled = false;
+    logger.warning('Failed to configure Crashlytics: $e',
+        tag: 'CRASHLYTICS_INIT');
   }
 }
 

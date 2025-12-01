@@ -1,5 +1,6 @@
 // lib/utils/feature_flags.dart
 
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
@@ -31,9 +32,21 @@ class FeatureFlags {
   };
 
   static SharedPreferences? _prefs;
+  static bool _initialized = false;
+  static Future<void>? _initFuture;
+  static final Map<String, bool> _deferredWrites = {};
 
   /// Initialize feature flags with SharedPreferences
   static Future<void> init() async {
+    if (_initialized) {
+      return;
+    }
+
+    _initFuture ??= _initializePrefs();
+    await _initFuture;
+  }
+
+  static Future<void> _initializePrefs() async {
     _prefs = await SharedPreferences.getInstance();
     debugPrint('[FeatureFlags] Initialized with SharedPreferences');
 
@@ -47,6 +60,16 @@ class FeatureFlags {
     await _prefs!.setBool(moodPersistenceEnabled, true);
     await _prefs!.setBool(
         voicePipelineControllerAuthoritative, true); // temporary rollout
+
+    if (_deferredWrites.isNotEmpty) {
+      for (final entry in _deferredWrites.entries) {
+        await _prefs!.setBool(entry.key, entry.value);
+      }
+      _deferredWrites.clear();
+    }
+
+    _initialized = true;
+    _initFuture = null;
   }
 
   /// Get the value of a feature flag
@@ -65,13 +88,17 @@ class FeatureFlags {
   /// Set the value of a feature flag
   static Future<void> setEnabled(String flagKey, bool value) async {
     if (_prefs == null) {
-      debugPrint('[FeatureFlags] ERROR: Not initialized, cannot set $flagKey');
+      debugPrint(
+          '[FeatureFlags] WARNING: Not initialized, queueing $flagKey override');
+      _deferredWrites[flagKey] = value;
       return;
     }
 
     await _prefs!.setBool(flagKey, value);
     debugPrint('[FeatureFlags] Set $flagKey = $value');
   }
+
+  static bool get isInitialized => _initialized;
 
   /// Check if refactored voice pipeline should be used
   static bool get useNewVoicePipeline => isEnabled(useRefactoredVoicePipeline);

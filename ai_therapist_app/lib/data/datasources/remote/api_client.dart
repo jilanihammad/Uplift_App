@@ -20,6 +20,14 @@ class ApiClient implements IApiClient {
   final Duration _timeout = const Duration(seconds: 15);
   // Max number of retries for transient errors
   final int _maxRetries = 3;
+  static const List<String> _rootEndpointPrefixes = <String>[
+    '/voice/',
+    '/ai/',
+    '/therapy/',
+    '/sessions',
+    '/session-reminder',
+    '/health',
+  ];
 
   ApiClient({
     required this.configService, // Add required ConfigService parameter
@@ -103,17 +111,10 @@ class ApiClient implements IApiClient {
     Map<String, dynamic>? queryParams,
   }) async {
     final token = await _getToken();
-    final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
-    debugPrint('[RELEASE DEBUG] ApiClient.get - Using baseUrl: "$baseUrl"');
-
-    final bool needsApiPrefix = !endpoint.startsWith('/voice/') &&
-        !endpoint.startsWith('/ai/') &&
-        !endpoint.startsWith('/therapy/') &&
-        !endpoint.startsWith('/sessions');
-
-    final String urlString = needsApiPrefix
-        ? '$baseUrl$endpoint'
-        : baseUrl.replaceAll('/api/v1', '') + endpoint;
+    final String urlString = _resolveUrl(endpoint);
+    if (kDebugMode) {
+      debugPrint('[RELEASE DEBUG] ApiClient.get - Resolved URL: $urlString');
+    }
 
     final Uri uri = Uri.parse(urlString);
     final Uri uriWithParams =
@@ -158,12 +159,22 @@ class ApiClient implements IApiClient {
     }
   }
 
-  Future<TtsConfigDto> fetchTtsConfig() async {
-    final response = await get('/system/tts-config');
-    if (response.isEmpty) {
-      throw Exception('Empty response from /system/tts-config');
+  Future<TtsConfigDto?> fetchTtsConfig() async {
+    try {
+      final response = await get('/system/tts-config');
+      if (response.isEmpty) {
+        return null;
+      }
+      return TtsConfigDto.fromJson(response);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) {
+        if (kDebugMode) {
+          debugPrint('Remote TTS config endpoint unavailable (404).');
+        }
+        return null;
+      }
+      rethrow;
     }
-    return TtsConfigDto.fromJson(response);
   }
 
   /// POST request to the API
@@ -178,24 +189,7 @@ class ApiClient implements IApiClient {
           '[RELEASE DEBUG] ApiClient.post - Starting post request to endpoint: $endpoint');
     }
 
-    // Force the URL to be the backend URL from AppConfig
-    final String forcedBaseUrl = AppConfig().backendUrl;
-
-    // Construct the complete URL - handle special endpoints differently
-    String urlString;
-    if (endpoint.startsWith('/voice/') ||
-        endpoint.startsWith('/ai/') ||
-        endpoint.startsWith('/therapy/') ||
-        endpoint.startsWith('/sessions')) {
-      // These endpoints don't need the /api/v1 prefix
-      urlString = '$forcedBaseUrl$endpoint';
-    } else if (endpoint.startsWith('/api/')) {
-      // These endpoints already have /api prefix
-      urlString = '$forcedBaseUrl$endpoint';
-    } else {
-      // Regular API endpoint needs the /api/v1 prefix
-      urlString = '$forcedBaseUrl/api/v1$endpoint';
-    }
+    final String urlString = _resolveUrl(endpoint);
 
     final token = await _getToken();
 
@@ -247,9 +241,11 @@ class ApiClient implements IApiClient {
     Map<String, String>? headers,
   }) async {
     final token = await _getToken();
-    final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
-    debugPrint('[RELEASE DEBUG] ApiClient.put - Using baseUrl: "$baseUrl"');
-    final uri = Uri.parse('$baseUrl$endpoint');
+    final urlString = _resolveUrl(endpoint);
+    if (kDebugMode) {
+      debugPrint('[RELEASE DEBUG] ApiClient.put - Resolved URL: $urlString');
+    }
+    final uri = Uri.parse(urlString);
 
     final requestHeaders = {
       'Content-Type': 'application/json',
@@ -290,19 +286,11 @@ class ApiClient implements IApiClient {
   // PATCH request
   Future<dynamic> patch(String endpoint, {dynamic body}) async {
     final token = await _getToken();
-    final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
-    debugPrint('[RELEASE DEBUG] ApiClient.patch - Using baseUrl: "$baseUrl"');
-
-    final bool needsApiPrefix = !endpoint.startsWith('/voice/') &&
-        !endpoint.startsWith('/ai/') &&
-        !endpoint.startsWith('/therapy/') &&
-        !endpoint.startsWith('/sessions');
-
-    final String urlString = needsApiPrefix
-        ? '$baseUrl$endpoint'
-        : baseUrl.replaceAll('/api/v1', '') + endpoint;
-    debugPrint(
-        '[RELEASE DEBUG] ApiClient.patch - Constructed urlString: "$urlString"');
+    final String urlString = _resolveUrl(endpoint);
+    if (kDebugMode) {
+      debugPrint(
+          '[RELEASE DEBUG] ApiClient.patch - Constructed urlString: "$urlString"');
+    }
 
     final uri = Uri.parse(urlString);
 
@@ -352,9 +340,12 @@ class ApiClient implements IApiClient {
     Map<String, String>? headers,
   }) async {
     final token = await _getToken();
-    final baseUrl = configService.llmApiEndpoint; // Get baseUrl just-in-time
-    debugPrint('[RELEASE DEBUG] ApiClient.delete - Using baseUrl: "$baseUrl"');
-    final uri = Uri.parse('$baseUrl$endpoint');
+    final urlString = _resolveUrl(endpoint);
+    if (kDebugMode) {
+      debugPrint(
+          '[RELEASE DEBUG] ApiClient.delete - Resolved URL: $urlString');
+    }
+    final uri = Uri.parse(urlString);
 
     final headers = {
       'Content-Type': 'application/json',
@@ -509,6 +500,28 @@ class ApiClient implements IApiClient {
   // Close the client when done
   void close() {
     httpClient.close();
+  }
+
+  String _resolveUrl(String endpoint) {
+    if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+      return endpoint;
+    }
+
+    final normalizedEndpoint =
+        endpoint.startsWith('/') ? endpoint : '/$endpoint';
+    final backendBase = AppConfig().backendUrl;
+
+    if (normalizedEndpoint.startsWith('/api/')) {
+      return '$backendBase$normalizedEndpoint';
+    }
+
+    if (_rootEndpointPrefixes
+        .any((prefix) => normalizedEndpoint.startsWith(prefix))) {
+      return '$backendBase$normalizedEndpoint';
+    }
+
+    final apiBase = AppConfig().apiBaseUrl;
+    return '$apiBase$normalizedEndpoint';
   }
 
   /// Make a direct LLM API call using centralized configuration

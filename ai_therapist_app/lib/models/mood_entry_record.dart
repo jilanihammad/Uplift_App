@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 class MoodEntryRecord {
   MoodEntryRecord({
@@ -100,13 +101,13 @@ class MoodEntryRecord {
       if (value is DateTime) {
         return value.toUtc();
       }
-      return DateTime.parse(value.toString()).toUtc();
+      return parseBackendDateTime(value.toString()).toUtc();
     }
 
     DateTime? parseNullableDate(Object? value) {
       if (value == null) return null;
       if (value is DateTime) return value.toUtc();
-      return DateTime.parse(value.toString()).toUtc();
+      return parseBackendDateTime(value.toString()).toUtc();
     }
 
     return MoodEntryRecord(

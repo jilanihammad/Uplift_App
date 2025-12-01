@@ -4,6 +4,7 @@ import logging
 import traceback
 import json
 from datetime import datetime
+from app.core.datetime_utils import serialize_datetime, utcnow_isoformat
 import uuid
 
 # Replace individual service imports with unified manager
@@ -132,7 +133,7 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_text(json.dumps({
                     "type": "error",
                     "detail": "Invalid JSON input",
-                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                    "timestamp": utcnow_isoformat()
                 }))
                 continue
             message = payload.get("message", "")
@@ -150,7 +151,7 @@ async def websocket_chat(websocket: WebSocket):
             else:
                 # Generate new session_id and session
                 session_id = str(uuid.uuid4())
-                session = {"history": [], "created_at": datetime.utcnow().isoformat() + 'Z'}
+                session = {"history": [], "created_at": utcnow_isoformat()}
                 session_store[session_id] = session
                 new_session = True
                 if history is None:
@@ -171,7 +172,7 @@ async def websocket_chat(websocket: WebSocket):
                         "type": "chunk",
                         "content": chunk,
                         "sequence": sequence,
-                        "timestamp": datetime.utcnow().isoformat() + 'Z',
+                        "timestamp": utcnow_isoformat(),
                         "session_id": session_id
                     }
                     await websocket.send_text(json.dumps(response))
@@ -180,7 +181,7 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_text(json.dumps({
                     "type": "done",
                     "sequence": sequence,
-                    "timestamp": datetime.utcnow().isoformat() + 'Z',
+                    "timestamp": utcnow_isoformat(),
                     "session_id": session_id
                 }))
                 sequence += 1
@@ -190,7 +191,7 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_text(json.dumps({
                     "type": "error",
                     "detail": f"Streaming error: {str(stream_error)}",
-                    "timestamp": datetime.utcnow().isoformat() + 'Z',
+                    "timestamp": utcnow_isoformat(),
                     "session_id": session_id
                 }))
                 
@@ -202,7 +203,7 @@ async def websocket_chat(websocket: WebSocket):
             await websocket.send_text(json.dumps({
                 "type": "error",
                 "detail": str(e),
-                "timestamp": datetime.utcnow().isoformat() + 'Z',
+                "timestamp": utcnow_isoformat(),
                 "session_id": session_id
             }))
             await websocket.close()

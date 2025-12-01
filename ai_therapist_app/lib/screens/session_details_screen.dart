@@ -6,6 +6,7 @@ import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import '../models/therapy_message.dart';
 import '../utils/date_formatter.dart';
+import '../utils/date_time_utils.dart';
 import '../services/tasks_service.dart';
 import 'widgets/action_items_card.dart';
 import 'dart:convert';
@@ -148,7 +149,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                 id: data['id'] as String,
                 content: data['content'] as String,
                 isUser: (data['is_user'] as int) == 1,
-                timestamp: DateTime.parse(data['timestamp'] as String).toUtc(),
+                timestamp:
+                    parseBackendDateTimeToUtc(data['timestamp'] as String),
                 audioUrl: data['audio_url'] as String?,
                 sequence: data['sequence'] as int? ?? 0, // Default to 0 if null
               ))

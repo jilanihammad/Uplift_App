@@ -1,6 +1,7 @@
 // lib/models/session_reminder.dart
 
 import 'package:flutter/foundation.dart';
+import 'package:ai_therapist_app/utils/date_time_utils.dart';
 
 /// Source of the reminder data, used to track whether it came from
 /// the backend or a local fallback.
@@ -49,7 +50,8 @@ class SessionReminder {
     final dynamic rawScheduled = json['scheduled_time'];
     if (rawScheduled is String && rawScheduled.isNotEmpty) {
       try {
-        scheduledTime = DateTime.parse(rawScheduled).toLocal();
+        scheduledTime =
+            parseBackendDateTime(rawScheduled).toLocal();
       } catch (_) {
         scheduledTime = null;
       }
