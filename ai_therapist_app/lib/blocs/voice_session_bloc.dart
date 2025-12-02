@@ -1972,6 +1972,17 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // Use SessionStateManager for mood selection and session setup
       final newState = _sessionManager.selectMood(mood);
 
+      // Log the mood entry to ProgressService (same as home screen mood logging)
+      try {
+        await progressService?.logMood(mood);
+        if (kDebugMode) {
+          debugPrint('[VoiceSessionBloc] Mood logged to ProgressService: $mood');
+        }
+      } catch (e) {
+        debugPrint('[VoiceSessionBloc] Warning: Failed to log mood: $e');
+        // Don't block session start if mood logging fails
+      }
+
       // Reset managers for fresh session
       _messageCoordinator.resetMessages();
 

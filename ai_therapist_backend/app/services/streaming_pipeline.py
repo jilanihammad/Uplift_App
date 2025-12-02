@@ -825,7 +825,8 @@ class EnhancedAsyncPipeline:
                 "latency_category": "lowest"
             },
             "opus": {
-                "response_format": "opus",
+                # OpenAI expects 'ogg_opus' to produce an OGG container with Opus audio
+                "response_format": "ogg_opus",
                 "mime_type": "audio/ogg; codecs=opus",
                 "sample_rate": 24000,
                 "channels": 1,
