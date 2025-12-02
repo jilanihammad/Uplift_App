@@ -307,21 +307,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade100,
+                    color: Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.amber),
+                    border: Border.all(color: Colors.blue.shade200),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline,
-                          color: Colors.amber, size: 16),
+                      Icon(Icons.info_outline,
+                          color: Colors.blue.shade600, size: 16),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "You've already logged your mood 3 times today. Today's logs: $todayLogsCount",
-                          style: const TextStyle(
-                            color: Colors.amber,
-                            fontWeight: FontWeight.bold,
+                          "You've logged 3 moods today. Logging another will update your most recent mood.",
+                          style: TextStyle(
+                            color: Colors.blue.shade800,
                             fontSize: 12,
                           ),
                         ),
@@ -344,44 +343,40 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 6),
             Center(
               child: TextButton(
-                onPressed: hasReachedLimit
-                    ? () {
-                        _showMoodLimitDialog();
-                      }
-                    : () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        final success =
-                            await _progressService.logMood(_currentMood);
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final success =
+                      await _progressService.logMood(_currentMood);
 
-                        if (success) {
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('Mood logged successfully'),
-                            ),
-                          );
+                  if (success) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Mood logged successfully'),
+                      ),
+                    );
 
-                          final showLocalMessage = _progressService
-                                  .consumeLastMoodLogWasLocalOnly() ||
-                              _progressService.consumePendingMoodSyncError();
-                          if (showLocalMessage) {
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Saved locally; we'll sync when you're online.",
-                                ),
-                                duration: Duration(seconds: 4),
-                              ),
-                            );
-                          }
-                        } else {
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content:
-                                  Text('Unable to log mood. Please try again.'),
-                            ),
-                          );
-                        }
-                      },
+                    final showLocalMessage = _progressService
+                            .consumeLastMoodLogWasLocalOnly() ||
+                        _progressService.consumePendingMoodSyncError();
+                    if (showLocalMessage) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "Saved locally; we'll sync when you're online.",
+                          ),
+                          duration: Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                  } else {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Unable to log mood. Please try again.'),
+                      ),
+                    );
+                  }
+                },
                 style: TextButton.styleFrom(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -396,30 +391,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showMoodLimitDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Daily Limit Reached'),
-        content: const Text(
-            "You've already logged your mood 3 times today. Would you like to view your mood history instead?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.go(AppRouter.progress);
-            },
-            child: const Text('View History'),
-          ),
-        ],
       ),
     );
   }

@@ -236,6 +236,10 @@ class ProgressService implements IProgressService {
     _moodHistory.clear();
     final Map<DateTime, List<MoodEntryRecord>> entriesByDay = {};
 
+    if (kDebugMode) {
+      debugPrint('[ProgressService] _rebuildMoodAggregates called with ${_moodEntries.length} entries');
+    }
+
     for (final entry in _moodEntries) {
       final loggedAtLocal = entry.loggedAt.toLocal();
       final dayStart =
@@ -267,6 +271,15 @@ class ProgressService implements IProgressService {
     });
 
     _currentProgress = _currentProgress.copyWith(moodHistory: aggregated);
+
+    if (kDebugMode) {
+      debugPrint('[ProgressService] After aggregation: ${aggregated.length} days in moodHistory');
+      if (aggregated.isNotEmpty) {
+        final sortedEntries = aggregated.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+        debugPrint('[ProgressService] First day: ${sortedEntries.first.key} -> ${sortedEntries.first.value}');
+        debugPrint('[ProgressService] Last day: ${sortedEntries.last.key} -> ${sortedEntries.last.value}');
+      }
+    }
   }
 
   Future<void> _purgeExpiredMoodEntries(String userId) async {
@@ -754,19 +767,65 @@ class ProgressService implements IProgressService {
   @override
   Future<bool> logMood(Mood mood, [String? notes]) async {
     try {
+      if (kDebugMode) {
+        debugPrint('[ProgressService] logMood called with mood: ${mood.label}');
+      }
+
       await _ensureMoodCacheLoaded();
+
+      if (kDebugMode) {
+        debugPrint('[ProgressService] Mood cache loaded. Total entries: ${_moodEntries.length}');
+      }
 
       final bool offline = FeatureFlags.isMoodPersistenceEnabled &&
           await ConnectivityChecker().isOffline();
       _lastMoodLogWasLocalOnly = offline;
 
-      // Check if we've reached the daily limit of 3 entries
-      final todayEntries = _entriesForDay(DateTime.now());
-      if (todayEntries.length >= 3) {
-        _moodLogLimitReached = true;
-        return false;
+      if (kDebugMode) {
+        debugPrint('[ProgressService] Offline status: $offline');
       }
 
+      // Check if we've reached the daily limit of 3 entries
+      final now = DateTime.now();
+      final todayEntries = _entriesForDay(now);
+      if (kDebugMode) {
+        debugPrint('[ProgressService] Current date/time: $now (local)');
+        debugPrint('[ProgressService] Today\'s entries count: ${todayEntries.length}');
+        if (todayEntries.isNotEmpty) {
+          debugPrint('[ProgressService] Today\'s entries:');
+          for (final entry in todayEntries) {
+            debugPrint('  - ${entry.loggedAt.toLocal()}: ${Mood.values[entry.mood].label}');
+          }
+        }
+      }
+
+      // If we've reached the daily limit of 3 entries, remove the oldest one
+      if (todayEntries.length >= 3) {
+        // Sort by logged time to find the oldest entry
+        final oldestEntry = todayEntries.reduce((a, b) =>
+          a.loggedAt.isBefore(b.loggedAt) ? a : b
+        );
+
+        if (kDebugMode) {
+          debugPrint('[ProgressService] Daily limit reached (3 moods). Removing oldest: ${oldestEntry.loggedAt.toLocal()}');
+        }
+
+        // Delete the oldest entry from database
+        await _databaseProvider.delete(
+          _moodEntriesTable,
+          where: 'client_entry_id = ?',
+          whereArgs: [oldestEntry.clientEntryId],
+        );
+
+        // Remove from in-memory cache
+        _moodEntries.removeWhere((e) => e.clientEntryId == oldestEntry.clientEntryId);
+
+        if (kDebugMode) {
+          debugPrint('[ProgressService] Oldest mood entry removed. Now have ${todayEntries.length - 1} entries today.');
+        }
+      }
+
+      // Update limit flag - will be recalculated after insert
       _moodLogLimitReached = false;
 
       final sanitizedNotes = _sanitizeNotes(notes);
@@ -783,6 +842,17 @@ class ProgressService implements IProgressService {
       // Prepend to local cache and recompute aggregates
       _moodEntries.insert(0, record);
       _rebuildMoodAggregates();
+
+      // Debug: Log mood aggregates after rebuild
+      if (kDebugMode) {
+        debugPrint('[ProgressService] After _rebuildMoodAggregates:');
+        debugPrint('  _moodEntries.length: ${_moodEntries.length}');
+        debugPrint('  _currentProgress.moodHistory.length: ${_currentProgress.moodHistory.length}');
+        if (_currentProgress.moodHistory.isNotEmpty) {
+          debugPrint('  First moodHistory entry: ${_currentProgress.moodHistory.entries.first}');
+        }
+      }
+
       await _saveProgress();
 
       // Update limit flag after insert
@@ -795,10 +865,15 @@ class ProgressService implements IProgressService {
         debugPrint('Mood logged: $mood, Notes: $notes');
       }
 
-      return true;
-    } catch (e) {
       if (kDebugMode) {
-        debugPrint('Error logging mood: $e');
+        debugPrint('[ProgressService] ✅ Mood logged successfully');
+      }
+
+      return true;
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('[ProgressService] ❌ Error logging mood: $e');
+        debugPrint('[ProgressService] Stack trace: $stackTrace');
       }
       return false;
     }

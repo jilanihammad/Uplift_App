@@ -4,8 +4,10 @@ import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/models/user_progress.dart';
 import 'package:ai_therapist_app/models/user_task.dart';
 import 'package:ai_therapist_app/services/tasks_service.dart';
+import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 class ProgressScreen extends StatefulWidget {
   final IProgressService? progressService;
@@ -415,6 +417,13 @@ class _ProgressScreenState extends State<ProgressScreen>
   Widget _buildMoodTab() {
     final moodData = _progressService.getMoodDataForLastDays(30);
 
+    // Debug: Log mood data
+    debugPrint('[ProgressScreen] Mood data for last 30 days: ${moodData.length} entries');
+    if (moodData.isNotEmpty) {
+      debugPrint('[ProgressScreen] First entry: ${moodData.first.key} -> ${moodData.first.value}');
+      debugPrint('[ProgressScreen] Last entry: ${moodData.last.key} -> ${moodData.last.value}');
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -466,10 +475,18 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Widget _buildMoodChart(List<MapEntry<DateTime, int>> moodData) {
-    // This is a placeholder for a chart widget
-    // In a real app, use a charting library like fl_chart
-    return Center(
-      child: Text('Mood chart would go here (${moodData.length} data points)'),
+    if (moodData.isEmpty) {
+      return const Center(
+        child: Text('No mood data available'),
+      );
+    }
+
+    return SizedBox(
+      height: 280,
+      child: CustomPaint(
+        painter: MoodWavePainter(moodData),
+        child: Container(),
+      ),
     );
   }
 
@@ -690,5 +707,262 @@ class _ProgressScreenState extends State<ProgressScreen>
         ),
       ),
     );
+  }
+}
+
+/// Custom painter for mood wave chart
+class MoodWavePainter extends CustomPainter {
+  final List<MapEntry<DateTime, int>> moodData;
+
+  MoodWavePainter(this.moodData);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (moodData.isEmpty) return;
+
+    const double padding = 40.0;
+    const double topPadding = 20.0;
+    const double bottomPadding = 30.0;
+    final double chartHeight = size.height - topPadding - bottomPadding;
+    final double chartWidth = size.width - padding * 2;
+
+    // Draw Y-axis labels
+    _drawYAxisLabels(canvas, padding, topPadding, chartHeight);
+
+    // Calculate data points
+    final points = _calculatePoints(
+      chartWidth,
+      chartHeight,
+      padding,
+      topPadding,
+    );
+
+    // Draw gradient fill under the wave
+    _drawGradientFill(canvas, points, size, topPadding, chartHeight);
+
+    // Draw the smooth wave line
+    _drawWaveLine(canvas, points);
+
+    // Draw emoji mood markers
+    _drawMoodEmojis(canvas, points);
+
+    // Draw X-axis date labels
+    _drawXAxisLabels(canvas, points, size.height - 15);
+  }
+
+  List<Offset> _calculatePoints(
+    double chartWidth,
+    double chartHeight,
+    double padding,
+    double topPadding,
+  ) {
+    final points = <Offset>[];
+
+    // Limit to last 30 days for better visualization
+    final displayData = moodData.length > 30
+        ? moodData.sublist(moodData.length - 30)
+        : moodData;
+
+    final int displayCount = displayData.length;
+
+    for (int i = 0; i < displayCount; i++) {
+      final x = padding + (i / (displayCount - 1)) * chartWidth;
+
+      // Map mood index (0-5) to Y position (inverted so happy is at top)
+      // Mood indices: 0=happy, 1=neutral, 2=sad, 3=anxious, 4=angry, 5=stressed
+      final moodIndex = displayData[i].value;
+
+      // Invert Y so 0 (happy) is at top, 5 (stressed) is at bottom
+      final normalizedY = (5 - moodIndex) / 5.0;
+      final y = topPadding + (1 - normalizedY) * chartHeight;
+
+      points.add(Offset(x, y));
+    }
+
+    return points;
+  }
+
+  void _drawYAxisLabels(
+    Canvas canvas,
+    double padding,
+    double topPadding,
+    double chartHeight,
+  ) {
+    final textPainter = TextPainter(
+      textDirection: ui.TextDirection.ltr,
+    );
+
+    final labels = [
+      ('High', topPadding),
+      ('Neutral', topPadding + chartHeight / 2),
+      ('Low', topPadding + chartHeight),
+    ];
+
+    for (final (label, y) in labels) {
+      textPainter.text = TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.grey,
+          fontSize: 11,
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(5, y - textPainter.height / 2),
+      );
+    }
+  }
+
+  void _drawGradientFill(
+    Canvas canvas,
+    List<Offset> points,
+    Size size,
+    double topPadding,
+    double chartHeight,
+  ) {
+    if (points.isEmpty) return;
+
+    final path = Path();
+    path.moveTo(points.first.dx, size.height - 30);
+
+    for (final point in points) {
+      path.lineTo(point.dx, point.dy);
+    }
+
+    path.lineTo(points.last.dx, size.height - 30);
+    path.close();
+
+    final gradient = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        Colors.green.withValues(alpha: 0.3),
+        Colors.amber.withValues(alpha: 0.2),
+        Colors.red.withValues(alpha: 0.1),
+      ],
+    );
+
+    final paint = Paint()
+      ..shader = gradient.createShader(
+        Rect.fromLTWH(0, topPadding, size.width, chartHeight),
+      )
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawWaveLine(Canvas canvas, List<Offset> points) {
+    if (points.length < 2) return;
+
+    final path = Path();
+    path.moveTo(points[0].dx, points[0].dy);
+
+    // Create smooth curve using quadratic bezier curves
+    for (int i = 0; i < points.length - 1; i++) {
+      final p0 = points[i];
+      final p1 = points[i + 1];
+      final controlPoint = Offset(
+        (p0.dx + p1.dx) / 2,
+        (p0.dy + p1.dy) / 2,
+      );
+      path.quadraticBezierTo(p0.dx, p0.dy, controlPoint.dx, controlPoint.dy);
+    }
+    path.lineTo(points.last.dx, points.last.dy);
+
+    final paint = Paint()
+      ..color = Colors.blue.shade700
+      ..strokeWidth = 3.0
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawMoodEmojis(Canvas canvas, List<Offset> points) {
+    final textPainter = TextPainter(
+      textDirection: ui.TextDirection.ltr,
+    );
+
+    // Only show emoji every few points to avoid crowding
+    final step = points.length > 10 ? (points.length / 7).ceil() : 1;
+
+    for (int i = 0; i < points.length; i += step) {
+      final point = points[i];
+      final moodIndex = moodData.length > 30
+          ? moodData[moodData.length - 30 + i].value
+          : moodData[i].value;
+
+      if (moodIndex >= 0 && moodIndex < Mood.values.length) {
+        final mood = Mood.values[moodIndex];
+
+        textPainter.text = TextSpan(
+          text: mood.emoji,
+          style: const TextStyle(fontSize: 20),
+        );
+        textPainter.layout();
+
+        // Draw white circle background
+        final circlePaint = Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(point, 14, circlePaint);
+
+        // Draw emoji
+        textPainter.paint(
+          canvas,
+          Offset(
+            point.dx - textPainter.width / 2,
+            point.dy - textPainter.height / 2,
+          ),
+        );
+      }
+    }
+  }
+
+  void _drawXAxisLabels(Canvas canvas, List<Offset> points, double y) {
+    final textPainter = TextPainter(
+      textDirection: ui.TextDirection.ltr,
+    );
+
+    // Show date labels for first, middle, and last points
+    final indices = points.length > 3
+        ? [0, points.length ~/ 2, points.length - 1]
+        : [0, points.length - 1];
+
+    for (final i in indices) {
+      if (i >= points.length) continue;
+
+      final dataIndex = moodData.length > 30
+          ? moodData.length - 30 + i
+          : i;
+
+      if (dataIndex >= 0 && dataIndex < moodData.length) {
+        final date = moodData[dataIndex].key;
+        final dateStr = '${date.month}/${date.day}';
+
+        textPainter.text = TextSpan(
+          text: dateStr,
+          style: const TextStyle(
+            color: Colors.grey,
+            fontSize: 10,
+          ),
+        );
+        textPainter.layout();
+
+        textPainter.paint(
+          canvas,
+          Offset(
+            points[i].dx - textPainter.width / 2,
+            y,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(MoodWavePainter oldDelegate) {
+    return oldDelegate.moodData != moodData;
   }
 }
