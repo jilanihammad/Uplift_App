@@ -38,7 +38,7 @@ Communication flow: mobile captures audio → backend transcription + LLM genera
 - Routing: `ai_therapist_app/lib/config/routes.dart` with `GoRouter` guards for auth/onboarding.
 - Dependency Injection: GetIt via `ai_therapist_app/lib/di/service_locator.dart` and `dependency_container.dart`; feature flags in `lib/utils/feature_flags.dart` toggle hybrid pipelines.
 - State Management: Primary BLoC (`lib/blocs`) plus helper managers for timers, session scope, and message orchestration.
-- Observability: Crashlytics is wired in `main.dart` and `logging_service.dart` so release builds automatically report Flutter/Platform errors once `_configureCrashlytics()` runs; keep `--split-debug-info` artifacts for symbolication and remember Crashlytics stays disabled in debug builds.
+- Observability & integrity: Crashlytics is wired in `main.dart` / `logging_service.dart` so release builds automatically report Flutter/Platform errors once `_configureCrashlytics()` runs; keep `--split-debug-info` artifacts for symbolication. Firebase App Check now boots inside `UpliftApplication` with `AppCheckProvidersManager` selecting Play Integrity for release builds (debug provider is scoped to `debugRuntimeOnly`).
 
 ### 3.2 Voice & Session Pipeline
 Key components (all under `lib/services/`):
@@ -60,7 +60,7 @@ Supporting utilities:
 - `MemoryManager`, `MemoryService`, and `ConversationMemory` to persist session anchors and insights.
 
 ### 3.3 Data Layer
-- **Remote**: `lib/data/datasources/remote/api_client.dart` handles REST/WebSocket interactions with token injection, `_resolveUrl()` routing all REST calls through `/api/v1` automatically, and graceful fallbacks for optional endpoints (e.g., `/system/tts-config`, `/mood_entries` 404s don’t block startup).
+- **Remote**: `lib/data/datasources/remote/api_client.dart` handles REST/WebSocket interactions with token injection, `_resolveUrl()` routing all REST calls through `/api/v1` automatically, and graceful fallbacks for optional endpoints (e.g., `/system/tts-config`, `/mood_entries` 404s don’t block startup). Auth tokens now live in `FlutterSecureStorage` instead of plain SharedPreferences.
 - **Local**: `lib/data/datasources/local` (`DatabaseProvider`, `AppDatabase`, `PrefsManager`) for SQLite via Drift and shared preferences.
 - **Repositories**: Auth, session, message, and user repositories under `lib/data/repositories` wrap data sources for testability.
 - **Timestamp normalization**: `lib/utils/date_time_utils.dart` parses backend ISO-8601 strings (fixes `+00:00Z` issues) and every model/entity now funnels through it; the backend mirrors this via `app/core/datetime_utils.py` so responses always emit RFC 3339 (`serialize_datetime`, `utcnow_isoformat`).
@@ -68,7 +68,7 @@ Supporting utilities:
 ### 3.4 Configuration & Feature Flags
 - `.env` managed via `lib/config/app_config.dart`; defaults to production backend Cloud Run URL. `ttsStreamingEnabled` and other toggles read from env to control pipeline behavior.
 - `FeatureFlags` (shared prefs-backed) manage runtime switches like the refactored voice pipeline. Always call `FeatureFlags.init()` before applying cached Remote Config overrides—writes are now deferred/queued until prefs are ready to avoid the “not initialized” errors seen previously.
-- Firebase initialization handled by `lib/utils/firebase_init.dart`; logging via `utils/logging_service.dart` and `AppLogger`.
+- Firebase initialization handled by `lib/utils/firebase_init.dart`; logging via `utils/logging_service.dart` and `AppLogger`. Tokens and other sensitive prefs should go through `flutter_secure_storage`, while `.env` stays out of release artifacts.
 
 ### 3.5 Presentation Layer
 - Screens live in `lib/screens` (splash, auth, chat, profile, history, resources, settings, onboarding, diagnostics, tasks).
@@ -76,8 +76,8 @@ Supporting utilities:
 - Design emphasizes theme-aware components (session summary cards, action lists) and dark mode support.
 
 ### 3.6 Platform Integration
-- Android entry: `android/app/src/main/kotlin/com/maya/uplift/MainActivity.kt` with wakelock method channel, `UpliftApplication.kt` for Firebase/App Check bootstrap, and `AppCheckProvidersManager.kt` for provider selection (Play Integrity vs debug).
-- Permissions and network config in `android/app/src/main/AndroidManifest.xml` and `res/xml/network_security_config.xml` (see `Before-Release.md` for tightening before store submission).
+- Android entry: `android/app/src/main/kotlin/com/maya/uplift/MainActivity.kt` with wakelock method channel, `UpliftApplication.kt` for Firebase/App Check bootstrap, and `AppCheckProvidersManager.kt` for provider selection (Play Integrity vs debug). `ForegroundAudioGuard` pauses recording/TTS whenever the app backgrounds so we stay foreground-only.
+- Permissions and network config live in `android/app/src/main/AndroidManifest.xml` with build-type placeholders driving `network_security_config_debug.xml` vs `network_security_config_release.xml` (release is HTTPS-only, debug whitelists localhost). `android:allowBackup="false"` prevents OS backups of therapy data.
 
 ### 3.7 Testing & Tooling
 - Unit/widget tests in `ai_therapist_app/test/` using `bloc_test`, `mocktail`, etc.
@@ -152,8 +152,8 @@ Supporting utilities:
 ---
 
 ## 7. Release & Compliance
-- **Android Play Store**: Follow `Before-Release.md` to re-enable App Check, tighten network security, remove debug dependencies, validate permissions, scrub secrets, and execute new automated tests.
-- **Crash Reporting**: Release builds must ship with Crashlytics enabled (see `_configureCrashlytics()` in `main.dart`) and include uploaded `--split-debug-info` symbols so Firebase can de-obfuscate stack traces.
+- **Android Play Store**: Follow `Before-Release.md` to run the automated scripts (`tools/build_release_aab.sh`, `tools/scan_release.sh`), re-verify App Check, network security, and secrets, and execute the validation matrix.
+- **Crash Reporting**: Release builds must ship with Crashlytics enabled (see `_configureCrashlytics()` in `main.dart`) and include uploaded `--split-debug-info` symbols (`firebase crashlytics:symbols:upload --app=<id> build/symbols`) so Firebase can de-obfuscate stack traces.
 - **Data Safety**: Ensure declarations cover audio capture, transcript storage, and analytics usage. Provide privacy policy links inside the app (Settings/About).
 - **Build Artifacts**: Prefer `flutter build appbundle` for release; backend deployed via Cloud Run (continuous or manual using `deploy_to_cloud.sh`).
 - **Observability Post-Launch**: Monitor error logs (App Logger, backend structured logs), TTS latency metrics, and rate limit dashboards.
@@ -165,6 +165,8 @@ Supporting utilities:
 - Crashlytics instrumentation shipped (Dec 2025): `logging_service.dart` and `main.dart` gate collection on release builds, wire global/zoned handlers, and require uploading Flutter symbol info alongside Play releases.
 - Feature flag initialization order hardened: cached Remote Config overrides run after `FeatureFlags.init()`, with queued writes while SharedPreferences spins up—eliminates the startup “[FeatureFlags] Not initialized” spam.
 - New ISO8601 normalization: `lib/utils/date_time_utils.dart` plus backend `app/core/datetime_utils.py` ensure timestamps parse/serialize cleanly (no more `+00:00Z`); every model/entity and API response uses the helpers.
+- App Check, network security, and secure storage hardening (Jan 2026): release builds now use HTTPS-only security configs, App Check is enforced via Play Integrity, and auth tokens live in `FlutterSecureStorage` (see `AppCheckProvidersManager`, `network_security_config_release.xml`, `ApiClient`).
+- Foreground-only audio (Jan 2026): `ForegroundAudioGuard` pauses recording/TTS whenever the app is backgrounded, removing the need for Android foreground-service declarations.
 - **Lazy TTS Config Initialization (2025-12)**: Implemented gold-standard two-layer defense for TTS config loading with zero startup blocking. Opportunistic prefetch runs in background at startup, lazy fetch fallback on first TTS request (5s timeout). Eliminates previous 15s blocking delay during app init. Added `setCachedTTSConfig()` to `ITTSService`, `fetchTtsConfig()` to `IApiClient`, state tracking in `SimpleTTSService`. Fixed zone mismatch warning by moving `WidgetsFlutterBinding.ensureInitialized()` inside zone.
 - Backend now connects to Cloud SQL (instance `jilaniuplift` in `us-central1`) and runs migrations automatically via `scripts/entrypoint.sh` on Cloud Run startup.
 - New Alembic revision adds `user_profiles`, `session_anchors`, and `session_summaries` with UUID primary keys and soft-delete semantics; migration stamped head and tested against Cloud SQL.

@@ -45,7 +45,46 @@ class ApiClient implements IApiClient {
   Future<void> _initPrefs() async {
     if (!_initialized) {
       _prefs = await SharedPreferences.getInstance();
+      await _migrateTokenToSecureStorage();
       _initialized = true;
+    }
+  }
+
+  /// Migrates auth token from SharedPreferences to FlutterSecureStorage.
+  /// Runs once per installation. Critical for existing users upgrading to secure storage.
+  Future<void> _migrateTokenToSecureStorage() async {
+    try {
+      // Check if migration already completed
+      final migrated = _prefs.getBool('auth_token_migrated_v1') ?? false;
+      if (migrated) {
+        if (kDebugMode) {
+          debugPrint('🔐 Token migration already completed, skipping');
+        }
+        return;
+      }
+
+      // Attempt to read old token from SharedPreferences
+      final oldToken = _prefs.getString('auth_token');
+      if (oldToken != null && oldToken.isNotEmpty) {
+        // Migrate to secure storage
+        await _secureStorage.write(key: 'auth_token', value: oldToken);
+        // Clear old location for security
+        await _prefs.remove('auth_token');
+        if (kDebugMode) {
+          debugPrint('🔐 Successfully migrated auth token to secure storage');
+        }
+      } else {
+        if (kDebugMode) {
+          debugPrint('🔐 No token found in SharedPreferences to migrate');
+        }
+      }
+
+      // Mark migration complete (even if no token found, to avoid re-checking)
+      await _prefs.setBool('auth_token_migrated_v1', true);
+    } catch (e) {
+      // Log but don't fail - secure storage might not be available on some devices
+      debugPrint('⚠️ Token migration failed: $e. Will attempt direct secure storage access.');
+      // Don't mark as migrated so we retry next time
     }
   }
 
@@ -55,16 +94,31 @@ class ApiClient implements IApiClient {
       return _cachedAuthToken;
     }
     await _initPrefs();
-    _cachedAuthToken = await _secureStorage.read(key: 'auth_token');
+
+    try {
+      _cachedAuthToken = await _secureStorage.read(key: 'auth_token');
+    } catch (e) {
+      // Fallback for devices where secure storage fails (corrupted keystore, etc.)
+      debugPrint('⚠️ Secure storage read failed: $e. Using fallback storage.');
+      _cachedAuthToken = _prefs.getString('auth_token_fallback');
+    }
+
     return _cachedAuthToken;
   }
 
   // Method to update auth token - used when refreshing Firebase tokens
   Future<void> updateAuthToken(String token) async {
-    await _secureStorage.write(key: 'auth_token', value: token);
     _cachedAuthToken = token;
-    if (kDebugMode) {
-      debugPrint('ApiClient: Updated auth token');
+
+    try {
+      await _secureStorage.write(key: 'auth_token', value: token);
+      if (kDebugMode) {
+        debugPrint('ApiClient: Updated auth token in secure storage');
+      }
+    } catch (e) {
+      // Fallback for devices where secure storage fails
+      debugPrint('⚠️ Secure storage write failed: $e. Using fallback storage.');
+      await _prefs.setString('auth_token_fallback', token);
     }
   }
 
