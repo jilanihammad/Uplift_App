@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import '../../../services/config_service.dart'; // Corrected import path
 import 'package:ai_therapist_app/config/app_config.dart'; // Import AppConfig
@@ -15,7 +16,9 @@ class ApiClient implements IApiClient {
   final http.Client httpClient;
   final ConfigService configService; // Add ConfigService field
   late SharedPreferences _prefs;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   bool _initialized = false;
+  String? _cachedAuthToken;
   // Increased timeout duration
   final Duration _timeout = const Duration(seconds: 15);
   // Max number of retries for transient errors
@@ -48,14 +51,18 @@ class ApiClient implements IApiClient {
 
   // Helper method to get auth token
   Future<String?> _getToken() async {
+    if (_cachedAuthToken != null) {
+      return _cachedAuthToken;
+    }
     await _initPrefs();
-    return _prefs.getString('auth_token');
+    _cachedAuthToken = await _secureStorage.read(key: 'auth_token');
+    return _cachedAuthToken;
   }
 
   // Method to update auth token - used when refreshing Firebase tokens
   Future<void> updateAuthToken(String token) async {
-    await _initPrefs();
-    await _prefs.setString('auth_token', token);
+    await _secureStorage.write(key: 'auth_token', value: token);
+    _cachedAuthToken = token;
     if (kDebugMode) {
       debugPrint('ApiClient: Updated auth token');
     }
@@ -444,15 +451,15 @@ class ApiClient implements IApiClient {
 
   @override
   void clearAuthToken() {
-    _initPrefs().then((_) {
-      _prefs.remove('auth_token');
+    _initPrefs().then((_) async {
+      await _secureStorage.delete(key: 'auth_token');
+      _cachedAuthToken = null;
     });
   }
 
   @override
   String? get authToken {
-    // Can't make this async, so return null and require proper initialization
-    return _initialized ? _prefs.getString('auth_token') : null;
+    return _cachedAuthToken;
   }
 
   @override

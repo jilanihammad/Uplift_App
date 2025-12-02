@@ -10,10 +10,4 @@
         <domain includeSubdomains="true">ai-therapist-backend-385290373302.us-central1.run.app</domain>
         <domain includeSubdomains="true">ai-therapist-backend-fuukqlcsha-uc.a.run.app</domain>
     </domain-config>
-
-    <!-- Allow local loopback cleartext traffic for just_audio's internal proxy -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">localhost</domain>
-    </domain-config>
 </network-security-config>

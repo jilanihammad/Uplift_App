@@ -56,6 +56,7 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
+        manifestPlaceholders = [networkSecurityConfig: "network_security_config_release"]
     }
 
     signingConfigs {
@@ -70,11 +71,21 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders = [networkSecurityConfig: "network_security_config_debug"]
+        }
+
         release {
             signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            manifestPlaceholders = [networkSecurityConfig: "network_security_config_release"]
+        }
+
+        profile {
+            initWith debug
+            manifestPlaceholders = [networkSecurityConfig: "network_security_config_release"]
         }
     }
 
@@ -108,7 +119,7 @@ dependencies {
     
     // Firebase App Check
     implementation 'com.google.firebase:firebase-appcheck-playintegrity'
-    debugImplementation 'com.google.firebase:firebase-appcheck-debug'
+    debugRuntimeOnly 'com.google.firebase:firebase-appcheck-debug'
     
     // Exclude core-common from Flutter dependencies
     configurations.all {
