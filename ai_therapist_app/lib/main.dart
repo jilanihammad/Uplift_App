@@ -37,6 +37,7 @@ import 'package:ai_therapist_app/utils/error_handling.dart';
 import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/data/datasources/local/database_provider.dart';
 import 'services/path_manager.dart';
+import 'services/foreground_audio_guard.dart';
 
 // Import the shared Firebase initialization utility
 import 'package:ai_therapist_app/utils/firebase_init.dart';
@@ -221,6 +222,7 @@ Future<void> setupCoreServices() async {
     );
     debugPrint('[main.dart] Service locator setup complete.');
     logger.info('[Main] Service locator setup complete.');
+    ForegroundAudioGuard();
   } catch (e) {
     debugPrint('[main.dart] ERROR during service locator setup: $e');
     logger.error('[Main] ERROR during service locator setup', error: e);
