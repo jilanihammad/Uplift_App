@@ -10,8 +10,8 @@ class AudioFormatNegotiator {
   /// Available audio formats in order of preference
   static const List<AudioFormat> _supportedFormats = [
     AudioFormat.native,
-    AudioFormat.opus, // Preferred for streaming
-    AudioFormat.wav, // Fallback for compatibility
+    AudioFormat.wav, // Primary format - standardized across app
+    AudioFormat.opus, // Legacy support (disabled via AudioFormatConfig)
   ];
 
   /// Current active format (starts with WAV for compatibility)
@@ -209,9 +209,9 @@ extension AudioFormatExtension on AudioFormat {
       case AudioFormat.native:
         return 'Gemini Live native audio';
       case AudioFormat.opus:
-        return 'OPUS/OGG - Optimized for streaming';
+        return 'OPUS/OGG - Compressed format (disabled)';
       case AudioFormat.wav:
-        return 'WAV - Legacy format with streaming limitations';
+        return 'WAV - Primary format with streaming support';
     }
   }
 }

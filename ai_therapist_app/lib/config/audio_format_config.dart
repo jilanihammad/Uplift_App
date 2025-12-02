@@ -11,7 +11,7 @@ class AudioFormatConfig {
   /// Set to false to force WAV format if OPUS encounters issues
   /// Backend supports OPUS via response_format parameter in llm_manager.py
   static bool get enableOpusFormat =>
-      true; // OPUS mode - backend configured and ready
+      false; // WAV mode - standardized format across frontend/backend
 
   /// Feature flag for OPUS header buffering
   /// Controls whether we wait for complete OPUS headers before playback
@@ -43,7 +43,7 @@ class AudioFormatConfig {
 
   /// OPUS rollout percentage (0-100)
   static int get opusRolloutPercentage =>
-      _getEnvInt('TTS_OPUS_ROLLOUT_PCT', 100); // 100% - tested and working well
+      _getEnvInt('TTS_OPUS_ROLLOUT_PCT', 0); // 0% - OPUS disabled, using WAV
 
   /// OPUS header buffer timeout (milliseconds)
   /// How long to wait for complete OPUS headers before giving up
