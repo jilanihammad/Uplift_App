@@ -482,6 +482,160 @@ lib/
 
 ---
 
+## Mood Tracking & Visualization
+
+### Overview
+The app includes a comprehensive mood tracking system with local persistence, backend sync, and beautiful wave visualization.
+
+### Architecture
+
+**Components:**
+- `ProgressService` - Core service managing mood entries and aggregation
+- `ProgressScreen` - UI displaying mood history with wave chart
+- `HomeScreen` - Quick mood logging interface
+- `MoodWavePainter` - CustomPaint widget for smooth wave visualization
+
+### Data Flow
+
+```
+User logs mood → ProgressService.logMood()
+  ├─ Save to SQLite (mood_entries table)
+  ├─ Add to in-memory cache (_moodEntries)
+  ├─ Rebuild aggregates (_rebuildMoodAggregates)
+  │   └─ Aggregate by day with averages
+  ├─ Save to SharedPreferences
+  └─ Schedule backend sync (if moodPersistenceEnabled)
+```
+
+### Key Features
+
+#### 1. Circular Buffer (3 moods/day limit)
+When user logs 4th mood in a day, oldest entry is automatically replaced:
+```dart
+// progress_service.dart:802-826
+if (todayEntries.length >= 3) {
+  final oldestEntry = todayEntries.reduce((a, b) =>
+    a.loggedAt.isBefore(b.loggedAt) ? a : b
+  );
+  await _databaseProvider.delete(_moodEntriesTable,
+    where: 'client_entry_id = ?',
+    whereArgs: [oldestEntry.clientEntryId],
+  );
+  _moodEntries.removeWhere((e) => e.clientEntryId == oldestEntry.clientEntryId);
+}
+```
+
+**UX:** No error message, seamless updating of mood throughout the day.
+
+#### 2. Mood Wave Visualization
+Beautiful wave chart showing mood trends over time:
+
+**Features:**
+- Smooth Bézier curves connecting data points
+- Gradient fill (green → amber → red) representing emotional range
+- Emoji markers at data points with white circle backgrounds
+- Smart spacing (shows ~7 emojis for clarity even with 30+ days of data)
+- Y-axis mapping based on emotional valence:
+  ```dart
+  // progress_screen.dart:775-790
+  if (moodIndex == 0) {        // Happy
+    normalizedY = 0.1;          // Top 10% (High positivity)
+  } else if (moodIndex == 1) { // Neutral
+    normalizedY = 0.5;          // Middle 50%
+  } else {                      // Sad, Anxious, Angry, Stressed
+    normalizedY = 0.7 + ((moodIndex - 2) / 3.0) * 0.3;  // Bottom 70-100%
+  }
+  ```
+
+**Why this mapping?**
+- Happy (0) → High positivity zone
+- Neutral (1) → Middle zone
+- Sad/Anxious/Angry/Stressed (2-5) → Low positivity zone
+- Prevents sad/anxious from appearing in neutral range
+
+#### 3. Backend Sync
+Mood entries sync to backend when `moodPersistenceEnabled` feature flag is enabled:
+
+**Endpoints:**
+- `GET /api/v1/mood_entries?limit=50&since=<timestamp>` - Fetch updates
+- `POST /api/v1/mood_entries:batch_upsert` - Upload local entries
+
+**Features:**
+- Offline queue with pending entries
+- Debounced sync (500-3000ms jitter)
+- Automatic retry on network errors
+- 60-day retention with automatic purging
+
+#### 4. Data Aggregation
+Mood entries are stored individually but aggregated by day for visualization:
+
+```dart
+// _rebuildMoodAggregates() creates two structures:
+// 1. _moodHistory: Map<String, List<Map>> - All entries grouped by day
+// 2. UserProgress.moodHistory: Map<DateTime, int> - Daily averages
+```
+
+**Example:**
+- 3 entries on 12/1: Happy, Neutral, Happy
+- Average: (0 + 1 + 0) / 3 = 0.33 ≈ 0 (Happy)
+- Chart shows single "Happy" emoji for 12/1
+
+### Mood Enum
+```dart
+enum Mood { happy, neutral, sad, anxious, angry, stressed }
+// Indices: 0=happy, 1=neutral, 2=sad, 3=anxious, 4=angry, 5=stressed
+```
+
+### Important Metrics
+
+**Three Different Counts:**
+1. **Individual Entries** (`getTotalMoodEntriesCount()`) - Total mood logs ever
+2. **Days with Data** (`moodHistory.length`) - Number of unique days
+3. **Days This Week** (`moodLogsThisWeek`) - Days in last 7 days with mood data
+
+### Database Schema
+```sql
+CREATE TABLE mood_entries (
+  id TEXT PRIMARY KEY,
+  client_entry_id TEXT UNIQUE,
+  user_id TEXT,
+  mood INTEGER,
+  logged_at TEXT,
+  notes TEXT,
+  is_pending INTEGER,
+  sync_error TEXT
+);
+```
+
+### Debug Logging
+Comprehensive logging for troubleshooting:
+```dart
+[ProgressService] logMood called with mood: Happy
+[ProgressService] Mood cache loaded. Total entries: 33
+[ProgressService] Offline status: false
+[ProgressService] Current date/time: 2025-12-02 21:44:00.000
+[ProgressService] Today's entries count: 2
+[ProgressService] _rebuildMoodAggregates called with 33 entries
+[ProgressService] After aggregation: 12 days in moodHistory
+[ProgressService] ✅ Mood logged successfully
+```
+
+### Common Issues
+
+**Issue: Mood chart shows fewer emojis than total entries**
+- **Why:** Chart shows ~7 emojis for clarity (line 888: `step = (points.length / 7).ceil()`)
+- **Fix:** Not a bug - prevents crowding on small screens
+
+**Issue: "You've logged mood 12 times" but 33 entries**
+- **Why:** Was counting days, not entries (now fixed)
+- **Fix:** Use `getTotalMoodEntriesCount()` not `moodHistory.length`
+
+**Issue: Sad/Anxious showing in neutral range**
+- **Why:** Linear mapping treated all 6 moods equally
+- **Fix:** Emotional valence mapping (Happy=High, Neutral=Mid, Others=Low)
+
+---
+
 ## Testing Checklist for Voice Features
 
 Before merging voice pipeline changes:
@@ -492,6 +646,24 @@ Before merging voice pipeline changes:
 - [ ] Background app during TTS - audio should continue
 - [ ] Check logs for race condition warnings (`🛡️`, `⚠️`)
 - [ ] No "Worker completion timeout" warnings in logs
+- [ ] `flutter analyze` passes
+
+---
+
+## Testing Checklist for Mood Features
+
+Before merging mood tracking changes:
+- [ ] Log mood from home screen - should show success message
+- [ ] Log 3 moods in one day - all should succeed
+- [ ] Log 4th mood same day - should replace oldest, no error
+- [ ] Check home screen "Days Logged" count is correct
+- [ ] Navigate to Progress → Mood tab
+- [ ] Verify mood wave chart displays with smooth curves
+- [ ] Verify emoji markers show correct moods (Happy at top, Sad/Anxious at bottom)
+- [ ] Check "You've logged mood X times" matches actual total entries
+- [ ] Test offline: log mood, verify "Saved locally" message
+- [ ] Go back online, verify sync happens automatically
+- [ ] Check logs for mood aggregation: `[ProgressService] After aggregation: X days`
 - [ ] `flutter analyze` passes
 
 ---

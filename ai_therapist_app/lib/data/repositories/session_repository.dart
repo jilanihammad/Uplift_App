@@ -185,7 +185,30 @@ class SessionRepository implements ISessionRepository {
         }
       });
 
-      return sessions;
+      // CRITICAL FIX: Merge with local-only sessions (not yet on server)
+      // Get all local sessions to include unsynced ones
+      final localResults = await appDatabase.query(
+        'sessions',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+
+      final allSessions = localResults
+          .map((data) => Session(
+                id: data['id'] as String,
+                title: data['title'] as String,
+                summary: data['summary'] as String,
+                actionItems: _parseActionItems(data['action_items']),
+                createdAt:
+                    parseBackendDateTimeToUtc(data['created_at'] as String),
+                lastModified:
+                    parseBackendDateTimeToUtc(data['last_modified'] as String),
+                isSynced: (data['is_synced'] as int) == 1,
+              ))
+          .toList();
+
+      debugPrint('Returning ${allSessions.length} sessions (${sessions.length} from server, ${allSessions.length - sessions.length} local-only)');
+      return allSessions;
     } catch (e) {
       debugPrint('Error fetching sessions from server: $e');
 

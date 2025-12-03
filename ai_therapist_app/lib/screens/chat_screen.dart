@@ -730,6 +730,15 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   Future<void> _saveSession(
       Map<String, dynamic> sessionData, List<TherapyMessage> messages) async {
     try {
+      debugPrint('[ChatScreen] Starting _saveSession...');
+      final userContextService = DependencyContainer().userContextService;
+      final userId = userContextService.getSignedInUserId(operation: 'ChatScreen._saveSession');
+      debugPrint('[ChatScreen] User ID for session save: $userId');
+
+      if (userId == null) {
+        throw Exception('Cannot save session: User not authenticated');
+      }
+
       final sessionRepository = DependencyContainer().sessionRepository;
 
       // If we have a backend session ID from the response, use it
@@ -823,10 +832,22 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         debugPrint('Session saved to repository successfully');
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error saving session to repository: $e');
+      debugPrint('❌ [CRITICAL] Error saving session to repository: $e');
+      debugPrint('Stack trace: ${StackTrace.current}');
+
+      // Show error to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save session: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
-      // Continue anyway - we don't want to block the user
+
+      // Rethrow to prevent showing success dialog
+      rethrow;
     }
   }
 
