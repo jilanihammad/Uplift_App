@@ -1160,6 +1160,11 @@ class ProgressService implements IProgressService {
       ..sort((a, b) => a.key.compareTo(b.key));
   }
 
+  @override
+  int getTotalMoodEntriesCount() {
+    return _moodEntries.length;
+  }
+
   // Get session data for visualization
   @override
   List<MapEntry<DateTime, int>> getSessionDataForLastDays(int days) {

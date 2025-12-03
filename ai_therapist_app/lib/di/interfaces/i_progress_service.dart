@@ -31,6 +31,7 @@ abstract class IProgressService {
   Map<String, List<Map<String, dynamic>>> getMoodHistory(
       {DateTime? startDate, DateTime? endDate});
   List<MapEntry<DateTime, int>> getMoodDataForLastDays(int days);
+  int getTotalMoodEntriesCount();
 
   // Session tracking
   Future<void> logSession(int sessionDuration);

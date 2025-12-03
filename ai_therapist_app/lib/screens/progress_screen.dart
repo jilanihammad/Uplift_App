@@ -510,7 +510,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             ),
             const SizedBox(height: 16),
             _buildInsightItem(
-              'You\'ve logged your mood ${_progress.moodHistory.length} times',
+              'You\'ve logged your mood ${_progressService.getTotalMoodEntriesCount()} times',
               Icons.insert_chart,
               Colors.purple,
             ),
@@ -768,14 +768,28 @@ class MoodWavePainter extends CustomPainter {
     for (int i = 0; i < displayCount; i++) {
       final x = padding + (i / (displayCount - 1)) * chartWidth;
 
-      // Map mood index (0-5) to Y position (inverted so happy is at top)
+      // Map mood index to Y position based on emotional valence
       // Mood indices: 0=happy, 1=neutral, 2=sad, 3=anxious, 4=angry, 5=stressed
       final moodIndex = displayData[i].value;
 
-      // Invert Y so 0 (happy) is at top, 5 (stressed) is at bottom
-      final normalizedY = (5 - moodIndex) / 5.0;
-      final y = topPadding + (1 - normalizedY) * chartHeight;
+      // Map moods to emotional ranges:
+      // - Happy (0) → High (0-20% from top)
+      // - Neutral (1) → Middle (40-60%)
+      // - Sad, Anxious, Angry, Stressed (2-5) → Low (70-100% from top)
+      double normalizedY;
+      if (moodIndex == 0) {
+        // Happy - at the top
+        normalizedY = 0.1;
+      } else if (moodIndex == 1) {
+        // Neutral - in the middle
+        normalizedY = 0.5;
+      } else {
+        // Sad, Anxious, Angry, Stressed - in the low range
+        // Map 2-5 to 0.7-1.0 range
+        normalizedY = 0.7 + ((moodIndex - 2) / 3.0) * 0.3;
+      }
 
+      final y = topPadding + normalizedY * chartHeight;
       points.add(Offset(x, y));
     }
 

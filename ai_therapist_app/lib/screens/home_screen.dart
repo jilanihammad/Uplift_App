@@ -825,7 +825,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   _buildStatItem(
                     '${_progress.moodLogsThisWeek}',
-                    'Mood Logs',
+                    'Days Logged',
                     Icons.mood,
                   ),
                   _buildStatItem(
