@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Callable
 from fastapi import Request, Response
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.enhanced_logging import (
     RequestTraceContext, 

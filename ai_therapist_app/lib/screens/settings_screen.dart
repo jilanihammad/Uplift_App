@@ -434,7 +434,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           subtitle: usableVoices.length > 1
-              ? const Text('Tap to choose a different therapist voice')
+              ? const Text('Tap to choose a different voice for Maya')
               : const Text('Using default voice'),
           trailing: const Column(
             mainAxisAlignment: MainAxisAlignment.center,

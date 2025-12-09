@@ -1779,14 +1779,14 @@ class LLMManager:
                 if response_format:
                     params['response_format'] = response_format
                 else:
-                    response_format = params.get('response_format', 'wav')  # Default to WAV
+                    response_format = params.get('response_format', 'mp3')  # Default to MP3
                 
                 # Remove model from params if it exists to avoid duplicate parameter error
                 params.pop('model', None)
                 
                 # Use OpenAI SDK's proper streaming method
                 try:
-                    logger.info(f"🎤 OpenAI TTS: Starting WAV streaming for text='{text[:50]}...' (length: {len(text)} chars), voice={params['voice']}, format={response_format}")
+                    logger.info(f"🎤 OpenAI TTS: Starting MP3 streaming for text='{text[:50]}...' (length: {len(text)} chars), voice={params['voice']}, format={response_format}")
                     
                     total_chunks = 0
                     total_bytes = 0
@@ -1797,7 +1797,7 @@ class LLMManager:
                     tts_args["input"] = text
                     voice_param = params.get('voice') or tts_args['voice']
                     tts_args["voice"] = voice_param
-                    tts_args["response_format"] = response_format or "wav"
+                    tts_args["response_format"] = response_format or "mp3"
                     
                     with client.audio.speech.with_streaming_response.create(**tts_args) as response:
                         if response.status_code != 200:
@@ -1839,7 +1839,7 @@ class LLMManager:
                                     logger.debug(f"🎤 OpenAI TTS: WAV chunk {total_chunks}, size={len(chunk)} bytes")
                                 yield b64_chunk
                     
-                    logger.info(f"🎤 OpenAI TTS: WAV completed - generated {total_chunks} chunks, {total_bytes} total bytes for text: '{text[:50]}...'")
+                    logger.info(f"🎤 OpenAI TTS: MP3 completed - generated {total_chunks} chunks, {total_bytes} total bytes for text: '{text[:50]}...'")
                     
                 except Exception as e:
                     logger.error(f"OpenAI TTS WAV streaming error: {str(e)}")

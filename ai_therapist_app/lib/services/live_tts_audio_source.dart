@@ -53,9 +53,10 @@ class LiveTtsAudioSource extends StreamAudioSource {
   // Chunk counter for log throttling (prevents UI thread blocking)
   int _chunkCount = 0;
 
-  // OPUS header buffering for proper format support
+  // Audio format detection for proper header handling
   bool _headersReady = false;
   bool _isOpusFormat = false;
+  bool _isMp3Format = false;
   OpusHeaderInfo? _opusHeaderInfo;
   Uint8List? _completeHeaders;
 
@@ -124,12 +125,14 @@ class LiveTtsAudioSource extends StreamAudioSource {
     // Pre-determine format based on content type
     _isOpusFormat = contentType.toLowerCase().contains('ogg') ||
         contentType.toLowerCase().contains('opus');
+    _isMp3Format = contentType.toLowerCase().contains('mpeg') ||
+        contentType.toLowerCase().contains('mp3');
 
     if (kDebugMode) {
       _ttsLog(
           '🎯 LiveTtsAudioSource: Created with direct stream access for $debugName (natural completion)');
       _ttsLog(
-          '🎯 Format detection: contentType=$contentType, isOpus=$_isOpusFormat');
+          '🎯 Format detection: contentType=$contentType, isOpus=$_isOpusFormat, isMp3=$_isMp3Format');
     }
 
     // CRITICAL FIX: Start listening immediately to capture broadcast stream events
@@ -378,6 +381,8 @@ class LiveTtsAudioSource extends StreamAudioSource {
     // Use pre-determined format based on content type
     if (_isOpusFormat) {
       _processOpusHeaders();
+    } else if (_isMp3Format) {
+      _processMp3Headers();
     } else {
       // For WAV or unknown formats, try WAV parsing
       _processWavHeaders();
@@ -393,6 +398,18 @@ class LiveTtsAudioSource extends StreamAudioSource {
     if (kDebugMode) {
       _ttsLog(
           '✅ LiveTtsAudioSource: OPUS format - headers ready for streaming (${_dataBuffer.length} bytes buffered)');
+    }
+  }
+
+  /// Process MP3 headers - for streaming, just mark as ready (like OPUS)
+  void _processMp3Headers() {
+    // For MP3 streaming, we don't need to parse headers
+    // MP3 is self-contained with frame headers, just mark as ready
+    _headersReady = true;
+
+    if (kDebugMode) {
+      _ttsLog(
+          '✅ LiveTtsAudioSource: MP3 format - headers ready for streaming (${_dataBuffer.length} bytes buffered)');
     }
   }
 

@@ -47,7 +47,7 @@ class _TherapistStyleScreenState extends State<TherapistStyleScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Therapist style updated to: ${style.name}'),
+          content: Text('Conversation style updated to: ${style.name}'),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -58,7 +58,7 @@ class _TherapistStyleScreenState extends State<TherapistStyleScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select Therapist Style'),
+        title: const Text('Select Conversation Style'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

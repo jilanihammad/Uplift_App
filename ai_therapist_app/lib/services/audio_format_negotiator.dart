@@ -10,12 +10,13 @@ class AudioFormatNegotiator {
   /// Available audio formats in order of preference
   static const List<AudioFormat> _supportedFormats = [
     AudioFormat.native,
-    AudioFormat.wav, // Primary format - standardized across app
+    AudioFormat.mp3, // Primary format - best compatibility and smaller file size
+    AudioFormat.wav, // Fallback format
     AudioFormat.opus, // Legacy support (disabled via AudioFormatConfig)
   ];
 
-  /// Current active format (starts with WAV for compatibility)
-  static AudioFormat _currentFormat = AudioFormat.wav;
+  /// Current active format (starts with MP3 for compatibility)
+  static AudioFormat _currentFormat = AudioFormat.mp3;
 
   /// Get the preferred format for new TTS requests
   /// Priority: native mode > client OPUS preference > backend format > WAV fallback
@@ -40,8 +41,13 @@ class AudioFormatNegotiator {
       return AudioFormat.opus;
     }
 
-    // 4. Default to WAV
-    return AudioFormat.wav;
+    // 4. Backend explicitly requested MP3
+    if (backendFormat == 'mp3') {
+      return AudioFormat.mp3;
+    }
+
+    // 5. Default to MP3
+    return AudioFormat.mp3;
   }
 
   /// Get current active format
@@ -117,6 +123,9 @@ class AudioFormatNegotiator {
         return 'audio/ogg; codecs=opus';
       case 'aac':
         return 'audio/aac';
+      case 'mp3':
+      case 'mpeg':
+        return 'audio/mpeg';
       case 'wav':
       default:
         return 'audio/wav';
@@ -130,6 +139,8 @@ class AudioFormatNegotiator {
         return 'ogg';
       case AudioFormat.opus:
         return 'ogg';
+      case AudioFormat.mp3:
+        return 'mp3';
       case AudioFormat.wav:
         return 'wav';
     }
@@ -142,6 +153,8 @@ class AudioFormatNegotiator {
         return 'native';
       case AudioFormat.opus:
         return 'opus'; // Backend parameter
+      case AudioFormat.mp3:
+        return 'mp3';
       case AudioFormat.wav:
         return 'wav';
     }
@@ -167,6 +180,8 @@ class AudioFormatNegotiator {
         return true;
       case AudioFormat.opus:
         return true; // OPUS is designed for streaming
+      case AudioFormat.mp3:
+        return true; // MP3 supports streaming
       case AudioFormat.wav:
         return true; // WAV now supports streaming with optimized buffers
     }
@@ -188,6 +203,7 @@ class AudioFormatNegotiator {
 enum AudioFormat {
   native,
   opus,
+  mp3,
   wav,
 }
 
@@ -199,6 +215,8 @@ extension AudioFormatExtension on AudioFormat {
         return 'NATIVE';
       case AudioFormat.opus:
         return 'OPUS';
+      case AudioFormat.mp3:
+        return 'MP3';
       case AudioFormat.wav:
         return 'WAV';
     }
@@ -210,8 +228,10 @@ extension AudioFormatExtension on AudioFormat {
         return 'Gemini Live native audio';
       case AudioFormat.opus:
         return 'OPUS/OGG - Compressed format (disabled)';
+      case AudioFormat.mp3:
+        return 'MP3/MPEG - Primary format for best compatibility';
       case AudioFormat.wav:
-        return 'WAV - Primary format with streaming support';
+        return 'WAV - Fallback format with streaming support';
     }
   }
 }

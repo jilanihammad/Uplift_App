@@ -121,22 +121,22 @@ class GroqService:
                 headers=headers,
                 json=payload
             )
-                
-                if response.status_code != 200:
-                    logger.error(f"Error from Groq API: {response.status_code} - {response.text}")
-                    raise Exception(f"Error from Groq API: {response.status_code} - {response.text}")
-                
-                # Parse the response
-                result = response.json()
-                
-                # Extract the assistant's message
-                if "choices" in result and len(result["choices"]) > 0:
-                    assistant_message = result["choices"][0]["message"]["content"]
-                    logger.info(f"Successfully generated response with Groq")
-                    return assistant_message
-                else:
-                    logger.error(f"Unexpected response format from Groq: {result}")
-                    raise Exception(f"Unexpected response format from Groq: {json.dumps(result)}")
+
+            if response.status_code != 200:
+                logger.error(f"Error from Groq API: {response.status_code} - {response.text}")
+                raise Exception(f"Error from Groq API: {response.status_code} - {response.text}")
+
+            # Parse the response
+            result = response.json()
+
+            # Extract the assistant's message
+            if "choices" in result and len(result["choices"]) > 0:
+                assistant_message = result["choices"][0]["message"]["content"]
+                logger.info(f"Successfully generated response with Groq")
+                return assistant_message
+            else:
+                logger.error(f"Unexpected response format from Groq: {result}")
+                raise Exception(f"Unexpected response format from Groq: {json.dumps(result)}")
                     
         except Exception as e:
             logger.error(f"Error generating response with Groq: {str(e)}")
@@ -193,19 +193,19 @@ class GroqService:
                     headers=headers,
                     json=payload
                 )
-                    
-                    if response.status_code == 200:
-                        # API key is working
-                        result["available"] = True
-                        result["message"] = "API key is working correctly"
-                        response_json = response.json()
-                        result["model"] = response_json.get("model", self.chat_model)
-                        self.available = True
-                    else:
-                        # API key is not working
-                        result["available"] = False
-                        result["error"] = f"Error code: {response.status_code} - {response.text}"
-                        self.available = False
+
+                if response.status_code == 200:
+                    # API key is working
+                    result["available"] = True
+                    result["message"] = "API key is working correctly"
+                    response_json = response.json()
+                    result["model"] = response_json.get("model", self.chat_model)
+                    self.available = True
+                else:
+                    # API key is not working
+                    result["available"] = False
+                    result["error"] = f"Error code: {response.status_code} - {response.text}"
+                    self.available = False
                         
             except Exception as api_error:
                 # Error making the API call

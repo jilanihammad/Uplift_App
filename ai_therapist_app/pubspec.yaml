@@ -1,7 +1,7 @@
 name: ai_therapist_app
 description: A voice-enabled AI therapy app with LLM integration
 publish_to: 'none'
-version: 1.0.0+2
+version: 1.0.0+11
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

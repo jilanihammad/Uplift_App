@@ -64,10 +64,11 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       listener: (context, state) {
         context.read<VoiceSessionBloc>().add(const EnsureMicToggleEnabled());
       },
-      child: Column(
-        children: [
-          // Voice Visualization Area
-          Expanded(
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Voice Visualization Area
+            Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -199,6 +200,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
           // Voice Controls Section
           _buildVoiceControls(),
         ],
+      ),
       ),
     );
   }

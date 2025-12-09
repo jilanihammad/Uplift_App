@@ -607,10 +607,10 @@ class TherapyService implements ITherapyService {
       return {
         'error': 'Unable to generate session summary',
         'details': e.toString(),
-        'summary': 'Your session has ended. Thank you for using AI Therapist.',
+        'summary': 'Your conversation with Maya has ended. Thank you for connecting today.',
         'action_items': [
           'Practice self-care',
-          'Remember the strategies discussed'
+          'Remember the strategies you discussed'
         ],
       };
     }

@@ -594,12 +594,19 @@ class SimpleTTSService implements ITTSService {
   }
 
   /// Get optimal buffer size based on audio format
-  /// OPTIMIZED: Reduced from 8KB to 4KB for faster time-to-first-audio
-  /// 4KB provides ~42ms of audio at 48kHz 16-bit mono, enough for smooth playback
+  /// CRITICAL: MP3 is ~10x smaller than WAV due to compression
+  /// Same byte threshold = 10x more audio content = 10x slower start!
+  ///
+  /// Target: ~50-100ms of audio before playback starts
+  /// - WAV (uncompressed): 4KB ≈ 42ms at 48kHz 16-bit mono
+  /// - MP3 (compressed ~64kbps): 512 bytes ≈ 64ms
   int _getOptimalBufferSize(String format) {
     switch (format.toLowerCase()) {
       case 'opus':
         return 4096; // 4KB - OPUS streams efficiently at smaller chunks
+      case 'mp3':
+      case 'mpeg':
+        return 512; // 512 bytes - Much smaller due to 10x compression (prevents 2s delay)
       case 'wav':
       default:
         return 4096; // 4KB - Faster time-to-first-audio (was 8KB)
@@ -766,7 +773,7 @@ class SimpleTTSService implements ITTSService {
                     '🚀 [TTS] Starting live TTS streaming for ${req.id} (${audioBuffer.length} bytes accumulated)');
               }
 
-              // CRITICAL: Hard-gate WAV vs OPUS processing
+              // CRITICAL: Hard-gate format processing (MP3/OPUS/WAV)
               Uint8List streamingAudioData;
 
               if (requestedFormat.toLowerCase() == 'opus') {
@@ -775,6 +782,13 @@ class SimpleTTSService implements ITTSService {
                 if (kDebugMode) {
                   debugPrint(
                       '🎵 [TTS] OPUS: Using original data directly (${streamingAudioData.length} bytes)');
+                }
+              } else if (requestedFormat.toLowerCase() == 'mp3' || requestedFormat.toLowerCase() == 'mpeg') {
+                // MP3: Push bytes straight through without any header modification
+                streamingAudioData = Uint8List.fromList(audioBuffer);
+                if (kDebugMode) {
+                  debugPrint(
+                      '🎵 [TTS] MP3: Using original data directly (${streamingAudioData.length} bytes)');
                 }
               } else {
                 // WAV: Apply header modification logic
@@ -983,7 +997,7 @@ class SimpleTTSService implements ITTSService {
 
         TTSStreamingMonitor().recordFallbackToFullBuffer(fallbackReason);
 
-        // Hard-gate WAV processing in fallback mode too
+        // Hard-gate format processing in fallback mode too
         Uint8List fallbackAudioData;
         if (requestedFormat.toLowerCase() == 'opus') {
           // OPUS: Use original data directly
@@ -991,6 +1005,13 @@ class SimpleTTSService implements ITTSService {
           if (kDebugMode) {
             debugPrint(
                 '🎵 [TTS] OPUS fallback: Using original data directly (${fallbackAudioData.length} bytes)');
+          }
+        } else if (requestedFormat.toLowerCase() == 'mp3' || requestedFormat.toLowerCase() == 'mpeg') {
+          // MP3: Use original data directly
+          fallbackAudioData = Uint8List.fromList(audioBuffer);
+          if (kDebugMode) {
+            debugPrint(
+                '🎵 [TTS] MP3 fallback: Using original data directly (${fallbackAudioData.length} bytes)');
           }
         } else {
           // WAV: Try to use modified headers for consistency
@@ -1109,6 +1130,9 @@ class SimpleTTSService implements ITTSService {
       case 'ogg':
       case 'ogg_opus':
         return _isValidOpusHeader(chunk);
+      case 'mp3':
+      case 'mpeg':
+        return _isValidMp3Header(chunk);
       case 'wav':
       default:
         return _isValidWavHeader(chunk);
@@ -1224,6 +1248,39 @@ class SimpleTTSService implements ITTSService {
     } catch (e) {
       if (kDebugMode) {
         _ttsTrace('❌ [TTS] Error validating WAV header: $e');
+      }
+      return false;
+    }
+  }
+
+  /// Validate MP3 header for proper format detection
+  /// Returns true if the chunk contains a valid ID3 tag or MPEG frame sync
+  bool _isValidMp3Header(List<int> chunk) {
+    if (chunk.length < 3) {
+      if (kDebugMode) {
+        debugPrint(
+            '⚠️ [TTS] Chunk too small for MP3 header: ${chunk.length} bytes');
+      }
+      return false;
+    }
+
+    try {
+      // Check for ID3v2 tag (most MP3 files start with this)
+      if (chunk[0] == 0x49 && chunk[1] == 0x44 && chunk[2] == 0x33) {
+        return true; // ID3
+      }
+
+      // Check for MPEG frame sync (0xFF 0xFB, 0xFF 0xFA, etc.)
+      if (chunk[0] == 0xFF && (chunk[1] & 0xE0) == 0xE0) {
+        return true; // MPEG sync
+      }
+
+      // Some MP3 streams might start directly with audio data
+      // Accept any data for MP3 to avoid false negatives
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        _ttsTrace('❌ [TTS] Error validating MP3 header: $e');
       }
       return false;
     }
@@ -1436,6 +1493,9 @@ class SimpleTTSService implements ITTSService {
       case 'opus':
       case 'native':
         return 'ogg';
+      case 'mp3':
+      case 'mpeg':
+        return 'mp3';
       case 'wav':
       default:
         return 'wav';
@@ -1796,6 +1856,8 @@ class SimpleTTSService implements ITTSService {
       // Log format-specific performance comparison
       if (format.toLowerCase() == 'opus') {
         debugPrint('  🎯 OPUS performance: Low-latency streaming optimized');
+      } else if (format.toLowerCase() == 'mp3' || format.toLowerCase() == 'mpeg') {
+        debugPrint('  🎯 MP3 performance: Best compatibility and compression');
       } else {
         debugPrint(
             '  🎯 WAV performance: Legacy format with header processing');

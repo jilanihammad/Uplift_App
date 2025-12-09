@@ -22,6 +22,7 @@ import traceback
 import base64
 from sqlalchemy.orm import Session as DBSession
 from fastapi import Depends
+from app.api.deps.auth import AuthenticatedUser, get_current_user
 
 # Database initialization imports
 from app.db.base import Base
@@ -648,7 +649,11 @@ async def ai_response(request: AIRequest):
         raise HTTPException(status_code=500, detail=f"Error generating AI response: {str(e)}")
 
 @app.post("/therapy/end_session")
-async def end_session(request: EndSessionRequest, db: DBSession = Depends(get_db)):
+async def end_session(
+    request: EndSessionRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
     """Generate therapy session summary and create session record with rich data."""
     try:
         logger.info("Received end session request with %d messages", len(request.messages))
@@ -657,14 +662,26 @@ async def end_session(request: EndSessionRequest, db: DBSession = Depends(get_db
         if not llm_manager:
             logger.error("Unified LLM manager not available")
             raise HTTPException(status_code=500, detail="LLM service not available")
-        
+
+        # Fetch user's preferred name for personalization
+        from app.services.profile_service import get_profile
+
+        user_id = current_user.user.id
+        preferred_name = None
+        profile = get_profile(db, user_id=user_id)
+        if profile:
+            preferred_name = profile.preferred_name
+
+        # Fallback to "you" if no name available (conversational)
+        display_name = preferred_name if preferred_name else "you"
+
         # Create a comprehensive summarization prompt for better action items
         conversation_text = ""
         user_concerns = []
         therapist_suggestions = []
         
         for msg in request.messages:
-            role = "User" if msg.get("isUser", False) else "Therapist"
+            role = display_name.capitalize() if msg.get("isUser", False) else "Maya"
             content = msg.get('content', '')
             conversation_text += f"{role}: {content}\n\n"
             
@@ -674,7 +691,7 @@ async def end_session(request: EndSessionRequest, db: DBSession = Depends(get_db
             else:
                 therapist_suggestions.append(content)
 
-        summary_prompt = f"""Based on this therapy session, provide a comprehensive summary with personalized action items.
+        summary_prompt = f"""Based on this conversation with Maya (an AI companion), provide a comprehensive summary with personalized action items for {display_name}.
 
 THERAPEUTIC APPROACH: {request.therapeutic_approach}
 
@@ -685,22 +702,27 @@ CONVERSATION:
 
 Please analyze this conversation and provide:
 
-1. **SUMMARY**: A compassionate 2-3 sentence summary highlighting the main topics discussed and progress made
+1. **SUMMARY**: A compassionate 2-3 sentence summary highlighting the main topics discussed and progress made. Address {display_name} directly using "you" language.
 
-2. **ACTION ITEMS**: 3-5 specific, actionable steps tailored to this client's situation. Make these:
+2. **ACTION ITEMS**: 3-5 specific, actionable steps tailored to what {display_name} discussed in this session. Make these:
    - Specific to what was discussed in this session
    - Realistic and achievable
    - Related to the coping strategies or insights mentioned
-   - Personal to the client's expressed concerns
+   - Personal and supportive in tone
 
 3. **INSIGHTS**: 2-3 observations about patterns, progress, or strengths noticed
 
-IMPORTANT: Respond ONLY with valid JSON in this exact format:
+IMPORTANT:
+- Refer to the AI companion as "Maya" (never "therapist" or "I")
+- Address {display_name} directly using "you" language (never "the client" or "the user")
+- Keep tone warm, supportive, and conversational
+
+RESPOND ONLY with valid JSON in this exact format:
 {{
     "summary": "Your compassionate summary here",
     "action_items": [
         "Specific action based on conversation topic 1",
-        "Specific action based on conversation topic 2", 
+        "Specific action based on conversation topic 2",
         "Specific action based on conversation topic 3"
     ],
     "insights": [
@@ -714,7 +736,7 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
             response_text = await llm_manager.generate_response(
                 message=summary_prompt,
                 context=[],
-                system_prompt="You are an expert therapist creating personalized session summaries. Focus on providing actionable, conversation-specific guidance.",
+                system_prompt="You are a compassionate AI assistant creating personalized conversation summaries for Maya, an AI companion app. Focus on providing actionable, conversation-specific guidance while maintaining a warm, supportive tone. Never refer to Maya as a therapist or the user as a client.",
                 temperature=0.3,  # Lower temperature for consistency
                 max_tokens=1500
             )
@@ -753,9 +775,9 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
                 
                 # Parse the JSON string
                 result = json.loads(json_str)
-                
+
                 # Validate and clean the result
-                result = await _validate_and_clean_summary(result, request.messages)
+                result = await _validate_and_clean_summary(result, request.messages, display_name)
                 
                 logger.info("Session summary generated successfully using LLM manager")
                 
@@ -777,7 +799,12 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
             except (json.JSONDecodeError, KeyError, ValueError) as e:
                 logger.warning(f"Failed to parse LLM response as JSON: {str(e)}")
                 logger.warning(f"Raw response: {response_text[:300]}...")
-                fallback_summary = await _generate_conversation_based_summary(request.messages, request.therapeutic_approach)
+                fallback_summary = await _generate_conversation_based_summary(
+                    request.messages,
+                    request.therapeutic_approach,
+                    user_id=current_user.user.id,
+                    db=db
+                )
                 
                 # Create session record with fallback data
                 session_id = await _create_session_with_summary(
@@ -793,7 +820,12 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
         except Exception as llm_error:
             logger.warning(f"Error using LLM manager for session summary: {str(llm_error)}")
             logger.warning("Falling back to conversation-based summary")
-            fallback_summary = await _generate_conversation_based_summary(request.messages, request.therapeutic_approach)
+            fallback_summary = await _generate_conversation_based_summary(
+                request.messages,
+                request.therapeutic_approach,
+                user_id=current_user.user.id,
+                db=db
+            )
             
             # Create session record with fallback data
             session_id = await _create_session_with_summary(
@@ -1077,7 +1109,6 @@ async def transcribe_file(file: UploadFile = File(...)):
 # Add the database and CRUD imports
 from app.crud import session as crud_session
 from app.crud import reminder as crud_reminder
-from app.api.deps.auth import AuthenticatedUser, get_current_user
 
 # Session-related schemas
 class SessionUpdateRequest(BaseModel):
@@ -1772,34 +1803,38 @@ async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, An
             # Return a default ID if all else fails
             return 1
 
-async def _validate_and_clean_summary(result: Dict[str, Any], messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def _validate_and_clean_summary(
+    result: Dict[str, Any],
+    messages: List[Dict[str, Any]],
+    display_name: str = "you"
+) -> Dict[str, Any]:
     """Validate and clean the summary result, ensuring quality action items."""
-    
+
     # Ensure result is a dictionary
     if not isinstance(result, dict):
         raise ValueError("Response is not a dictionary")
-    
+
     # Validate summary
     if not result.get("summary") or len(result["summary"].strip()) < 20:
         result["summary"] = "Thank you for sharing your thoughts and feelings in this session. We explored important topics together."
-    
+
     # Validate and improve action items
     action_items = result.get("action_items", [])
     if not action_items or len(action_items) == 0:
         # Generate basic action items based on conversation
-        action_items = await _generate_basic_action_items(messages)
+        action_items = await _generate_basic_action_items(messages, display_name)
     else:
         # Clean existing action items
         cleaned_items = []
         for item in action_items:
             if isinstance(item, str) and len(item.strip()) > 10:
                 cleaned_items.append(item.strip())
-        
+
         if len(cleaned_items) < 2:
             # Add some basic items if we don't have enough
-            basic_items = await _generate_basic_action_items(messages)
+            basic_items = await _generate_basic_action_items(messages, display_name)
             cleaned_items.extend(basic_items[:3])
-        
+
         action_items = cleaned_items[:5]  # Limit to 5 items
     
     result["action_items"] = action_items
@@ -1816,7 +1851,7 @@ async def _validate_and_clean_summary(result: Dict[str, Any], messages: List[Dic
     
     return result
 
-async def _generate_basic_action_items(messages: List[Dict[str, Any]]) -> List[str]:
+async def _generate_basic_action_items(messages: List[Dict[str, Any]], display_name: str = "you") -> List[str]:
     """Generate basic action items based on conversation content."""
     
     # Extract keywords from user messages to create relevant action items
@@ -1853,29 +1888,44 @@ async def _generate_basic_action_items(messages: List[Dict[str, Any]]) -> List[s
     all_items = action_items + default_items
     return list(dict.fromkeys(all_items))[:4]  # Remove duplicates and limit to 4
 
-async def _generate_conversation_based_summary(messages: List[Dict[str, Any]], therapeutic_approach: str) -> Dict[str, Any]:
+async def _generate_conversation_based_summary(
+    messages: List[Dict[str, Any]],
+    therapeutic_approach: str,
+    user_id: Optional[int] = None,
+    db: Optional[DBSession] = None
+) -> Dict[str, Any]:
     """Generate a fallback summary based on conversation analysis."""
-    
+
     logger.info("Generating conversation-based fallback summary")
-    
+
+    # Fetch user's preferred name for personalization
+    from app.services.profile_service import get_profile
+
+    preferred_name = None
+    if user_id and db:
+        profile = get_profile(db, user_id=user_id)
+        preferred_name = profile.preferred_name if profile else None
+
+    display_name = preferred_name if preferred_name else "you"
+
     # Basic conversation analysis
     user_message_count = len([msg for msg in messages if msg.get("isUser", False)])
-    therapist_message_count = len([msg for msg in messages if not msg.get("isUser", False)])
-    
+    maya_message_count = len([msg for msg in messages if not msg.get("isUser", False)])
+
     # Generate summary based on conversation length and content
     if user_message_count > 5:
-        summary = "Thank you for sharing so openly in today's session. We covered several important topics and explored different perspectives together."
+        summary = f"Thank you for sharing so openly with Maya today. You covered several important topics and explored different perspectives together."
     else:
-        summary = "Thank you for taking the time to connect today. Even brief conversations can provide valuable insights."
-    
+        summary = f"Thank you for taking the time to connect with Maya today. Even brief conversations can provide valuable insights."
+
     # Generate action items based on conversation
-    action_items = await _generate_basic_action_items(messages)
-    
+    action_items = await _generate_basic_action_items(messages, display_name)
+
     insights = [
-        f"You engaged thoughtfully in our conversation today",
+        f"You engaged thoughtfully in your conversation with Maya today",
         "Your willingness to explore these topics shows strength and self-awareness"
     ]
-    
+
     return {
         "summary": summary,
         "action_items": action_items,

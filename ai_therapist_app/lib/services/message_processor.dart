@@ -11,6 +11,7 @@ import './config_service.dart'; // Added for ConfigService
 import '../di/interfaces/i_groq_service.dart'; // Added for GroqService streaming
 import '../utils/box_logger.dart';
 import '../utils/log_channels.dart';
+import '../di/dependency_container.dart'; // Added for user profile access
 
 /// Handles processing of user messages and generating AI responses
 class MessageProcessor {
@@ -355,15 +356,19 @@ class MessageProcessor {
     String? sessionTitle,
     int? userId,
   }) async {
+    // Get user's name for personalization
+    final userProfileService = DependencyContainer().userProfile;
+    final displayName = userProfileService.profile?.displayName ?? 'you';
+
     try {
       log.i('Generating session summary for ${messages.length} messages');
 
       if (_directLLMEnabled) {
         // Use direct LLM call for session summary
-        return await _generateSessionSummaryDirectLLM(messages, systemPrompt);
+        return await _generateSessionSummaryDirectLLM(messages, systemPrompt, displayName);
       } else {
         // Use backend proxy (original behavior)
-        return await _generateSessionSummaryViaBackend(messages, systemPrompt,
+        return await _generateSessionSummaryViaBackend(messages, systemPrompt, displayName,
             sessionTitle: sessionTitle, userId: userId);
       }
     } catch (e) {
@@ -371,10 +376,10 @@ class MessageProcessor {
       return {
         'error': 'Unable to generate session summary',
         'details': e.toString(),
-        'summary': 'Your session has ended. Thank you for using AI Therapist.',
+        'summary': 'Your conversation with Maya has ended. Thank you for connecting today${displayName != 'you' ? ', $displayName' : ''}.',
         'action_items': [
           'Practice self-care',
-          'Remember the strategies discussed'
+          'Remember the strategies you discussed'
         ],
       };
     }
@@ -382,23 +387,25 @@ class MessageProcessor {
 
   /// Generate session summary using direct LLM call
   Future<Map<String, dynamic>> _generateSessionSummaryDirectLLM(
-      List<Map<String, dynamic>> messages, String systemPrompt) async {
+      List<Map<String, dynamic>> messages, String systemPrompt, String displayName) async {
     try {
       log.d('Using direct LLM call for session summary');
 
       // Build conversation text
       final conversationText = messages.map((msg) {
-        final role = msg['isUser'] == true ? 'User' : 'Therapist';
+        final role = msg['isUser'] == true ? displayName : 'Maya';
         return '$role: ${msg['content']}';
       }).join('\n\n');
 
       // Create summary prompt
       final summaryPrompt =
-          '''Based on this therapy session conversation, please provide:
+          '''Based on this conversation with Maya (an AI companion), please provide:
 
-1. A compassionate summary of the session (2-3 sentences)
-2. 3-5 actionable items for the client to consider
+1. A compassionate summary of the conversation (2-3 sentences). Address $displayName directly using "you" language.
+2. 3-5 actionable items for $displayName to consider
 3. Key topics discussed
+
+IMPORTANT: Refer to the AI companion as "Maya" (never "therapist"). Address $displayName directly using "you" language (never "the client").
 
 Return your response in JSON format:
 {
@@ -412,7 +419,7 @@ $conversationText''';
 
       // Make direct LLM call
       final response = await apiClient.callLLMDirect(
-        'You are an expert therapist creating session summaries. Provide thoughtful, actionable insights.',
+        'You are a compassionate AI assistant creating conversation summaries for Maya, an AI companion app. Provide thoughtful, actionable insights while maintaining a warm, supportive tone. Never refer to Maya as a therapist or the user as a client.',
         summaryPrompt,
         additionalParams: {
           'temperature': 0.3, // Lower temperature for more consistent summaries
@@ -466,14 +473,15 @@ $conversationText''';
       throw Exception('No response from direct LLM call');
     } catch (e) {
       log.e('Error with direct LLM session summary, falling back', e);
-      return _generateFallbackSummary(messages);
+      return _generateFallbackSummary(messages, displayName);
     }
   }
 
   /// Generate session summary using backend proxy (original behavior)
   Future<Map<String, dynamic>> _generateSessionSummaryViaBackend(
     List<Map<String, dynamic>> messages,
-    String systemPrompt, {
+    String systemPrompt,
+    String displayName, {
     String? sessionTitle,
     int? userId,
   }) async {
@@ -505,13 +513,14 @@ $conversationText''';
     } catch (e) {
       log.e('Backend API error in generateSessionSummary', e);
       _logDetailedError(e);
-      return _generateFallbackSummary(messages);
+      return _generateFallbackSummary(messages, displayName);
     }
   }
 
   /// Generate a fallback summary when the API call fails
   Map<String, dynamic> _generateFallbackSummary(
-      List<Map<String, dynamic>> messages) {
+      List<Map<String, dynamic>> messages,
+      String displayName) {
     try {
       log.i('Generating fallback summary for ${messages.length} messages');
 
@@ -544,16 +553,16 @@ $conversationText''';
         }
       }
 
-      final summary = 'Thank you for your session today. '
-          'We discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, '
+      final summary = 'Thank you for connecting with Maya today${displayName != 'you' ? ', $displayName' : ''}. '
+          'You discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, '
           'and explored ways to approach these areas in your life. '
           'Remember that personal growth takes time, and it\'s important to be patient with yourself.';
 
       final actionItems = [
         'Take time for self-reflection',
-        'Practice the strategies we discussed',
+        'Practice the strategies you discussed with Maya',
         'Be kind to yourself',
-        'Return for another session when you feel ready'
+        'Connect with Maya again when you feel ready'
       ];
 
       return {
@@ -568,7 +577,7 @@ $conversationText''';
       // Most basic fallback
       return {
         'summary':
-            'Thank you for your session today. I hope our conversation was helpful.',
+            'Thank you for connecting with Maya today${displayName != 'you' ? ', $displayName' : ''}. I hope our conversation was helpful.',
         'action_items': [
           'Take care of yourself',
           'Return soon for another session'
