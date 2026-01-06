@@ -358,28 +358,17 @@ class VoiceService {
             '[VoiceService] enableAutoModeWhenPlaybackCompletes called (generation=$capturedGeneration, token=$playbackToken, current=$_currentPlaybackToken, last=$_lastPlaybackToken)');
       }
 
-      const retryDelay = Duration(milliseconds: 120);
       const postClearDelay = Duration(milliseconds: 100);
-      const maxAttempts = 3;
+      const pollInterval = Duration(milliseconds: 200);
+      const maxWaitDuration = Duration(seconds: 60); // Max wait for TTS playback
       var playbackCleared = false;
 
-      for (var attempt = 0; attempt < maxAttempts; attempt++) {
-        if (_ttsActive) {
-          try {
-            await isTtsActuallySpeaking
-                .firstWhere((speaking) => speaking == false)
-                .timeout(const Duration(seconds: 5));
-          } catch (e) {
-            if (kDebugMode) {
-              debugPrint(
-                  '[VoiceService] Waiting for TTS to finish timed out (attempt ${attempt + 1}): $e');
-            }
-          }
-        }
+      // FIX: Use single long wait with state polling instead of short timeouts
+      // This avoids race conditions where stream events are missed between subscriptions
+      final startTime = DateTime.now();
 
-        await _waitForPlaybackToFinish();
-        await Future.delayed(retryDelay);
-
+      while (DateTime.now().difference(startTime) < maxWaitDuration) {
+        // Check generation first
         final currentGeneration = getCurrentGeneration?.call();
         final generationChanged = (capturedGeneration != null &&
                 currentGeneration != capturedGeneration) ||
@@ -393,43 +382,42 @@ class VoiceService {
           return;
         }
 
-        if (_ttsActive || _playbackActive) {
-          if (kDebugMode) {
-            debugPrint(
-                '[VoiceService] Playback still active after attempt ${attempt + 1}; rechecking after short delay');
+        // Check if playback completed (state-based, not stream-based)
+        if (!_ttsActive && !_playbackActive) {
+          // Verify token matches
+          final activeToken = _currentPlaybackToken;
+          final lastTokenSnapshot = _lastPlaybackToken;
+
+          if (activeToken != null && activeToken != playbackToken) {
+            if (kDebugMode) {
+              debugPrint(
+                  '[VoiceService] New playback detected (expected $playbackToken, active $activeToken) – aborting auto-mode enable');
+            }
+            return;
           }
-          continue;
+
+          if (activeToken == null &&
+              lastTokenSnapshot != null &&
+              lastTokenSnapshot != playbackToken) {
+            if (kDebugMode) {
+              debugPrint(
+                  '[VoiceService] Playback token mismatch after wait (expected $playbackToken, last $lastTokenSnapshot) – aborting auto-mode enable');
+            }
+            return;
+          }
+
+          playbackCleared = true;
+          break;
         }
 
-        final activeToken = _currentPlaybackToken;
-        final lastTokenSnapshot = _lastPlaybackToken;
-
-        if (activeToken != null && activeToken != playbackToken) {
-          if (kDebugMode) {
-            debugPrint(
-                '[VoiceService] New playback detected (expected $playbackToken, active $activeToken) – aborting auto-mode enable');
-          }
-          return;
-        }
-
-        if (activeToken == null &&
-            lastTokenSnapshot != null &&
-            lastTokenSnapshot != playbackToken) {
-          if (kDebugMode) {
-            debugPrint(
-                '[VoiceService] Playback token mismatch after wait (expected $playbackToken, last $lastTokenSnapshot) – aborting auto-mode enable');
-          }
-          return;
-        }
-
-        playbackCleared = true;
-        break;
+        // Poll at regular intervals instead of using stream subscriptions
+        await Future.delayed(pollInterval);
       }
 
       if (!playbackCleared) {
         if (kDebugMode) {
           debugPrint(
-              '[VoiceService] Playback or TTS still active after retries – skipping auto mode enable');
+              '[VoiceService] Playback wait timed out after ${maxWaitDuration.inSeconds}s – skipping auto mode enable');
         }
         return;
       }

@@ -35,6 +35,16 @@ Future<FirebaseApp?> _initializeFirebaseApp() async {
   debugPrint('Firebase is not yet initialized, attempting to initialize...');
 
   try {
+    // RACE CONDITION FIX: Check again right before init in case another path
+    // initialized Firebase during the async gap (e.g., FlutterFire auto-init,
+    // background message handler, or plugin initialization)
+    if (Firebase.apps.isNotEmpty) {
+      _app = Firebase.app();
+      _firebaseInitialized = true;
+      debugPrint('Firebase initialized by another path during async gap: ${_app!.name}');
+      return _app;
+    }
+
     _app = await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
@@ -44,20 +54,21 @@ Future<FirebaseApp?> _initializeFirebaseApp() async {
         'Firebase App Check is INTENTIONALLY DISABLED to fix auth issues');
     return _app;
   } catch (e) {
-    debugPrint('Error initializing Firebase: $e');
-    _firebaseInitialized = false;
-
+    // Handle duplicate-app error gracefully - this can still happen in rare
+    // race conditions where init completes between our check and the call
     if (e.toString().contains('duplicate-app')) {
       try {
         _app = Firebase.app();
         _firebaseInitialized = true;
-        debugPrint('Using existing Firebase app: ${_app!.name}');
+        debugPrint('Firebase already initialized (caught duplicate-app): ${_app!.name}');
         return _app;
       } catch (innerError) {
         debugPrint('Error getting existing Firebase app: $innerError');
       }
+    } else {
+      debugPrint('Error initializing Firebase: $e');
     }
-
+    _firebaseInitialized = false;
     _initializationFuture = null;
     return null;
   }

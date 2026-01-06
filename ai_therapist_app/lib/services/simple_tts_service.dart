@@ -572,15 +572,20 @@ class SimpleTTSService implements ITTSService {
       debugPrint('  Requested Format: $requestedFormat');
       debugPrint(
           '  Buffer Size: $bufferSize bytes (${(bufferSize / 1024).toStringAsFixed(1)} KB)');
+      final formatLower = requestedFormat.toLowerCase();
+      final bufferDesc = formatLower == "opus"
+          ? "Low-latency OPUS (4KB)"
+          : formatLower == "mp3" || formatLower == "mpeg"
+              ? "Compressed MP3 (512B)"
+              : "WAV (4KB)";
+      debugPrint('  Buffer Description: $bufferDesc');
+      final formatLabel = formatLower == "opus"
+          ? "OPUS"
+          : formatLower == "mp3" || formatLower == "mpeg"
+              ? "MP3"
+              : "WAV";
       debugPrint(
-          '  Buffer Description: ${requestedFormat.toLowerCase() == "opus" ? "Low-latency OPUS (8KB)" : "Conservative WAV (32KB)"}');
-      if (requestedFormat.toLowerCase() == "opus") {
-        debugPrint(
-            '  🚀 OPUS STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
-      } else {
-        debugPrint(
-            '  🔄 WAV STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
-      }
+          '  🚀 $formatLabel STREAMING ACTIVE - Will start playback after ${(bufferSize / 1024).toStringAsFixed(1)}KB');
     }
 
     // ZERO RISK IMPLEMENTATION: Choose path based on configuration

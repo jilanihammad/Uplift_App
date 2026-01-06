@@ -147,7 +147,7 @@ class MemoryService {
     }
   }
 
-  /// Ensure all required tables exist in the database
+  /// Ensure all required tables exist in the database, creating them if missing
   Future<void> _ensureTablesExist() async {
     try {
       // Get DatabaseOperationManager to prevent database locks
@@ -174,25 +174,91 @@ class MemoryService {
       );
 
       logger.debug(
-          'Table check: conversation_memories=[32m$convMemoriesExists[0m, therapy_insights=[32m$therapyInsightsExists[0m, emotional_states=[32m$emotionalStatesExists[0m');
+          'Table check: conversation_memories=$convMemoriesExists, therapy_insights=$therapyInsightsExists, emotional_states=$emotionalStatesExists');
 
-      // If any table is missing, log and throw
-      if (!convMemoriesExists ||
-          !therapyInsightsExists ||
-          !emotionalStatesExists) {
-        final missing = [
+      // Create any missing tables instead of throwing (fixes 3-4s startup delay from retries)
+      if (!convMemoriesExists) {
+        logger.info('Creating missing conversation_memories table...');
+        await dbOpManager.queueOperation<void>(
+          () => _databaseProvider.rawExecute('''
+            CREATE TABLE IF NOT EXISTS conversation_memories (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              user_message TEXT NOT NULL,
+              ai_response TEXT NOT NULL,
+              metadata TEXT,
+              timestamp TEXT NOT NULL
+            )
+          '''),
+          name: 'create-conversation-memories-table',
+          isReadOnly: false,
+        );
+        logger.info('Created conversation_memories table');
+      }
+
+      if (!therapyInsightsExists) {
+        logger.info('Creating missing therapy_insights table...');
+        await dbOpManager.queueOperation<void>(
+          () => _databaseProvider.rawExecute('''
+            CREATE TABLE IF NOT EXISTS therapy_insights (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id TEXT NOT NULL,
+              insight TEXT NOT NULL,
+              source TEXT NOT NULL,
+              timestamp TEXT NOT NULL
+            )
+          '''),
+          name: 'create-therapy-insights-table',
+          isReadOnly: false,
+        );
+        await dbOpManager.queueOperation<void>(
+          () => _databaseProvider.rawExecute(
+            'CREATE INDEX IF NOT EXISTS idx_therapy_insights_user_id ON therapy_insights(user_id)',
+          ),
+          name: 'create-therapy-insights-index',
+          isReadOnly: false,
+        );
+        logger.info('Created therapy_insights table with index');
+      }
+
+      if (!emotionalStatesExists) {
+        logger.info('Creating missing emotional_states table...');
+        await dbOpManager.queueOperation<void>(
+          () => _databaseProvider.rawExecute('''
+            CREATE TABLE IF NOT EXISTS emotional_states (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id TEXT NOT NULL,
+              emotion TEXT NOT NULL,
+              intensity REAL NOT NULL,
+              trigger TEXT,
+              timestamp TEXT NOT NULL
+            )
+          '''),
+          name: 'create-emotional-states-table',
+          isReadOnly: false,
+        );
+        await dbOpManager.queueOperation<void>(
+          () => _databaseProvider.rawExecute(
+            'CREATE INDEX IF NOT EXISTS idx_emotional_states_user_id ON emotional_states(user_id)',
+          ),
+          name: 'create-emotional-states-index',
+          isReadOnly: false,
+        );
+        logger.info('Created emotional_states table with index');
+      }
+
+      // Log success after ensuring all tables exist
+      if (!convMemoriesExists || !therapyInsightsExists || !emotionalStatesExists) {
+        final created = [
           if (!convMemoriesExists) 'conversation_memories',
           if (!therapyInsightsExists) 'therapy_insights',
           if (!emotionalStatesExists) 'emotional_states',
         ];
-        logger.error(
-            'Missing required database tables: [31m${missing.join(', ')}[0m');
-        throw Exception(
-            'Missing required database tables: ${missing.join(', ')}');
+        logger.info('Created missing tables: ${created.join(', ')}');
       }
     } catch (e) {
-      logger.error('Error checking required tables', error: e);
-      throw Exception('Failed to verify required database tables: $e');
+      logger.error('Error ensuring required tables exist', error: e);
+      throw Exception('Failed to ensure required database tables: $e');
     }
   }
 

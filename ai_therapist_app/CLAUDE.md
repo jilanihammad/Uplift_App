@@ -451,7 +451,7 @@ lib/
 
 ---
 
-## Recent Updates (2025-12)
+## Recent Updates (2025-12 to 2025-01)
 
 ### Performance Optimizations
 - **Lazy TTS Config Initialization** (Gold Standard): Two-layer defense with zero startup blocking
@@ -470,6 +470,43 @@ lib/
 - Auto mode re-enablement after TTS when mic was toggled during playback
 - TTS reset race condition guard (`hasPendingOrActiveTts`)
 - Generation counter pattern prevents stale async callbacks
+
+### Audio Streaming Fixes (2025-01)
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `live_tts_audio_source.dart` | Audio streaming ended prematurely for MP3/WAV | Wait for all formats, not just OPUS |
+| `live_tts_audio_source.dart` | Replay prevention blocking ExoPlayer retries | Return EOF/serve buffer instead of throwing |
+| `live_tts_audio_source.dart` | Audio repeating multiple times | Track `_primaryStreamStarted` to prevent multiple stream generators |
+| `simple_tts_service.dart` | Logging showed "WAV" for MP3 format | Added proper MP3/OPUS/WAV format detection in logs |
+| `audio_format_config.dart` | `effectiveFormat` only knew OPUS/WAV | Updated to indicate format is request-dependent |
+| `voice_service.dart` | 5s timeout race condition with stream subscriptions | Replaced `firstWhere()` + short timeouts with state polling at 200ms intervals (60s max) |
+
+**Key Fix: Timeout Race Condition in VoiceService**
+
+The `enableAutoModeWhenPlaybackCompletes()` method had a race condition where stream events could be missed between subscription attempts:
+
+```dart
+// Before (race condition prone):
+await isTtsActuallySpeaking
+    .firstWhere((speaking) => speaking == false)
+    .timeout(const Duration(seconds: 5));  // Could miss events!
+
+// After (reliable state polling):
+while (DateTime.now().difference(startTime) < maxWaitDuration) {
+  if (!_ttsActive && !_playbackActive) {
+    playbackCleared = true;
+    break;
+  }
+  await Future.delayed(pollInterval);  // 200ms polling
+}
+```
+
+**Benefits:**
+- No more spurious "timed out" warnings for long audio
+- No race condition from missed stream events between subscriptions
+- 60s max wait covers very long TTS responses
+- State polling is more reliable than stream subscriptions for this use case
 
 ### Architecture Changes
 - **SimpleTTSService**: Added lazy config initialization with state tracking (`_ttsConfigFetched`, `_configFetchInProgress`)

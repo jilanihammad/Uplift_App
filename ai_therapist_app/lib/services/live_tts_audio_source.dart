@@ -43,6 +43,11 @@ class LiveTtsAudioSource extends StreamAudioSource {
   String? _currentSessionId;
   bool _sessionCompleted = false;
 
+  // CRITICAL: Track if primary streaming request has been made
+  // Once streaming starts, subsequent requests should serve from buffer, not create new streams
+  bool _primaryStreamStarted = false;
+  int _streamReadPosition = 0; // Track how much has been read from primary stream
+
   int? _lastRequestTime; // For validation logging
 
   // Data buffer and stream subscription for proper DataSource implementation
@@ -165,22 +170,35 @@ class LiveTtsAudioSource extends StreamAudioSource {
           '  WebSocket State: closed=$_webSocketClosed, streamCompleted=$_streamCompleted');
       _ttsLog('  Buffer Size: ${_dataBuffer.length} bytes');
       _ttsLog('  Has Delivered Data: $_hasDeliveredData');
-      _ttsLog('⏳ Waiting for content size from backend...');
     }
 
-    // Wait for content size from tts-done message (with timeout)
+    // Wait for headers to be ready (NOT for full content) - enables true streaming
+    // Headers are ready after first ~512 bytes arrive, which is very fast
+    // ExoPlayer/AVPlayer handle unknown-length streams natively
     int? contentSize;
-    try {
-      contentSize = await _contentSizeCompleter.future
-          .timeout(const Duration(seconds: 10), onTimeout: () => null);
-      if (kDebugMode) {
-        _ttsLog('✅ Received content size: $contentSize bytes');
+
+    // Wait for initial data to arrive and headers to be processed (fast - typically <100ms)
+    int waitAttempts = 0;
+    const maxWaitAttempts = 100; // 100 * 10ms = 1 second max wait for first data
+    while (!_headersReady && waitAttempts < maxWaitAttempts) {
+      await Future.delayed(const Duration(milliseconds: 10));
+      waitAttempts++;
+    }
+
+    if (kDebugMode) {
+      if (_headersReady) {
+        _ttsLog('🚀 Headers ready after ${waitAttempts * 10}ms - starting streaming playback');
+      } else {
+        _ttsLog('⚠️ Headers not ready after ${waitAttempts * 10}ms - proceeding anyway');
       }
-    } catch (e) {
+    }
+
+    // Check if content size is already available (unlikely on first request)
+    if (_contentSizeCompleter.isCompleted) {
+      contentSize = _totalContentSize;
       if (kDebugMode) {
-        _ttsLog('⚠️ Timeout waiting for content size, using null: $e');
+        _ttsLog('✅ Content size already available: $contentSize bytes');
       }
-      contentSize = null;
     }
 
     // Generate session ID on first request to track legitimate vs replay requests
@@ -192,18 +210,44 @@ class LiveTtsAudioSource extends StreamAudioSource {
       }
     }
 
-    // CRITICAL: Only prevent replay AFTER session is completed
-    // Allow multiple requests during the same ExoPlayer session (seeks, retries, etc.)
-    if (_sessionCompleted &&
-        _hasDeliveredData &&
-        (start == null || start == 0)) {
+    // CRITICAL: Handle completed sessions - return EOF to prevent audio repeat
+    // When session is completed and all data was delivered via the stream generator,
+    // any NEW requests should return empty (EOF) to signal "no more data"
+    // This prevents ExoPlayer from replaying the audio from the beginning
+    if (_sessionCompleted && _hasDeliveredData) {
+      // For requests at offset > 0, serve from buffer if available (ExoPlayer seeking within played content)
+      if (start != null && start > 0 && start < _dataBuffer.length) {
+        final availableBytes = _dataBuffer.length - start;
+        final responseData = _dataBuffer.sublist(start);
+
+        if (kDebugMode) {
+          _ttsLog(
+              '♻️ LiveTtsAudioSource: Session completed - serving $availableBytes bytes for seek (offset: $start)');
+        }
+
+        return StreamAudioResponse(
+          sourceLength: _totalContentSize,
+          contentLength: availableBytes,
+          offset: start,
+          stream: Stream.value(Uint8List.fromList(responseData)),
+          contentType: _contentType,
+        );
+      }
+
+      // For requests at offset 0 or beyond buffer, return EOF
+      // This tells ExoPlayer "all data was already delivered, nothing more to give"
       if (kDebugMode) {
         _ttsLog(
-            '🚫 LiveTtsAudioSource: Preventing replay - session $_currentSessionId already completed');
+            '✅ LiveTtsAudioSource: Session completed - returning EOF (prevents audio repeat)');
       }
-      throw UnsupportedError(
-          'TTS stream session $_currentSessionId already completed - refusing replay. '
-          'This prevents infinite audio loops between different TTS requests.');
+
+      return StreamAudioResponse(
+        sourceLength: _totalContentSize,
+        contentLength: 0,
+        offset: start ?? 0,
+        stream: const Stream.empty(),
+        contentType: _contentType,
+      );
     }
 
     try {
@@ -254,6 +298,50 @@ class LiveTtsAudioSource extends StreamAudioSource {
             'Content type cannot be empty for live TTS streams');
       }
 
+      // CRITICAL: Prevent creating multiple stream generators (causes audio repeat)
+      // If primary stream already started, serve from buffer instead
+      if (_primaryStreamStarted) {
+        if (kDebugMode) {
+          _ttsLog(
+              '🛡️ LiveTtsAudioSource: Primary stream already started - serving from buffer instead of creating new stream');
+          _ttsLog(
+              '🛡️ Buffer: ${_dataBuffer.length} bytes, read position: $_streamReadPosition');
+        }
+
+        // Serve any remaining unread data from the buffer
+        if (_streamReadPosition < _dataBuffer.length) {
+          final availableBytes = _dataBuffer.length - _streamReadPosition;
+          final responseData = _dataBuffer.sublist(_streamReadPosition);
+
+          if (kDebugMode) {
+            _ttsLog(
+                '🛡️ LiveTtsAudioSource: Serving $availableBytes remaining bytes from offset $_streamReadPosition');
+          }
+
+          return StreamAudioResponse(
+            sourceLength: contentSize,
+            contentLength: availableBytes,
+            offset: _streamReadPosition,
+            stream: Stream.value(Uint8List.fromList(responseData)),
+            contentType: _contentType,
+          );
+        } else {
+          // All data already served, return EOF
+          if (kDebugMode) {
+            _ttsLog(
+                '🛡️ LiveTtsAudioSource: All data already served - returning EOF');
+          }
+
+          return StreamAudioResponse(
+            sourceLength: contentSize,
+            contentLength: 0,
+            offset: _streamReadPosition,
+            stream: const Stream.empty(),
+            contentType: _contentType,
+          );
+        }
+      }
+
       // Listening should already be active from constructor (timing fix)
       // This redundant check ensures we don't double-subscribe
       if (!_isListening) {
@@ -264,6 +352,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
         _startListening();
       }
 
+      // Mark that primary stream is starting
+      _primaryStreamStarted = true;
+
       // Create a custom stream that implements proper DataSource contract
       final dataSourceStream = _createDataSourceStream();
 
@@ -273,9 +364,9 @@ class LiveTtsAudioSource extends StreamAudioSource {
         _ttsLog('🎯 Content-Type: $_contentType');
         _ttsLog('🎯 Stream Configuration:');
         _ttsLog(
-            '  - sourceLength: ${contentSize ?? "null (unknown - streaming)"}');
+            '  - sourceLength: ${contentSize ?? "null (true streaming mode)"}');
         _ttsLog(
-            '  - contentLength: ${contentSize ?? "null (unknown - streaming)"}');
+            '  - contentLength: ${contentSize ?? "null (true streaming mode)"}');
         _ttsLog('  - offset: 0 (start from beginning)');
         _ttsLog(
             '  - DataSource contract: RESULT_NOTHING_READ when empty, END_OF_INPUT when closed');
@@ -487,7 +578,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
     int readPosition = 0;
 
     if (kDebugMode) {
-      final format = _isOpusFormat ? 'OPUS' : 'WAV';
+      final format = _isOpusFormat ? 'OPUS' : (_isMp3Format ? 'MP3' : 'WAV');
       _ttsLog(
           '🏗️ LiveTtsAudioSource: Created $format DataSource stream with contract implementation');
     }
@@ -511,9 +602,11 @@ class LiveTtsAudioSource extends StreamAudioSource {
             _dataBuffer.skip(readPosition).take(bytesToRead).toList());
 
         readPosition += bytesToRead;
+        _streamReadPosition = readPosition; // Track for subsequent requests
 
         if (kDebugMode && chunk.isNotEmpty) {
-          final dataType = _isOpusFormat ? 'OPUS' : 'WAV';
+          // Throttled logging - only log every 16 chunks
+          // final dataType = _isOpusFormat ? 'OPUS' : (_isMp3Format ? 'MP3' : 'WAV');
           // _ttsLog('📤 LiveTtsAudioSource: Yielding ${chunk.length} bytes of $dataType to ExoPlayer (position: $readPosition)');
         }
 
@@ -534,7 +627,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
         // WebSocket is closed - no more data will arrive, end the stream
         if (kDebugMode) {
-          final format = _isOpusFormat ? 'OPUS' : 'WAV';
+          final format = _isOpusFormat ? 'OPUS' : (_isMp3Format ? 'MP3' : 'WAV');
           _ttsLog(
               '🏁 LiveTtsAudioSource: $format stream completed - ending stream (END_OF_INPUT)');
           _ttsLog(
@@ -543,7 +636,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
         // Natural completion - let ExoPlayer handle ProcessingState.completed event
         if (kDebugMode) {
-          final format = _isOpusFormat ? 'OPUS' : 'WAV';
+          final format = _isOpusFormat ? 'OPUS' : (_isMp3Format ? 'MP3' : 'WAV');
           _ttsLog(
               '🏁 LiveTtsAudioSource: $format stream completed - ending stream (END_OF_INPUT)');
           _ttsLog('🏁 Session: $_currentSessionId - marking as completed');
@@ -558,26 +651,15 @@ class LiveTtsAudioSource extends StreamAudioSource {
 
         break;
       } else {
-        // WebSocket still open - check format for retry behavior
-        if (!_isOpusFormat) {
-          // If it's WAV format
-          if (kDebugMode) {
-            _ttsLog(
-                '🏁 LiveTtsAudioSource: WAV stream stalled/no data, ending stream (ExoPlayer will handle)');
-          }
-          _streamCompleted = true; // Mark as completed
-          _sessionCompleted =
-              true; // Mark session as completed to prevent replays
-          break; // Exit the loop
-        } else {
-          // If it's OPUS, continue waiting as before
-          if (kDebugMode) {
-            _ttsLog(
-                '⏳ LiveTtsAudioSource: No data available but WebSocket still open - waiting (RESULT_NOTHING_READ)');
-          }
-          await Future.delayed(const Duration(milliseconds: 10));
-          continue;
+        // WebSocket still open - wait for more streaming data (ALL formats)
+        // This is a LiveTtsAudioSource, so ALL formats (WAV, MP3, OPUS) are streamed progressively
+        if (kDebugMode) {
+          final format = _isOpusFormat ? 'OPUS' : (_isMp3Format ? 'MP3' : 'WAV');
+          _ttsLog(
+              '⏳ LiveTtsAudioSource: $format - No data available but WebSocket still open - waiting (RESULT_NOTHING_READ)');
         }
+        await Future.delayed(const Duration(milliseconds: 10));
+        continue;
       }
     }
 
@@ -588,7 +670,7 @@ class LiveTtsAudioSource extends StreamAudioSource {
         true; // Mark session as completed to prevent future replays (from just_audio)
 
     if (kDebugMode) {
-      final format = _isOpusFormat ? 'OPUS' : 'WAV';
+      final format = _isOpusFormat ? 'OPUS' : (_isMp3Format ? 'MP3' : 'WAV');
       _ttsLog(
           '🏁 LiveTtsAudioSource: $format DataSource stream ended (total read: $readPosition bytes)');
     }

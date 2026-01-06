@@ -129,7 +129,7 @@ class AudioFormatConfig {
       'opusChannels': opusChannels,
       'opusRolloutPercentage': opusRolloutPercentage,
       'emergencyWavFallback': _emergencyWavFallback,
-      'effectiveFormat': shouldUseOpus ? 'OPUS' : 'WAV',
+      'effectiveFormat': shouldUseOpus ? 'OPUS' : 'WAV (or MP3 if requested)',
       'shouldBufferOpusHeaders': shouldBufferOpusHeaders,
       'shouldModifyWavHeaders': shouldModifyWavHeaders,
       'shouldUseProgressiveStreaming': shouldUseProgressiveStreaming,
