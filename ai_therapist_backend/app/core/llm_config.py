@@ -235,7 +235,7 @@ class LLMConfig:
         # Grok Models (x.ai)
         (ModelProvider.GROK, ModelType.LLM): ModelConfig(
             provider=ModelProvider.GROK,
-            model_id=os.getenv("GROK_LLM_MODEL", "grok-4-fast-non-reasoning"),
+            model_id=os.getenv("GROK_LLM_MODEL", "grok-4-1-fast-non-reasoning"),
             base_url=os.getenv("GROK_API_BASE_URL", "https://api.x.ai/v1"),
             api_key_env="XAI_API_KEY",
             default_params={

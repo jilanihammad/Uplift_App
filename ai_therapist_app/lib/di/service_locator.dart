@@ -340,27 +340,8 @@ Future<void> setupServiceLocator({
       debugPrint('Registered ConversationBufferMemory');
     }
 
-    // ===== REGISTER MessageProcessor (BEFORE TherapyService) =====
-    // Break circular dependency by registering MessageProcessor first
-    if (!serviceLocator.isRegistered<MessageProcessor>()) {
-      serviceLocator.registerLazySingleton<MessageProcessor>(() {
-        debugPrint('Creating MessageProcessor instance (lazy initialization)');
-
-        final processor = MessageProcessor(
-          conversationHistory: serviceLocator<ConversationBufferMemory>(),
-          configService: serviceLocator<ConfigService>(),
-          groqService: serviceLocator<GroqService>(),
-        );
-
-        DependencyStatus.markInitialized('MessageProcessor');
-        debugPrint('MessageProcessor instance created and marked initialized.');
-        return processor;
-      });
-      debugPrint('Registered MessageProcessor without circular dependencies');
-    }
-
-    // NOTE: TherapyService will be registered in registerApiDependentServices()
-    // after ApiClient is available
+    // NOTE: MessageProcessor and TherapyService will be registered in
+    // registerApiDependentServices() after ApiClient is available
 
     if (!serviceLocator.isRegistered<AudioGenerator>()) {
       // Use lazy singleton to prevent immediate initialization
@@ -741,7 +722,27 @@ Future<void> registerApiDependentServices(
       debugPrint('Registered MessageRepository with interfaces');
     }
 
-    // Register TherapyService concrete implementation first
+    // Register MessageProcessor now that ApiClient is available
+    // (MessageProcessor needs ApiClient for LLM calls)
+    if (!serviceLocator.isRegistered<MessageProcessor>()) {
+      serviceLocator.registerLazySingleton<MessageProcessor>(() {
+        debugPrint('Creating MessageProcessor instance (lazy initialization)');
+
+        final processor = MessageProcessor(
+          conversationHistory: serviceLocator<ConversationBufferMemory>(),
+          configService: serviceLocator<ConfigService>(),
+          groqService: serviceLocator<GroqService>(),
+          apiClient: serviceLocator<ApiClient>(),
+        );
+
+        DependencyStatus.markInitialized('MessageProcessor');
+        debugPrint('MessageProcessor instance created and marked initialized.');
+        return processor;
+      });
+      debugPrint('Registered MessageProcessor with ApiClient from DI');
+    }
+
+    // Register TherapyService concrete implementation
     if (!serviceLocator.isRegistered<TherapyService>()) {
       serviceLocator.registerLazySingleton<TherapyService>(() => TherapyService(
             messageProcessor: serviceLocator<MessageProcessor>(),

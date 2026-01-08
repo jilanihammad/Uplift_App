@@ -162,6 +162,9 @@ class VoiceService {
   bool _isInitialized = false;
   bool _disposed = false;
 
+  // Init-future coalescing: ensures concurrent callers await the same init
+  Future<void>? _initFuture;
+
   // Stream controllers for audio playback states
   final StreamController<bool> _audioPlaybackController =
       StreamController<bool>.broadcast();
@@ -552,21 +555,38 @@ class VoiceService {
   }
 
   // Method to initialize the voice service
-  Future<void> initialize() async {
-    // Skip if already initialized
+  // Uses init-future coalescing to prevent duplicate initialization
+  Future<void> initialize() {
+    // Fast path: already initialized
     if (_isInitialized) {
       if (kDebugMode) {
         debugPrint('VoiceService already initialized, skipping initialize()');
       }
-      return;
+      return Future.value();
     }
 
+    // Coalescing: if init is in progress, return existing future so all callers await
+    final existing = _initFuture;
+    if (existing != null) {
+      if (kDebugMode) {
+        debugPrint('VoiceService init already in progress, awaiting existing future...');
+      }
+      return existing;
+    }
+
+    // Start new initialization and store the future for coalescing
+    _initFuture = _doInitialize();
+    return _initFuture!;
+  }
+
+  // Internal initialization implementation
+  Future<void> _doInitialize() async {
     try {
       // Get backend URL from AppConfig instead of hardcoding
       _backendUrl = AppConfig().backendUrl;
 
       if (kDebugMode) {
-        debugPrint('Voice service initialized with API client');
+        debugPrint('[VoiceService] Starting initialization...');
       }
 
       // For web platform, use a simplified initialization
@@ -574,19 +594,9 @@ class VoiceService {
         if (kDebugMode) {
           debugPrint('Initializing voice service in web mode');
         }
-        // _currentState = RecordingState.ready; // REMOVED
-        // _recordingStateController!.add(_currentState); // REMOVED
         _isInitialized = true;
         return;
       }
-
-      // Request microphone permissions for recording (non-web platforms) - Handled by RecordingManager
-      // if (!_isWeb) {
-      //   var status = await Permission.microphone.request();
-      //   if (status != PermissionStatus.granted) {
-      //     throw Exception("Microphone permission not granted");
-      //   }
-      // }
 
       // Reset the conversation context
       _conversationContext = [];
@@ -601,36 +611,22 @@ class VoiceService {
             '[VoiceService] AudioRecordingService initialized successfully');
       }
 
-      // _currentState = RecordingState.ready; // REMOVED
-      // _recordingStateController!.add(_currentState); // REMOVED
-
+      // Mark as initialized ONLY after all steps complete successfully
       _isInitialized = true;
 
-      // WebSocket pre-warming removed - handled by TTSService
-
       if (kDebugMode) {
-        debugPrint('Voice service initialized successfully');
+        debugPrint('[VoiceService] Initialization complete');
       }
     } catch (e) {
-      // _currentState = RecordingState.error;
-      // try {
-      //   if (_recordingStateController != null &&
-      //       !_recordingStateController!.isClosed) {
-      //     _recordingStateController!.add(_currentState);
-      //   }
-      // } catch (streamError) {
-      //   if (kDebugMode) {
-      //     debugPrint('Error sending state to stream: $streamError');
-      //   }
-      // }
-
       if (kDebugMode) {
         debugPrint('Error initializing voice service: $e');
       }
-      // Don't rethrow the error in web mode
-      if (!_isWeb) {
-        rethrow;
-      }
+      // On failure: log + rethrow so callers see the failure
+      // _isInitialized stays false, allowing retry on next call
+      rethrow;
+    } finally {
+      // Clear the init future so next call can retry if needed
+      _initFuture = null;
     }
   }
 

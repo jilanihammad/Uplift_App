@@ -65,10 +65,10 @@ class MessageProcessor {
     required ConversationBufferMemory conversationHistory,
     required ConfigService configService,
     required IGroqService groqService,
+    required this.apiClient,
   })  : _conversationHistory = conversationHistory,
         _configService = configService,
-        _groqService = groqService,
-        apiClient = ApiClient(configService: configService) {
+        _groqService = groqService {
     _init();
     debugPrint(
         '[MessageProcessor] Initialized. ApiClient hash: ${apiClient.hashCode}');

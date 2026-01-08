@@ -55,8 +55,11 @@ class MemoryService {
   bool _isApplyingRemoteAnchors = false;
   bool _isFlushingAnchorQueue = false;
   bool _isFlushingProfileQueue = false;
+  Timer? _anchorFlushDebounceTimer;
   final List<Map<String, dynamic>> _pendingAnchorOps = [];
   Map<String, dynamic>? _pendingProfileUpdate;
+  static const Duration _anchorFlushDebounceDelay = Duration(seconds: 2);
+  static const Duration _anchorFlushRetryDelay = Duration(seconds: 10);
 
   // User preferences
   final Map<String, dynamic> _userPreferences = {};
@@ -719,7 +722,8 @@ class MemoryService {
         }
       }
       await _removeAnchorOpFromQueue(anchor.clientAnchorId, type: 'upsert');
-      await _flushPendingAnchors();
+      // Note: Don't call _flushPendingAnchors() here - it causes cascade floods
+      // Pending ops are flushed during initialization or via debounced trigger
     } catch (e) {
       logger.warning('Failed to upsert anchor to server: $e');
       await _queueAnchorOperation({
@@ -742,7 +746,8 @@ class MemoryService {
     try {
       await _apiClient.post('/anchors:delete', payload);
       await _removeAnchorOpFromQueue(anchor.clientAnchorId, type: 'delete');
-      await _flushPendingAnchors();
+      // Note: Don't call _flushPendingAnchors() here - it causes cascade floods
+      // Pending ops are flushed during initialization or via debounced trigger
     } catch (e) {
       logger.warning('Failed to delete anchor on server: $e');
       await _queueAnchorOperation({
@@ -809,6 +814,7 @@ class MemoryService {
     }
 
     await _persistAnchorQueue();
+    _scheduleAnchorFlush();
   }
 
   Future<void> _removeAnchorOpFromQueue(String clientId,
@@ -837,6 +843,18 @@ class MemoryService {
     }
   }
 
+  void _scheduleAnchorFlush({Duration delay = _anchorFlushDebounceDelay}) {
+    if (!_isSyncEnabled || _isApplyingRemoteAnchors) {
+      return;
+    }
+
+    _anchorFlushDebounceTimer?.cancel();
+    _anchorFlushDebounceTimer = Timer(delay, () {
+      _anchorFlushDebounceTimer = null;
+      unawaited(_flushPendingAnchors());
+    });
+  }
+
   Future<void> _flushPendingAnchors() async {
     if (_isFlushingAnchorQueue || !_isSyncEnabled) {
       return;
@@ -845,8 +863,20 @@ class MemoryService {
       return;
     }
 
+    // SAFETY: Limit operations per flush to prevent network saturation
+    const int maxOpsPerFlush = 5;
+    if (_pendingAnchorOps.length > maxOpsPerFlush) {
+      logger.warning(
+        'Pending anchor ops (${_pendingAnchorOps.length}) exceeds per-flush limit ($maxOpsPerFlush). '
+        'Will drain in batches to avoid network saturation.',
+      );
+    }
+
     _isFlushingAnchorQueue = true;
-    final opsSnapshot = List<Map<String, dynamic>>.from(_pendingAnchorOps);
+    final opsSnapshot = List<Map<String, dynamic>>.from(
+      _pendingAnchorOps.take(maxOpsPerFlush),
+    );
+    bool hadError = false;
     try {
       for (final op in opsSnapshot) {
         final type = op['type'] as String?;
@@ -854,18 +884,29 @@ class MemoryService {
         if (type == null || payload == null) {
           continue;
         }
+        final clientId = payload['client_anchor_id'] as String?;
+        if (clientId == null || clientId.isEmpty) {
+          continue;
+        }
         if (type == 'upsert') {
           await _apiClient.post('/anchors:upsert', payload);
         } else if (type == 'delete') {
           await _apiClient.post('/anchors:delete', payload);
         }
-        _pendingAnchorOps.remove(op);
-        await _persistAnchorQueue();
+        // Remove by (clientId,type) to avoid identity-mismatch issues if the queue entry
+        // was replaced while we were awaiting the network request.
+        await _removeAnchorOpFromQueue(clientId, type: type);
       }
     } catch (e) {
+      hadError = true;
       logger.warning('Failed to flush pending anchor operations: $e');
     } finally {
       _isFlushingAnchorQueue = false;
+      if (_pendingAnchorOps.isNotEmpty) {
+        _scheduleAnchorFlush(
+          delay: hadError ? _anchorFlushRetryDelay : _anchorFlushDebounceDelay,
+        );
+      }
     }
   }
 
@@ -1021,7 +1062,13 @@ class MemoryService {
     for (final anchor in toRemove) {
       if (anchor.id != null) {
         if (_isSyncEnabled && !_isApplyingRemoteAnchors) {
-          unawaited(_syncAnchorDelete(anchor));
+          await _queueAnchorOperation({
+            'type': 'delete',
+            'payload': {
+              'client_anchor_id': anchor.clientAnchorId,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+          });
         }
         await _databaseProvider.delete(
           'user_anchors',

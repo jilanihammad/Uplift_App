@@ -16,7 +16,7 @@ Comprehensive reference for engineers, product managers, and stakeholders workin
 1. **Flutter Client** (`ai_therapist_app`)
    - UI + business logic using BLoC/state managers.
    - Voice capture, streaming playback, and session coordination.
-   - Local persistence (SQLite/Drift) for session history, preferences, and cached anchors.
+   - Local persistence (SQLite via `sqflite` / `sqflite_common_ffi` + SharedPreferences) for session history, preferences, and cached anchors.
 2. **FastAPI Backend** (`ai_therapist_backend`)
    - Unified LLM manager with provider switching (OpenAI, Groq, Anthropic, Google, Azure, DeepSeek).
    - Real-time voice pipeline via WebSocket streaming and rate-limited REST endpoints.
@@ -55,13 +55,13 @@ Key components (all under `lib/services/`):
      - **Debug Logs**: `[TTS Config] Prefetch started (non-blocking)`, `[TTS Config] Marked as cached from prefetch`, `[TTS Config] Lazy fetch triggered`.
 
 Supporting utilities:
-- `AudioProcessingService`, `RNNoiseService`, and `EnhancedVADManager` for noise suppression and speech detection.
+- `RecordingManager`, `VADManager`, `RNNoiseService`, and `EnhancedVADManager` for audio capture, noise suppression, and speech detection.
 - `SessionScopeManager` to clean up resources when voice sessions end.
 - `MemoryManager`, `MemoryService`, and `ConversationMemory` to persist session anchors and insights.
 
 ### 3.3 Data Layer
-- **Remote**: `lib/data/datasources/remote/api_client.dart` handles REST/WebSocket interactions with token injection, `_resolveUrl()` routing all REST calls through `/api/v1` automatically, and graceful fallbacks for optional endpoints (e.g., `/system/tts-config`, `/mood_entries` 404s don’t block startup). Auth tokens now live in `FlutterSecureStorage` instead of plain SharedPreferences.
-- **Local**: `lib/data/datasources/local` (`DatabaseProvider`, `AppDatabase`, `PrefsManager`) for SQLite via Drift and shared preferences.
+- **Remote**: `lib/data/datasources/remote/api_client.dart` handles REST/WebSocket interactions with token injection; `_resolveUrl()` defaults to `/api/v1` but allowlists legacy root endpoints (`/ai/*`, `/voice/*`, `/health`, etc.); and it has graceful fallbacks for optional endpoints (e.g., `/system/tts-config`, `/mood_entries` 404s don’t block startup). Auth tokens now live in `FlutterSecureStorage` instead of plain SharedPreferences.
+- **Local**: `lib/data/datasources/local` (`DatabaseProvider`, `AppDatabase`, `PrefsManager`) for SQLite (sqflite) + shared preferences.
 - **Repositories**: Auth, session, message, and user repositories under `lib/data/repositories` wrap data sources for testability.
 - **Timestamp normalization**: `lib/utils/date_time_utils.dart` parses backend ISO-8601 strings (fixes `+00:00Z` issues) and every model/entity now funnels through it; the backend mirrors this via `app/core/datetime_utils.py` so responses always emit RFC 3339 (`serialize_datetime`, `utcnow_isoformat`).
 
@@ -80,17 +80,17 @@ Supporting utilities:
 - Permissions and network config live in `android/app/src/main/AndroidManifest.xml` with build-type placeholders driving `network_security_config_debug.xml` vs `network_security_config_release.xml` (release is HTTPS-only, debug whitelists localhost). `android:allowBackup="false"` prevents OS backups of therapy data.
 
 ### 3.7 Testing & Tooling
-- Unit/widget tests in `ai_therapist_app/test/` using `bloc_test`, `mocktail`, etc.
+- Unit/widget tests in `ai_therapist_app/test/` using `bloc_test`, `mockito`, etc.
 - Integration tests under `integration_test/` covering end-to-end voice sessions, auto mode scenarios, dark mode persistence, timestamp fixes.
-- CI/quality commands: `flutter analyze`, `flutter test`, `flutter test integration_test`, plus targeted scripts from doc files (`test_checklist.md`, `quick_test_guide.md`).
-- Specialized docs: `TTS_BUFFERING_IMPLEMENTATION.md`, `TTS_CLEANUP_COMPLETE_REPORT.md`, `WAKELOCK_IMPLEMENTATION.md`, `AUTO_MODE_PERSISTENCE_FIX.md`, etc., catalogue historical fixes and expected behavior.
+- CI/quality commands: `flutter analyze`, `flutter test`, `flutter test integration_test`, plus targeted scripts from doc files (`ai_therapist_app/test_checklist.md`, `ai_therapist_app/quick_test_guide.md`).
+- Specialized docs: `ai_therapist_app/TTS_BUFFERING_IMPLEMENTATION.md`, `ai_therapist_app/TTS_CLEANUP_COMPLETE_REPORT.md`, `ai_therapist_app/WAKELOCK_IMPLEMENTATION.md`, `ai_therapist_app/AUTO_MODE_PERSISTENCE_FIX.md`, etc., catalogue historical fixes and expected behavior.
 
 ### 3.8 Developer Workflow
 1. `flutter pub get`
 2. Configure `.env` (if necessary) with backend URL and flags.
 3. Run locally via `flutter run`; choose device/emulator.
-4. For debugging voice pipeline, leverage `lib/debug_app.dart`, `debug_api.dart`, and `monitor_logs.sh`.
-5. Use GetIt service locator logs to ensure dependencies are registered; consult `PHASE_6_MIGRATION_STATUS.md` for hybrid architecture decisions.
+4. For debugging voice pipeline, leverage `ai_therapist_app/lib/debug_app.dart`, `ai_therapist_app/lib/debug_api.dart`, and `ai_therapist_app/monitor_logs.sh`.
+5. Use GetIt service locator logs to ensure dependencies are registered; consult `ai_therapist_app/PHASE_6_MIGRATION_STATUS.md` for hybrid architecture decisions.
 
 ---
 
@@ -119,19 +119,19 @@ Supporting utilities:
 - Observability via `app/core/enhanced_logging.py`, `performance_monitor.py`, `http_client_manager.py` for tracing and metrics (OpenTelemetry-ready).
 
 ### 4.5 Local Development & Deployment
-1. `pip install -r requirements-dev.txt`
-2. Configure `.env.dev` and `.env` with provider keys (OpenAI, Groq, Anthropic, etc.).
-3. Launch dev server: `python dev_server.py` or `uvicorn app.main:app --reload`.
+1. `cd ai_therapist_backend && pip install -r requirements.txt -r requirements-dev.txt`
+2. Configure `.env` with provider keys (OpenAI, Groq, Anthropic, etc.); optionally add an untracked `.env.dev` for local overrides.
+3. Launch dev server: `python dev_server.py` or `uvicorn app.main:app --reload --port 8000`.
 4. Run tests: `pytest`, targeted scripts, and streaming benchmarks.
-5. Deployment: `deploy_to_cloud.sh` or Cloud Build pipeline; Dockerfiles provided for various environments (`Dockerfile.cloudrun`, `.simple`, `.test`).
+5. Deployment: `deploy_to_cloud.sh` or Cloud Build pipeline; Dockerfiles provided for various environments (`dockerfile`, `Dockerfile.cloudrun`, `Dockerfile.simple`, `Dockerfile.test`).
 6. Cloud Run expects GCP Project with Cloud SQL Postgres; see `ai_therapist_backend/README.md` and `deploy_to_cloud.sh`.
 
 ### 4.6 Production Hardening Highlights
 - JWT session tracking with concurrent-session limits and automatic invalidation.
 - Interrupt acknowledgment protocol ensures no overlapping audio on rapid user input.
-- Adaptive TTS formats (WAV, Opus, AAC) based on network scoring, reducing bandwidth while meeting quality targets.
+- Adaptive TTS formats (MP3, WAV, Opus, AAC) based on network scoring, reducing bandwidth while meeting quality targets.
 - Binary WebSocket frames reduce payload size by ~33%, keeping CPU and latency in check.
-- App Check integration expects Play Integrity tokens; same tokens validated server-side before streaming.
+- App Check (Play Integrity) is enforced in the Android client for Firebase services; the backend currently validates Firebase Auth JWTs for API calls (not App Check tokens).
 
 ---
 
@@ -147,12 +147,15 @@ Supporting utilities:
 - **Frontend**: Unit tests (voice pipeline, feature flags, theme), widget/integration tests (session flows, auto mode). Use `test_checklist.md` for release gates.
 - **Backend**: Pytest suites grouped by features (LLM routing, audio streaming, rate limiting). Replay tests for VAD/Opus issues ensure regression protection.
 - **Performance**: Benchmarks for TTFB and audio streaming latency; soak tests (`soak_test.js`) simulate long-running sessions.
-- **Security**: Automated checks for JWT/session handling, App Check enforcement, and rate limiting. See `Before-Release.md` for additional pre-launch validations and tests.
+- **Security**: Automated checks for JWT/session handling, App Check enforcement, and rate limiting. See `md_files/Before-Release.md` for additional pre-launch validations and tests.
 
 ---
 
 ## 7. Release & Compliance
-- **Android Play Store**: Follow `Before-Release.md` to run the automated scripts (`tools/build_release_aab.sh`, `tools/scan_release.sh`), re-verify App Check, network security, and secrets, and execute the validation matrix.
+- **Android Play Store**: Follow `md_files/Before-Release.md` to run the automated scripts (`tools/build_release_aab.sh`, `tools/scan_release.sh`), re-verify App Check, network security, and secrets, and execute the validation matrix.
+- **Versioning**: `ai_therapist_app/pubspec.yaml` uses `version: <semver>+<versionCode>`; Play requires monotonically increasing `versionCode` (e.g., `+13`).
+- **Build Output**: `app-release.aab` at `ai_therapist_app/build/app/outputs/bundle/release/app-release.aab`; Dart symbols at `ai_therapist_app/build/symbols/`.
+- **Strip Debug Symbols Errors**: If the AAB build fails on “failed to strip debug symbols”, it’s usually an Android NDK/toolchain issue; verify the AAB exists and run `flutter doctor -v` to fix the toolchain.
 - **Crash Reporting**: Release builds must ship with Crashlytics enabled (see `_configureCrashlytics()` in `main.dart`) and include uploaded `--split-debug-info` symbols (`firebase crashlytics:symbols:upload --app=<id> build/symbols`) so Firebase can de-obfuscate stack traces.
 - **Data Safety**: Ensure declarations cover audio capture, transcript storage, and analytics usage. Provide privacy policy links inside the app (Settings/About).
 - **Build Artifacts**: Prefer `flutter build appbundle` for release; backend deployed via Cloud Run (continuous or manual using `deploy_to_cloud.sh`).
@@ -181,16 +184,16 @@ Supporting utilities:
 ---
 
 ## 8. Onboarding Checklist for New Contributors
-1. **Read Key Docs**: `Maya.md` (this file), `CLAUDE.md`, `DOCUMENTATION_STRUCTURE.md`, backend `LLM_CONFIGURATION_GUIDE.md`, and `Before-Release.md`.
+1. **Read Key Docs**: `Maya.md` (this file), `CLAUDE.md`, `DOCUMENTATION_STRUCTURE.md`, `ai_therapist_backend/LLM_CONFIGURATION_GUIDE.md`, and `md_files/Before-Release.md`.
 2. **Set Up Environment**:
    - Frontend: install Flutter 3+, configure Firebase project (copy relevant `google-services.json`).
-   - Backend: Python 3.9+, virtualenv, set `.env` with API keys, configure PostgreSQL (local or Docker).
+   - Backend: Python 3.11+, virtualenv, set `.env` with API keys, configure PostgreSQL (local or Docker).
 3. **Run Baseline Tests**: `flutter test`, `pytest`, streaming smoke tests.
 4. **Understand Voice Pipeline**: Review `voice_session_bloc.dart`, `voice_service.dart`, `websocket_audio_manager.dart`, `SimpleTTSService`, and `message_processor.dart`.
 5. **Explore Backend Services**: Step through `app/services/llm_manager.py`, `app/api/endpoints/voice.py`, and `app/core` modules.
 6. **Check Feature Flags**: Evaluate `FeatureFlags` defaults and toggles—especially `voicePipelineControllerEnabled`, `voicePipelineControllerAuthoritative`, and `memory_persistence_enabled`—when working on voice pipeline or direct LLM access.
 7. **Coordinate Deployments**: Familiarize yourself with Cloud Run scripts and App Check considerations before shipping.
-8. **Security & Compliance**: Adhere to secret management, logging hygiene, and release gating items captured in `Before-Release.md`.
+8. **Security & Compliance**: Adhere to secret management, logging hygiene, and release gating items captured in `md_files/Before-Release.md`.
 
 ---
 
@@ -286,10 +289,10 @@ if (gen != _generation) return; // Abort if state changed
 ---
 
 ## 10. Additional Resources
-- **Troubleshooting**: `fix.md`, `improvements.md`, `streaming.md`, `TTS_STREAMING_IMPLEMENTATION.md`, `verbose_logging_fix_summary.md`.
-- **Migration Notes**: `backendRefactor.md`, `PHASE_6_MIGRATION_STATUS.md`, `refactor_progress.md`.
+- **Troubleshooting**: `md_files/fix.md`, `md_files/improvements.md`, `md_files/streaming.md`, `md_files/TTS_STREAMING_IMPLEMENTATION.md`, `ai_therapist_app/verbose_logging_fix_summary.md`.
+- **Migration Notes**: `md_files/backendRefactor.md`, `ai_therapist_app/PHASE_6_MIGRATION_STATUS.md`, `ai_therapist_app/refactor_progress.md`.
 - **Voice Pipeline Takeover**: `takeover.md` (detailed plan for finishing the controller migration and deleting the legacy AutoListeningCoordinator path).
-- **Testing Guides**: `test_bulletproof_completion.md`, `test_dark_mode_persistence.dart`, `test_wav_header_fix.dart`.
+- **Testing Guides**: `ai_therapist_app/test_bulletproof_completion.md`, `ai_therapist_app/test_dark_mode_persistence.dart`, `ai_therapist_app/test_wav_header_fix.dart`.
 - **Deployment Helpers**: `deploy_to_cloud.sh`, `deploy_to_cloud.ps1`, `build_*` scripts for Flutter builds.
 
 Stay aligned with the hybrid architecture vision: maintain compatibility while gradually shifting to the interface-driven voice pipeline and modular backend services. When in doubt, review existing documentation and follow the safety-first release process.

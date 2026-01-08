@@ -48,7 +48,9 @@ class FeatureFlags {
 
   static Future<void> _initializePrefs() async {
     _prefs = await SharedPreferences.getInstance();
-    debugPrint('[FeatureFlags] Initialized with SharedPreferences');
+    if (kDebugMode) {
+      debugPrint('[FeatureFlags] Initialized with SharedPreferences');
+    }
 
     // Seed defaults for any unset flags so rollouts behave deterministically
     for (final entry in _defaults.entries) {
@@ -75,27 +77,32 @@ class FeatureFlags {
   /// Get the value of a feature flag
   static bool isEnabled(String flagKey) {
     if (_prefs == null) {
-      debugPrint(
-          '[FeatureFlags] WARNING: Not initialized, returning default for $flagKey');
+      if (kDebugMode) {
+        debugPrint(
+            '[FeatureFlags] WARNING: Not initialized, returning default for $flagKey');
+      }
       return _defaults[flagKey] ?? false;
     }
 
     final value = _prefs!.getBool(flagKey) ?? _defaults[flagKey] ?? false;
-    debugPrint('[FeatureFlags] $flagKey = $value');
     return value;
   }
 
   /// Set the value of a feature flag
   static Future<void> setEnabled(String flagKey, bool value) async {
     if (_prefs == null) {
-      debugPrint(
-          '[FeatureFlags] WARNING: Not initialized, queueing $flagKey override');
+      if (kDebugMode) {
+        debugPrint(
+            '[FeatureFlags] WARNING: Not initialized, queueing $flagKey override');
+      }
       _deferredWrites[flagKey] = value;
       return;
     }
 
     await _prefs!.setBool(flagKey, value);
-    debugPrint('[FeatureFlags] Set $flagKey = $value');
+    if (kDebugMode) {
+      debugPrint('[FeatureFlags] Set $flagKey = $value');
+    }
   }
 
   static bool get isInitialized => _initialized;
@@ -131,14 +138,18 @@ class FeatureFlags {
   /// Reset all flags to defaults
   static Future<void> resetToDefaults() async {
     if (_prefs == null) {
-      debugPrint('[FeatureFlags] ERROR: Not initialized');
+      if (kDebugMode) {
+        debugPrint('[FeatureFlags] ERROR: Not initialized');
+      }
       return;
     }
 
     for (final entry in _defaults.entries) {
       await _prefs!.setBool(entry.key, entry.value);
     }
-    debugPrint('[FeatureFlags] Reset all flags to defaults');
+    if (kDebugMode) {
+      debugPrint('[FeatureFlags] Reset all flags to defaults');
+    }
   }
 
   /// Get all current flag values for debugging
@@ -152,6 +163,10 @@ class FeatureFlags {
 
   /// Debug print all flags
   static void debugPrintFlags() {
+    if (!kDebugMode) {
+      return;
+    }
+
     debugPrint('[FeatureFlags] Current flag values:');
     getAllFlags().forEach((key, value) {
       debugPrint('  $key: $value');

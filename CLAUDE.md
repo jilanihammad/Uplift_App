@@ -12,7 +12,7 @@ AI Therapist App - A full-stack application providing AI-powered therapeutic con
 - **Pattern**: BLoC (Business Logic Component) with hybrid architecture (Phase 6 migration)
 - **State Management**: Flutter BLoC, Provider, GetX
 - **Dependency Injection**: GetIt service locator
-- **Key Services**: VoiceService, TherapyService, AudioProcessingService
+- **Key Services**: VoiceService, AudioRecordingService, VoicePipelineController, SimpleTTSService, ApiClient
 - **Platform Support**: Android, iOS, Windows, macOS
 
 ### Backend (ai_therapist_backend/)
@@ -34,14 +34,26 @@ flutter pub get
 # Run in debug mode
 flutter run
 
-# Run in release mode with custom backend
-flutter run --release --dart-define=API_BASE_URL=https://your-backend-url
+# Point app at a custom backend
+# - Preferred: set BACKEND_URL in ai_therapist_app/.env (AppConfig reads this at runtime)
+# - AppConfig defaults to production Cloud Run if BACKEND_URL is unset
+
+# Example: disable TTS streaming at build time (optional)
+flutter run --release --dart-define=TTS_STREAMING_ENABLED=false
 
 # Build for platforms
 flutter build apk --release                 # Android
+flutter build appbundle --release           # Android (Play Store AAB)
 flutter build ios --release                 # iOS
 flutter build windows --release             # Windows
 flutter build macos --release               # macOS
+
+# Play Store testing build (signed AAB)
+# 1) Bump ai_therapist_app/pubspec.yaml: version: x.y.z+<versionCode>
+# 2) Build
+./tools/build_release_aab.sh
+# Output: ai_therapist_app/build/app/outputs/bundle/release/app-release.aab
+# If Flutter reports "failed to strip debug symbols", run `flutter doctor -v` and fix the Android toolchain; the AAB may still be created.
 
 # Run tests and analysis
 flutter analyze
@@ -52,16 +64,13 @@ flutter test
 ```bash
 # Local development (fastest - no Cloud Run deployments needed!)
 cd ai_therapist_backend
-python dev_server.py                       # Auto-reload, uses .env.dev
+python dev_server.py                       # Auto-reload; loads .env.dev if present (falls back to .env)
 
 # Alternative local development
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Install dev dependencies (first time only)
-pip install -r requirements-dev.txt
-
-# Run using dev script
-python scripts/dev.py local
+# Install dependencies (first time only)
+pip install -r requirements.txt -r requirements-dev.txt
 
 # Database migrations
 # IMPORTANT: Cloud Run runs migrations automatically via entrypoint.sh
@@ -69,7 +78,7 @@ python scripts/dev.py local
 
 # For local development with Cloud SQL Proxy
 cloud-sql-proxy upliftapp-cd86e:us-central1:jilaniuplift --port=5433
-export DATABASE_URL="postgresql://postgres:7860@localhost:5433/ai_therapist"
+export DATABASE_URL="postgresql://postgres:<password>@localhost:5433/ai_therapist"
 alembic upgrade head                        # Apply migrations
 alembic revision -m "Description"           # Create new migration
 alembic stamp head                          # Mark migration as applied (troubleshooting only)
@@ -78,7 +87,7 @@ alembic stamp head                          # Mark migration as applied (trouble
 bash deploy_to_cloud.sh
 
 # Build and run with Docker
-docker build -t ai-therapist-backend .
+docker build -f dockerfile -t ai-therapist-backend .
 docker run -p 8080:8080 ai-therapist-backend
 ```
 
@@ -100,7 +109,7 @@ curl -X POST "http://localhost:8000/ai/response" \
 # Test transcription
 curl -X POST "http://localhost:8000/voice/transcribe" \
   -H "Content-Type: application/json" \
-  -d '{"audio_data": "base64_audio_here", "audio_format": "mp3"}'
+  -d '{"audio_data": "base64_audio_here", "audio_format": "m4a"}'
 
 # Production endpoints (for comparison)
 curl -X GET "https://ai-therapist-backend-385290373302.us-central1.run.app/health"
@@ -109,10 +118,10 @@ curl -X GET "https://ai-therapist-backend-385290373302.us-central1.run.app/healt
 ## Key Technical Decisions
 
 ### Audio Architecture
-- **Format**: OPUS (ogg_opus) for 60-70% size reduction
+- **Formats**: MP3 (`audio/mpeg`) default for compatibility; OPUS (`ogg_opus`) behind `AudioFormatConfig`; WAV fallback
 - **Streaming**: WebSocket-based real-time audio streaming
 - **Processing**: RNNoise for voice activity detection and noise reduction
-- **TTS**: Supports multiple providers (OpenAI, ElevenLabs, Google)
+- **TTS**: Routed via the backend unified LLM manager (OpenAI/Groq/Google, etc.)
 
 ### LLM Integration
 - **Unified Manager**: Single interface for multiple LLM providers
@@ -134,11 +143,13 @@ The codebase is undergoing a hybrid architecture migration to decompose monolith
 OPENAI_API_KEY=your-key
 GROQ_API_KEY=your-key
 XAI_API_KEY=your-key                       # x.ai Grok API key
+ANTHROPIC_API_KEY=your-key
+FIREBASE_PROJECT_ID=your-project-id        # used for JWT verification (fallback path)
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json  # local-only (firebase-admin ADC)
 DATABASE_URL=postgresql://user:pass@host/db
-FIREBASE_CREDENTIALS=path/to/credentials.json
 
 # Flutter App (.env)
-API_BASE_URL=https://your-backend-url
+BACKEND_URL=https://your-backend-url
 FIREBASE_API_KEY=your-key
 ```
 
@@ -147,13 +158,13 @@ FIREBASE_API_KEY=your-key
 # Cloud SQL Connection (for local development)
 # Instance: upliftapp-cd86e:us-central1:jilaniuplift
 # Database: ai_therapist
-# User: postgres, Password: 7860
+# User: postgres, Password: <set via Secret Manager>
 
 # Install and run Cloud SQL Proxy
 cloud-sql-proxy upliftapp-cd86e:us-central1:jilaniuplift --port=5433
 
 # Set DATABASE_URL for local development
-export DATABASE_URL="postgresql://postgres:7860@localhost:5433/ai_therapist"
+export DATABASE_URL="postgresql://postgres:<password>@localhost:5433/ai_therapist"
 
 # Initialize database (migrations run automatically on Cloud Run)
 alembic upgrade head
@@ -162,7 +173,7 @@ alembic upgrade head
 python scripts/seed_db.py
 
 # Production DATABASE_URL (set in Cloud Run)
-# postgresql://postgres:7860@/ai_therapist?host=/cloudsql/upliftapp-cd86e:us-central1:jilaniuplift
+# postgresql://postgres:<password>@/ai_therapist?host=/cloudsql/upliftapp-cd86e:us-central1:jilaniuplift
 ```
 
 ## Important Implementation Notes
@@ -224,7 +235,7 @@ gcloud run deploy ai-therapist-backend \
 ### Audio Issues
 - If TTS is not working, check OPUS codec support
 - For streaming issues, verify WebSocket connection
-- VAD sensitivity can be adjusted in AudioProcessingService
+- VAD sensitivity/tuning lives in `VADManager` / `EnhancedVADManager` (and orchestration in `AutoListeningCoordinator` / `VoicePipelineController`)
 
 ### Build Issues
 - Clean Flutter build: `flutter clean && flutter pub get`
@@ -235,7 +246,7 @@ gcloud run deploy ai-therapist-backend \
 - **Migration errors on Cloud Run**: Check that `DATABASE_URL` points to Cloud SQL (not localhost/SQLite)
 - **DuplicateTable errors**: Use `alembic stamp head` to mark existing tables as migrated
 - **Connection refused**: Ensure Cloud SQL Proxy is running for local development
-- **Password authentication failed**: Verify Cloud SQL postgres password is set to `7860`
+- **Password authentication failed**: Verify Cloud SQL postgres password matches your Secret Manager / local env
 
 ### API Integration
 - Use the LLM manager's unified interface for provider switching

@@ -40,7 +40,10 @@ class AutoListeningCoordinator with SessionDisposable {
   bool _aiAudioActive = false;
   bool _autoModeEnabledDuringAiAudio = false;
   Timer? _aiAudioGuardTimer;
-  static const Duration _aiAudioGuardTimeout = Duration(seconds: 10);
+  // Guard is a safety fallback for stale "AI audio active" state.
+  // It must not cut off legitimate long TTS responses, so it uses a longer timeout
+  // and double-checks that audio/TTS is truly inactive before forcing a restart.
+  static const Duration _aiAudioGuardTimeout = Duration(seconds: 30);
   final bool _voiceGuardEnabled;
 
   // Unified TTS activity stream (set after initialization if available)
@@ -273,12 +276,19 @@ class AutoListeningCoordinator with SessionDisposable {
       if (!_autoModeEnabledDuringAiAudio || !_autoModeEnabled) {
         return;
       }
+      // If audio/TTS is still active, this is not a stuck state; extend the guard.
+      // This prevents cutting off long TTS responses mid-playback.
+      final stillActive =
+          _audioPlayerManager.isPlaybackActive || _voiceService.isTtsActive;
+      if (stillActive) {
+        _startAiAudioGuardTimer();
+        return;
+      }
       if (kDebugMode) {
         debugPrint(
             '[AutoListeningCoordinator] [GUARD] AI audio timeout hit; forcing listening restart');
       }
-      _autoModeEnabledDuringAiAudio = false;
-      _aiAudioActive = false;
+      _forceAiAudioIdle();
       unawaited(_startListeningAfterDelay());
     });
   }
