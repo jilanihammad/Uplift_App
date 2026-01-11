@@ -1591,6 +1591,13 @@ class AutoListeningCoordinator with SessionDisposable {
   // Enable automatic listening mode (original method using AudioPlayerManager)
   Future<void> enableAutoMode() async {
     _traceEntryPoint('enableAutoMode');
+
+    // HARD NO-OP: Already enabled with no transition in flight
+    if (_autoModeEnabled && _vadTransitionLock == null) {
+      debugPrint('[AutoListening] enableAutoMode: already enabled, no-op');
+      return;
+    }
+
     // STATE VALIDATION: Guard against unexpected state
     if (_currentState != AutoListeningState.idle) {
       final shouldResetState =
@@ -1652,9 +1659,21 @@ class AutoListeningCoordinator with SessionDisposable {
   // Disable automatic listening mode
   Future<void> disableAutoMode() {
     _traceEntryPoint('disableAutoMode');
+
+    // Return existing in-flight disable
     final existing = _pendingDisableCompleter;
     if (existing != null) {
+      debugPrint('[AutoListening] disableAutoMode: already in-flight, returning existing');
       return existing.future;
+    }
+
+    // HARD NO-OP: Already disabled with no active listening/recording
+    if (!_autoModeEnabled &&
+        !_isVadActive &&
+        !_isRecordingActive &&
+        _currentState == AutoListeningState.idle) {
+      debugPrint('[AutoListening] disableAutoMode: already disabled, no-op');
+      return Future.value();
     }
 
     final completer = Completer<void>();

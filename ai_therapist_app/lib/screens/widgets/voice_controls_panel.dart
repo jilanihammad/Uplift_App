@@ -34,6 +34,11 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     highContrast: false,
   );
 
+  /// Debounce tracking for mic/speaker toggles to prevent rapid tap crashes
+  DateTime? _lastMicToggleTime;
+  DateTime? _lastSpeakerToggleTime;
+  static const _toggleDebounce = Duration(milliseconds: 500);
+
   @override
   void initState() {
     super.initState();
@@ -243,6 +248,15 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                   isToggleEnabled: data.toggleEnabled,
                   onTap: data.toggleEnabled
                       ? () {
+                          // Debounce rapid taps to prevent state machine crashes
+                          final now = DateTime.now();
+                          if (_lastMicToggleTime != null &&
+                              now.difference(_lastMicToggleTime!) < _toggleDebounce) {
+                            debugPrint('[MicToggle] Debounced - ignoring rapid tap');
+                            return;
+                          }
+                          _lastMicToggleTime = now;
+
                           final bloc = context.read<VoiceSessionBloc>();
                           bloc.add(const ToggleMicMute());
                         }
@@ -252,6 +266,15 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                 _buildSpeakerButton(
                   isMuted: data.muted,
                   onTap: () {
+                    // Debounce rapid taps to prevent state machine crashes
+                    final now = DateTime.now();
+                    if (_lastSpeakerToggleTime != null &&
+                        now.difference(_lastSpeakerToggleTime!) < _toggleDebounce) {
+                      debugPrint('[SpeakerToggle] Debounced - ignoring rapid tap');
+                      return;
+                    }
+                    _lastSpeakerToggleTime = now;
+
                     final bloc = context.read<VoiceSessionBloc>();
                     final newMuted = !data.muted;
                     bloc.add(SetSpeakerMuted(newMuted));
