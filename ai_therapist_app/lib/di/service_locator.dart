@@ -58,6 +58,7 @@ import '../services/simple_tts_service.dart';
 import '../services/audio_player_manager.dart';
 import '../services/audio_file_manager.dart';
 import '../blocs/voice_session_bloc.dart';
+import '../blocs/voice_session/voice_session.dart' as new_voice_session;
 import '../services/audio_format_negotiator.dart';
 import '../services/facades/chat_voice_facade.dart';
 import '../services/facades/voice_mode_facade.dart';
@@ -456,7 +457,7 @@ Future<void> setupServiceLocator({
       }
     }
 
-    // === VOICE PIPELINE CONTROLLER REGISTRATION (Mirror mode) ===
+    // === VOICE PIPELINE CONTROLLER REGISTRATION ===
     if (enableVoicePipelineController &&
         !serviceLocator.isRegistered<VoicePipelineControllerFactory>()) {
       serviceLocator.registerFactory<VoicePipelineControllerFactory>(() {
@@ -470,14 +471,44 @@ Future<void> setupServiceLocator({
         return ({
           required VoicePipelineDependencies dependencies,
           bool Function()? micMutedGetter,
+          bool Function()? canStartListening,
         }) {
           return VoicePipelineController(
             dependencies: dependencies,
             micMutedGetter: micMutedGetter ?? defaultMicGetter,
+            canStartListening: canStartListening,
           );
         };
       });
-      debugPrint('✅ Registered VoicePipelineController factory (mirror mode)');
+      debugPrint('✅ Registered VoicePipelineController factory');
+    }
+
+    // === NEW VOICE SESSION BLOC REGISTRATION ===
+    if (!serviceLocator.isRegistered<new_voice_session.VoiceSessionBloc>()) {
+      serviceLocator.registerFactory<new_voice_session.VoiceSessionBloc>(() {
+        // Get the pipeline controller factory and create instance
+        VoicePipelineController? controller;
+        if (serviceLocator.isRegistered<VoicePipelineControllerFactory>()) {
+          final factory = serviceLocator<VoicePipelineControllerFactory>();
+          final voiceService = serviceLocator<VoiceService>();
+          final audioPlayerManager = serviceLocator<AudioPlayerManager>();
+          final recordingManager = voiceService.getRecordingManager();
+          
+          controller = factory(
+            dependencies: VoicePipelineDependencies(
+              voiceService: voiceService,
+              audioPlayerManager: audioPlayerManager,
+              recordingManager: recordingManager,
+            ),
+          );
+        }
+        
+        return new_voice_session.VoiceSessionBloc(
+          pipelineController: controller,
+          therapyService: serviceLocator<ITherapyService>(),
+        );
+      });
+      debugPrint('✅ Registered new VoiceSessionBloc factory');
     }
 
     // === SESSION FACADE REGISTRATIONS ===
