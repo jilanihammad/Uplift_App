@@ -1,38 +1,33 @@
 // lib/services/pipeline/voice_pipeline_dependencies.dart
-// Phase 3.1: interim struct bundling the legacy concrete services used by the
-// upcoming VoicePipelineController. This keeps the controller constructor tidy
-// while we gradually replace the internals with real interfaces.
+// Clean dependency container for VoicePipelineController
 
 import '../voice_service.dart';
-import '../auto_listening_snapshot_source.dart';
-import '../voice_session_coordinator.dart';
 import '../audio_player_manager.dart';
 import '../recording_manager.dart';
-import 'audio_capture.dart';
-import 'audio_playback.dart';
-import 'ai_gateway.dart';
-import 'mic_auto_mode_controller.dart';
 
+/// Dependencies required by VoicePipelineController
+/// This replaces the scattered dependencies from the old architecture
 class VoicePipelineDependencies {
   final VoiceService voiceService;
-  final AutoListeningSnapshotSource autoListening;
-  final AudioPlayerManager? audioPlayerManager;
-  final RecordingManager? recordingManager;
-  final VoiceSessionCoordinator? sessionCoordinator;
-  final AudioCapture? audioCapture;
-  final AudioPlayback? audioPlayback;
-  final AiGateway? aiGateway;
-  final MicAutoModeController? micController;
+  final AudioPlayerManager audioPlayerManager;
+  final RecordingManager recordingManager;
 
   const VoicePipelineDependencies({
     required this.voiceService,
-    required this.autoListening,
-    this.audioPlayerManager,
-    this.recordingManager,
-    this.sessionCoordinator,
-    this.audioCapture,
-    this.audioPlayback,
-    this.aiGateway,
-    this.micController,
+    required this.audioPlayerManager,
+    required this.recordingManager,
   });
+
+  /// Factory for creating dependencies from service locator
+  static VoicePipelineDependencies fromLocator() {
+    // This will be implemented to pull from GetIt/service locator
+    throw UnimplementedError('Use DependencyContainer to resolve dependencies');
+  }
 }
+
+/// Factory type for creating VoicePipelineController instances
+typedef VoicePipelineControllerFactory = VoicePipelineController Function({
+  required VoicePipelineDependencies dependencies,
+  bool Function()? micMutedGetter,
+  bool Function()? canStartListening,
+});
