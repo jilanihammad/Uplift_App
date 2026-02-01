@@ -1,13 +1,4 @@
-"""FastAPI endpoint routers."""
+"""API endpoint modules"""
+from app.api.endpoints import health, sessions, ai_endpoints, voice_endpoints
 
-from . import ai, anchors, mood_entries, profile, session_summaries, voice, system
-
-__all__ = [
-    "ai",
-    "voice",
-    "profile",
-    "anchors",
-    "session_summaries",
-    "mood_entries",
-    "system",
-]
+__all__ = ["health", "sessions", "ai_endpoints", "voice_endpoints"]
