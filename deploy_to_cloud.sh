@@ -23,9 +23,9 @@ BUILD_TAG="$SERVICE_NAME-$TIMESTAMP"
 
 # ===== HARDCODED API KEYS =====
 # Replace these with your actual API keys:
-openai_api_key=***REMOVED***    # Replace with your OpenAI key (starts with sk-)
-google_api_key=***REMOVED***   # Replace with your Google key
-groq_api_key=***REMOVED***         # Replace with your Groq key (starts with gsk_)
+openai_api_key=REDACTED_OPENAI_KEY    # Replace with your OpenAI key (starts with sk-)
+google_api_key=REDACTED_GOOGLE_API_KEY   # Replace with your Google key
+groq_api_key=REDACTED_GROQ_KEY         # Replace with your Groq key (starts with gsk_)
 
 # Validate API keys are not placeholders
 if [[ "$openai_api_key" == "YOUR_OPENAI_API_KEY_HERE" ]]; then

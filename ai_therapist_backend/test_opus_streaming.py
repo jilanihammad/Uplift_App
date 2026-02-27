@@ -8,7 +8,7 @@ def test_openai_opus():
     print("Testing OpenAI TTS API with OPUS format...")
     
     # Use the same API key from the existing test
-    api_key = "***REMOVED***"
+    api_key = "REDACTED_OPENAI_KEY"
     tts_model = "gpt-4o-mini-tts"
     voice = "sage"
     test_text = "Testing direct OPUS format from OpenAI TTS API. This should work without FFmpeg conversion."

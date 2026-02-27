@@ -5,7 +5,7 @@ import os
 def test_openai_tts():
     print("Testing OpenAI TTS API...")
     
-    api_key = "***REMOVED***"
+    api_key = "REDACTED_OPENAI_KEY"
     tts_model = "gpt-4o-mini-tts"
     voice = "sage"
     test_text = "This is a test of the OpenAI text to speech API."

@@ -2,7 +2,7 @@ import openai
 import asyncio
 
 async def test_chat_completion():
-    openai.api_key = "***REMOVED***"
+    openai.api_key = "REDACTED_GROQ_KEY"
 
     try:
         response = await openai.ChatCompletion.acreate(

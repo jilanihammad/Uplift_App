@@ -351,7 +351,7 @@ class ConfigService implements IConfigService {
         _firebaseApiKey = envFirebaseApiKey;
       } else {
         _firebaseApiKey =
-            '***REMOVED***'; // Default from android config
+            'REDACTED_GOOGLE_API_KEY'; // Default from android config
       }
 
       if (envFirebaseAppId.isNotEmpty) {
