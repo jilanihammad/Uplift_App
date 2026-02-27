@@ -1,6 +1,6 @@
 # AI Therapist App
 
-A cross-platform AI-powered therapist app with real-time chat and voice (TTS) streaming, built with Flutter (frontend) and Python (FastAPI backend).
+A cross-platform Conversational AI therapist app with real-time chat and voice (TTS) streaming, built with Flutter (frontend) and Python (FastAPI backend).
 
 ---
 
