@@ -340,7 +340,7 @@ class GcsJsonApi(CloudApi):
       # This API key is not secret and is used to identify gsutil during
       # anonymous requests.
       self.api_client.AddGlobalParam('key',
-                                     '***REMOVED***')
+                                     'REDACTED_GOOGLE_API_KEY')
 
   def GetServiceAccountId(self):
     """Returns the service account email id."""

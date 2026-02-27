@@ -96,7 +96,7 @@ class KmsApi(object):
       # This API key is not secret and is used to identify gsutil during
       # anonymous requests.
       self.api_client.AddGlobalParam(
-          'key', u'***REMOVED***')
+          'key', u'REDACTED_GOOGLE_API_KEY')
 
   def GetKeyIamPolicy(self, key_name):
     request = (apitools_messages.

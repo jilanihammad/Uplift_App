@@ -86,10 +86,10 @@ def _PrintInstallationAction(err, err_string):
 
 
 ERROR_PROJECT = 'cloud-sdk-user-errors'
-ERROR_REPORTING_PARAM = '***REMOVED***'
+ERROR_REPORTING_PARAM = 'REDACTED_GOOGLE_API_KEY'
 SERVICE = 'gcloud'
 CRASH_PROJECT = 'cloud-sdk-crashes'
-CRASH_REPORTING_PARAM = '***REMOVED***'
+CRASH_REPORTING_PARAM = 'REDACTED_GOOGLE_API_KEY'
 
 
 def _GetReportingClient(is_crash=True):
