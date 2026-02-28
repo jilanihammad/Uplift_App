@@ -16,8 +16,12 @@ class Settings(BaseSettings):
     # Server settings based on environment
     SERVER_HOST: str = env_settings.api_base_url
     
-    # Default CORS allows all in development, restrict in production
-    BACKEND_CORS_ORIGINS: List[str] = ["*"] if not env_settings.is_production else []
+    # CORS: allow all in dev; production defaults to Capacitor/Ionic origins.
+    # Override in production via BACKEND_CORS_ORIGINS env var (comma-separated or JSON array).
+    BACKEND_CORS_ORIGINS: List[str] = ["*"] if not env_settings.is_production else [
+        "capacitor://localhost",
+        "ionic://localhost",
+    ]
 
     # WebSocket Security Configuration
     WEBSOCKET_ALLOWED_ORIGINS: List[str] = [
@@ -60,7 +64,7 @@ class Settings(BaseSettings):
     GROQ_TRANSCRIPTION_MODEL_ID: str = os.getenv("GROQ_TRANSCRIPTION_MODEL_ID", "whisper-large-v3-turbo")
     
     # Legacy External API settings (kept for backward compatibility)
-    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "your_encryption_key")
+    ENCRYPTION_KEY: str = os.environ["ENCRYPTION_KEY"] if env_settings.is_production else os.getenv("ENCRYPTION_KEY", "dev-only-encryption-key")
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "dummy_key")
     DEEPSEEK_API_URL: str = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1")
     SESAME_API_KEY: str = os.getenv("SESAME_API_KEY", "dummy_key")
@@ -132,7 +136,7 @@ class Settings(BaseSettings):
     # Database settings based on environment
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "7860")
+    POSTGRES_PASSWORD: str = os.environ["POSTGRES_PASSWORD"] if env_settings.is_production else os.getenv("POSTGRES_PASSWORD", "7860")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "ai_therapist_new")
     SQLALCHEMY_DATABASE_URI: Optional[str] = None
 
