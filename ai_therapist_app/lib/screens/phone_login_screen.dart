@@ -76,21 +76,21 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
+                Text(
                   'Maya',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Enter your phone number to continue',
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.grey,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -108,6 +108,11 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your phone number';
                     }
+                    // E.164 format: + followed by 7-15 digits
+                    final cleaned = value.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+                    if (!RegExp(r'^\+[1-9]\d{6,14}$').hasMatch(cleaned)) {
+                      return 'Enter a valid phone number (e.g. +1234567890)';
+                    }
                     return null;
                   },
                 ),
@@ -115,7 +120,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                 ElevatedButton(
                   onPressed: _isLoading ? null : _verifyPhoneNumber,
                   child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
+                      ? CircularProgressIndicator(color: Theme.of(context).colorScheme.onPrimary)
                       : const Text('Send Verification Code'),
                 ),
                 const SizedBox(height: 16),
@@ -189,9 +194,9 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                         }
                       },
                 child: isVerifying
-                    ? const CircularProgressIndicator(
+                    ? CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.blue,
+                        color: Theme.of(context).colorScheme.primary,
                       )
                     : const Text('Verify'),
               ),

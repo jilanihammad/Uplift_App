@@ -363,12 +363,30 @@ class _ProgressScreenState extends State<ProgressScreen>
             ),
             const SizedBox(height: 16),
             if (recentSessions.isEmpty)
-              const Center(
-                child: Text(
-                  'No sessions yet',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic,
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Column(
+                    children: [
+                      Icon(Icons.self_improvement, size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No sessions yet',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Start a session to see your progress here',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -448,14 +466,20 @@ class _ProgressScreenState extends State<ProgressScreen>
                   ),
                   const SizedBox(height: 16),
                   if (moodData.isEmpty)
-                    const Center(
+                    Center(
                       heightFactor: 3,
-                      child: Text(
-                        'No mood data yet',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontStyle: FontStyle.italic,
-                        ),
+                      child: Column(
+                        children: [
+                          Icon(Icons.mood, size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No mood data yet',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   else
@@ -587,7 +611,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.task_alt, size: 64, color: Colors.grey[400]),
+                      Icon(Icons.task_alt, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       const SizedBox(height: 16),
                       const Text(
                         'No Tasks Yet',
@@ -600,7 +624,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                       Text(
                         'Add tasks from your therapy session action items',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey[600]),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),

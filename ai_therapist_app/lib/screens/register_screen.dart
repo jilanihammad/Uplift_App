@@ -91,21 +91,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
             key: _formKey,
             child: ListView(
               children: [
-                const Text(
+                Text(
                   'Maya',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Create your account to begin your wellness journey',
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.grey,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -150,8 +150,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter a password';
                     }
-                    if (value.length < 6) {
-                      return 'Password must be at least 6 characters';
+                    if (value.length < 8) {
+                      return 'Password must be at least 8 characters';
+                    }
+                    if (!RegExp(r'[A-Z]').hasMatch(value)) {
+                      return 'Password must contain an uppercase letter';
+                    }
+                    if (!RegExp(r'[a-z]').hasMatch(value)) {
+                      return 'Password must contain a lowercase letter';
+                    }
+                    if (!RegExp(r'[0-9]').hasMatch(value)) {
+                      return 'Password must contain a number';
                     }
                     return null;
                   },
@@ -172,7 +181,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           }
                         },
                   child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
+                      ? CircularProgressIndicator(color: Theme.of(context).colorScheme.onPrimary)
                       : const Text('Register'),
                 ),
                 const SizedBox(height: 16),
@@ -189,10 +198,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: _isLoading ? null : _signInWithGoogle,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.g_mobiledata,
                     size: 24,
-                    color: Colors.red,
+                    color: Theme.of(context).colorScheme.error,
                   ),
                   label: const Text('Sign up with Google'),
                 ),
@@ -201,10 +210,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   onPressed: _isLoading
                       ? null
                       : () => context.go(AppRouter.phoneLogin),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.phone_android,
                     size: 24,
-                    color: Colors.green,
+                    color: Theme.of(context).colorScheme.tertiary,
                   ),
                   label: const Text('Sign up with Phone Number'),
                 ),

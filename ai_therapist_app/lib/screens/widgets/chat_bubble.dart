@@ -61,6 +61,7 @@ class ChatBubble extends StatelessWidget {
                   isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 Container(
+                  constraints: const BoxConstraints(maxWidth: 280),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: isUser ? userBubbleColor : aiBubbleColor,
@@ -75,6 +76,8 @@ class ChatBubble extends StatelessWidget {
                   ),
                   child: Text(
                     message.content,
+                    softWrap: true,
+                    overflow: TextOverflow.fade,
                     style: TextStyle(
                       fontSize: 15,
                       color: isUser ? userTextColor : aiTextColor,

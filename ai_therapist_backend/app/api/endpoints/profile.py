@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthenticatedUser, get_current_user
+from app.core.rate_limiter import profile_rate_limiter
 from app.db.session import get_db
 from app.schemas import ProfileResponse, ProfileUpdateRequest
 from app.services.profile_service import ProfileConflictError, get_profile, upsert_profile
@@ -58,6 +59,9 @@ async def update_profile(
     db: Session = Depends(get_db),
     if_match: str = Header(..., alias="If-Match"),
 ) -> ProfileResponse:
+    # Per-user rate limit: 10 updates/minute
+    profile_rate_limiter.check(str(current_user.user.id))
+
     expected_version = _parse_if_match(if_match)
 
     existing = get_profile(db, user_id=current_user.user.id)

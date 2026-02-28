@@ -196,6 +196,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<SwitchMode>(_onSwitchMode);
     on<ProcessAudio>(_onProcessAudio);
     on<HandleError>(_onHandleError);
+    on<ClearErrorEvent>(_onClearError);
+    on<RetryLastActionEvent>(_onRetryLastAction);
     on<UpdateAmplitude>(_onUpdateAmplitude);
     on<AddMessage>(_onAddMessage);
     on<SetProcessing>(_onSetProcessing);
@@ -1418,6 +1420,26 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       errorMessage: userFriendlyMessage,
       hasError: true,
     ));
+  }
+
+  void _onClearError(ClearErrorEvent event, Emitter<VoiceSessionState> emit) {
+    emit(state.copyWith(hasError: false, clearErrorMessage: true));
+  }
+
+  void _onRetryLastAction(RetryLastActionEvent event, Emitter<VoiceSessionState> emit) {
+    // Clear the error state first
+    emit(state.copyWith(hasError: false, clearErrorMessage: true));
+    // Re-send the last user message if available
+    final messages = state.messages;
+    if (messages.isNotEmpty) {
+      final lastUserMsg = messages.lastWhere(
+        (m) => m.isUser,
+        orElse: () => messages.last,
+      );
+      if (lastUserMsg.isUser) {
+        add(ProcessTextMessage(lastUserMsg.content));
+      }
+    }
   }
 
   void _onUpdateAmplitude(

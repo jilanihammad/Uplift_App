@@ -190,6 +190,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   });
                   _themeService
                       .setTheme(value ? ThemeMode.dark : ThemeMode.light);
+                  _showSnack(value ? 'Dark mode enabled' : 'Light mode enabled');
                 },
               ),
               ListTile(
@@ -362,7 +363,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) {
         return;
       }
-      _showSnack('Unable to update voice. Please try again.');
+      _showSnack('Unable to update voice. Please try again.', isError: true);
     }
   }
 
@@ -609,10 +610,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _showSnack(String message) {
+  void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.error_outline : Icons.check_circle_outline,
+              color: Theme.of(context).colorScheme.onPrimary,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: isError
+            ? Theme.of(context).colorScheme.error
+            : Theme.of(context).colorScheme.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: isError ? 4 : 2),
+      ),
     );
   }
 
@@ -785,7 +803,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showSnack('Failed to refresh remote config: $e');
+        _showSnack('Failed to refresh remote config: $e', isError: true);
       }
     }
   }

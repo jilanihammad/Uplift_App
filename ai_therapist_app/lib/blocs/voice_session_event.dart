@@ -209,3 +209,13 @@ class InitialMoodSelected extends VoiceSessionEvent {
   final Mood mood;
   const InitialMoodSelected(this.mood);
 }
+
+/// Dismiss the error banner without retrying
+class ClearErrorEvent extends VoiceSessionEvent {
+  const ClearErrorEvent();
+}
+
+/// Retry the last failed action (re-send last message, reconnect, etc.)
+class RetryLastActionEvent extends VoiceSessionEvent {
+  const RetryLastActionEvent();
+}

@@ -314,11 +314,51 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
                 therapistStyle: _therapistStyle,
                 onEndSession: () => _endSession(),
               ),
-              body: ChatInterfaceView(
-                onSwitchMode: _toggleChatMode,
-                onSendMessage: _sendMessage,
-                messageController: _messageController,
-                scrollController: _scrollController,
+              body: Column(
+                children: [
+                  // Network/API error banner with retry
+                  if (state.hasError)
+                    MaterialBanner(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      content: Text(
+                        state.errorMessage ?? 'Something went wrong. Please try again.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onErrorContainer,
+                        ),
+                      ),
+                      leading: Icon(
+                        Icons.cloud_off,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            context.read<VoiceSessionBloc>().add(
+                              const ClearErrorEvent(),
+                            );
+                          },
+                          child: const Text('DISMISS'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            context.read<VoiceSessionBloc>().add(
+                              const RetryLastActionEvent(),
+                            );
+                          },
+                          child: const Text('RETRY'),
+                        ),
+                      ],
+                    ),
+                  Expanded(
+                    child: ChatInterfaceView(
+                      onSwitchMode: _toggleChatMode,
+                      onSendMessage: _sendMessage,
+                      messageController: _messageController,
+                      scrollController: _scrollController,
+                    ),
+                  ),
+                ],
               ),
               endDrawer: kDebugMode ? const DebugDrawer() : null,
             ),
