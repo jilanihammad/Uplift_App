@@ -79,16 +79,16 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
           SnackBar(
             content: Text(
                 'Added to tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
-            backgroundColor: Colors.green,
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to add task'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('Failed to add task'),
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -104,16 +104,16 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
           SnackBar(
             content: Text(
                 'Removed from tasks: ${actionItem.length > 50 ? '${actionItem.substring(0, 50)}...' : actionItem}'),
-            backgroundColor: Colors.orange,
+            backgroundColor: Theme.of(context).colorScheme.tertiary,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to remove task'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('Failed to remove task'),
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -327,7 +327,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: Colors.blue),
+          Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 8),
           Text(
             '$label: ',

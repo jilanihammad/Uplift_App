@@ -99,21 +99,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 32),
-                  const Text(
+                  Text(
                     'Maya',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
-                      color: Colors.blue,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Your AI companion for mental wellness',
                     style: TextStyle(
                       fontSize: 16,
-                      color: Colors.grey,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -162,7 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             }
                           },
                     child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
+                        ? CircularProgressIndicator(color: Theme.of(context).colorScheme.onPrimary)
                         : const Text('Login'),
                   ),
                   const SizedBox(height: 16),
@@ -179,10 +179,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _signInWithGoogle,
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.g_mobiledata,
                       size: 24,
-                      color: Colors.red,
+                      color: Theme.of(context).colorScheme.error,
                     ),
                     label: const Text('Sign in with Google'),
                   ),
@@ -191,10 +191,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _isLoading
                         ? null
                         : () => context.go(AppRouter.phoneLogin),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.phone_android,
                       size: 24,
-                      color: Colors.green,
+                      color: Theme.of(context).colorScheme.tertiary,
                     ),
                     label: const Text('Sign in with Phone Number'),
                   ),

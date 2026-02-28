@@ -566,7 +566,7 @@ class _SplashScreenState extends State<SplashScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_statusMessage),
-        backgroundColor: _backendAvailable ? Colors.green : Colors.red,
+        backgroundColor: _backendAvailable ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.error,
       ),
     );
   }
@@ -672,28 +672,28 @@ class _SplashScreenState extends State<SplashScreen>
                 },
               ),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'Uplift',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onPrimary,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Your Personal Therapy Companion',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onPrimary,
                 ),
               ),
               const SizedBox(height: 24),
               Text(
                 kDebugMode ? _statusMessage : "Preparing your experience...",
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onPrimary,
                 ),
               ),
               const SizedBox(height: 16),
@@ -702,8 +702,8 @@ class _SplashScreenState extends State<SplashScreen>
                 width: 200,
                 child: LinearProgressIndicator(
                   value: _loadingProgress,
-                  backgroundColor: Colors.white.withOpacity(0.3),
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                  backgroundColor: Theme.of(context).colorScheme.onPrimary.withOpacity(0.3),
+                  valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
                 ),
               ),
             ],
