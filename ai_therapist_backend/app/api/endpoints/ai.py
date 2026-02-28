@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional, Dict, Any
 import logging
 import traceback
 import json
@@ -9,6 +11,20 @@ import uuid
 # Replace individual service imports with unified manager
 from app.services.llm_manager import llm_manager
 from app.core.config import settings
+from app.api.deps.auth import get_current_user
+
+
+# --- Request validation models ---
+
+class HistoryMessage(BaseModel):
+    role: str = Field(..., max_length=20)
+    content: str = Field(..., max_length=10000)
+
+class GenerateRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=10000, description="User message")
+    history: List[HistoryMessage] = Field(default_factory=list, max_length=50)
+    system_prompt: str = Field(default="", max_length=5000)
+    user_info: Optional[Dict[str, Any]] = None
 
 logger = logging.getLogger(__name__)
 
@@ -18,28 +34,23 @@ router = APIRouter()
 session_store = {}
 
 @router.post("/generate", response_class=JSONResponse)
-async def generate_response(request: Request):
+async def generate_response(body: GenerateRequest):
     """
-    Generate response from AI model using the unified LLM manager
+    Generate response from AI model using the unified LLM manager.
+    Input is validated via Pydantic (max message length, bounded history, etc.).
     """
     try:
-        data = await request.json()
-        user_message = data.get("message", "")
-        conversation_history = data.get("history", [])
-        system_prompt = data.get("system_prompt", "")
-        user_info = data.get("user_info")
+        logger.info(f"Generating AI response for message: {body.message[:30]}...")
         
-        if not user_message:
-            return JSONResponse({"error": "No message provided"}, status_code=400)
-            
-        logger.info(f"Generating AI response for message: {user_message[:30]}...")
+        # Convert validated history to dicts for LLM manager
+        conversation_history = [h.model_dump() for h in body.history]
         
         # Generate AI response using unified LLM manager
         response = await llm_manager.generate_response(
-            message=user_message,
+            message=body.message,
             context=conversation_history,
-            system_prompt=system_prompt,
-            user_info=user_info
+            system_prompt=body.system_prompt,
+            user_info=body.user_info
         )
         
         if not response:
@@ -68,7 +79,7 @@ async def check_service_status():
         return JSONResponse({"error": str(e), "traceback": str(traceback.format_exc())}, status_code=500)
 
 @router.get("/test-key", response_class=JSONResponse)
-async def test_api_keys():
+async def test_api_keys(current_user=Depends(get_current_user)):
     """
     Test all API keys to ensure they're working correctly using unified manager
     """

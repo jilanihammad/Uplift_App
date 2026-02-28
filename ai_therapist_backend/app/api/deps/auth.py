@@ -139,16 +139,25 @@ def _verify_with_local_secret(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _verify_token(token: str) -> Optional[Dict[str, Any]]:
+def _verify_token(token: str) -> Optional[tuple]:
+    """Returns (payload, provider) or None."""
     payload = _verify_with_firebase_admin(token)
     if payload:
-        return payload
+        return payload, "firebase"
 
     payload = _verify_with_google_keys(token)
     if payload:
-        return payload
+        return payload, "google"
 
-    return _verify_with_local_secret(token)
+    # Local SECRET_KEY fallback is dev-only. Never allow in production —
+    # anyone who knows the key can forge arbitrary JWTs.
+    from app.core.environment import env_settings
+    if not env_settings.is_production:
+        payload = _verify_with_local_secret(token)
+        if payload:
+            return payload, "local"
+
+    return None
 
 
 def _normalize_email(provider: str, uid: str, email: Optional[str]) -> str:
@@ -221,9 +230,11 @@ async def get_current_user(
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token")
 
-    payload = _verify_token(token)
-    if not payload:
+    result = _verify_token(token)
+    if not result:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+
+    payload, provider = result
 
     uid = payload.get("user_id") or payload.get("sub") or payload.get("uid")
     if not uid:
@@ -236,7 +247,7 @@ async def get_current_user(
     try:
         user = _get_or_create_user(
             db,
-            provider=_DEFAULT_PROVIDER,
+            provider=provider,
             uid=uid,
             email=email,
             name=name,
@@ -248,6 +259,6 @@ async def get_current_user(
     return AuthenticatedUser(
         user=user,
         token=token,
-        provider=_DEFAULT_PROVIDER,
+        provider=provider,
         payload=payload,
     )
