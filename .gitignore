@@ -84,3 +84,9 @@ GoogleService-Info.plist
 *.g.dart
 *.freezed.dart
 *.mocks.dart google-cloud-cli-*.tar.gz
+google-cloud-sdk/
+**/google-cloud-sdk/
+
+.idea/
+.roo/
+**/.DS_Store
