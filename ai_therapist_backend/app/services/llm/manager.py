@@ -26,7 +26,7 @@ from app.utils.audio_path import ensure_wav
 
 # Phase 2 circuit-breaker fallback decorators
 try:
-    from app.core.phase2_integration import llm_fallback, tts_fallback
+    from app.core.resilience import llm_fallback, tts_fallback
     PHASE2_AVAILABLE = True
 except ImportError:
     PHASE2_AVAILABLE = False

@@ -20,7 +20,7 @@ from app.services.llm.base_provider import BaseProvider
 
 # Phase 2 circuit-breaker decorators (no-ops when unavailable)
 try:
-    from app.core.phase2_integration import (
+    from app.core.resilience import (
         openai_chat, openai_streaming, openai_tts,
     )
 except ImportError:

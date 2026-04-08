@@ -738,7 +738,7 @@ class ContainerWarmup:
             )
             
             # Import and run Phase 1 optimizations
-            from app.core.phase1_optimizations import quick_phase1_optimization
+            from app.core.http_warmup import quick_phase1_optimization
             
             optimization_results = await quick_phase1_optimization()
             

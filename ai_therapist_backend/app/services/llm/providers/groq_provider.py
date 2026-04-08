@@ -17,7 +17,7 @@ from app.services.llm.providers.openai_provider import OpenAIProvider
 
 # Phase 2 circuit-breaker decorators
 try:
-    from app.core.phase2_integration import groq_chat, groq_streaming, groq_transcription
+    from app.core.resilience import groq_chat, groq_streaming, groq_transcription
 except ImportError:
     def _noop(fn):
         return fn

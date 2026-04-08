@@ -518,7 +518,7 @@ async def voice_synthesize(request: VoiceRequest):
 
         if phase3_enabled:
             try:
-                from app.core.phase3_fast_path import route_tts_request_fast_path, RequestPriority
+                from app.services.tts_optimizer import route_tts_request_fast_path, RequestPriority
 
                 request_start_time = time.time()
                 logger.info(f"[API-Phase3] /voice/synthesize called. Text: '{request.text[:100]}' Voice: {request.voice}")

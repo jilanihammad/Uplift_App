@@ -34,7 +34,7 @@ from app.services.llm.base_provider import BaseProvider
 
 # Phase 2 circuit-breaker decorators
 try:
-    from app.core.phase2_integration import google_chat, google_streaming
+    from app.core.resilience import google_chat, google_streaming
 except ImportError:
     def _noop(fn):
         return fn

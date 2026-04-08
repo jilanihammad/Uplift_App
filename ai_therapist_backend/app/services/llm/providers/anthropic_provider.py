@@ -15,7 +15,7 @@ from app.services.llm.base_provider import BaseProvider
 
 # Phase 2 circuit-breaker decorators
 try:
-    from app.core.phase2_integration import anthropic_chat, anthropic_streaming
+    from app.core.resilience import anthropic_chat, anthropic_streaming
 except ImportError:
     def _noop(fn):
         return fn
