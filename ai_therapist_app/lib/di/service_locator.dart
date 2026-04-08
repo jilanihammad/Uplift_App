@@ -34,6 +34,8 @@ import '../services/session_schedule_service.dart';
 import '../services/user_context_service.dart';
 import '../utils/connectivity_checker.dart';
 import 'interfaces/i_api_client.dart';
+import 'interfaces/i_progress_service.dart';
+import 'interfaces/i_session_repository.dart';
 import '../config/llm_config.dart';
 import '../models/tts_config.dart';
 import 'interfaces/i_app_database.dart';
@@ -42,6 +44,7 @@ import 'interfaces/i_database_operation_manager.dart';
 import 'interfaces/i_session_schedule_service.dart';
 import '../data/datasources/local/database_provider.dart';
 import '../services/memory_manager.dart';
+import '../services/session_finalization_service.dart';
 import '../services/message_processor.dart';
 import '../services/audio_generator.dart';
 import 'package:ai_therapist_app/utils/database_helper.dart';
@@ -455,6 +458,17 @@ Future<void> registerApiDependentServices(
       );
     }
     await ServicesModule.register(serviceLocator);
+    if (!serviceLocator.isRegistered<SessionFinalizationService>()) {
+      serviceLocator
+          .registerLazySingleton<SessionFinalizationService>(() =>
+              SessionFinalizationService(
+                therapyService: serviceLocator<ITherapyService>(),
+                progressService: serviceLocator<IProgressService>(),
+                sessionRepository: serviceLocator<ISessionRepository>(),
+                userContextService: serviceLocator<UserContextService>(),
+                apiClient: serviceLocator<IApiClient>(),
+              ));
+    }
     DependencyStatus.apiDependenciesRegistered = true;
     stopwatch.stop();
     DependencyContainer.markReady();

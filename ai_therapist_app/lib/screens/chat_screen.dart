@@ -1,7 +1,6 @@
 // lib/screens/chat_screen.dart
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
-import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
@@ -27,6 +26,7 @@ import '../widgets/debug_drawer.dart';
 import '../utils/app_logger.dart';
 import '../utils/feature_flags.dart';
 import '../services/pipeline/voice_pipeline_controller.dart';
+import '../services/session_finalization_service.dart';
 class ChatScreen extends StatelessWidget {
   final String? sessionId;
   const ChatScreen({
@@ -88,6 +88,7 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
   late final ITherapyService _therapyService;
   late final IProgressService _progressService;
   late final INavigationService _navigationService;
+  late final SessionFinalizationService _sessionFinalizationService;
   Timer? _sessionTimer;
   Timer? _metricsChangeTimer;
   Future<void> _enableWakelock() async {
@@ -158,10 +159,12 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
     super.initState();
     AppLogger.d('ChatScreen: initState called');
     WidgetsBinding.instance.addObserver(this);
-    _therapyService = DependencyContainer().therapy;
-    _progressService = DependencyContainer().progress;
-    _navigationService = DependencyContainer().navigation;
-    _voiceService = DependencyContainer().get<VoiceService>();
+    final dc = DependencyContainer();
+    _therapyService = dc.therapy;
+    _progressService = dc.progress;
+    _navigationService = dc.navigation;
+    _voiceService = dc.get<VoiceService>();
+    _sessionFinalizationService = dc.get<SessionFinalizationService>();
     _initializeServices();
     _loadTherapistStyle();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -489,22 +492,23 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
       );
     }
     try {
-      final sessionData = await _generateSessionSummary(state.messages);
-      await _saveSession(sessionData, state.messages);
+      final result = await _sessionFinalizationService.finalize(
+        currentSessionId: _currentSessionId,
+        messages: state.messages,
+        initialMood: _initialMood,
+      );
+      _currentSessionId = result.sessionId;
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
       if (!mounted) return;
-      final sessionIdForNavigation =
-          sessionData['id']?.toString() ?? _currentSessionId;
       context.pushReplacement(
         '/session_summary',
         extra: {
-          'sessionId': sessionIdForNavigation,
-          'summary': sessionData['summary'],
-          'actionItems':
-              sessionData['action_items'] ?? sessionData['actionItems'],
-          'insights': sessionData['insights'],
+          'sessionId': result.sessionId,
+          'summary': result.summary,
+          'actionItems': result.actionItems,
+          'insights': result.insights,
           'messages': state.messages,
           'initialMood': _initialMood,
         },
@@ -529,133 +533,6 @@ class _ChatScreenBodyState extends State<_ChatScreenBody>
         );
       }
     }
-  }
-  Future<Map<String, dynamic>> _generateSessionSummary(
-      List<TherapyMessage> messages) async {
-    if (_initialMood != null) {
-      await _progressService.logMood(_initialMood!);
-    }
-    final messageList = messages.map((m) => m.toJson()).toList();
-    final sessionTitle =
-        'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
-    final sessionData = await _therapyService.endSessionWithMessages(
-      messageList,
-      sessionTitle: sessionTitle,
-      userId: 1, // Default user ID for now
-    );
-    final actionItemsDynamic = sessionData['action_items'] as List<dynamic>? ??
-        sessionData['actionItems'] as List<dynamic>? ??
-        ['Take care of yourself', 'Return soon for another session'];
-    final insightsDynamic = sessionData['insights'] as List<dynamic>? ?? [];
-    return {
-      'id': sessionData['id'], // Include backend session ID
-      'summary': sessionData['summary'] as String? ??
-          'Thank you for your session today. I hope our conversation was helpful.',
-      'action_items':
-          actionItemsDynamic.map((item) => item.toString()).toList(),
-      'actionItems': actionItemsDynamic
-          .map((item) => item.toString())
-          .toList(), // Keep both for compatibility
-      'insights': insightsDynamic.map((item) => item.toString()).toList(),
-    };
-  }
-  Future<void> _saveSession(
-      Map<String, dynamic> sessionData, List<TherapyMessage> messages) async {
-    try {
-      final userContextService = DependencyContainer().userContextService;
-      final userId = userContextService.getSignedInUserId(operation: 'ChatScreen._saveSession');
-      if (userId == null) {
-        throw Exception('Cannot save session: User not authenticated');
-      }
-      final sessionRepository = DependencyContainer().sessionRepository;
-      final backendSessionId = sessionData['id']?.toString();
-      final sessionIdToUse = backendSessionId ?? _currentSessionId;
-      var actionItems = <String>[];
-      final insights = (sessionData['insights'] as List<dynamic>? ?? [])
-          .map((item) => item.toString())
-          .toList();
-      if (backendSessionId != null) {
-        final actionItemsDynamic =
-            sessionData['action_items'] as List<dynamic>? ??
-                sessionData['actionItems'] as List<dynamic>? ??
-                [];
-        actionItems =
-            actionItemsDynamic.map((item) => item.toString()).toList();
-        await sessionRepository.saveSession(
-          sessionId: sessionIdToUse,
-          title:
-              'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}',
-          summary: sessionData['summary'],
-          actionItems: actionItems,
-          messages: messages.map((m) => m.toJson()).toList(),
-        );
-        _currentSessionId = sessionIdToUse;
-      } else {
-        final sessionTitle =
-            'Therapy Session ${DateFormat('MMM d, yyyy').format(DateTime.now())}';
-        try {
-          final createdSession = await sessionRepository.createSession(
-            sessionTitle,
-            id: _currentSessionId,
-          );
-          if (createdSession.id != _currentSessionId) {
-            _currentSessionId = createdSession.id;
-          }
-        } catch (e) {}
-        final actionItemsDynamic =
-            sessionData['action_items'] as List<dynamic>? ??
-                sessionData['actionItems'] as List<dynamic>? ??
-                [];
-        actionItems =
-            actionItemsDynamic.map((item) => item.toString()).toList();
-        await sessionRepository.saveSession(
-          sessionId: _currentSessionId,
-          title: sessionTitle,
-          summary: sessionData['summary'],
-          actionItems: actionItems,
-          messages: messages.map((m) => m.toJson()).toList(),
-        );
-      }
-      if (FeatureFlags.isMemoryPersistenceEnabled) {
-        await _syncSessionSummaryRemote(
-          sessionIdToUse,
-          sessionData,
-          actionItems,
-          insights,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save session: ${e.toString()}'),
-            duration: const Duration(seconds: 5),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      rethrow;
-    }
-  }
-  Future<void> _syncSessionSummaryRemote(
-    String sessionId,
-    Map<String, dynamic> sessionData,
-    List<String> actionItems,
-    List<String> insights,
-  ) async {
-    try {
-      final apiClient = DependencyContainer().apiClientConcrete;
-      final summaryPayload = {
-        'session_id': sessionId,
-        'summary_json': {
-          'summary': sessionData['summary'],
-          'action_items': actionItems,
-          'insights': insights,
-        },
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      };
-      await apiClient.post('/session_summaries:upsert', summaryPayload);
-    } catch (e) {}
   }
   void _toggleChatMode() {
     final bloc = context.read<VoiceSessionBloc>();
