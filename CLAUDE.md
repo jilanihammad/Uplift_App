@@ -1,5 +1,11 @@
 # CLAUDE.md
 
+## Session Bootstrap
+1. Read `~/Uplift-Brain/Uplift-Home.md` — current status and priorities
+2. Read `~/Uplift-Brain/01_thinking/daily/2026-04-08-handoff.md` — implementation handoff (9 beads ready)
+3. Check beads: `cd ~/Uplift_App && bd list`
+4. Vault: `~/Uplift-Brain/` — architecture docs, voice pipeline deep dive, decisions, daily notes
+
 ## Project Overview
 
 AI Therapist App (Maya) — Full-stack voice & text therapy conversations. Flutter mobile/desktop frontend + Python FastAPI backend.
