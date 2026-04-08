@@ -60,7 +60,7 @@ Thumbs.db
 # Application specific
 *.sqlite
 *.db
-models/
+# ML model weights (not app/models/ which is SQLAlchemy)
 *.pt
 *.bin
 *.onnx

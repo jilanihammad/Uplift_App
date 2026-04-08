@@ -35,6 +35,7 @@ logger = get_logger(__name__)
 # Core imports -- fail loudly if any are missing
 from app.api.api_v1.api import api_router
 from app.core.config import settings
+from app.core.environment import env_settings
 from app.core.rate_limiter import RateLimitMiddleware
 from app.core.security_middleware import SecurityMiddleware
 from app.core.health import get_health_status
