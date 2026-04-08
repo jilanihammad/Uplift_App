@@ -25,141 +25,50 @@ from fastapi import Depends
 from app.api.deps.auth import AuthenticatedUser, get_current_user
 
 # Database initialization imports
-from app.db.base import Base
-from app.db.session import engine, get_db
+from app.db.session import get_db
 
-# Create database tables on startup
-def init_db():
-    try:
-        # Try to connect to database first
-        from app.core.config import settings
-        with engine.connect() as connection:
-            logger.info(f"Successfully connected to database: {settings.SQLALCHEMY_DATABASE_URI}")
-        
-        # Create tables
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
-    except Exception as e:
-        logger.error(f"Error connecting to database: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise  # Re-raise to indicate critical error
+# Setup enhanced logging (single source of truth)
+from app.core.enhanced_logging import setup_logging, get_logger
+setup_logging()
+logger = get_logger(__name__)
 
-# Verify database connection on startup
-try:
-    # Setup enhanced logging first
-    from app.core.enhanced_logging import setup_logging, get_logger
-    setup_logging()
-    logger = get_logger(__name__)
-    
-    # Initialize database - must happen after logger is created but before app starts
-    init_db()
-    logger.info("Database initialization successful")
-except Exception as e:
-    # Setup enhanced logging first
-    from app.core.enhanced_logging import setup_logging, get_logger
-    setup_logging()
-    logger = get_logger(__name__)
-    
-    logger.error(f"CRITICAL: Database initialization failed: {str(e)}")
-    logger.error("The application will start but database operations will be simulated")
+# Core imports -- fail loudly if any are missing
+from app.api.api_v1.api import api_router
+from app.core.config import settings
+from app.core.rate_limiter import RateLimitMiddleware
+from app.core.security_middleware import SecurityMiddleware
+from app.core.health import get_health_status
+from app.services.llm_manager import llm_manager, _groq_stt_client
 
-# Safely import dependencies with error handling
-try:
-    from app.api.api_v1.api import api_router
-    from app.core.config import settings
-    from app.core.rate_limiter import RateLimitMiddleware
-    from app.core.security_middleware import SecurityMiddleware
-    from app.core.logger import setup_logging
-    from app.core.health import get_health_status
-    from app.services.llm_manager import llm_manager, _groq_stt_client
-    
-    # Configure structured logging
-    setup_logging()
-    
-    # Log startup information
-    logger.info("Starting AI Therapist Backend")
-    logger.info(f"Environment: {os.environ.get('ENVIRONMENT', 'development')}")
-    logger.info(f"PORT: {os.environ.get('PORT', '8080')}")
-    
-except Exception as e:
-    logger.error(f"Error during imports: {str(e)}")
-    logger.error(traceback.format_exc())
-    # Create fallback settings for minimal app functionality
-    from types import SimpleNamespace
-    settings = SimpleNamespace(
-        PROJECT_NAME="AI Therapist API",
-        API_V1_STR="/api/v1",
-        BACKEND_CORS_ORIGINS=["*"],
-        # Remove old LLM-specific settings - now handled by unified LLM manager
-        OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY", ""),
-        GROQ_API_KEY=os.environ.get("GROQ_API_KEY", ""),
-        GROQ_API_BASE_URL=os.environ.get("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1"),
-        GROQ_LLM_MODEL_ID=os.environ.get("GROQ_LLM_MODEL_ID", "meta-llama/llama-4-scout-17b-16e-instruct")
-        # Removed OPENAI_TTS_MODEL, OPENAI_TTS_VOICE, OPENAI_TRANSCRIPTION_MODEL - now in unified config
-    )
-    
-    # Create fallback middleware classes if they couldn't be imported
-    try:
-        from starlette.middleware.base import BaseHTTPMiddleware
-        
-        class FallbackSecurityMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request, call_next):
-                logger.info(f"Security middleware (fallback) processing request: {request.url.path}")
-                return await call_next(request)
-                
-        class FallbackRateLimitMiddleware(BaseHTTPMiddleware):
-            def __init__(self, app, requests_per_minute=60):
-                super().__init__(app)
-                self.requests_per_minute = requests_per_minute
-                
-            async def dispatch(self, request, call_next):
-                logger.info(f"Rate limit middleware (fallback) processing request: {request.url.path}")
-                return await call_next(request)
-    except ImportError:
-        # If we can't import BaseHTTPMiddleware, create empty middleware classes
-        # that won't be used (we'll skip adding middleware in this case)
-        logger.warning("Could not import BaseHTTPMiddleware, skipping middleware setup")
-        class FallbackSecurityMiddleware:
-            pass
-            
-        class FallbackRateLimitMiddleware:
-            def __init__(self, app, requests_per_minute=60):
-                pass
-    
-    # Use the fallback middleware classes
-    SecurityMiddleware = FallbackSecurityMiddleware
-    RateLimitMiddleware = FallbackRateLimitMiddleware
-    
-    logger.warning("Using fallback settings and middleware due to import errors")
-    # We'll create a minimal app that can respond to health checks
+logger.info("Starting AI Therapist Backend")
+logger.info(f"Environment: {os.environ.get('ENVIRONMENT', 'development')}")
+logger.info(f"PORT: {os.environ.get('PORT', '8080')}")
 
-# Container warm-up lifespan handler
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan handler for container warm-up and cleanup."""
-    # Startup
+    # --- Startup ---
     logger.info("Starting container warm-up on application startup")
-    
-    # Check OpenAI SDK version first
+
+    # Check OpenAI SDK version
     try:
         import openai
         from packaging import version
-        
+
         logger.info(f"OpenAI SDK version: {openai.__version__}")
-        
-        # Fail fast if version too old for TTS streaming
         if version.parse(openai.__version__) < version.parse("1.85.0"):
-            error_msg = f"OpenAI SDK >= 1.85.0 required for TTS streaming (format parameter); found {openai.__version__}"
+            error_msg = f"OpenAI SDK >= 1.85.0 required for TTS streaming; found {openai.__version__}"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
-        else:
-            logger.info(f"✅ OpenAI SDK version {openai.__version__} is compatible with TTS streaming")
+        logger.info(f"OpenAI SDK version {openai.__version__} is compatible with TTS streaming")
     except ImportError:
         logger.warning("OpenAI SDK not installed - TTS features will be unavailable")
-    except Exception as e:
-        logger.error(f"Error checking OpenAI SDK version: {str(e)}")
-        # Don't fail startup for version check errors
-    
+
     # Initialize observability system
     try:
         from app.core.observability import observability_manager
@@ -167,17 +76,18 @@ async def lifespan(app: FastAPI):
         logger.info("Observability system started successfully")
     except Exception as e:
         logger.warning(f"Failed to start observability system: {str(e)}")
-    
+
+    # Container warm-up
     try:
         from app.core.container_warmup import quick_warmup
         warmup_result = await quick_warmup()
         logger.info(f"Container warm-up completed: {warmup_result.get('successful_stages', 0)}/{warmup_result.get('total_stages', 0)} stages successful")
     except Exception as e:
         logger.warning(f"Container warm-up failed, continuing startup: {str(e)}")
-    
+
     yield
-    
-    # Shutdown
+
+    # --- Shutdown ---
     logger.info("Shutting down HTTP clients and connections")
     try:
         from app.core.http_client_manager import get_http_client_manager
@@ -186,8 +96,7 @@ async def lifespan(app: FastAPI):
         logger.info("HTTP clients shut down successfully")
     except Exception as e:
         logger.warning(f"Error during HTTP client shutdown: {str(e)}")
-    
-    # Shutdown observability system
+
     try:
         from app.core.observability import observability_manager
         await observability_manager.stop()
@@ -195,66 +104,52 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Error during observability shutdown: {str(e)}")
 
-# Create the FastAPI app (ONLY ONCE)
+
+# ---------------------------------------------------------------------------
+# App creation & middleware
+# ---------------------------------------------------------------------------
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="AI Therapist API for mental health support",
     version="1.0.0",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url=None,  # Disable default docs
-    redoc_url=None,  # Disable default ReDoc
+    docs_url=None,
+    redoc_url=None,
     lifespan=lifespan
 )
 
-# Add middleware - order matters!
+# Middleware (order matters)
 try:
-    # Add request tracing middleware first (for all requests)
     from app.core.request_middleware import RequestTracingMiddleware
     app.add_middleware(RequestTracingMiddleware)
-    logger.info("Added request tracing middleware")
-    
     app.add_middleware(SecurityMiddleware)
     app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
     logger.info("Successfully added all middleware")
 except Exception as e:
     logger.error(f"Error adding middleware: {str(e)}")
-    logger.error(traceback.format_exc())
     logger.warning("Continuing without middleware - limited functionality")
 
-# Set all CORS enabled origins
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if settings.BACKEND_CORS_ORIGINS == ["*"] else [str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=(
+            ["*"] if settings.BACKEND_CORS_ORIGINS == ["*"]
+            else [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
+        ),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
 # Include API router
-try:
-    app.include_router(api_router, prefix=settings.API_V1_STR)
-except NameError:
-    # Create a fallback API router if the original couldn't be imported
-    from fastapi import APIRouter
-    fallback_router = APIRouter()
-    
-    @fallback_router.get("/")
-    def fallback_root():
-        return {"message": "API router fallback - limited functionality available"}
-    
-    @fallback_router.get("/health")
-    def fallback_health():
-        return {
-            "status": "limited",
-            "message": "Running with fallback API router",
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    app.include_router(fallback_router, prefix=settings.API_V1_STR)
-    logger.warning("Using fallback API router due to import error")
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
+
+# ---------------------------------------------------------------------------
 # Global exception handler
+# ---------------------------------------------------------------------------
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
@@ -263,27 +158,30 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "An unexpected error occurred"},
     )
 
-# Create directory for audio files if it doesn't exist
-# In Cloud Run, we should use a more cloud-friendly approach
+
+# ---------------------------------------------------------------------------
+# Static files for audio
+# ---------------------------------------------------------------------------
+
 if os.environ.get("GOOGLE_CLOUD") == "1":
-    # In Cloud Run, log instead of creating local directories
     logger.info("Running in Cloud Run, using cloud-friendly static file handling")
-    static_files_path = "/tmp/static/audio"  # Use /tmp which is writable in Cloud Run
+    static_files_path = "/tmp/static/audio"
 else:
-    # For local development, use local directory
     static_files_path = "static/audio"
 
-# Create the directory if needed
 os.makedirs(static_files_path, exist_ok=True)
 logger.info(f"Using static files path: {static_files_path}")
 
-# Serve static files (for audio)
 try:
     app.mount("/audio", StaticFiles(directory=static_files_path), name="audio")
     logger.info(f"[API] Successfully mounted static files directory: {static_files_path}")
 except Exception as e:
     logger.error(f"[API] Error mounting static files: {str(e)}")
-    logger.error(traceback.format_exc())
+
+
+# ---------------------------------------------------------------------------
+# Core endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/")
 def read_root():
@@ -305,6 +203,7 @@ def read_root():
             "error": str(e)
         }
 
+
 @app.get("/health")
 def health_check():
     """Health check endpoint for Google Cloud Run."""
@@ -318,20 +217,18 @@ def health_check():
             "error": str(e)
         }
 
+
 @app.get("/performance")
 def performance_report():
     """Performance monitoring endpoint for optimization tracking."""
     try:
         from app.core.performance_monitor import get_performance_report
         from app.core.http_client_manager import get_http_client_manager
-        
-        # Get performance metrics
+
         performance_data = get_performance_report()
-        
-        # Get HTTP client health
         http_manager = get_http_client_manager()
         http_health = http_manager.get_health_status()
-        
+
         return {
             "status": "ok",
             "timestamp": datetime.now().isoformat(),
@@ -347,21 +244,15 @@ def performance_report():
         }
     except Exception as e:
         logger.error(f"Error in performance endpoint: {str(e)}")
-        return {
-            "status": "error",
-            "timestamp": datetime.now().isoformat(),
-            "error": str(e)
-        }
+        return {"status": "error", "timestamp": datetime.now().isoformat(), "error": str(e)}
+
 
 @app.get("/metrics")
 def metrics_endpoint():
     """Real-time performance metrics endpoint for TTFB tracking."""
     try:
         from app.core.observability import observability_manager
-        
-        # Get observability metrics
         metrics_summary = observability_manager.get_health_status()
-        
         return {
             "status": "ok",
             "timestamp": datetime.now().isoformat(),
@@ -374,36 +265,25 @@ def metrics_endpoint():
                     "provider_error_rate": {"target": "<5%", "p95_target": "<10%"}
                 }
             },
-            "phase_0_status": {
-                "baseline_metrics_implemented": True,
-                "ready_for_phase_1": True
-            },
-            "phase_1_status": {
-                "http_client_hotrodding_implemented": True,
-                "connection_prewarming_active": True,
-                "ready_for_phase_2": True
-            }
+            "phase_0_status": {"baseline_metrics_implemented": True, "ready_for_phase_1": True},
+            "phase_1_status": {"http_client_hotrodding_implemented": True, "connection_prewarming_active": True, "ready_for_phase_2": True}
         }
     except Exception as e:
         logger.error(f"Error in metrics endpoint: {str(e)}")
-        return {
-            "status": "error",
-            "timestamp": datetime.now().isoformat(),
-            "error": str(e)
-        }
+        return {"status": "error", "timestamp": datetime.now().isoformat(), "error": str(e)}
 
+
+# ---------------------------------------------------------------------------
+# LLM / AI endpoints
+# ---------------------------------------------------------------------------
 
 @app.get(f"{settings.API_V1_STR}/llm/status")
 async def llm_status():
     """Check if the LLM API is available using unified LLM manager."""
     try:
-        # Use unified LLM manager instead of checking individual API keys
         if not llm_manager:
             return {"status": "unavailable", "reason": "Unified LLM manager not available"}
-        
-        # Get status from unified LLM manager
         status_info = llm_manager.get_status()
-        
         return {
             "status": "available" if status_info.get("available_providers") else "unavailable",
             "manager_status": status_info,
@@ -412,6 +292,11 @@ async def llm_status():
     except Exception as e:
         logger.error("Error checking LLM status: %s", str(e))
         return {"status": "unavailable", "reason": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Request/response models
+# ---------------------------------------------------------------------------
 
 class AIRequest(BaseModel):
     message: str
@@ -423,13 +308,13 @@ class AIRequest(BaseModel):
 
 class VoiceRequest(BaseModel):
     text: str
-    voice: Optional[str] = None  # No default, config handles it
+    voice: Optional[str] = None
     model: Optional[str] = None
 
 class TranscriptionRequest(BaseModel):
     audio_url: Optional[str] = None
-    audio_data: Optional[str] = None  # Base64 encoded audio data
-    audio_format: Optional[str] = "mp3"  # Format of the audio (mp3, wav, aac, etc.)
+    audio_data: Optional[str] = None
+    audio_format: Optional[str] = "mp3"
     model: Optional[str] = None
 
 class EndSessionRequest(BaseModel):
@@ -438,14 +323,16 @@ class EndSessionRequest(BaseModel):
     memory_context: str = ""
     therapeutic_approach: str = "supportive"
     visited_nodes: list = []
-    # Optional session metadata for creating session record
     session_title: Optional[str] = None
     user_id: Optional[int] = None
 
 class ChatStreamRequestBody(BaseModel):
-    history: List[Dict[str, Any]] # Expects keys like 'role', 'content', 'sequence'
-    # You could add other optional parameters here if needed, e.g.,
-    # model_config: Optional[Dict[str, Any]] = None
+    history: List[Dict[str, Any]]
+
+
+# ---------------------------------------------------------------------------
+# /ai/response
+# ---------------------------------------------------------------------------
 
 @app.post("/ai/response")
 async def ai_response(request: AIRequest):
@@ -456,31 +343,28 @@ async def ai_response(request: AIRequest):
             logger.info(f"Request includes history with {len(request.history)} messages.")
         else:
             logger.info("Request does not include history.")
-        
-        # Use unified LLM manager instead of individual services
+
         if not llm_manager:
-            logger.error("Unified LLM manager not available")
             raise HTTPException(status_code=500, detail="LLM service not available")
-        
-        # Generate response using unified LLM manager
+
         response_text = await llm_manager.generate_response(
             message=request.message,
-            system_prompt=request.system_prompt, 
+            system_prompt=request.system_prompt,
             context=request.history,
-            # Don't pass model - unified LLM manager handles this internally
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
-        
         logger.info("AI response generated successfully using unified LLM manager")
         return {"response": response_text}
-            
     except Exception as e:
         logger.error("Error generating AI response: %s", str(e))
         logger.error("Exception traceback: %s", traceback.format_exc())
-        
-        # Return the actual error instead of a fallback response
         raise HTTPException(status_code=500, detail=f"Error generating AI response: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# /therapy/end_session
+# ---------------------------------------------------------------------------
 
 @app.post("/therapy/end_session")
 async def end_session(
@@ -491,39 +375,23 @@ async def end_session(
     """Generate therapy session summary and create session record with rich data."""
     try:
         logger.info("Received end session request with %d messages", len(request.messages))
-        
-        # Use unified LLM manager instead of individual services
+
         if not llm_manager:
-            logger.error("Unified LLM manager not available")
             raise HTTPException(status_code=500, detail="LLM service not available")
 
-        # Fetch user's preferred name for personalization
         from app.services.profile_service import get_profile
-
         user_id = current_user.user.id
         preferred_name = None
         profile = get_profile(db, user_id=user_id)
         if profile:
             preferred_name = profile.preferred_name
-
-        # Fallback to "you" if no name available (conversational)
         display_name = preferred_name if preferred_name else "you"
 
-        # Create a comprehensive summarization prompt for better action items
         conversation_text = ""
-        user_concerns = []
-        therapist_suggestions = []
-        
         for msg in request.messages:
             role = display_name.capitalize() if msg.get("isUser", False) else "Maya"
             content = msg.get('content', '')
             conversation_text += f"{role}: {content}\n\n"
-            
-            # Extract key themes for better action items
-            if msg.get("isUser", False):
-                user_concerns.append(content)
-            else:
-                therapist_suggestions.append(content)
 
         summary_prompt = f"""Based on this conversation with Maya (an AI companion), provide a comprehensive summary with personalized action items for {display_name}.
 
@@ -564,177 +432,131 @@ RESPOND ONLY with valid JSON in this exact format:
         "Insight about strengths or observations"
     ]
 }}"""
-        
+
         try:
-            # Get the assistant's response using the LLM manager
             response_text = await llm_manager.generate_response(
                 message=summary_prompt,
                 context=[],
                 system_prompt="You are a compassionate AI assistant creating personalized conversation summaries for Maya, an AI companion app. Focus on providing actionable, conversation-specific guidance while maintaining a warm, supportive tone. Never refer to Maya as a therapist or the user as a client.",
-                temperature=0.3,  # Lower temperature for consistency
+                temperature=0.3,
                 max_tokens=1500
             )
-            
-            # Enhanced JSON parsing with multiple fallback strategies
+
             try:
-                # First, try to extract clean JSON
                 json_str = response_text.strip()
-                
-                # Remove common LLM response prefixes
                 prefixes_to_remove = [
                     "Here is the session summary:",
                     "Based on the conversation, here is the summary:",
                     "Here's the session summary:",
                     "Session summary:"
                 ]
-                
                 for prefix in prefixes_to_remove:
                     if json_str.lower().startswith(prefix.lower()):
                         json_str = json_str[len(prefix):].strip()
-                
-                # Handle markdown code blocks
+
                 if "```json" in json_str:
                     json_str = json_str.split("```json")[1].split("```")[0].strip()
                 elif "```" in json_str:
                     json_str = json_str.split("```")[1].strip()
-                
-                # Find JSON structure using regex if needed
+
                 import re
                 if not json_str.startswith('{'):
                     json_match = re.search(r'({[\s\S]*})', json_str)
                     if json_match:
                         json_str = json_match.group(1)
-                
-                logger.info(f"Attempting to parse JSON from LLM response...")
-                
-                # Parse the JSON string
-                result = json.loads(json_str)
 
-                # Validate and clean the result
+                result = json.loads(json_str)
                 result = await _validate_and_clean_summary(result, request.messages, display_name)
-                
-                logger.info("Session summary generated successfully using LLM manager")
-                
-                # Create session record in database with rich data
-                session_id = await _create_session_with_summary(
-                    db=db,
-                    summary_data=result,
-                    request=request
-                )
-                
+
+                session_id = await _create_session_with_summary(db=db, summary_data=result, request=request)
+
                 return {
-                    "id": session_id,  # Include the backend session ID
+                    "id": session_id,
                     "summary": result.get("summary", ""),
                     "action_items": result.get("action_items", []),
                     "insights": result.get("insights", []),
                     "therapeutic_approach": request.therapeutic_approach
                 }
-                
+
             except (json.JSONDecodeError, KeyError, ValueError) as e:
                 logger.warning(f"Failed to parse LLM response as JSON: {str(e)}")
-                logger.warning(f"Raw response: {response_text[:300]}...")
                 fallback_summary = await _generate_conversation_based_summary(
-                    request.messages,
-                    request.therapeutic_approach,
-                    user_id=current_user.user.id,
-                    db=db
+                    request.messages, request.therapeutic_approach,
+                    user_id=current_user.user.id, db=db
                 )
-                
-                # Create session record with fallback data
-                session_id = await _create_session_with_summary(
-                    db=db,
-                    summary_data=fallback_summary,
-                    request=request
-                )
-                
-                # Add session ID to fallback response
+                session_id = await _create_session_with_summary(db=db, summary_data=fallback_summary, request=request)
                 fallback_summary["id"] = session_id
                 return fallback_summary
-                
+
         except Exception as llm_error:
             logger.warning(f"Error using LLM manager for session summary: {str(llm_error)}")
-            logger.warning("Falling back to conversation-based summary")
             fallback_summary = await _generate_conversation_based_summary(
-                request.messages,
-                request.therapeutic_approach,
-                user_id=current_user.user.id,
-                db=db
+                request.messages, request.therapeutic_approach,
+                user_id=current_user.user.id, db=db
             )
-            
-            # Create session record with fallback data
-            session_id = await _create_session_with_summary(
-                db=db,
-                summary_data=fallback_summary,
-                request=request
-            )
-            
-            # Add session ID to fallback response
+            session_id = await _create_session_with_summary(db=db, summary_data=fallback_summary, request=request)
             fallback_summary["id"] = session_id
             return fallback_summary
-            
+
     except Exception as e:
         logger.error("Error generating session summary: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Error generating session summary: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# /voice/synthesize
+# ---------------------------------------------------------------------------
 
 @app.post("/voice/synthesize")
 async def voice_synthesize(request: VoiceRequest):
     try:
         import time
         from app.core.observability import record_latency, record_counter
-        
-        # Phase 3: TTS Fast-Path Optimization - Check if enabled
+
+        # Phase 3: TTS Fast-Path Optimization
         phase3_enabled = os.getenv("PHASE3_TTS_OPTIMIZATION", "true").lower() == "true"
-        
+
         if phase3_enabled:
             try:
                 from app.core.phase3_fast_path import route_tts_request_fast_path, RequestPriority
-                
+
                 request_start_time = time.time()
-                logger.info(f"[API-Phase3] /voice/synthesize called with Phase 3 optimization. Text: '{request.text[:100]}' Voice: {request.voice} Model: {request.model}")
-                
+                logger.info(f"[API-Phase3] /voice/synthesize called. Text: '{request.text[:100]}' Voice: {request.voice}")
+
                 if not request.text:
-                    logger.warning("[API-Phase3] No text provided for TTS")
                     raise HTTPException(status_code=400, detail="No text provided for TTS")
-                
-                # Determine priority based on text length and request headers
+
                 priority = RequestPriority.NORMAL
                 if len(request.text) < 20:
                     priority = RequestPriority.HIGH
                 elif len(request.text) > 200:
                     priority = RequestPriority.LOW
-                
-                # Route through Phase 3 fast-path
+
                 audio_data, metadata = await route_tts_request_fast_path(
-                    text=request.text,
-                    voice=request.voice,
-                    model=request.model,
-                    priority=priority
+                    text=request.text, voice=request.voice, model=request.model, priority=priority
                 )
-                
-                # Record Phase 3 metrics
+
                 total_time_ms = (time.time() - request_start_time) * 1000
                 ttfb_ms = metadata.get("processing_time_ms", total_time_ms)
-                
+
                 record_latency("tts_phase3", "total_time", total_time_ms, {
                     "provider": metadata.get("provider_used", "unknown"),
                     "strategy": metadata.get("fast_path_strategy", "unknown"),
                     "priority": priority.value
                 })
-                
                 record_latency("tts_phase3", "first_byte", ttfb_ms, {
                     "provider": metadata.get("provider_used", "unknown"),
                     "optimization": metadata.get("optimization_level", "unknown")
                 })
-                
                 record_counter("tts_phase3", "requests_total", labels={
                     "provider": metadata.get("provider_used", "unknown"),
                     "strategy": metadata.get("fast_path_strategy", "unknown")
                 })
-                
-                logger.info(f"Phase 3 TTS completed: {ttfb_ms:.1f}ms TTFB, {total_time_ms:.1f}ms total, strategy: {metadata.get('fast_path_strategy')}")
-                
+
+                logger.info(f"Phase 3 TTS completed: {ttfb_ms:.1f}ms TTFB, {total_time_ms:.1f}ms total")
+
                 return StreamingResponse(
-                    io.BytesIO(audio_data), 
+                    io.BytesIO(audio_data),
                     media_type="audio/mpeg",
                     headers={
                         "X-TTS-Provider": metadata.get("provider_used", "unknown"),
@@ -744,207 +566,132 @@ async def voice_synthesize(request: VoiceRequest):
                         "X-Optimization-Level": metadata.get("optimization_level", "unknown")
                     }
                 )
-                
+
             except Exception as phase3_error:
                 logger.warning(f"Phase 3 TTS failed, falling back to legacy: {phase3_error}")
-                # Fall through to legacy implementation
-        
-        # Legacy TTS implementation (Phase 0-2)
-        request_start_time = time.time()
-        logger.info(f"[API-Legacy] /voice/synthesize called with legacy processing. Text: '{request.text[:100]}' Voice: {request.voice} Model: {request.model}")
-        if not request.text:
-            logger.warning("[API] No text provided for TTS")
-            raise HTTPException(status_code=400, detail="No text provided for TTS")
-            
-        # Use unified LLM manager instead of individual services
-        if not llm_manager:
-            logger.error("Unified LLM manager not available")
-            raise HTTPException(status_code=500, detail="LLM service not available")
-        
-        try:
-            logger.info(f"[API] Using unified LLM manager for TTS")
-            
-            # Accept response_format from request if present (for OPUS/OGG support)
-            response_format = getattr(request, 'response_format', None)
-            if not response_format:
-                # Try to get from request body if sent as dict
-                if hasattr(request, 'dict'):
-                    response_format = request.dict().get('response_format', None)
-            if not response_format:
-                response_format = 'mp3'  # Default for backward compatibility
 
-            # Track first byte metrics
-            first_chunk_received = False
-            
-            # Generate speech using unified LLM manager streaming API
-            audio_chunks = []
-            async for chunk in llm_manager.stream_text_to_speech(
-                text=request.text,
-                voice=request.voice,
-                response_format=response_format
-            ):
-                # Record TTFB (Time To First Byte) for first chunk
-                if not first_chunk_received:
-                    ttfb_ms = (time.time() - request_start_time) * 1000
-                    record_latency("tts", "first_byte", ttfb_ms, {"provider": os.environ.get("ACTIVE_TTS_PROVIDER", "unknown")})
-                    record_counter("tts", "requests_total", labels={"provider": os.environ.get("ACTIVE_TTS_PROVIDER", "unknown")})
-                    logger.info(f"TTS TTFB: {ttfb_ms:.1f}ms for text length {len(request.text)}")
-                    first_chunk_received = True
-                audio_chunks.append(chunk)
-            
-            # Combine all base64 chunks into single audio data
-            import base64
-            combined_audio = base64.b64encode(base64.b64decode(''.join(audio_chunks))).decode('utf-8')
-            audio_data = combined_audio
-            
-            logger.info(f"[API] TTS generated successfully via unified LLM manager")
-            
-            if not audio_data:
-                logger.error("[API] Failed to generate audio - empty data returned")
-                raise HTTPException(status_code=500, detail="Failed to generate audio - empty data returned")
-            
-            # Return the audio data and format
-            logger.info(f"[API] Returning audio data to client (format: {response_format})")
-            return {"audio_data": audio_data, "format": response_format}
-            
-        except Exception as speech_error:
-            logger.error(f"[API] Error generating speech: {str(speech_error)}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Error generating speech: {str(speech_error)}")
-            
+        # Legacy TTS implementation
+        request_start_time = time.time()
+        logger.info(f"[API-Legacy] /voice/synthesize called. Text: '{request.text[:100]}' Voice: {request.voice}")
+        if not request.text:
+            raise HTTPException(status_code=400, detail="No text provided for TTS")
+
+        if not llm_manager:
+            raise HTTPException(status_code=500, detail="LLM service not available")
+
+        response_format = getattr(request, 'response_format', None)
+        if not response_format:
+            if hasattr(request, 'dict'):
+                response_format = request.dict().get('response_format', None)
+        if not response_format:
+            response_format = 'mp3'
+
+        first_chunk_received = False
+        audio_chunks = []
+        async for chunk in llm_manager.stream_text_to_speech(
+            text=request.text, voice=request.voice, response_format=response_format
+        ):
+            if not first_chunk_received:
+                ttfb_ms = (time.time() - request_start_time) * 1000
+                record_latency("tts", "first_byte", ttfb_ms, {"provider": os.environ.get("ACTIVE_TTS_PROVIDER", "unknown")})
+                record_counter("tts", "requests_total", labels={"provider": os.environ.get("ACTIVE_TTS_PROVIDER", "unknown")})
+                logger.info(f"TTS TTFB: {ttfb_ms:.1f}ms for text length {len(request.text)}")
+                first_chunk_received = True
+            audio_chunks.append(chunk)
+
+        combined_audio = base64.b64encode(base64.b64decode(''.join(audio_chunks))).decode('utf-8')
+
+        if not combined_audio:
+            raise HTTPException(status_code=500, detail="Failed to generate audio - empty data returned")
+
+        logger.info(f"[API] Returning audio data to client (format: {response_format})")
+        return {"audio_data": combined_audio, "format": response_format}
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"[API] Error in voice_synthesize endpoint: {str(e)}")
-        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# /voice/transcribe & /voice/transcribe_file
+# ---------------------------------------------------------------------------
 
 @app.post("/voice/transcribe")
 async def transcribe_audio(request: Request):
-    """Endpoint to transcribe audio sent as base64 encoded data using unified LLM manager."""
+    """Transcribe audio sent as base64 encoded data."""
     try:
-        # Get the request body as JSON
         json_data = await request.json()
         audio_data = json_data.get("audio_data")
-        audio_format = json_data.get("audio_format", "mp3")  # Default to mp3 if not specified
-        # Model selection is now handled by unified LLM manager
-        requested_model = json_data.get("model")  # Optional override
-        
+        audio_format = json_data.get("audio_format", "mp3")
+        requested_model = json_data.get("model")
+
         logger.info(f"Received transcription request. Format: {audio_format}, Model: {requested_model or 'default'}")
-        
-        # Check if audio data was provided
+
         if not audio_data:
-            logger.warning("No audio data provided for transcription")
             raise HTTPException(status_code=400, detail="No audio data provided")
-        
-        # Log the size of the received audio data
-        audio_data_length = len(audio_data) if audio_data else 0
-        logger.info(f"Audio data received: {audio_data_length} characters")
-        
-        # Use unified LLM manager instead of individual services
         if not llm_manager:
-            logger.error("Unified LLM manager not available")
             raise HTTPException(status_code=500, detail="LLM service not available")
-        
-        # Decode the base64 audio data
+
+        audio_bytes = base64.b64decode(audio_data)
+        if len(audio_bytes) < 100:
+            raise HTTPException(status_code=400, detail="Audio data too small or invalid")
+
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        unique_id = uuid.uuid4()
+        temp_file_path = os.path.join(temp_dir, f"audio_transcription_{unique_id}.{audio_format}")
+
+        with open(temp_file_path, "wb") as f:
+            f.write(audio_bytes)
+
         try:
-            audio_bytes = base64.b64decode(audio_data)
-            logger.info(f"Successfully decoded audio: {len(audio_bytes)} bytes, format: {audio_format}")
-            
-            if len(audio_bytes) < 100:
-                logger.warning(f"Audio data too small ({len(audio_bytes)} bytes), likely invalid")
-                raise HTTPException(status_code=400, detail="Audio data too small or invalid")
-            
-            # Save to a temporary file
-            import tempfile
-            import os
-            
-            temp_dir = tempfile.gettempdir()
-            unique_id = uuid.uuid4()
-            temp_file_path = os.path.join(temp_dir, f"audio_transcription_{unique_id}.{audio_format}")
-            
-            logger.info(f"Will save audio to temporary file: {temp_file_path}")
-            
-            with open(temp_file_path, "wb") as f:
-                f.write(audio_bytes)
-            
-            # Verify the file was written successfully
-            if os.path.exists(temp_file_path):
-                file_size = os.path.getsize(temp_file_path)
-                logger.info(f"Saved audio to temporary file: {temp_file_path}, size: {file_size} bytes")
-            else:
-                logger.error(f"Failed to save audio file at {temp_file_path}")
-                raise HTTPException(status_code=500, detail="Failed to save audio file")
-            
-            # Transcribe the audio using unified LLM manager
-            logger.info(f"Calling unified LLM manager transcription service")
-            try:
-                # Don't pass model parameter - unified LLM manager handles this internally
-                transcription = await llm_manager.transcribe_audio(temp_file_path)
-                logger.info(f"Transcription service returned: '{transcription}'")
-                    
-            except Exception as e:
-                logger.error(f"Error from transcription service: {str(e)}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                # Clean up the temporary file
-                try:
-                    os.remove(temp_file_path)
-                except:
-                    pass
-                raise HTTPException(status_code=500, detail=f"Transcription service error: {str(e)}")
-            
-            # Clean up the temporary file
+            transcription = await llm_manager.transcribe_audio(temp_file_path)
+        finally:
             try:
                 os.remove(temp_file_path)
-                logger.info("Temporary audio file removed")
-            except Exception as e:
-                logger.error(f"Error removing temporary file: {str(e)}")
-            
-            if not transcription or not transcription.strip():
-                logger.warning("Empty transcription result")
-                raise HTTPException(status_code=500, detail="Transcription service returned empty result")
-            
-            return {"text": transcription}
-                
-        except HTTPException:
-            raise  # Re-raise HTTP exceptions
-        except Exception as e:
-            logger.error(f"Error processing audio data: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
-            
+            except Exception:
+                pass
+
+        if not transcription or not transcription.strip():
+            raise HTTPException(status_code=500, detail="Transcription service returned empty result")
+
+        return {"text": transcription}
+
     except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error in transcribe_audio endpoint: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
 
 @app.post("/voice/transcribe_file")
 async def transcribe_file(file: UploadFile = File(...)):
-    """Transcribe uploaded audio file using unified LLM manager."""
-    import tempfile, os
-    
-    # Use unified LLM manager instead of individual services
+    """Transcribe uploaded audio file."""
+    import tempfile
+
     if not llm_manager:
-        logger.error("Unified LLM manager not available")
         raise HTTPException(status_code=500, detail="LLM service not available")
-    
+
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     temp.write(await file.read())
     temp.close()
-    
+
     try:
         transcription = await llm_manager.transcribe_audio(temp.name)
         return {"text": transcription}
     finally:
         os.remove(temp.name)
 
-# Add the database and CRUD imports
+
+# ---------------------------------------------------------------------------
+# Session CRUD
+# ---------------------------------------------------------------------------
+
 from app.crud import session as crud_session
 from app.crud import reminder as crud_reminder
 
-# Session-related schemas
 class SessionUpdateRequest(BaseModel):
     title: Optional[str] = None
     summary: Optional[str] = None
@@ -959,13 +706,11 @@ class SessionResponse(BaseModel):
     last_modified: str
     isSynced: bool = True
 
-
 class SessionReminderRequest(BaseModel):
     scheduled_time: datetime
     title: Optional[str] = None
     description: Optional[str] = None
     user_id: Optional[int] = None
-
 
 class SessionReminderResponse(BaseModel):
     id: Optional[int] = None
@@ -980,122 +725,58 @@ class MessageRequest(BaseModel):
     audio_url: Optional[str] = None
     sequence: Optional[int] = None
 
+
 @app.get("/sessions", status_code=status.HTTP_200_OK)
 async def get_sessions(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    """Get all sessions, optionally filtered by user_id"""
+    """Get all sessions for the current user."""
     try:
         effective_user_id = current_user.user.id
         logger.info(f"Getting sessions for user {effective_user_id}")
-        
+
         try:
-            # Try to get sessions from database first
             sessions = crud_session.get_sessions_by_user(db, effective_user_id)
-            logger.info(f"Database query returned {len(sessions)} sessions for user {effective_user_id}")
-            
-            # If no sessions found, create default starter sessions
             if not sessions:
-                logger.info(f"No sessions found for user {effective_user_id}, creating default sessions")
+                logger.info(f"No sessions found for user {effective_user_id}, creating defaults")
                 try:
-                    # Create default sessions
-                    session1 = crud_session.create_session(db, user_id=effective_user_id, title="Your First Session")
-                    session2 = crud_session.create_session(db, user_id=effective_user_id, title="Your Follow-up Session")
-                    
-                    # Update with summaries
-                    crud_session.update_session(db, session1.id, {
-                        "summary": "Welcome to your therapy journey. This is where your completed sessions will appear."
-                    })
-                    crud_session.update_session(db, session2.id, {
-                        "summary": "Regular sessions help build progress. Complete another session to see it here."
-                    })
-                    
-                    # Get the sessions again
-                    sessions = [session1, session2]
-                    logger.info(f"Created {len(sessions)} default sessions for user {effective_user_id}")
+                    s1 = crud_session.create_session(db, user_id=effective_user_id, title="Your First Session")
+                    s2 = crud_session.create_session(db, user_id=effective_user_id, title="Your Follow-up Session")
+                    crud_session.update_session(db, s1.id, {"summary": "Welcome to your therapy journey. This is where your completed sessions will appear."})
+                    crud_session.update_session(db, s2.id, {"summary": "Regular sessions help build progress. Complete another session to see it here."})
+                    sessions = [s1, s2]
                 except Exception as create_error:
                     logger.error(f"Error creating default sessions: {str(create_error)}")
-                    logger.error(traceback.format_exc())
-                    # If we can't create sessions, return mock data
-                    logger.warning("Falling back to mock data due to database error")
                     now = utcnow_isoformat()
                     return [
-                        {
-                            "id": str(uuid.uuid4()),
-                            "title": "First Therapy Session",
-                            "summary": "Welcome to your therapy journey. This is where your completed sessions will appear.",
-                            "created_at": now,
-                            "last_modified": now,
-                            "isSynced": True
-                        },
-                        {
-                            "id": str(uuid.uuid4()),
-                            "title": "Follow-up Session",
-                            "summary": "Regular sessions help build progress. Complete another session to see it here.",
-                            "created_at": now,
-                            "last_modified": now,
-                            "isSynced": True
-                        }
+                        {"id": str(uuid.uuid4()), "title": "First Therapy Session", "summary": "Welcome to your therapy journey.", "created_at": now, "last_modified": now, "isSynced": True},
+                        {"id": str(uuid.uuid4()), "title": "Follow-up Session", "summary": "Regular sessions help build progress.", "created_at": now, "last_modified": now, "isSynced": True}
                     ]
         except Exception as db_error:
             logger.error(f"Database error fetching sessions: {str(db_error)}")
-            logger.error(traceback.format_exc())
-            # If database operations fail, return mock data as fallback
-            logger.warning("Falling back to mock data due to database error")
             now = utcnow_isoformat()
             return [
-                {
-                    "id": str(uuid.uuid4()),
-                    "title": "First Therapy Session",
-                    "summary": "Database connectivity issue. Please try again later.",
-                    "created_at": now,
-                    "last_modified": now,
-                    "isSynced": True
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "title": "Support",
-                    "summary": "If issues persist, please contact support.",
-                    "created_at": now,
-                    "last_modified": now,
-                    "isSynced": True
-                }
+                {"id": str(uuid.uuid4()), "title": "First Therapy Session", "summary": "Database connectivity issue. Please try again later.", "created_at": now, "last_modified": now, "isSynced": True}
             ]
-        
-        # Convert SQLAlchemy models to response format
+
         result = []
         for session in sessions:
-            # Add detailed logging for each session
-            logger.info(f"Processing session: id={session.id}, title={session.title}")
             result.append({
                 "id": str(session.id),
                 "title": session.title or f"Session {session.id}",
                 "summary": session.summary or "No summary available",
                 "action_items": session.action_items or [],
                 "created_at": serialize_datetime(session.start_time),
-                "last_modified": serialize_datetime(session.end_time)
-                if session.end_time
-                else serialize_datetime(session.start_time),
+                "last_modified": serialize_datetime(session.end_time) if session.end_time else serialize_datetime(session.start_time),
                 "isSynced": True
             })
-            
         return result
     except Exception as e:
         logger.error(f"Unhandled error in get_sessions: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        # Return a user-friendly error response
         now = utcnow_isoformat()
-        return [
-            {
-                "id": str(uuid.uuid4()),
-                "title": "Service Temporarily Unavailable",
-                "summary": "We're experiencing technical difficulties. Please try again later.",
-                "created_at": now,
-                "last_modified": now,
-                "isSynced": True
-            }
-        ]
+        return [{"id": str(uuid.uuid4()), "title": "Service Temporarily Unavailable", "summary": "Please try again later.", "created_at": now, "last_modified": now, "isSynced": True}]
+
 
 @app.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=SessionResponse)
 async def create_session(
@@ -1105,20 +786,10 @@ async def create_session(
 ):
     """Create a new session"""
     try:
-        logger.info("Creating new session")
-        
-        # If no request body was provided, create an empty one
         if not request:
             request = SessionUpdateRequest()
-        
         user_id = current_user.user.id
-        logger.info(f"Creating session for user_id: {user_id}")
-        
-        # Create session in database
         session = crud_session.create_session(db, user_id=user_id, title=request.title)
-        logger.info(f"Session created in database: id={session.id}, title={session.title}")
-        
-        # Return the created session in the expected format
         return {
             "id": str(session.id),
             "title": request.title or f"Session {session.id}",
@@ -1129,8 +800,8 @@ async def create_session(
         }
     except Exception as e:
         logger.error(f"Error creating session: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error creating session: {str(e)}")
+
 
 @app.get("/sessions/{session_id}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
 async def get_session(
@@ -1140,33 +811,24 @@ async def get_session(
 ):
     """Get a specific session"""
     try:
-        logger.info(f"Getting session {session_id}")
-        
-        # Query the database for the session
         session = crud_session.get_session(db, session_id)
-        
-        # If session not found, return 404
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        
-        # Return the session in the expected format
         return {
             "id": str(session.id),
-            "title": f"Session {session.id}" if not hasattr(session, 'title') or not session.title else session.title,
+            "title": session.title or f"Session {session.id}",
             "summary": session.summary or "",
             "action_items": session.action_items or [],
             "created_at": serialize_datetime(session.start_time),
-            "last_modified": serialize_datetime(session.end_time)
-            if session.end_time
-            else serialize_datetime(session.start_time),
+            "last_modified": serialize_datetime(session.end_time) if session.end_time else serialize_datetime(session.start_time),
             "isSynced": True
         }
     except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error getting session: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error getting session: {str(e)}")
+
 
 @app.patch("/sessions/{session_id}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
 async def update_session(
@@ -1177,83 +839,43 @@ async def update_session(
 ):
     """Update a session"""
     try:
-        logger.info(f"Updating session {session_id} with data: {request}")
-        
-        # Build the update data
         update_data = {}
         if request.title is not None:
             update_data["title"] = request.title
         if request.summary is not None:
             update_data["summary"] = request.summary
-        
-        logger.info(f"Update data: {update_data}")
-        
-        try:
-            existing_session = crud_session.get_session(db, session_id)
-            if existing_session and existing_session.user_id != current_user.user.id:
-                raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
-            # Update the session in the database if it already exists
-            session = None
-            if existing_session:
-                session = crud_session.update_session(db, session_id, update_data)
+        existing_session = crud_session.get_session(db, session_id)
+        if existing_session and existing_session.user_id != current_user.user.id:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
-            # If session not found, create it for the current user
-            if not session:
-                logger.warning(f"Session {session_id} not found, attempting to create it")
-                session = crud_session.create_session(
-                    db,
-                    user_id=current_user.user.id,
-                    title=request.title,
-                    summary=request.summary,
-                )
+        session = None
+        if existing_session:
+            session = crud_session.update_session(db, session_id, update_data)
 
-                logger.info(f"Created new session {session.id} as fallback")
-            
-            # Return the updated session
-            response = {
-                "id": str(session.id),
-                "title": session.title or f"Session {session.id}",
-                "summary": session.summary or "",
-                "created_at": serialize_datetime(session.start_time),
-                "last_modified": serialize_datetime(session.end_time)
-                if session.end_time
-                else serialize_datetime(session.start_time),
-                "isSynced": True
-            }
-            
-            logger.info(f"Successfully updated session {session_id}")
-            return response
-        except Exception as db_error:
-            logger.error(f"Database error updating session: {str(db_error)}")
-            logger.error(traceback.format_exc())
-            
-            # Return a mock response as fallback
-            now = utcnow_isoformat()
-            return {
-                "id": session_id,
-                "title": request.title or f"Session {session_id}",
-                "summary": request.summary or "No summary available",
-                "created_at": now,
-                "last_modified": now,
-                "isSynced": True
-            }
+        if not session:
+            session = crud_session.create_session(db, user_id=current_user.user.id, title=request.title, summary=request.summary)
+
+        return {
+            "id": str(session.id),
+            "title": session.title or f"Session {session.id}",
+            "summary": session.summary or "",
+            "created_at": serialize_datetime(session.start_time),
+            "last_modified": serialize_datetime(session.end_time) if session.end_time else serialize_datetime(session.start_time),
+            "isSynced": True
+        }
     except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error updating session: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        
-        # Return a response rather than an error for better user experience
+        logger.error(f"Error updating session: {str(e)}")
         now = utcnow_isoformat()
         return {
             "id": session_id,
             "title": request.title or f"Session {session_id}",
             "summary": request.summary or "Error saving session, please try again",
-            "created_at": now,
-            "last_modified": now,
-            "isSynced": True
+            "created_at": now, "last_modified": now, "isSynced": True
         }
+
 
 @app.delete("/sessions/{session_id}", status_code=status.HTTP_200_OK)
 async def delete_session(
@@ -1263,59 +885,41 @@ async def delete_session(
 ):
     """Delete a session"""
     try:
-        logger.info(f"Deleting session {session_id}")
-        
         session = crud_session.get_session(db, session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-
-        # Delete the session from the database
         success = crud_session.delete_session(db, session_id)
-        
-        # If session not found, return 404
         if not success:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        
-        # Return success
         return {"status": "success", "message": f"Session {session_id} deleted"}
     except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
+
+# ---------------------------------------------------------------------------
+# Session reminder
+# ---------------------------------------------------------------------------
 
 @app.get("/session-reminder", status_code=status.HTTP_200_OK, response_model=SessionReminderResponse)
 async def get_session_reminder(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    """Fetch the next scheduled therapy session reminder for the user."""
+    """Fetch the next scheduled therapy session reminder."""
     try:
-        effective_user_id = current_user.user.id
-        reminder = crud_reminder.get_next_session_reminder(db, effective_user_id)
-
+        reminder = crud_reminder.get_next_session_reminder(db, current_user.user.id)
         if not reminder:
-            logger.info(f"No session reminder found for user {effective_user_id}")
             return SessionReminderResponse()
-
-        logger.info(
-            "Returning session reminder for user %s at %s",
-            effective_user_id,
-            reminder.scheduled_time.isoformat() if reminder.scheduled_time else "unknown",
-        )
-
         return SessionReminderResponse(
-            id=reminder.id,
-            scheduled_time=reminder.scheduled_time,
-            title=reminder.title,
-            description=reminder.description,
+            id=reminder.id, scheduled_time=reminder.scheduled_time,
+            title=reminder.title, description=reminder.description,
             is_completed=reminder.is_completed,
         )
     except Exception as e:
         logger.error(f"Error fetching session reminder: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Unable to fetch session reminder")
 
 
@@ -1327,34 +931,24 @@ async def upsert_session_reminder(
 ):
     """Create or update the user's next session reminder."""
     try:
-        effective_user_id = current_user.user.id
-
         reminder = crud_reminder.upsert_session_reminder(
-            db,
-            user_id=effective_user_id,
+            db, user_id=current_user.user.id,
             scheduled_time=request.scheduled_time,
-            title=request.title,
-            description=request.description,
+            title=request.title, description=request.description,
         )
-
-        logger.info(
-            "Upserted session reminder %s for user %s at %s",
-            reminder.id,
-            effective_user_id,
-            reminder.scheduled_time.isoformat() if reminder.scheduled_time else "unknown",
-        )
-
         return SessionReminderResponse(
-            id=reminder.id,
-            scheduled_time=reminder.scheduled_time,
-            title=reminder.title,
-            description=reminder.description,
+            id=reminder.id, scheduled_time=reminder.scheduled_time,
+            title=reminder.title, description=reminder.description,
             is_completed=reminder.is_completed,
         )
     except Exception as e:
         logger.error(f"Error upserting session reminder: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Unable to update session reminder")
+
+
+# ---------------------------------------------------------------------------
+# Session messages
+# ---------------------------------------------------------------------------
 
 @app.post("/sessions/{session_id}/messages", status_code=status.HTTP_200_OK)
 async def add_session_message(
@@ -1365,31 +959,21 @@ async def add_session_message(
 ):
     """Add a message to a session"""
     try:
-        logger.info(f"Adding message to session {session_id}")
-        
-        # Check if session exists
         session = crud_session.get_session(db, session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        
-        # Add message to database
         msg = crud_session.add_message_to_session(
-            db, 
-            session_id=session_id,
-            content=message.content,
+            db, session_id=session_id, content=message.content,
             is_user_message=message.is_user_message,
-            audio_url=message.audio_url,
-            sequence=message.sequence
+            audio_url=message.audio_url, sequence=message.sequence
         )
-        
-        # Return success with the message ID
         return {"status": "success", "message_id": str(msg.id)}
     except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error adding message: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error adding message: {str(e)}")
+
 
 @app.post("/sessions/{session_id}/messages/batch", status_code=status.HTTP_200_OK)
 async def add_session_messages_batch(
@@ -1400,104 +984,95 @@ async def add_session_messages_batch(
 ):
     """Add multiple messages to a session in a single batch"""
     try:
-        logger.info(f"Adding batch of {len(messages)} messages to session {session_id}")
-        
-        # Check if session exists
         session = crud_session.get_session(db, session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        
-        # Convert requests to dict format for the crud function
-        message_dicts = []
-        for msg in messages:
-            message_dicts.append({
-                "content": msg.content,
-                "is_user_message": msg.is_user_message,
-                "audio_url": msg.audio_url,
-                "sequence": msg.sequence
-            })
-        
-        # Add messages to database
-        saved_messages = crud_session.add_messages_batch(db, session_id, message_dicts)
-        
-        # Return success with the message IDs
-        message_ids = [str(msg.id) for msg in saved_messages]
-        return {
-            "status": "success", 
-            "message_count": len(saved_messages),
-            "message_ids": message_ids
-        }
+        message_dicts = [
+            {"content": m.content, "is_user_message": m.is_user_message, "audio_url": m.audio_url, "sequence": m.sequence}
+            for m in messages
+        ]
+        saved = crud_session.add_messages_batch(db, session_id, message_dicts)
+        return {"status": "success", "message_count": len(saved), "message_ids": [str(m.id) for m in saved]}
     except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error adding batch messages: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error adding batch messages: {str(e)}")
 
-# Legacy API endpoints with /api/v1 prefix included explicitly
+
+# ---------------------------------------------------------------------------
+# Legacy API endpoints (/api/v1 prefix)
+# ---------------------------------------------------------------------------
+
 @app.get(f"{settings.API_V1_STR}/sessions", status_code=status.HTTP_200_OK)
-async def get_sessions_legacy(db: DBSession = Depends(get_db), user_id: Optional[int] = None):
-    """Legacy endpoint for getting all sessions"""
-    return await get_sessions(db=db, user_id=user_id)
+async def get_sessions_legacy(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    return await get_sessions(current_user=current_user, db=db)
 
 @app.get(f"{settings.API_V1_STR}/sessions/{{session_id}}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
-async def get_session_legacy(session_id: str):
-    """Legacy endpoint for getting a specific session"""
-    return await get_session(session_id)
+async def get_session_legacy(
+    session_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    return await get_session(session_id, current_user=current_user, db=db)
 
 @app.patch(f"{settings.API_V1_STR}/sessions/{{session_id}}", status_code=status.HTTP_200_OK, response_model=SessionResponse)
-async def update_session_legacy(session_id: str, request: SessionUpdateRequest):
-    """Legacy endpoint for updating a session"""
-    return await update_session(session_id, request)
+async def update_session_legacy(
+    session_id: str,
+    request: SessionUpdateRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    return await update_session(session_id, request, current_user=current_user, db=db)
 
 @app.delete(f"{settings.API_V1_STR}/sessions/{{session_id}}", status_code=status.HTTP_200_OK)
-async def delete_session_legacy(session_id: str):
-    """Legacy endpoint for deleting a session"""
-    return await delete_session(session_id)
+async def delete_session_legacy(
+    session_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    return await delete_session(session_id, current_user=current_user, db=db)
 
 @app.post(f"{settings.API_V1_STR}/sessions/{{session_id}}/messages", status_code=status.HTTP_200_OK)
-async def add_session_message_legacy(session_id: str, message: dict):
-    """Legacy endpoint for adding a message to a session"""
-    return await add_session_message(session_id, message)
+async def add_session_message_legacy(
+    session_id: str,
+    message: MessageRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    return await add_session_message(session_id, message, current_user=current_user, db=db)
 
 @app.post(f"{settings.API_V1_STR}/sessions/{{session_id}}/messages/batch", status_code=status.HTTP_200_OK)
-async def add_session_messages_batch_legacy(session_id: str, messages: List[dict]):
-    """Legacy endpoint for adding multiple messages to a session in a single batch"""
-    return await add_session_messages_batch(session_id, messages)
+async def add_session_messages_batch_legacy(
+    session_id: str,
+    messages: List[MessageRequest],
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    return await add_session_messages_batch(session_id, messages, current_user=current_user, db=db)
 
-# Replace the catch-all route with more specific error handlers
+
+# ---------------------------------------------------------------------------
+# Error handlers
+# ---------------------------------------------------------------------------
+
 @app.exception_handler(404)
 async def custom_404_handler(request: Request, exc):
     logger.warning(f"Route not found: {request.method} {request.url.path}")
-    return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content={"detail": f"Route not found: {request.url.path}"}
-    )
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Route not found: {request.url.path}"})
 
 @app.exception_handler(405)
 async def custom_405_handler(request: Request, exc):
     logger.warning(f"Method {request.method} not allowed for {request.url.path}")
-    return JSONResponse(
-        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-        content={"detail": f"Method {request.method} not allowed for {request.url.path}"}
-    )
+    return JSONResponse(status_code=status.HTTP_405_METHOD_NOT_ALLOWED, content={"detail": f"Method {request.method} not allowed for {request.url.path}"})
 
-# Duplicate routes removed - all paths now served by main app and API router
 
-# Router mounting moved to earlier in the file to avoid duplicates
-
-# LLM manager is now imported at the top level
-
-@app.get("/debug/env")
-def debug_env():
-    return {
-        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
-        "GROQ_API_KEY": os.environ.get("GROQ_API_KEY"),
-        "GOOGLE_API_KEY": os.environ.get("GOOGLE_API_KEY"),
-        "ACTIVE_LLM_PROVIDER": os.environ.get("ACTIVE_LLM_PROVIDER"),
-        "ACTIVE_TTS_PROVIDER": os.environ.get("ACTIVE_TTS_PROVIDER"),
-        "ACTIVE_TRANSCRIPTION_PROVIDER": os.environ.get("ACTIVE_TRANSCRIPTION_PROVIDER"),
-    }
+# ---------------------------------------------------------------------------
+# Chat streaming
+# ---------------------------------------------------------------------------
 
 @app.post("/sessions/{session_id}/chat_stream")
 async def stream_chat_from_llm(
@@ -1506,13 +1081,8 @@ async def stream_chat_from_llm(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    """
-    Streams chat completions from the LLM for a given session.
-    Expects a 'history' in the request body, where each message has 'role', 'content', and 'sequence'.
-    The history should include the latest user message.
-    """
+    """Streams chat completions from the LLM for a given session."""
     if not llm_manager:
-        logger.error("LLM Manager not available for streaming chat.")
         raise HTTPException(status_code=500, detail="LLM service not configured or unavailable.")
 
     try:
@@ -1524,54 +1094,25 @@ async def stream_chat_from_llm(
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
         request_start_time = time.time()
-        logger.info(f"Received chat stream request for session_id: {session_id} with {len(request_data.history)} messages in history.")
-        
-        # --- System Prompt ---
-        # You'll need to decide how to get the system prompt.
-        # It could be a default, or loaded based on session_id or user settings.
-        # For now, let's use a generic one. Replace with your actual logic.
-        system_prompt_for_session = "You are Maya, a caring and empathetic AI therapist. Respond naturally and supportively."
-        # Example: Fetch from DB:
-        # session_settings = crud_session.get_session_settings(db, session_id)
-        # system_prompt_for_session = session_settings.system_prompt if session_settings else "Default prompt"
+        logger.info(f"Chat stream request for session_id: {session_id} with {len(request_data.history)} messages")
 
-        # The history from request_data.history should already be in the format
-        # that stream_google_chat_completion expects: List[Dict[str, str]]
-        # with 'role' and 'content'. Ensure 'sequence' is also there if your llm_manager uses it.
-        # The llm_manager.stream_google_chat_completion handles mapping this to Gemini's format.
-        
+        system_prompt_for_session = "You are Maya, a caring and empathetic AI therapist. Respond naturally and supportively."
+
         if not request_data.history:
             raise HTTPException(status_code=400, detail="Chat history cannot be empty.")
 
-        # --- LLM Parameters ---
-        # You can make these configurable or pass them from the request if needed
-        llm_params = {
-            "temperature": 0.7, # Example
-            # "top_p": 1.0,
-            # "max_tokens": 1000 # Gemini SDK usually handles this with its own limits/defaults for stream
-        }
-
-        # Log the history being sent to the LLM for debugging
-        # logger.debug(f"History being sent to LLM for session {session_id}: {json.dumps(request_data.history, indent=2)}")
-
-        # Extract the latest user message and context
         latest_message = request_data.history[-1].get("content", "") if request_data.history else ""
         context = request_data.history[:-1] if len(request_data.history) > 1 else []
-        
-        # Track first token metrics
+
         first_chunk_received = False
-        
-        # Create async generator function for streaming with TTFB tracking
+
         async def text_stream():
             nonlocal first_chunk_received
             try:
                 async for chunk in llm_manager.stream_chat_completion(
-                    message=latest_message,
-                    context=context,
-                    system_prompt=system_prompt_for_session,
-                    temperature=llm_params.get("temperature", 0.7)
+                    message=latest_message, context=context,
+                    system_prompt=system_prompt_for_session, temperature=0.7
                 ):
-                    # Record TTFB (Time To First Byte) for first chunk
                     if not first_chunk_received:
                         ttfb_ms = (time.time() - request_start_time) * 1000
                         record_latency("llm", "chat_ttfb", ttfb_ms, {"provider": os.environ.get("ACTIVE_LLM_PROVIDER", "unknown")})
@@ -1580,193 +1121,130 @@ async def stream_chat_from_llm(
                         first_chunk_received = True
                     yield chunk
             except Exception as e:
-                # Record error metrics
-                record_counter("llm", "chat_errors_total", labels={
-                    "provider": os.environ.get("ACTIVE_LLM_PROVIDER", "unknown"),
-                    "error_type": type(e).__name__
-                })
+                record_counter("llm", "chat_errors_total", labels={"provider": os.environ.get("ACTIVE_LLM_PROVIDER", "unknown"), "error_type": type(e).__name__})
                 raise
-        
+
         return StreamingResponse(text_stream(), media_type="text/plain; charset=utf-8")
 
-    except HTTPException as e:
-        logger.error(f"HTTPException in stream_chat_from_llm for session {session_id}: {e.detail}")
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in stream_chat_from_llm for session {session_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An error occurred while streaming the chat response: {str(e)}")
 
+
+# ---------------------------------------------------------------------------
+# Helper functions (end_session support)
+# ---------------------------------------------------------------------------
+
 async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, Any], request: EndSessionRequest) -> int:
     """Create a session record in the database with rich summary data and return the session ID."""
     try:
-        # Extract session metadata from request or use defaults
-        user_id = request.user_id or 1  # Default to user 1 if not provided
+        user_id = request.user_id or 1
         session_title = request.session_title or f"Therapy Session {datetime.now().strftime('%b %d, %Y')}"
-        
-        logger.info(f"Creating session record for user {user_id} with title: {session_title}")
-        
-        # Create the session with rich data including action items and summary
-        action_items = summary_data.get("action_items", [])
-        summary_text = summary_data.get("summary", "")
         session = crud_session.create_session(
-            db=db,
-            user_id=user_id,
-            title=session_title,
-            action_items=action_items,
-            summary=summary_text
+            db=db, user_id=user_id, title=session_title,
+            action_items=summary_data.get("action_items", []),
+            summary=summary_data.get("summary", "")
         )
-        
-        logger.info(f"Session created successfully with ID: {session.id}")
         return session.id
-        
     except Exception as e:
         logger.error(f"Error creating session record: {str(e)}")
-        # If session creation fails, log the error but don't fail the entire request
-        # Return a default ID or create a minimal session
         try:
-            fallback_session = crud_session.create_session(
-                db=db,
-                user_id=1,  # Default user
-                title="Therapy Session",
+            fallback = crud_session.create_session(
+                db=db, user_id=1, title="Therapy Session",
                 action_items=summary_data.get("action_items", []),
                 summary=summary_data.get("summary", "")
             )
-            return fallback_session.id
-        except Exception as fallback_error:
-            logger.error(f"Fallback session creation also failed: {str(fallback_error)}")
-            # Return a default ID if all else fails
+            return fallback.id
+        except Exception:
             return 1
 
-async def _validate_and_clean_summary(
-    result: Dict[str, Any],
-    messages: List[Dict[str, Any]],
-    display_name: str = "you"
-) -> Dict[str, Any]:
-    """Validate and clean the summary result, ensuring quality action items."""
 
-    # Ensure result is a dictionary
+async def _validate_and_clean_summary(result: Dict[str, Any], messages: List[Dict[str, Any]], display_name: str = "you") -> Dict[str, Any]:
+    """Validate and clean the summary result."""
     if not isinstance(result, dict):
         raise ValueError("Response is not a dictionary")
 
-    # Validate summary
     if not result.get("summary") or len(result["summary"].strip()) < 20:
         result["summary"] = "Thank you for sharing your thoughts and feelings in this session. We explored important topics together."
 
-    # Validate and improve action items
     action_items = result.get("action_items", [])
-    if not action_items or len(action_items) == 0:
-        # Generate basic action items based on conversation
+    if not action_items:
         action_items = await _generate_basic_action_items(messages, display_name)
     else:
-        # Clean existing action items
-        cleaned_items = []
-        for item in action_items:
-            if isinstance(item, str) and len(item.strip()) > 10:
-                cleaned_items.append(item.strip())
+        cleaned = [item.strip() for item in action_items if isinstance(item, str) and len(item.strip()) > 10]
+        if len(cleaned) < 2:
+            cleaned.extend((await _generate_basic_action_items(messages, display_name))[:3])
+        action_items = cleaned[:5]
 
-        if len(cleaned_items) < 2:
-            # Add some basic items if we don't have enough
-            basic_items = await _generate_basic_action_items(messages, display_name)
-            cleaned_items.extend(basic_items[:3])
-
-        action_items = cleaned_items[:5]  # Limit to 5 items
-    
     result["action_items"] = action_items
-    
-    # Validate insights
-    insights = result.get("insights", [])
-    if not insights:
-        insights = [
-            "You showed courage by sharing your experiences today",
-            "Your self-awareness is a valuable strength"
-        ]
-    
-    result["insights"] = insights
-    
+    result["insights"] = result.get("insights") or [
+        "You showed courage by sharing your experiences today",
+        "Your self-awareness is a valuable strength"
+    ]
     return result
+
 
 async def _generate_basic_action_items(messages: List[Dict[str, Any]], display_name: str = "you") -> List[str]:
     """Generate basic action items based on conversation content."""
-    
-    # Extract keywords from user messages to create relevant action items
     user_messages = [msg.get('content', '').lower() for msg in messages if msg.get("isUser", False)]
-    conversation_text = ' '.join(user_messages)
-    
-    action_items = []
-    
-    # Keyword-based action item suggestions
-    if any(word in conversation_text for word in ['stress', 'anxious', 'worry', 'overwhelmed']):
-        action_items.append("Practice deep breathing exercises when feeling stressed or anxious")
-    
-    if any(word in conversation_text for word in ['sleep', 'tired', 'exhausted']):
-        action_items.append("Focus on improving your sleep routine and getting adequate rest")
-    
-    if any(word in conversation_text for word in ['relationship', 'family', 'friends', 'partner']):
-        action_items.append("Consider having an open conversation with someone you trust")
-    
-    if any(word in conversation_text for word in ['work', 'job', 'career']):
-        action_items.append("Take regular breaks during work to maintain balance")
-    
-    if any(word in conversation_text for word in ['exercise', 'physical', 'activity']):
-        action_items.append("Incorporate some physical activity into your daily routine")
-    
-    # Add default items if we don't have enough specific ones
-    default_items = [
+    text = ' '.join(user_messages)
+
+    items = []
+    if any(w in text for w in ['stress', 'anxious', 'worry', 'overwhelmed']):
+        items.append("Practice deep breathing exercises when feeling stressed or anxious")
+    if any(w in text for w in ['sleep', 'tired', 'exhausted']):
+        items.append("Focus on improving your sleep routine and getting adequate rest")
+    if any(w in text for w in ['relationship', 'family', 'friends', 'partner']):
+        items.append("Consider having an open conversation with someone you trust")
+    if any(w in text for w in ['work', 'job', 'career']):
+        items.append("Take regular breaks during work to maintain balance")
+    if any(w in text for w in ['exercise', 'physical', 'activity']):
+        items.append("Incorporate some physical activity into your daily routine")
+
+    defaults = [
         "Take time for self-reflection and journaling",
         "Practice mindfulness or meditation for a few minutes daily",
         "Engage in one activity that brings you joy this week",
         "Be kind and patient with yourself as you work through challenges"
     ]
-    
-    # Combine and ensure we have 3-4 items
-    all_items = action_items + default_items
-    return list(dict.fromkeys(all_items))[:4]  # Remove duplicates and limit to 4
+    return list(dict.fromkeys(items + defaults))[:4]
+
 
 async def _generate_conversation_based_summary(
-    messages: List[Dict[str, Any]],
-    therapeutic_approach: str,
-    user_id: Optional[int] = None,
-    db: Optional[DBSession] = None
+    messages: List[Dict[str, Any]], therapeutic_approach: str,
+    user_id: Optional[int] = None, db: Optional[DBSession] = None
 ) -> Dict[str, Any]:
     """Generate a fallback summary based on conversation analysis."""
-
-    logger.info("Generating conversation-based fallback summary")
-
-    # Fetch user's preferred name for personalization
     from app.services.profile_service import get_profile
 
     preferred_name = None
     if user_id and db:
         profile = get_profile(db, user_id=user_id)
         preferred_name = profile.preferred_name if profile else None
-
     display_name = preferred_name if preferred_name else "you"
 
-    # Basic conversation analysis
     user_message_count = len([msg for msg in messages if msg.get("isUser", False)])
-    maya_message_count = len([msg for msg in messages if not msg.get("isUser", False)])
-
-    # Generate summary based on conversation length and content
     if user_message_count > 5:
-        summary = f"Thank you for sharing so openly with Maya today. You covered several important topics and explored different perspectives together."
+        summary = "Thank you for sharing so openly with Maya today. You covered several important topics and explored different perspectives together."
     else:
-        summary = f"Thank you for taking the time to connect with Maya today. Even brief conversations can provide valuable insights."
-
-    # Generate action items based on conversation
-    action_items = await _generate_basic_action_items(messages, display_name)
-
-    insights = [
-        f"You engaged thoughtfully in your conversation with Maya today",
-        "Your willingness to explore these topics shows strength and self-awareness"
-    ]
+        summary = "Thank you for taking the time to connect with Maya today. Even brief conversations can provide valuable insights."
 
     return {
         "summary": summary,
-        "action_items": action_items,
-        "insights": insights
+        "action_items": await _generate_basic_action_items(messages, display_name),
+        "insights": [
+            "You engaged thoughtfully in your conversation with Maya today",
+            "Your willingness to explore these topics shows strength and self-awareness"
+        ]
     }
 
-# Add WebSocket endpoints at root level (without /voice prefix) for direct access
+
+# ---------------------------------------------------------------------------
+# Root WebSocket proxies
+# ---------------------------------------------------------------------------
+
 @app.websocket("/ws/tts/speech")
 async def root_websocket_streaming_tts(
     websocket: WebSocket,
@@ -1777,31 +1255,34 @@ async def root_websocket_streaming_tts(
 ):
     """Root-level WebSocket endpoint for streaming TTS"""
     try:
-        # Import the websocket function from voice module
         from app.api.endpoints.voice import websocket_streaming_tts
         return await websocket_streaming_tts(websocket, token, conversation_id, voice, format)
     except Exception as e:
         logger.error(f"Root WebSocket TTS error: {str(e)}")
         try:
             await websocket.close(code=1011, reason="Internal server error")
-        except:
+        except Exception:
             pass
+
 
 @app.websocket("/ws/tts")
 async def root_websocket_tts(websocket: WebSocket):
     """Root-level WebSocket endpoint for basic TTS"""
     try:
-        # Import the websocket function from voice module
         from app.api.endpoints.voice import websocket_tts
         return await websocket_tts(websocket)
     except Exception as e:
         logger.error(f"Root WebSocket basic TTS error: {str(e)}")
         try:
             await websocket.close(code=1011, reason="Internal server error")
-        except:
+        except Exception:
             pass
 
+
+# ---------------------------------------------------------------------------
 # App lifecycle events
+# ---------------------------------------------------------------------------
+
 @app.on_event("shutdown")
 async def close_groq_stt_client():
     """Clean up httpx client on app shutdown"""
@@ -1811,6 +1292,7 @@ async def close_groq_stt_client():
             logger.info("Groq STT client closed successfully")
         except Exception as e:
             logger.error(f"Error closing Groq STT client: {e}")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
