@@ -52,11 +52,7 @@ class ChatScreen extends StatelessWidget {
               );
 
         VoicePipelineControllerFactory? pipelineFactory;
-        final controllerFlag = FeatureFlags.isVoicePipelineControllerEnabled;
-        final controllerAuthoritative = controllerFlag &&
-            FeatureFlags.isVoicePipelineControllerAuthoritativeEnabled;
-        if (controllerFlag &&
-            dependencyContainer
+        if (dependencyContainer
                 .isRegistered<VoicePipelineControllerFactory>()) {
           pipelineFactory =
               dependencyContainer.get<VoicePipelineControllerFactory>();
@@ -72,7 +68,6 @@ class ChatScreen extends StatelessWidget {
           progressService: dependencyContainer.progress,
           navigationService: dependencyContainer.navigation,
           voicePipelineControllerFactory: pipelineFactory,
-          useLegacyAutoListening: !controllerAuthoritative,
         );
       },
       child: _ChatScreenBody(

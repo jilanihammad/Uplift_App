@@ -13,10 +13,6 @@ class FeatureFlags {
   static const String voiceFacadeEnabled = 'voiceFacadeEnabled';
   static const String coordinatorVoiceGuardEnabled =
       'coordinatorVoiceGuardEnabled';
-  static const String voicePipelineControllerEnabled =
-      'voicePipelineControllerEnabled';
-  static const String voicePipelineControllerAuthoritative =
-      'voicePipelineControllerAuthoritative';
 
   // Default values
   static const Map<String, bool> _defaults = {
@@ -27,8 +23,6 @@ class FeatureFlags {
     moodPersistenceEnabled: true, // Mood logging sync enabled across the board
     voiceFacadeEnabled: true,
     coordinatorVoiceGuardEnabled: true,
-    voicePipelineControllerEnabled: true,
-    voicePipelineControllerAuthoritative: true,
   };
 
   static SharedPreferences? _prefs;
@@ -60,8 +54,6 @@ class FeatureFlags {
     // Force-enable mood persistence for existing installs even if a stale
     // preference cached "false" before the rollout flipped on.
     await _prefs!.setBool(moodPersistenceEnabled, true);
-    await _prefs!.setBool(
-        voicePipelineControllerAuthoritative, true); // temporary rollout
 
     if (_deferredWrites.isNotEmpty) {
       for (final entry in _deferredWrites.entries) {
@@ -123,11 +115,6 @@ class FeatureFlags {
   static bool get isCoordinatorVoiceGuardEnabled =>
       isEnabled(coordinatorVoiceGuardEnabled);
 
-  static bool get isVoicePipelineControllerEnabled =>
-      isEnabled(voicePipelineControllerEnabled);
-
-  static bool get isVoicePipelineControllerAuthoritativeEnabled =>
-      isEnabled(voicePipelineControllerAuthoritative);
 
   /// Toggle the refactored voice pipeline flag
   static Future<void> toggleRefactoredVoicePipeline() async {

@@ -183,12 +183,8 @@ class VoiceService {
   bool _currentTtsState = false;
   int? _currentPlaybackToken;
   int? _lastPlaybackToken;
-  final Set<int> _autoModeWaitTokens = <int>{};
   bool _ttsActive = false;
   bool _recordingActive = false;
-  bool _playbackActive = false;
-  bool _playbackStartedForCurrentTts = false;
-  StreamSubscription<bool>? _playbackActiveSub;
   bool get isTtsActive => _ttsActive;
   bool get isRecordingActive =>
       _recordingActive ||
@@ -209,8 +205,6 @@ class VoiceService {
     _autoListeningCoordinator.isVoiceModeCallback = callback;
   }
 
-  // TIMING FIX: Callback to get current generation for TTS completion checks
-  int Function()? getCurrentGeneration;
 
   // BATCH 2 PHASE 7: VoiceSessionBloc reference for session validity checks
   bool Function()? _isSessionValidCallback;
@@ -248,30 +242,17 @@ class VoiceService {
 
   bool get geminiLiveEnabled => _useGeminiLive;
 
-  // Passthrough methods for auto mode control
+  // Passthrough methods for auto mode control — delegated to VoicePipelineController
   Future<void> enableAutoMode() async {
     if (kDebugMode) {
-      debugPrint(
-          '[VoiceService] enableAutoMode called (using AudioPlayerManager state)');
+      debugPrint('[VoiceService] enableAutoMode called');
     }
-    if (_controllerAutoModeEnabled) {
-      await _voicePipelineController?.requestEnableAutoMode();
-      return;
-    }
-    await _autoListeningCoordinator.enableAutoMode();
+    await _voicePipelineController?.requestEnableAutoMode();
   }
 
   Future<void> disableAutoMode() async {
     if (kDebugMode) debugPrint('[VoiceService] disableAutoMode() called');
-    if (_controllerAutoModeEnabled) {
-      await _voicePipelineController?.requestDisableAutoMode();
-      return;
-    }
-    await _autoListeningCoordinator.disableAutoMode();
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceService] disableAutoMode() completed. autoModeEnabled=${_autoListeningCoordinator.autoModeEnabled}');
-    }
+    await _voicePipelineController?.requestDisableAutoMode();
   }
 
   // Enable auto mode with explicit audio state from Bloc
@@ -280,191 +261,49 @@ class VoiceService {
       debugPrint(
           '[VoiceService] enableAutoModeWithAudioState called with isAudioPlaying=$isAudioPlaying');
     }
-    if (_controllerAutoModeEnabled) {
-      await _voicePipelineController?.requestEnableAutoMode();
-      return;
-    }
-    await _autoListeningCoordinator
-        .enableAutoModeWithAudioState(isAudioPlaying);
+    await _voicePipelineController?.requestEnableAutoMode();
   }
 
   Future<void> initializeAutoListening() async {
-    if (_controllerAutoModeEnabled) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] initializeAutoListening skipped (controller auto mode active)');
-      }
-      return;
+    if (kDebugMode) {
+      debugPrint(
+          '[VoiceService] initializeAutoListening skipped (controller manages auto mode)');
     }
-    await _autoListeningCoordinator.initialize();
   }
 
   void resetAutoListening({bool full = false, bool? preserveAutoMode}) {
-    if (_controllerAutoModeEnabled) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] resetAutoListening skipped (controller auto mode active)');
-      }
-      return;
+    if (kDebugMode) {
+      debugPrint(
+          '[VoiceService] resetAutoListening skipped (controller manages auto mode)');
     }
-    _autoListeningCoordinator.reset(
-        full: full, preserveAutoMode: preserveAutoMode);
   }
 
   void setAutoListeningRecordingCallback(
       void Function(String audioPath)? callback) {
-    // NOTE: Even when controller is "authoritative" for auto-mode, the
-    // AutoListeningCoordinator still manages recordings. The callback must
-    // be wired so recording completions reach the bloc.
+    // AutoListeningCoordinator still manages recordings internally via the
+    // pipeline controller. The callback must be wired so recording completions
+    // reach the bloc.
     _autoListeningCoordinator.onRecordingCompleteCallback = callback;
   }
 
   void setAutoListeningTtsActivityStream(Stream<bool> stream) {
-    // NOTE: Even when controller is active, AutoListeningCoordinator needs
-    // the TTS stream to know when AI is speaking (for state machine transitions).
+    // AutoListeningCoordinator needs the TTS stream to know when AI is
+    // speaking (for state machine transitions).
     _autoListeningCoordinator.setTtsActivityStream(stream);
   }
 
   void triggerListening() {
-    if (_controllerAutoModeEnabled) {
-      _voicePipelineController?.requestTriggerListening();
-      return;
-    }
-    _autoListeningCoordinator.triggerListening();
+    _voicePipelineController?.requestTriggerListening();
   }
 
+  /// Notify the pipeline controller that auto mode should be enabled
+  /// after the current TTS playback completes.
+  /// The VoicePipelineController handles the TTS-to-listening transition
+  /// via its own _scheduleListeningRestart().
   Future<void> enableAutoModeWhenPlaybackCompletes({
     required int playbackToken,
   }) async {
-    if (_controllerAutoModeEnabled) {
-      await _voicePipelineController?.requestEnableAutoMode();
-      return;
-    }
-
-    if (_disposed) {
-      return;
-    }
-
-    if (!_autoModeWaitTokens.add(playbackToken)) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] enableAutoModeWhenPlaybackCompletes already scheduled for token $playbackToken');
-      }
-      return;
-    }
-
-    try {
-      final capturedGeneration = getCurrentGeneration?.call();
-
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] enableAutoModeWhenPlaybackCompletes called (generation=$capturedGeneration, token=$playbackToken, current=$_currentPlaybackToken, last=$_lastPlaybackToken)');
-      }
-
-      const postClearDelay = Duration(milliseconds: 100);
-      const pollInterval = Duration(milliseconds: 200);
-      const maxWaitDuration = Duration(seconds: 60); // Max wait for TTS playback
-      var playbackCleared = false;
-
-      // FIX: Use single long wait with state polling instead of short timeouts
-      // This avoids race conditions where stream events are missed between subscriptions
-      final startTime = DateTime.now();
-
-      while (DateTime.now().difference(startTime) < maxWaitDuration) {
-        // Check generation first
-        final currentGeneration = getCurrentGeneration?.call();
-        final generationChanged = (capturedGeneration != null &&
-                currentGeneration != capturedGeneration) ||
-            (capturedGeneration == null && currentGeneration != null);
-
-        if (generationChanged) {
-          if (kDebugMode) {
-            debugPrint(
-                '[VoiceService] Generation changed during playback wait (was $capturedGeneration, now $currentGeneration) – aborting auto-mode enable');
-          }
-          return;
-        }
-
-        // Check if playback completed (state-based, not stream-based)
-        if (!_ttsActive && !_playbackActive) {
-          // Verify token matches
-          final activeToken = _currentPlaybackToken;
-          final lastTokenSnapshot = _lastPlaybackToken;
-
-          if (activeToken != null && activeToken != playbackToken) {
-            if (kDebugMode) {
-              debugPrint(
-                  '[VoiceService] New playback detected (expected $playbackToken, active $activeToken) – aborting auto-mode enable');
-            }
-            return;
-          }
-
-          if (activeToken == null &&
-              lastTokenSnapshot != null &&
-              lastTokenSnapshot != playbackToken) {
-            if (kDebugMode) {
-              debugPrint(
-                  '[VoiceService] Playback token mismatch after wait (expected $playbackToken, last $lastTokenSnapshot) – aborting auto-mode enable');
-            }
-            return;
-          }
-
-          playbackCleared = true;
-          break;
-        }
-
-        // Poll at regular intervals instead of using stream subscriptions
-        await Future.delayed(pollInterval);
-      }
-
-      if (!playbackCleared) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] Playback wait timed out after ${maxWaitDuration.inSeconds}s – skipping auto mode enable');
-        }
-        return;
-      }
-
-      await Future.delayed(postClearDelay);
-
-      final generationAfterDelay = getCurrentGeneration?.call();
-      if (capturedGeneration != null &&
-          generationAfterDelay != capturedGeneration) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] Generation changed during post-delay check (was $capturedGeneration, now $generationAfterDelay) – skipping auto mode enable');
-        }
-        return;
-      }
-
-      if (_ttsActive || _playbackActive) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] Playback resumed during post-delay check – skipping auto mode enable');
-        }
-        return;
-      }
-
-      if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] Voice mode inactive after playback – skipping auto mode enable');
-        }
-        return;
-      }
-
-      if (_autoListeningCoordinator.autoModeEnabled) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] Auto mode already enabled – no action needed');
-        }
-        return;
-      }
-
-      await enableAutoMode();
-    } finally {
-      _autoModeWaitTokens.remove(playbackToken);
-    }
+    await _voicePipelineController?.requestEnableAutoMode();
   }
 
   // Factory constructor to enforce singleton pattern
@@ -514,14 +353,6 @@ class VoiceService {
       recordingManager: _recordingManager,
       voiceService: this,
     );
-    _playbackActiveSub =
-        _audioPlayerManager.playbackActiveStream.listen((isActive) {
-      _playbackActive = isActive;
-      if (isActive) {
-        _playbackStartedForCurrentTts = true;
-      }
-    });
-    _playbackActive = _audioPlayerManager.isPlaybackActive;
     if (kDebugMode) {
       debugPrint('VoiceService initialized with constructor injection');
       debugPrint(
@@ -541,8 +372,6 @@ class VoiceService {
       _voicePipelineController?.supportsRecording == true;
   bool get _controllerPlaybackEnabled =>
       _voicePipelineController?.supportsPlayback == true;
-  bool get _controllerAutoModeEnabled =>
-      _voicePipelineController?.supportsAutoMode == true;
 
   // Check if service is initialized
   bool get isInitialized => _isInitialized;
@@ -1361,10 +1190,7 @@ class VoiceService {
     _currentTtsState = false;
     _currentPlaybackToken = null;
     _lastPlaybackToken = null;
-    _autoModeWaitTokens.clear();
     _recordingActive = false;
-    _playbackActive = false;
-    _playbackStartedForCurrentTts = false;
 
     if (_useGeminiLive) {
       unawaited(stopGeminiLiveSession());
@@ -1374,14 +1200,6 @@ class VoiceService {
 
     // Clean up debounce timer
     _playbackDebounceTimer?.cancel();
-
-    // if (_recordingStateController != null &&
-    //     !_recordingStateController!.isClosed) {
-    //   _recordingStateController!.close();
-    // }
-
-    unawaited(_playbackActiveSub?.cancel());
-    _playbackActiveSub = null;
 
     if (!_audioPlaybackController.isClosed) {
       _audioPlaybackController.close();
@@ -1435,8 +1253,6 @@ class VoiceService {
   RecordingManager getRecordingManager() {
     return _recordingManager;
   }
-
-  bool get controllerAutoModeEnabled => _controllerAutoModeEnabled;
 
   // CRITICAL FIX: Method to play audio with debounce to prevent duplicate calls
   Future<void> playAudioWithCallbacks(
@@ -1531,11 +1347,9 @@ class VoiceService {
               '$playbackToken for auto-mode guard');
         }
         _currentPlaybackToken = playbackToken;
-        if (!_autoModeWaitTokens.contains(playbackToken)) {
-          unawaited(enableAutoModeWhenPlaybackCompletes(
-            playbackToken: playbackToken,
-          ));
-        }
+        unawaited(enableAutoModeWhenPlaybackCompletes(
+          playbackToken: playbackToken,
+        ));
       }
 
       if (!isSpeaking && playbackToken != null) {
@@ -1573,11 +1387,6 @@ class VoiceService {
           '[VoiceService] Playback lock acquired – preparing for TTS start');
     }
 
-    _playbackStartedForCurrentTts = false;
-    if (_playbackActive) {
-      _playbackStartedForCurrentTts = true;
-    }
-
     if (isRecordingActive) {
       if (kDebugMode) {
         debugPrint(
@@ -1600,45 +1409,6 @@ class VoiceService {
     }
   }
 
-  Future<void> _waitForPlaybackToFinish({
-    Duration playbackStartTimeout = const Duration(seconds: 3),
-    Duration playbackEndTimeout = const Duration(seconds: 8),
-  }) async {
-    if (!_playbackStartedForCurrentTts && !_playbackActive) {
-      // No playback was triggered for this TTS cycle.
-      return;
-    }
-
-    if (!_playbackStartedForCurrentTts) {
-      try {
-        await _audioPlayerManager.playbackActiveStream
-            .firstWhere((active) => active)
-            .timeout(playbackStartTimeout);
-        _playbackStartedForCurrentTts = true;
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] Playback start wait timed out: $e (continuing)');
-        }
-      }
-    }
-
-    if (!_playbackActive) {
-      return;
-    }
-
-    try {
-      await _audioPlayerManager.playbackActiveStream
-          .firstWhere((active) => !active)
-          .timeout(playbackEndTimeout);
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] Playback completion wait timed out: $e (continuing)');
-      }
-    }
-  }
-
   Future<void> _handleTtsCompletion() async {
     // Always update token state for cleanup
     final completedPlaybackToken = _currentPlaybackToken;
@@ -1647,83 +1417,20 @@ class VoiceService {
     }
     _currentPlaybackToken = null;
 
-    // BATCH 2 PHASE 6: Guard against late TTS completion after session end
+    // Guard against late TTS completion after session end
     if (_isSessionValidCallback != null && !_isSessionValidCallback!()) {
       if (kDebugMode) {
         debugPrint(
-            '[VoiceService] TTS completion after session ended - skipping listening restart');
+            '[VoiceService] TTS completion after session ended - skipping');
       }
       return;
     }
 
-    // CONTROLLER PATH: When controller is active, it handles TTS→listening
-    // transition via its own _ttsSub listener. We only do token cleanup above.
-    if (_controllerAutoModeEnabled) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] _handleTtsCompletion: Controller handles listening restart (skipping legacy path)');
-      }
-      return;
-    }
-
-    // LEGACY PATH: Manual TTS completion handling for AutoListeningCoordinator
-
-    // BYPASS FIX: Check voice mode before re-arming VAD
-    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] TTS done in chat mode – skipping listening restart');
-      }
-      return;
-    }
-
-    await _waitForPlaybackToFinish();
-
-    if (isVoiceModeCallback != null && !isVoiceModeCallback!()) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] Playback finished but voice mode exited – skipping listening restart');
-      }
-      return;
-    }
-
-    if (canStartListeningCallback != null && !canStartListeningCallback!()) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] TTS done but bloc deferred listening restart – awaiting readiness');
-      }
-      return;
-    }
-
-    if (!_autoListeningCoordinator.autoModeEnabled) {
-      // CRITICAL FIX: If auto mode is disabled but the bloc says we CAN listen
-      // (mic enabled, voice mode, greeting played), re-enable auto mode.
-      // This handles mic toggle during TTS causing desync between bloc and coordinator.
-      if (canStartListeningCallback != null && canStartListeningCallback!()) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] TTS done – autoMode disabled but bloc allows listening, re-enabling');
-        }
-        _autoListeningCoordinator.enableAutoMode();
-        _autoListeningCoordinator.startListening();
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceService] updateTTSSpeakingState: TTS done, auto mode re-enabled and listening restarted');
-        }
-        return;
-      }
-
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceService] TTS done but autoMode disabled – skipping listening restart');
-      }
-      return;
-    }
-
-    _autoListeningCoordinator.startListening(); // guarantees VAD on
+    // VoicePipelineController handles TTS→listening transition
+    // via its own _ttsSub listener. We only do token cleanup above.
     if (kDebugMode) {
       debugPrint(
-          '[VoiceService] updateTTSSpeakingState: TTS done, listening restarted (legacy path)');
+          '[VoiceService] _handleTtsCompletion: Controller handles listening restart');
     }
   }
 

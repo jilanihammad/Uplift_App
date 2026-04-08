@@ -200,7 +200,6 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
 /// @param useRefactoredVoicePipeline Feature flag to control voice service registration
 Future<void> setupServiceLocator({
   bool useRefactoredVoicePipeline = false,
-  bool enableVoicePipelineController = false,
 }) async {
   // Phase 2.2.5: Sync-once pattern prevents race conditions and duplicate logging
   if (_setupCompleter.isCompleted) {
@@ -217,8 +216,6 @@ Future<void> setupServiceLocator({
     debugPrint('Starting core service registration...');
     debugPrint(
         'Feature flag useRefactoredVoicePipeline: $useRefactoredVoicePipeline');
-    debugPrint(
-        'Feature flag voicePipelineControllerEnabled: $enableVoicePipelineController');
 
     // Register utilities first
     if (!serviceLocator.isRegistered<DatabaseOperationManager>()) {
@@ -456,9 +453,8 @@ Future<void> setupServiceLocator({
       }
     }
 
-    // === VOICE PIPELINE CONTROLLER REGISTRATION (Mirror mode) ===
-    if (enableVoicePipelineController &&
-        !serviceLocator.isRegistered<VoicePipelineControllerFactory>()) {
+    // === VOICE PIPELINE CONTROLLER REGISTRATION ===
+    if (!serviceLocator.isRegistered<VoicePipelineControllerFactory>()) {
       serviceLocator.registerFactory<VoicePipelineControllerFactory>(() {
         bool defaultMicGetter() {
           if (!serviceLocator.isRegistered<IAudioSettings>()) {
@@ -477,7 +473,7 @@ Future<void> setupServiceLocator({
           );
         };
       });
-      debugPrint('✅ Registered VoicePipelineController factory (mirror mode)');
+      debugPrint('✅ Registered VoicePipelineController factory');
     }
 
     // === SESSION FACADE REGISTRATIONS ===

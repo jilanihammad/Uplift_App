@@ -82,8 +82,6 @@ class _SplashScreenState extends State<SplashScreen>
       try {
         await setupServiceLocator(
           useRefactoredVoicePipeline: FeatureFlags.useNewVoicePipeline,
-          enableVoicePipelineController:
-              FeatureFlags.isVoicePipelineControllerEnabled,
         );
       } catch (e) {
         if (kDebugMode) {

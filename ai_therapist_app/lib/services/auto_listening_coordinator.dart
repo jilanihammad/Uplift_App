@@ -76,15 +76,7 @@ class AutoListeningCoordinator with SessionDisposable {
   }
 
   void _traceEntryPoint(String method) {
-    if (!kDebugMode) {
-      return;
-    }
-    if (FeatureFlags.isVoicePipelineControllerEnabled) {
-      return;
-    }
-    debugPrint(
-        '[AutoListeningCoordinator] $method called while controller flag disabled');
-    debugPrint(StackTrace.current.toString());
+    // No-op: VoicePipelineController is always active, trace not needed.
   }
 
   // Configuration method to enable/disable Enhanced VAD

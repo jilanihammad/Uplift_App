@@ -470,13 +470,6 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   Future<void> enableAutoMode() async {
     final legacyVoiceService = _resolveLegacyVoiceService();
     if (legacyVoiceService != null) {
-      if (legacyVoiceService.controllerAutoModeEnabled) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionCoordinator] Skipping enableAutoMode – controller manages auto mode');
-        }
-        return;
-      }
       if (kDebugMode) {
         debugPrint('[VoiceSessionCoordinator] Enabling auto-listening mode');
       }
@@ -493,13 +486,6 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   Future<void> disableAutoMode() async {
     final legacyVoiceService = _resolveLegacyVoiceService();
     if (legacyVoiceService != null) {
-      if (legacyVoiceService.controllerAutoModeEnabled) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionCoordinator] Skipping disableAutoMode – controller manages auto mode');
-        }
-        return;
-      }
       if (kDebugMode) {
         debugPrint('[VoiceSessionCoordinator] Disabling auto-listening mode');
       }
