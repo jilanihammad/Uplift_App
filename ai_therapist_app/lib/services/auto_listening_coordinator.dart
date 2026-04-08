@@ -71,7 +71,6 @@ class AutoListeningCoordinator with SessionDisposable {
 
   void _trace(String message) {
     if (_vadTraceEnabled) {
-      debugPrint(message);
     }
   }
 
@@ -606,8 +605,6 @@ class AutoListeningCoordinator with SessionDisposable {
           _updateState(AutoListeningState.aiSpeaking);
         }
       } else if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [AUDIO] Ignored isPlayingStream event because autoMode is disabled');
       }
     });
 
@@ -689,8 +686,6 @@ class AutoListeningCoordinator with SessionDisposable {
           }
           _cancelPendingSpeechEnd();
         } else if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator] [VAD] Ignored onSpeechStart event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
         }
       }
     });
@@ -741,8 +736,6 @@ class AutoListeningCoordinator with SessionDisposable {
             _stopRecording();
           }
         } else if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator][DEBUG] Ignored onSpeechEnd event (autoModeEnabled=$_autoModeEnabled, currentState=$_currentState)');
         }
       }
     });
@@ -831,8 +824,6 @@ class AutoListeningCoordinator with SessionDisposable {
         _vadRestartScheduled = true;
         _enterAiSpeakingCompleteWithDebounce();
       } else if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [UNIFIED-TTS] AI audio stopped but restart already scheduled or inappropriate state ($_currentState)');
       }
     }
   }
@@ -939,8 +930,6 @@ class AutoListeningCoordinator with SessionDisposable {
           _updateState(AutoListeningState.idle);
         }
       } else if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator] [ROBUST] State changed, auto mode disabled, or restart not scheduled - skipping VAD start');
       }
     } catch (error) {
       if (kDebugMode) {
@@ -1292,7 +1281,6 @@ class AutoListeningCoordinator with SessionDisposable {
     _trace(
         '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Starting ${timeout.inMilliseconds}ms timer (burst: $_speechBurstCount). Current state: $_currentState, sequence: $currentSeq');
     if (_vadTraceEnabled && loggingConfig.isVerboseDebugEnabled) {
-      debugPrint(StackTrace.current.toString());
     }
 
     // Wait for silence to be detected for adaptive duration before stopping recording
@@ -1300,7 +1288,6 @@ class AutoListeningCoordinator with SessionDisposable {
       _trace(
           '[AutoListeningCoordinator][DEBUG] _startSpeechEndTimer: Timer fired. Current state: $_currentState, timer seq: $currentSeq, current seq: $_speechSeq');
       if (_vadTraceEnabled && loggingConfig.isVerboseDebugEnabled) {
-        debugPrint(StackTrace.current.toString());
       }
 
       // RACE CONDITION FIX: Only execute if sequence matches (no newer speech detected)
@@ -1387,13 +1374,9 @@ class AutoListeningCoordinator with SessionDisposable {
           // Call stopRecording directly - this bypasses the 1.5s timer
           _stopRecording();
         } else if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator][DEBUG] Pending speech end confirmed but recording not active - skipping no-op _stopRecording()');
         }
         _hasPendingSpeechEnd = false;
       } else if (kDebugMode) {
-        debugPrint(
-            '[AutoListeningCoordinator][DEBUG] Pending speech end timer fired but conditions not met - ignoring (sequence: $currentSeq vs $_speechSeq, state: $_currentState, hasPending: $_hasPendingSpeechEnd)');
       }
     });
   }
@@ -1575,8 +1558,6 @@ class AutoListeningCoordinator with SessionDisposable {
         await _startListening();
       }
     } else if (kDebugMode) {
-      debugPrint(
-          '[AutoListeningCoordinator] [MODE] enableAutoModeWithAudioState called, but autoModeEnabled already true');
     }
   }
 
@@ -1586,7 +1567,6 @@ class AutoListeningCoordinator with SessionDisposable {
 
     // HARD NO-OP: Already enabled with no transition in flight
     if (_autoModeEnabled && _vadTransitionLock == null) {
-      debugPrint('[AutoListening] enableAutoMode: already enabled, no-op');
       return;
     }
 
@@ -1643,8 +1623,6 @@ class AutoListeningCoordinator with SessionDisposable {
         await _startListening();
       }
     } else if (kDebugMode) {
-      debugPrint(
-          '[AutoListeningCoordinator] [MODE] enableAutoMode called, but autoModeEnabled already true');
     }
   }
 
@@ -1655,7 +1633,6 @@ class AutoListeningCoordinator with SessionDisposable {
     // Return existing in-flight disable
     final existing = _pendingDisableCompleter;
     if (existing != null) {
-      debugPrint('[AutoListening] disableAutoMode: already in-flight, returning existing');
       return existing.future;
     }
 
@@ -1664,7 +1641,6 @@ class AutoListeningCoordinator with SessionDisposable {
         !_isVadActive &&
         !_isRecordingActive &&
         _currentState == AutoListeningState.idle) {
-      debugPrint('[AutoListening] disableAutoMode: already disabled, no-op');
       return Future.value();
     }
 
@@ -1680,8 +1656,6 @@ class AutoListeningCoordinator with SessionDisposable {
             _trace('[AutoListeningCoordinator] [MODE] disableAutoMode called');
           }
         } else if (kDebugMode) {
-          debugPrint(
-              '[AutoListeningCoordinator] [MODE] disableAutoMode called, but autoModeEnabled already false');
         }
 
         await _stopListeningAndRecording();
@@ -1904,8 +1878,6 @@ class AutoListeningCoordinator with SessionDisposable {
       }
       _startListeningAfterDelay();
     } else if (kDebugMode) {
-      debugPrint(
-          '🤖 Auto mode: External trigger ignored - already listening or auto mode disabled');
     }
   }
 

@@ -84,9 +84,6 @@ class PathManager {
     final filePath =
         _buildSecurePath([SUBDIR_RECORDINGS], '$uuid.$RECORDING_EXT');
 
-    // 🚨 CORRUPTION DIAGNOSTIC - Log clean path immediately after creation
-    debugPrint('🛡️ PathManager.recordingFile() created CLEAN path: $filePath');
-
     return filePath;
   }
 

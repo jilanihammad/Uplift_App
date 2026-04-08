@@ -22,7 +22,6 @@
 library;
 
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rxdart/rxdart.dart';
 import 'voice_session_event.dart';
@@ -483,7 +482,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     final bool shouldTriggerListeningOnEnable = !isInitialVoicePrep;
 
     try {
-      debugPrint('[VoiceSessionBloc] Voice mode preparation sequence started');
       _atomicResetCompleter = Completer<void>();
 
       // CRITICAL: Always call startSession during voice mode preparation.
@@ -494,7 +492,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       await voiceFacade.startSession();
 
       audioPlayerManager.mute(false);
-      debugPrint('[VoiceSessionBloc] Audio unmuted for voice mode');
 
       if (isClosed) {
         if (kDebugMode) {
@@ -526,8 +523,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       await Future.sync(() => _safeVoiceService.resetTTSState());
       _wireAutoListeningCallbacks();
 
-      debugPrint(
-          '[VoiceSessionBloc] Audio, TTS, and AutoListening reset sequence complete');
 
       if (!(_atomicResetCompleter?.isCompleted ?? true)) {
         _atomicResetCompleter?.complete();
@@ -554,39 +549,27 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       if (isInitialVoicePrep) {
         await _voicePipelineController?.requestEnableAutoMode();
-        debugPrint(
-            '[VoiceSessionBloc] Controller auto mode requested for voice session (initial prep)');
 
         final shouldDeferAutoEnable = !state.isInitialGreetingPlayed ||
             isTtsActive ||
             audioPlayerManager.isPlaybackActive;
 
         if (shouldDeferAutoEnable) {
-          debugPrint(
-              '[VoiceSessionBloc] Deferring listening; awaiting welcome completion or idle audio');
           _deferAutoMode = true;
         } else {
           _triggerListening();
-          debugPrint(
-              '[VoiceSessionBloc] Auto mode active immediately; listening triggered');
         }
       } else {
         if (!_welcomeAutoModeArmed) {
           _welcomeAutoModeArmed = true;
-          debugPrint(
-              '[VoiceSessionBloc] Mid-session switch: auto-mode guard re-armed for deferred enable');
         }
 
         try {
           await _voicePipelineController?.requestEnableAutoMode();
-          debugPrint(
-              '[VoiceSessionBloc] Controller auto mode requested for voice session (mid-session)');
           if (shouldTriggerListeningOnEnable) {
             _triggerListening();
           }
         } catch (e) {
-          debugPrint(
-              '[VoiceSessionBloc] Failed to enable auto mode (mid-session): $e');
           emit(state.copyWith(errorMessage: e.toString()));
         }
       }
@@ -640,11 +623,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
       if (wasAiSpeaking || isTtsActive) {
         _deferAutoMode = true;
-        debugPrint(
-            '[VoiceSessionBloc] TTS active during voice prep; deferring auto mode resume');
       }
 
-      debugPrint('[VoiceSessionBloc] Voice mode preparation sequence complete');
     } catch (e, stackTrace) {
       if (kDebugMode) {
         debugPrint(
@@ -702,12 +682,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   Future<void> _onStartSession(
       StartSession event, Emitter<VoiceSessionState> emit) async {
-    debugPrint('[VoiceSessionBloc] Starting new session...');
 
     // Re-entrancy guard
     if (inSession) {
-      debugPrint(
-          '[VoiceSessionBloc] Session already in progress, ignoring StartSession');
       return;
     }
 
@@ -759,8 +736,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           ),
         );
       } else if (_voicePipelineControllerFactory != null && kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Pipeline factory available but auto-listening snapshot missing');
       }
 
       // Initialize session services
@@ -800,7 +775,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         ),
       );
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Error starting session: $e');
       await _awaitVoiceFacadeStable();
       await voiceFacade.endSession();
       await _cleanupFailedSession();
@@ -811,25 +785,19 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   Future<void> _onEndSession(
       EndSession event, Emitter<VoiceSessionState> emit) async {
     if (!inSession) {
-      debugPrint('[VoiceSessionBloc] No active session to end');
       return;
     }
 
-    debugPrint(
-        '[VoiceSessionBloc] Ending session - cleaning up audio and resources...');
 
     try {
       // BATCH 2 PHASE 4: Force-cancel TTS before cleanup to prevent late playback
       if (_safeVoiceService.hasPendingOrActiveTts) {
-        debugPrint(
-            '[VoiceSessionBloc] Force-cancelling active TTS before session cleanup');
         await DependencyContainer().ttsService.cancelAllStreams();
         await Future.delayed(const Duration(milliseconds: 50));
       }
 
       // Async teardown order - stop services gracefully first
       await _safeVoiceService.stopAudio(); // Await playback completion
-      debugPrint('[VoiceSessionBloc] Audio stopped successfully');
 
       _safeVoiceService.resetTTSState(); // Flush TTS monitor (sync operation)
       await _safeVoiceService.disableAutoMode(); // Disable auto listening
@@ -837,7 +805,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       await _safeVoiceService
           .tryStopRecording(); // Stop VAD/recording (idempotent)
 
-      debugPrint('[VoiceSessionBloc] Session services stopped gracefully');
 
       // Destroy entire session scope (automatic disposal)
       _clearAutoListeningCallbacks();
@@ -856,9 +823,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       _sessionStarted = false;
       _welcomeAutoModeArmed = false;
 
-      debugPrint('[VoiceSessionBloc] Session cleanup completed successfully');
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Error during session cleanup: $e');
       await _forceSessionCleanup();
     }
 
@@ -921,8 +886,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     // NATURAL UX: Clear deferred auto mode flag on generation change
     _deferAutoMode = false;
 
-    debugPrint(
-        '[VoiceSessionBloc] Switching to ${event.isVoiceMode ? "voice" : "chat"} mode (gen $_modeGeneration)');
 
     // Get audio player manager for soft mute functionality (use legacy service)
     final audioPlayerManager = voiceService.getAudioPlayerManager();
@@ -937,18 +900,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       if (_voiceModeSwitchCompleter?.isCompleted == false) {
         await _voiceModeSwitchCompleter!.future;
       }
-      debugPrint(
-          '[VoiceSessionBloc] Switching to chat mode (will cancel TTS)');
       try {
         // BATCH 2 PHASE 3: Cancel TTS immediately instead of just muting
         if (_safeVoiceService.hasPendingOrActiveTts) {
-          debugPrint(
-              '[VoiceSessionBloc] Force-cancelling TTS for chat mode switch');
           await DependencyContainer().ttsService.cancelAllStreams();
         }
         await _safeVoiceService.stopAudio();
         audioPlayerManager.mute(true); // Backup safety
-        debugPrint('[VoiceSessionBloc] TTS cancelled for chat mode');
 
         emit(state.copyWith(
           isVoiceMode: event.isVoiceMode,
@@ -972,15 +930,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           emit(state.copyWith(isProcessingAudio: false));
         }
         emit(state.copyWith(isAutoListeningEnabled: false, isRecording: false));
-        debugPrint(
-            '[VoiceSessionBloc] VAD disabled successfully for chat mode');
 
         await _awaitVoiceFacadeStable();
         await voiceFacade.endSession();
         _clearAutoListeningCallbacks();
       } catch (e) {
-        debugPrint(
-            '[VoiceSessionBloc] Failed to disable VAD for chat mode: $e');
         emit(state.copyWith(errorMessage: e.toString()));
       }
     }
@@ -999,20 +953,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
 
     if (_sessionManager.state.status == VoiceSessionStatus.ended) {
-      debugPrint(
-          '[VoiceSessionBloc] Ignoring ProcessAudio - session is ending');
       return;
     }
-    debugPrint('[VoiceSessionBloc] Processing audio file: ${event.audioPath}');
     emit(state.copyWith(isProcessingAudio: true));
 
     try {
       final transcription =
           await _safeVoiceService.processRecordedAudioFile(event.audioPath);
-      debugPrint('[VoiceSessionBloc] Transcription: "$transcription"');
 
       if (transcription.trim().isEmpty || transcription.startsWith("Error:")) {
-        debugPrint('[VoiceSessionBloc] Empty or error transcription');
         emit(state.copyWith(
             isProcessingAudio: false,
             errorMessage: 'Could not understand audio'));
@@ -1020,8 +969,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
 
       if (_sessionManager.state.status == VoiceSessionStatus.ended) {
-        debugPrint(
-            '[VoiceSessionBloc] Session ending detected after transcription - aborting TTS');
         emit(state.copyWith(isProcessingAudio: false));
         return;
       }
@@ -1038,7 +985,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       final history = _messageCoordinator.buildConversationHistory();
 
       if (state.isVoiceMode) {
-        debugPrint('[VoiceSessionBloc] Voice mode - getting AI response...');
         emit(
             state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.preparing));
 
@@ -1054,8 +1000,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           transcription,
           history,
           onTTSStart: (responseText) {
-            debugPrint(
-                '[VoiceSessionBloc] TTS streaming started - adding message to chat immediately');
 
             // Phase 1.1.4: Add Maya's message to chat IMMEDIATELY when TTS starts
             _messageCoordinator.addAIMessage(responseText);
@@ -1067,7 +1011,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             ));
           },
           onTTSPlaybackComplete: () async {
-            debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
             emit(state.copyWith(
                 isProcessingAudio: false,
                 isAiSpeaking: false,
@@ -1076,7 +1019,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             _onProcessingComplete();
           },
           onTTSError: (error) async {
-            debugPrint('[VoiceSessionBloc] TTS error: $error');
             emit(state.copyWith(
                 isProcessingAudio: false,
                 errorMessage: error.toString(),
@@ -1090,15 +1032,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         final mayaResponseText = responseData['text'] as String? ??
             'I\'m having trouble responding right now.';
 
-        debugPrint(
-            '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
 
         // Note: Maya's message is now added to MessageCoordinator in onTTSStart callback
         // This ensures it appears in chat immediately when TTS begins, not when it completes
       } else {
         // Text mode - only get text response without TTS
-        debugPrint(
-            '[VoiceSessionBloc] Text mode - getting text response only...');
         final therapyServiceInstance =
             therapyService ?? DependencyContainer().therapy;
         final mayaResponseText =
@@ -1108,15 +1046,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         );
 
         if (mayaResponseText.trim().isEmpty) {
-          debugPrint('[VoiceSessionBloc] Empty response from Maya');
           emit(state.copyWith(
               isProcessingAudio: false,
               errorMessage: 'Failed to get response from Maya'));
           return;
         }
 
-        debugPrint(
-            '[VoiceSessionBloc] Maya\'s text response: "$mayaResponseText"');
 
         // Phase 1.1.4: Use MessageCoordinator for AI message (consistent with voice mode)
         _messageCoordinator.addAIMessage(mayaResponseText);
@@ -1128,7 +1063,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         ));
       }
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Error in _onProcessAudio: $e');
       emit(
           state.copyWith(isProcessingAudio: false, errorMessage: e.toString()));
     }
@@ -1302,22 +1236,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       AddMessage event, Emitter<VoiceSessionState> emit) async {
     try {
       // Phase 1.1.4: Use MessageCoordinator for message addition
-      final addedMessage = _messageCoordinator.addMessage(event.message);
+      _messageCoordinator.addMessage(event.message);
 
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
         currentMessageSequence: _messageCoordinator.currentSequence,
       ));
 
-      if (state.currentSessionId != null) {
-        debugPrint(
-            '[VoiceSessionBloc] Message would be added to repository: ${addedMessage.content.substring(0, min(addedMessage.content.length, 20))}... Seq: ${addedMessage.sequence}');
-      } else {
-        debugPrint(
-            '[VoiceSessionBloc] CurrentSessionId is null, message not saved to repo.');
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error adding message: $e $stackTrace');
+      // Session persistence handled by session manager
+    } catch (e) {
       emit(state.copyWith(
           errorMessage: 'Failed to add message: $e', hasError: true));
     }
@@ -1335,14 +1262,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   Future<void> _onProcessTextMessage(
       ProcessTextMessage event, Emitter<VoiceSessionState> emit) async {
     if (_sessionManager.state.status == VoiceSessionStatus.ended) {
-      debugPrint(
-          '[VoiceSessionBloc] Ignoring ProcessTextMessage - session is ending');
       return;
     }
-    debugPrint(
-        '[VoiceSessionBloc] Received ProcessTextMessage: \'${event.text}\'');
-    debugPrint(
-        '[VoiceSessionBloc] Current state - isVoiceMode: ${state.isVoiceMode}, isProcessingAudio: ${state.isProcessingAudio}');
 
     if (_usesGeminiLive) {
       _messageCoordinator.addUserMessage(event.text);
@@ -1374,8 +1295,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       String mayaResponseText;
 
       if (state.isVoiceMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Text message in voice mode - getting AI response...');
 
         emit(
             state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.preparing));
@@ -1389,8 +1308,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           event.text,
           history,
           onTTSStart: (responseText) {
-            debugPrint(
-                '[VoiceSessionBloc] TTS streaming started - adding message to chat immediately');
 
             // Phase 1.1.4: Add Maya's message to chat IMMEDIATELY when TTS starts
             _messageCoordinator.addAIMessage(responseText);
@@ -1402,12 +1319,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             ));
           },
           onTTSPlaybackComplete: () async {
-            debugPrint('[VoiceSessionBloc] Maya\'s TTS playback completed');
             emit(
                 state.copyWith(isAiSpeaking: false, ttsStatus: TtsStatus.idle));
           },
           onTTSError: (error) {
-            debugPrint('[VoiceSessionBloc] TTS Error: $error');
             emit(state.copyWith(
                 isAiSpeaking: false, errorMessage: error.toString()));
           },
@@ -1415,15 +1330,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         mayaResponseText = responseData['text'] as String? ??
             'I\'m having trouble responding right now.';
       } else {
-        debugPrint('[VoiceSessionBloc] Text message in text mode - no TTS...');
-        debugPrint(
-            '[VoiceSessionBloc] Calling therapyService.processUserMessage...');
         mayaResponseText = await therapyServiceInstance.processUserMessage(
           event.text,
           history: history,
         );
-        debugPrint(
-            '[VoiceSessionBloc] Received therapy response: "${mayaResponseText.substring(0, 50)}..."');
       }
 
       // Phase 1.1.4: Use MessageCoordinator for AI message
@@ -1438,11 +1348,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         currentMessageSequence: _messageCoordinator.currentSequence,
       ));
 
-      debugPrint('[VoiceSessionBloc] Text message processing complete');
-    } catch (e, stackTrace) {
-      debugPrint('[VoiceSessionBloc] Error processing text message: $e');
-      debugPrint('[VoiceSessionBloc] Stack trace: $stackTrace');
-
+    } catch (e) {
       // Ensure processing state is cleared and error is shown to user
       emit(state.copyWith(
         isProcessingAudio: false,
@@ -1463,7 +1369,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onShowMoodSelector(
       ShowMoodSelector event, Emitter<VoiceSessionState> emit) {
-    debugPrint('[VoiceSessionBloc] Show mood selector: ${event.show}');
     // Phase 1.1.4: Use SessionStateManager for UI state
     final newState = _sessionManager.setMoodSelectorVisibility(event.show);
     emit(newState);
@@ -1471,7 +1376,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onShowDurationSelector(
       ShowDurationSelector event, Emitter<VoiceSessionState> emit) {
-    debugPrint('[VoiceSessionBloc] Show duration selector: ${event.show}');
     // Phase 1.1.4: Use SessionStateManager for UI state
     final newState = _sessionManager.setDurationSelectorVisibility(event.show);
     emit(newState);
@@ -1487,7 +1391,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     }
 
     final newMicEnabledState = !state.isMicEnabled;
-    debugPrint('[VoiceSessionBloc] Toggle mic enabled: $newMicEnabledState');
     emit(state.copyWith(isMicEnabled: newMicEnabledState));
     _voicePipelineController?.updateExternalMicState(!newMicEnabledState);
 
@@ -1516,7 +1419,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   Future<void> _onInitializeService(
       InitializeService event, Emitter<VoiceSessionState> emit) async {
-    debugPrint('[VoiceSessionBloc] Initializing services...');
     emit(state.copyWith(isProcessingAudio: true));
 
     try {
@@ -1526,10 +1428,8 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           therapyService ?? DependencyContainer().therapy;
       await therapyServiceInstance.init();
 
-      debugPrint('[VoiceSessionBloc] Services initialized successfully');
       emit(state.copyWith(isProcessingAudio: false));
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Service initialization failed: $e');
       emit(
           state.copyWith(isProcessingAudio: false, errorMessage: e.toString()));
     }
@@ -1537,33 +1437,25 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   Future<void> _onStopAudio(
       StopAudio event, Emitter<VoiceSessionState> emit) async {
-    debugPrint('[VoiceSessionBloc] Stopping audio...');
     try {
       await _safeVoiceService.stopAudio();
       emit(state.copyWith(isAiSpeaking: false, ttsStatus: TtsStatus.idle));
-      debugPrint('[VoiceSessionBloc] Audio stopped successfully');
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Failed to stop audio: $e');
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
 
   Future<void> _onPlayAudio(
       PlayAudio event, Emitter<VoiceSessionState> emit) async {
-    debugPrint('[VoiceSessionBloc] Playing audio: ${event.audioPath}');
     try {
       await _safeVoiceService.playAudio(event.audioPath);
-      debugPrint('[VoiceSessionBloc] Audio played successfully');
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Failed to play audio: $e');
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
 
   Future<void> _onPlayWelcomeMessage(
       PlayWelcomeMessage event, Emitter<VoiceSessionState> emit) async {
-    debugPrint(
-        '[VoiceSessionBloc] Playing welcome message TTS: ${event.welcomeMessage}');
 
     if (state.isMicControlGuarded) {
       if (kDebugMode) {
@@ -1596,7 +1488,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       final ttsService = DependencyContainer().ttsService;
       await ttsService.speak(event.welcomeMessage, makeBackupFile: false);
 
-      debugPrint('[VoiceSessionBloc] Welcome TTS streaming completed');
 
       // Use VoiceService TTS state management to trigger auto-listening
       if (kDebugMode) {
@@ -1610,7 +1501,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // Fire the welcome message completed event if needed
       add(const WelcomeMessageCompleted());
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Error playing welcome message: $e');
       if (kDebugMode) {
         debugPrint(
             '🎯 [TTS-TRACK] updateTTSSpeakingState(false) - Welcome message error recovery');
@@ -1633,7 +1523,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
   void _onTtsStateChanged(
       TtsStateChanged event, Emitter<VoiceSessionState> emit) {
-    debugPrint('[VoiceSessionBloc] TTS state changed: ${event.isSpeaking}');
 
     final bool wasSpeaking = state.isAiSpeaking;
     emit(state.copyWith(isAiSpeaking: event.isSpeaking));
@@ -1642,8 +1531,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         !event.isSpeaking &&
         !state.isInitialGreetingPlayed &&
         state.isVoiceMode) {
-      debugPrint(
-          '[VoiceSessionBloc] TTS transition detected (true -> false), initial TTS has completed');
       emit(state.copyWith(isInitialGreetingPlayed: true));
       _welcomeAutoModeArmed = true;
       unawaited(_enableAutoModeIfGenerationMatches(context: 'InitialGreeting'));
@@ -1664,8 +1551,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         state.isVoiceMode &&
         state.isMicEnabled &&
         !state.isAutoListeningEnabled) {
-      debugPrint(
-          '[VoiceSessionBloc] TTS finished mid-session with mic enabled, re-enabling auto mode');
       unawaited(_enableAutoModeIfGenerationMatches(context: 'TtsCompletionRestore'));
     }
   }
@@ -1747,10 +1632,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       InitialMoodSelected event, Emitter<VoiceSessionState> emit) async {
     // Validate we're in the correct state to accept mood selection
     if (state.status != VoiceSessionStatus.awaitingMood) {
-      debugPrint(
-          '[VoiceSessionBloc] ERROR: InitialMoodSelected called from wrong state: ${state.status}');
-      debugPrint(
-          '[VoiceSessionBloc] Mood selection should only happen from awaitingMood state');
       return;
     }
 
@@ -1775,8 +1656,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
 
     // Validate duration is selected before starting session
     if (state.selectedDuration == null) {
-      debugPrint(
-          '[VoiceSessionBloc] ERROR: Cannot start session without duration!');
       emit(state.copyWith(
         errorMessage: 'Please select a session duration first',
         status: VoiceSessionStatus.awaitingMood,
@@ -1802,7 +1681,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       // Start the actual session with audio/VAD pipeline - reuse existing logic
       await _startSessionWithMood(mood, emit);
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Error in session start: $e');
       _sessionStarted = false; // Reset flag on error
       emit(state.copyWith(errorMessage: e.toString()));
     }
@@ -1811,7 +1689,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   /// Extract session start logic to be called only after mood selection
   Future<void> _startSessionWithMood(
       Mood mood, Emitter<VoiceSessionState> emit) async {
-    debugPrint('[VoiceSessionBloc] Starting session with mood: $mood');
 
     try {
       // Performance monitoring
@@ -1845,7 +1722,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           debugPrint('[VoiceSessionBloc] Mood logged to ProgressService: $mood');
         }
       } catch (e) {
-        debugPrint('[VoiceSessionBloc] Warning: Failed to log mood: $e');
         // Don't block session start if mood logging fails
       }
 
@@ -1887,7 +1763,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         add(PlayWelcomeMessage(welcomeMessage.content));
       }
     } catch (e) {
-      debugPrint('[VoiceSessionBloc] Error starting session with mood: $e');
       _sessionStarted = false; // Reset flag on error
       await _cleanupFailedSession();
       emit(state.copyWith(errorMessage: e.toString()));
@@ -2216,10 +2091,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         (listeningExpected != state.isListening ||
             recordingExpected != state.isRecording ||
             speakingExpected != state.isAiSpeaking)) {
-      debugPrint('[VoiceSessionBloc][PipelineParity] phase='
-          '${snapshot.phase.name} listen=$listeningExpected/${state.isListening} '
-          'record=$recordingExpected/${state.isRecording} '
-          'speak=$speakingExpected/${state.isAiSpeaking}');
     }
     final bool phaseListening = snapshot.phase == VoicePipelinePhase.listening;
     final bool phaseRecording = snapshot.phase == VoicePipelinePhase.recording;

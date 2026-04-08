@@ -313,10 +313,6 @@ class RecordingManager {
       final String uuid = const Uuid().v4();
       final String filePath = PathManager.instance.recordingFile(uuid);
 
-      // 🚨 CORRUPTION DIAGNOSTIC - Verify path is still clean after PathManager
-      debugPrint(
-          '🛡️ RecordingManager.startRecording() received path: $filePath');
-
       // Configure recording: prefer mono 48 kHz to align with RNNoise
       // Fallback to 44.1 kHz on devices that don't support 48 kHz
       try {
@@ -355,10 +351,6 @@ class RecordingManager {
       }
 
       _lastRecordedPath = filePath;
-
-      // 🚨 CORRUPTION DIAGNOSTIC - Check if path corrupted after storing
-      debugPrint(
-          '🛡️ RecordingManager._lastRecordedPath stored as: $_lastRecordedPath');
 
       _recordingStartTime = DateTime.now(); // Track start time
       _updateState(RecordingState.recording);
@@ -455,19 +447,11 @@ class RecordingManager {
     try {
       _updateState(RecordingState.processing);
 
-      // 🚨 CORRUPTION DIAGNOSTIC - Check path before stopping
-      debugPrint(
-          '🛡️ RecordingManager.stopRecording() _lastRecordedPath BEFORE stop: $_lastRecordedPath');
-
       // Stop recording - but don't trust the returned path as it may be corrupted
       await recorder.stop();
 
       // Release access to shared recorder
       SharedRecorderManager.instance.releaseAccess(_userId);
-
-      // 🚨 CORRUPTION DIAGNOSTIC - Check path after stopping
-      debugPrint(
-          '🛡️ RecordingManager.stopRecording() _lastRecordedPath AFTER stop: $_lastRecordedPath');
 
       // Use our stored clean path from PathManager instead of the returned path
       if (_lastRecordedPath == null) {

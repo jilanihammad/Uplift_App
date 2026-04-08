@@ -63,12 +63,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // This handler runs in its own isolate, so we need to re-initialize Firebase
   await ensureFirebaseInitialized();
 
-  // Safe logging since we can't use our LoggingService in this isolate
-  try {
-    debugPrint('Handling a background message: ${message.messageId}');
-  } catch (e) {
-    debugPrint('Error in background message handler: $e');
-  }
+  // Background message handling - no logging available in this isolate
 }
 
 // Error handling bloc observer for logging
@@ -117,7 +112,6 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
 }
 
 Future<void> setupCoreServices() async {
-  debugPrint('[main.dart] App initialization starting...');
   logger.info('[Main] Starting app initialization.');
 
   if (kDebugMode) {
@@ -126,27 +120,21 @@ Future<void> setupCoreServices() async {
 
   // Note: WidgetsFlutterBinding.ensureInitialized() now called in main()
   // before setupCoreServices() to ensure single zone initialization
-  debugPrint('[main.dart] Setting up core services...');
   logger.info('[Main] Setting up core services...');
 
   await AppConfig.initialize();
   AppConfig().logConfig();
-  debugPrint('[main.dart] AppConfig initialized');
   logger.info('[Main] AppConfig initialized with environment variables.');
 
   await FeatureFlags.init();
   FeatureFlags.debugPrintFlags();
-  debugPrint('[main.dart] FeatureFlags initialized');
   logger.info('[Main] FeatureFlags initialized with SharedPreferences.');
 
   await RemoteConfigService().preloadCachedOverrides();
-  debugPrint('[main.dart] Remote config cached overrides applied');
   logger.info('[Main] Applied cached remote-config overrides.');
 
   final firebaseApp = await ensureFirebaseInitialized();
   if (firebaseApp != null) {
-    debugPrint(
-        '[main.dart] Firebase initialized successfully via ensureFirebaseInitialized()');
     logger.info(
         '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
 
@@ -155,11 +143,8 @@ Future<void> setupCoreServices() async {
     // NOTE: RemoteConfigService().initialize() moved to background init
     // to avoid blocking startup with network calls. Cached overrides from
     // preloadCachedOverrides() above provide immediate defaults.
-    debugPrint('[main.dart] Remote config network fetch deferred to background');
     logger.info('[Main] Remote config network fetch deferred to background.');
   } else {
-    debugPrint(
-        '[main.dart] Could not initialize Firebase via ensureFirebaseInitialized()');
     logger.warning(
         '[Main] Could not initialize Firebase via ensureFirebaseInitialized(), some features may be limited');
   }
@@ -168,11 +153,8 @@ Future<void> setupCoreServices() async {
     Firebase.app();
     FirebaseMessaging.onBackgroundMessage(
         _firebaseMessagingBackgroundHandler);
-    debugPrint('[main.dart] Background messaging handler registered.');
     logger.info('[Main] Background messaging handler registered.');
   } catch (e) {
-    debugPrint(
-        '[main.dart] Firebase not available for background messaging handler registration or error: $e');
     logger.warning(
         '[Main] Firebase not available for background messaging handler registration or error: $e');
   }
@@ -194,7 +176,6 @@ Future<void> setupCoreServices() async {
     }
     return false;
   };
-  debugPrint('[main.dart] Error handlers configured.');
 
   if (kDebugMode) {
     Bloc.observer = SimpleBlocObserver();
@@ -203,7 +184,6 @@ Future<void> setupCoreServices() async {
   }
 
   final useNewVoicePipeline = FeatureFlags.useNewVoicePipeline;
-  debugPrint('[main.dart] useRefactoredVoicePipeline = $useNewVoicePipeline');
   logger.info(
       '[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
 
@@ -211,23 +191,18 @@ Future<void> setupCoreServices() async {
     await setupServiceLocator(
       useRefactoredVoicePipeline: useNewVoicePipeline,
     );
-    debugPrint('[main.dart] Service locator setup complete.');
     logger.info('[Main] Service locator setup complete.');
     ForegroundAudioGuard();
   } catch (e) {
-    debugPrint('[main.dart] ERROR during service locator setup: $e');
     logger.error('[Main] ERROR during service locator setup', error: e);
   }
 
-  debugPrint('[main.dart] Initializing app database connection...');
   logger.info('[Main] Initializing app database connection...');
   try {
     final appDatabase = DependencyContainer().appDatabaseConcrete;
     await appDatabase.database;
-    debugPrint('[main.dart] Database connection established.');
     logger.info('[Main] Database connection established.');
   } catch (e) {
-    debugPrint('[main.dart] ERROR initializing database connection: $e');
     logger.error('[Main] ERROR initializing database connection', error: e);
   }
 }
@@ -239,7 +214,6 @@ Future<void> _startBackgroundInitialization() async {
     // Deferred RemoteConfig network fetch (moved from critical startup path)
     try {
       await RemoteConfigService().initialize();
-      debugPrint('[main.dart] Remote config fetched in background');
       logger.info('[Main] Remote config fetched and applied in background.');
     } catch (e) {
       logger.warning('[Main] Remote config background fetch failed: $e');
@@ -254,7 +228,6 @@ Future<void> _startBackgroundInitialization() async {
       if (serviceLocator.isRegistered<AudioPlayerManager>()) {
         final audioPlayer = serviceLocator<AudioPlayerManager>();
         await audioPlayer.prewarmPlayer();
-        debugPrint('[main.dart] Audio player pre-warmed');
       }
     } catch (e) {
       logger.warning('[Main] Audio player prewarm failed (non-fatal): $e');
@@ -285,8 +258,6 @@ Future<void> main() async {
     final coreStopwatch = Stopwatch()..start();
     await setupCoreServices();
     coreStopwatch.stop();
-    debugPrint(
-        '[main.dart] Core services ready in ${coreStopwatch.elapsedMilliseconds}ms');
     logger.info(
         '[Startup] Core services ready in ${coreStopwatch.elapsedMilliseconds}ms');
 
@@ -297,8 +268,6 @@ Future<void> main() async {
       backgroundInitBuilder: _startBackgroundInitialization,
     ));
   }, (error, stack) {
-    debugPrint('[main.dart] Uncaught error in runZonedGuarded: $error');
-    debugPrint('[main.dart] Stack trace: $stack');
     logger.error('[Main] Uncaught error in runZonedGuarded');
     _handleGlobalError(error, stack);
     if (_crashlyticsEnabled) {
@@ -365,12 +334,9 @@ Future<void> _requestNotificationPermissions() async {
   // First check if we're running on a platform that supports notifications
   // This is not strictly necessary but helps avoid unnecessary API calls
   try {
-    debugPrint('[Main] Starting notification permission request');
 
     // Skip if FirebaseService isn't registered
     if (!serviceLocator.isRegistered<FirebaseService>()) {
-      debugPrint(
-          '[Main] FirebaseService not registered, skipping notification permissions');
       return;
     }
 
@@ -379,14 +345,12 @@ Future<void> _requestNotificationPermissions() async {
       () async {
         final firebaseService = serviceLocator<FirebaseService>();
         await firebaseService.initMessaging();
-        debugPrint('[Main] Notification permissions setup complete');
       },
       timeoutSeconds: 12, // Increased from 8
       operationName: 'Notification permissions setup',
     );
   } catch (e) {
     // Just log and continue - notifications are not critical for app functionality
-    debugPrint('[Main] Non-fatal error in notification setup: $e');
   }
 }
 
@@ -416,19 +380,15 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
   void initState() {
     super.initState();
     _backgroundInit = widget.initialBackgroundInit;
-    debugPrint('[main.dart] AiTherapistApp initState');
     try {
       if (serviceLocator.isRegistered<ThemeService>()) {
         _themeService = serviceLocator<ThemeService>();
         _initTheme();
       } else {
-        debugPrint(
-            '[main.dart] WARNING: ThemeService not registered, using default theme');
         _themeService = ThemeService();
         _initTheme();
       }
     } catch (e) {
-      debugPrint('[main.dart] Error initializing theme: $e');
       _themeService = ThemeService();
     }
   }
@@ -437,14 +397,13 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
     try {
       await _themeService.init();
       if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint('[main.dart] Error in _initTheme: $e');
+    } catch (_) {
+      // Non-fatal: theme init failure uses defaults
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[main.dart] AiTherapistApp build');
     return FutureBuilder<void>(
       future: _backgroundInit,
       builder: (context, snapshot) {
@@ -491,7 +450,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
 
   @override
   void dispose() {
-    debugPrint('[main.dart] AiTherapistApp dispose');
     _completionDelayTimer?.cancel();
     _cleanupResources();
     super.dispose();
@@ -504,7 +462,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       if (serviceLocator.isRegistered<AppDatabase>()) {
         final appDatabase = DependencyContainer().appDatabaseConcrete;
         await appDatabase.close();
-        debugPrint('[AiTherapistApp] Database connection closed');
       }
 
       // Close any BLoCs that were registered in the service locator
@@ -520,8 +477,8 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       }
 
       // Additional cleanup can be added here
-    } catch (e) {
-      debugPrint('[AiTherapistApp] Error during cleanup: $e');
+    } catch (_) {
+      // Non-fatal: cleanup failure
     }
   }
 
@@ -570,19 +527,13 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
               providers: [
                 BlocProvider<AuthBloc>(
                   create: (context) {
-                    debugPrint(
-                        '[main.dart] Creating AuthBloc in MultiBlocProvider');
                     try {
                       if (serviceLocator.isRegistered<AuthService>()) {
                         final authBloc = AuthBloc(
                           authService: serviceLocator<AuthService>(),
                         )..add(CheckAuthStatusEvent());
-                        debugPrint(
-                            '[main.dart] AuthBloc registered in service locator');
                         return authBloc;
                       } else {
-                        debugPrint(
-                            '[main.dart] WARNING: AuthService not registered, using empty AuthBloc');
                         final authBloc = AuthBloc(
                           authService: AuthService(
                             userProfileService: UserProfileService(),
@@ -599,7 +550,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                         return authBloc;
                       }
                     } catch (e) {
-                      debugPrint('[main.dart] Error creating AuthBloc: $e');
                       final authBloc = AuthBloc(
                         authService: AuthService(
                           userProfileService: UserProfileService(),

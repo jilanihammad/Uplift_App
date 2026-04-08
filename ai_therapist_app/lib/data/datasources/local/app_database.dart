@@ -29,8 +29,6 @@ class AppDatabase implements IAppDatabase {
 
   // Error handling callback
   final _onError = (e, stackTrace) {
-    debugPrint('Database error: $e');
-    debugPrint('Stack trace: $stackTrace');
   };
 
   /// Get the database instance
@@ -47,26 +45,19 @@ class AppDatabase implements IAppDatabase {
 
     // Prevent concurrent initialization with better timeout handling
     if (_isInitializing) {
-      debugPrint(
-          'WARNING: Database initialization already in progress, waiting...');
       // Wait until initialization is complete or timeout
       int attempts = 0;
       while (_database == null && attempts < 20) {
         await Future.delayed(const Duration(milliseconds: 100));
         attempts++;
         if (attempts % 5 == 0) {
-          debugPrint(
-              'Still waiting for database initialization... ($attempts/20)');
         }
       }
 
       if (_database != null) {
-        debugPrint('Database initialization completed while waiting');
         return _database!;
       }
 
-      debugPrint(
-          'ERROR: Database initialization timed out after ${attempts * 100}ms');
       // Don't throw an exception - instead create a new instance
       _isInitializing = false;
     }
@@ -74,12 +65,9 @@ class AppDatabase implements IAppDatabase {
     // Initialize database
     _isInitializing = true;
     try {
-      debugPrint('Initializing database...');
       _database = await _initDatabase();
-      debugPrint('Database initialization completed successfully');
       return _database!;
     } catch (e, stackTrace) {
-      debugPrint('ERROR initializing database: $e');
       _onError(e, stackTrace);
       _isInitializing = false;
       rethrow;
@@ -93,7 +81,6 @@ class AppDatabase implements IAppDatabase {
     try {
       // Initialize the appropriate database factory based on platform
       if (Platform.isWindows || Platform.isLinux) {
-        debugPrint('Initializing FFI for Windows/Linux');
         sqfliteFfiInit();
         databaseFactory = databaseFactoryFfi;
       }
@@ -102,7 +89,6 @@ class AppDatabase implements IAppDatabase {
       final databasesPath = await getDatabasesPath();
       final path = join(databasesPath, _databaseName);
 
-      debugPrint('Opening database at $path (version $_databaseVersion)');
 
       // Open database with versioning and migrations
       return await openDatabase(
@@ -114,12 +100,10 @@ class AppDatabase implements IAppDatabase {
             onDatabaseDowngradeDelete, // For development: delete and recreate on downgrade
         onConfigure: _onConfigureDatabase,
         onOpen: (db) {
-          debugPrint('Database opened successfully. Path: ${db.path}');
         },
         singleInstance: true,
       );
     } catch (e, stackTrace) {
-      debugPrint('Failed to initialize database: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -127,7 +111,6 @@ class AppDatabase implements IAppDatabase {
 
   /// Create initial database schema (version 1)
   Future<void> _createDatabase(Database db, int version) async {
-    debugPrint('Creating database schema (version: $version)');
 
     try {
       // Start a transaction for atomicity
@@ -307,9 +290,7 @@ class AppDatabase implements IAppDatabase {
             'CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id)');
       });
 
-      debugPrint('Database schema created successfully');
     } catch (e, stackTrace) {
-      debugPrint('Error creating database schema: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -318,7 +299,6 @@ class AppDatabase implements IAppDatabase {
   /// Upgrade database schema when version changes
   Future<void> _upgradeDatabase(
       Database db, int oldVersion, int newVersion) async {
-    debugPrint('Upgrading database from version $oldVersion to $newVersion');
 
     try {
       // Run migrations in a transaction for atomicity
@@ -365,9 +345,7 @@ class AppDatabase implements IAppDatabase {
         }
       });
 
-      debugPrint('Database upgraded successfully to version $newVersion');
     } catch (e, stackTrace) {
-      debugPrint('Error upgrading database: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -375,7 +353,6 @@ class AppDatabase implements IAppDatabase {
 
   /// Migration to version 2: Add audio_duration field to messages table
   Future<void> _migrateToV2(Transaction txn) async {
-    debugPrint('Applying migration to version 2...');
 
     // Add audio_duration column to messages table
     await txn.execute('''
@@ -387,12 +364,10 @@ class AppDatabase implements IAppDatabase {
       ALTER TABLE sessions ADD COLUMN is_archived INTEGER DEFAULT 0
     ''');
 
-    debugPrint('Migration to version 2 completed');
   }
 
   /// Migration to version 3: Add conversation_memories, therapy_insights tables for MemoryService
   Future<void> _migrateToV3(Transaction txn) async {
-    debugPrint('Applying migration to version 3...');
 
     // Check if conversation_memories table already exists
     final convMemExists = await txn.rawQuery(
@@ -411,7 +386,6 @@ class AppDatabase implements IAppDatabase {
           timestamp TEXT NOT NULL
         )
       ''');
-      debugPrint('Created conversation_memories table');
 
       // Copy data from conversations to conversation_memories (if conversations exists)
       final convExists = await txn.rawQuery(
@@ -424,7 +398,6 @@ class AppDatabase implements IAppDatabase {
           INSERT INTO conversation_memories (id, user_message, ai_response, metadata, timestamp)
           SELECT id, user_message, ai_response, metadata, timestamp FROM conversations
         ''');
-        debugPrint('Migrated data from conversations to conversation_memories');
       }
     }
 
@@ -444,7 +417,6 @@ class AppDatabase implements IAppDatabase {
           timestamp TEXT NOT NULL
         )
       ''');
-      debugPrint('Created therapy_insights table');
 
       // Copy data from insights to therapy_insights (if insights exists)
       final oldInsightsExists = await txn.rawQuery(
@@ -457,7 +429,6 @@ class AppDatabase implements IAppDatabase {
           INSERT INTO therapy_insights (id, insight, source, timestamp)
           SELECT id, insight, source, timestamp FROM insights
         ''');
-        debugPrint('Migrated data from insights to therapy_insights');
       }
     }
 
@@ -477,15 +448,12 @@ class AppDatabase implements IAppDatabase {
           timestamp TEXT NOT NULL
         )
       ''');
-      debugPrint('Created emotional_states table');
     }
 
-    debugPrint('Migration to version 3 completed');
   }
 
   /// Migration to version 4: Fix column names in conversation_memories table
   Future<void> _migrateToV4(Transaction txn) async {
-    debugPrint('Applying migration to version 4...');
 
     try {
       // Check if conversation_memories table exists
@@ -520,7 +488,6 @@ class AppDatabase implements IAppDatabase {
         // Drop the old table
         await txn.execute('DROP TABLE conversation_memories_old');
 
-        debugPrint('Fixed column names in conversation_memories table');
       } else {
         // Create the table with correct column names if it doesn't exist
         await txn.execute('''
@@ -532,8 +499,6 @@ class AppDatabase implements IAppDatabase {
             timestamp TEXT NOT NULL
           )
         ''');
-        debugPrint(
-            'Created conversation_memories table with correct column names');
       }
 
       // Similarly for the conversations table (legacy table)
@@ -582,38 +547,30 @@ class AppDatabase implements IAppDatabase {
           // Drop the old table
           await txn.execute('DROP TABLE conversations_old');
 
-          debugPrint('Fixed column names in conversations table');
         }
       }
     } catch (e) {
-      debugPrint('Error during migration to version 4: $e');
       rethrow;
     }
 
-    debugPrint('Migration to version 4 completed');
   }
 
   /// Migration to version 5: Add action_items column to sessions table
   Future<void> _migrateToV5(Transaction txn) async {
-    debugPrint('Applying migration to version 5...');
 
     try {
       // Add action_items column to sessions table
       await txn.execute('''
         ALTER TABLE sessions ADD COLUMN action_items TEXT
       ''');
-      debugPrint('Added action_items column to sessions table');
     } catch (e) {
-      debugPrint('Error during migration to version 5: $e');
       rethrow;
     }
 
-    debugPrint('Migration to version 5 completed');
   }
 
   /// Migration to version 6: Create user_anchors table if missing
   Future<void> _migrateToV6(Transaction txn) async {
-    debugPrint('Applying migration to version 6...');
 
     try {
       final anchorsExists = await txn.rawQuery(
@@ -643,25 +600,21 @@ class AppDatabase implements IAppDatabase {
             UNIQUE(client_anchor_id)
           )
         ''');
-        debugPrint('Created user_anchors table');
       }
     } catch (e) {
-      debugPrint('Error during migration to version 6: $e');
       rethrow;
     }
 
-    debugPrint('Migration to version 6 completed');
   }
 
   /// Migration to version 7: Extend user_anchors with sync metadata columns
   Future<void> _migrateToV7(Transaction txn) async {
-    debugPrint('Applying migration to version 7...');
 
     Future<void> safeAlter(String statement) async {
       try {
         await txn.execute(statement);
-      } catch (e) {
-        debugPrint('Migration v7: ignoring alter error for "$statement": $e');
+      } catch (_) {
+        // Column may already exist from previous migration
       }
     }
 
@@ -690,9 +643,7 @@ class AppDatabase implements IAppDatabase {
       await txn.execute(
           'CREATE UNIQUE INDEX IF NOT EXISTS idx_user_anchors_normalized ON user_anchors(normalized_text)');
 
-      debugPrint('Migration to version 7 completed');
     } catch (e) {
-      debugPrint('Error during migration to version 7: $e');
       rethrow;
     }
   }
@@ -707,7 +658,6 @@ class AppDatabase implements IAppDatabase {
           [tableName]);
       return result.isNotEmpty;
     } catch (e, stackTrace) {
-      debugPrint('Error checking if table $tableName exists: $e');
       _onError(e, stackTrace);
       return false; // Safer to return false than throw
     }
@@ -719,7 +669,6 @@ class AppDatabase implements IAppDatabase {
     if (_database != null) {
       await _database!.close();
       _database = null;
-      debugPrint('Database closed');
     }
   }
 
@@ -736,7 +685,6 @@ class AppDatabase implements IAppDatabase {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     } catch (e, stackTrace) {
-      debugPrint('Error inserting into $table: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -763,7 +711,6 @@ class AppDatabase implements IAppDatabase {
         offset: offset,
       );
     } catch (e, stackTrace) {
-      debugPrint('Error querying $table: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -786,7 +733,6 @@ class AppDatabase implements IAppDatabase {
         whereArgs: whereArgs,
       );
     } catch (e, stackTrace) {
-      debugPrint('Error updating $table: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -807,7 +753,6 @@ class AppDatabase implements IAppDatabase {
         whereArgs: whereArgs,
       );
     } catch (e, stackTrace) {
-      debugPrint('Error deleting from $table: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -823,7 +768,6 @@ class AppDatabase implements IAppDatabase {
       final db = await database;
       return await db.rawQuery(sql, arguments);
     } catch (e, stackTrace) {
-      debugPrint('Error executing raw query: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -839,7 +783,6 @@ class AppDatabase implements IAppDatabase {
       final db = await database;
       return await db.rawUpdate(sql, arguments);
     } catch (e, stackTrace) {
-      debugPrint('Error executing raw command: $e');
       _onError(e, stackTrace);
       rethrow;
     }
@@ -864,8 +807,6 @@ class AppDatabase implements IAppDatabase {
           if (e.toString().contains('database is locked') &&
               retries < maxRetries) {
             retries++;
-            debugPrint(
-                'Database locked, retrying transaction (attempt $retries/$maxRetries)...');
             await Future.delayed(retryDelay);
           } else {
             // If it's not a lock error or we've exceeded retries, rethrow
@@ -874,35 +815,25 @@ class AppDatabase implements IAppDatabase {
         }
       }
     } catch (e, stackTrace) {
-      debugPrint('Transaction error: $e');
       _onError(e, stackTrace);
       rethrow;
     }
   }
 
   Future<void> _onConfigureDatabase(Database db) async {
-    debugPrint('Configuring database...');
     try {
       await db.execute('PRAGMA foreign_keys = ON;');
-      debugPrint('PRAGMA foreign_keys = ON executed.');
 
       // Try setting busy_timeout using rawQuery, and catch potential errors
       try {
         await db.rawQuery(
             'PRAGMA busy_timeout = 10000;'); // Note: rawQuery usually expects a result
-        debugPrint(
-            'PRAGMA busy_timeout = 10000 attempt via rawQuery successful (or did not throw).');
       } catch (e) {
-        debugPrint(
-            'Error attempting to set PRAGMA busy_timeout via rawQuery: $e. Trying execute as fallback.');
         // Fallback to execute if rawQuery fails for a set-only PRAGMA (less likely to work if rawQuery failed)
         try {
           await db.execute('PRAGMA busy_timeout = 10000;');
-          debugPrint(
-              'PRAGMA busy_timeout = 10000 attempt via execute successful.');
-        } catch (e2) {
-          debugPrint(
-              'Error attempting to set PRAGMA busy_timeout via execute: $e2. This PRAGMA might not be settable this way or is not supported.');
+        } catch (_) {
+          // Non-fatal: busy_timeout fallback also failed
         }
       }
 
@@ -913,31 +844,20 @@ class AppDatabase implements IAppDatabase {
         if (journalModeResult.isNotEmpty &&
             journalModeResult.first.values.first.toString().toLowerCase() ==
                 'wal') {
-          debugPrint('PRAGMA journal_mode is WAL.');
+          // WAL mode already active
         } else {
-          final applied = await db.rawQuery('PRAGMA journal_mode = WAL;');
-          debugPrint(
-              'Attempted to set PRAGMA journal_mode = WAL explicitly: $applied');
-          final List<Map<String, dynamic>> journalModeResultAfterSet =
-              await db.rawQuery('PRAGMA journal_mode');
-          debugPrint(
-              'PRAGMA journal_mode after explicit set: $journalModeResultAfterSet');
+          await db.rawQuery('PRAGMA journal_mode = WAL;');
         }
-      } catch (e) {
-        debugPrint(
-            'Error setting/checking PRAGMA journal_mode: $e. This might be okay if singleInstance=true handles it.');
+      } catch (_) {
+        // Non-fatal: WAL mode configuration failure
       }
 
       await db.execute('PRAGMA synchronous = NORMAL;');
-      debugPrint('PRAGMA synchronous = NORMAL executed.');
 
       await db.execute('PRAGMA cache_size = 10000;');
-      debugPrint('PRAGMA cache_size = 10000 executed.');
 
       await db.execute('PRAGMA temp_store = MEMORY;');
-      debugPrint('PRAGMA temp_store = MEMORY executed.');
     } catch (e, stackTrace) {
-      debugPrint('!!! Critical error during _onConfigureDatabase: $e');
       debugPrintStack(
           label: 'Stack trace for _onConfigureDatabase error',
           stackTrace: stackTrace);
@@ -945,12 +865,10 @@ class AppDatabase implements IAppDatabase {
       // otherwise the app might proceed with a misconfigured database.
       rethrow;
     }
-    debugPrint('Database configuration complete (or attempted).');
   }
 
   /// Migration to version 8: Create mood_entries table for persistent mood tracking
   Future<void> _migrateToV8(Transaction txn) async {
-    debugPrint('Applying migration to version 8...');
 
     final tableExists = await txn.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -980,17 +898,13 @@ class AppDatabase implements IAppDatabase {
       await txn.execute(
         'CREATE INDEX IF NOT EXISTS idx_mood_entries_pending ON mood_entries (is_pending)',
       );
-      debugPrint('Created mood_entries table');
-    } else {
-      debugPrint('mood_entries table already exists, skipping creation');
     }
+    // else: table already exists, no migration needed
 
-    debugPrint('Migration to version 8 completed');
   }
 
   /// Migration to version 9: add user_id scoping and reset local caches
   Future<void> _migrateToV9(Transaction txn) async {
-    debugPrint('Applying migration to version 9 (user data isolation)...');
 
     const tableDefinitions = <String, String>{
       'sessions': '''
@@ -1172,6 +1086,5 @@ class AppDatabase implements IAppDatabase {
     await txn.execute(
         'CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id)');
 
-    debugPrint('Migration to version 9 completed; local caches were reset.');
   }
 }

@@ -1,7 +1,6 @@
 // lib/di/service_locator.dart
 import 'dart:async';
 import 'package:get_it/get_it.dart';
-import 'package:flutter/foundation.dart';
 import 'dependency_container.dart';
 import 'modules/services_module.dart';
 
@@ -92,7 +91,6 @@ class DependencyStatus {
   /// Mark a service as initialized
   static void markInitialized(String serviceName) {
     initializedServices[serviceName] = true;
-    debugPrint('Service marked as initialized: $serviceName');
   }
 
   /// Check if a service is initialized
@@ -107,20 +105,12 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
   // Register AudioPlayerManager first (required by SimpleTTSService)
   if (!locator.isRegistered<AudioPlayerManager>()) {
     locator.registerLazySingleton<AudioPlayerManager>(() {
-      debugPrint(
-          'Registering AudioPlayerManager for audio infrastructure with AudioSettings');
       return AudioPlayerManager(audioSettings: locator<IAudioSettings>());
     });
   }
 
   // Register ITTSService (needed by AudioGenerator)
   if (!locator.isRegistered<ITTSService>()) {
-    if (useRefactoredVoicePipeline) {
-      debugPrint('🔄 Registering SimpleTTSService for NEW pipeline');
-    } else {
-      debugPrint('🔄 Registering SimpleTTSService for LEGACY pipeline');
-    }
-
     locator.registerLazySingleton<ITTSService>(() {
       // Create SimpleTTSService with VoiceService callback for TTS-VAD coordination
       final simpleTTSService = SimpleTTSService(
@@ -132,8 +122,6 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
       Future.microtask(() {
         try {
           if (useRefactoredVoicePipeline) {
-            debugPrint(
-                'ℹ️ SimpleTTSService defers VoiceService wiring to VoiceModeFacade');
             return;
           }
 
@@ -150,32 +138,24 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
                   final voiceSessionBloc = locator<VoiceSessionBloc>();
                   simpleTTSService.setGetCurrentGenerationCallback(
                       () => voiceSessionBloc.currentGeneration);
-                  debugPrint(
-                      '✅ SimpleTTSService generation callback wired to VoiceSessionBloc');
                 }
-              } catch (e) {
-                debugPrint('Warning: Could not wire generation callback: $e');
+              } catch (_) {
+                // Non-fatal: generation callback wiring is optional
               }
             });
-            debugPrint(
-                '✅ SimpleTTSService wired to legacy VoiceService for TTS-VAD coordination');
           }
-        } catch (e) {
-          debugPrint(
-              'Warning: Could not wire SimpleTTSService for TTS-VAD coordination: $e');
+        } catch (_) {
+          // Non-fatal: VoiceService wiring deferred
         }
       });
 
       return simpleTTSService;
     });
-    debugPrint('✅ ITTSService registered successfully');
   }
 
   // Register IAudioFileManager (needed by AudioGenerator)
   if (!locator.isRegistered<IAudioFileManager>()) {
-    debugPrint('🔄 Registering AudioFileManager for audio infrastructure');
     locator.registerLazySingleton<IAudioFileManager>(() => AudioFileManager());
-    debugPrint('✅ IAudioFileManager registered successfully');
   }
 }
 
@@ -213,16 +193,10 @@ Future<void> setupServiceLocator({
   _setupStarted = true;
 
   try {
-    debugPrint('Starting core service registration...');
-    debugPrint(
-        'Feature flag useRefactoredVoicePipeline: $useRefactoredVoicePipeline');
-
     // Register utilities first
     if (!serviceLocator.isRegistered<DatabaseOperationManager>()) {
       serviceLocator.registerSingleton<DatabaseOperationManager>(
           DatabaseOperationManager());
-      debugPrint(
-          'Registered DatabaseOperationManager to manage database operations');
     }
 
     // Register interface mapping for DatabaseOperationManager
@@ -230,20 +204,17 @@ Future<void> setupServiceLocator({
       serviceLocator.registerLazySingleton<IDatabaseOperationManager>(
         () => serviceLocator<DatabaseOperationManager>(),
       );
-      debugPrint('Registered IDatabaseOperationManager interface');
     }
 
     // Register data sources
     if (!serviceLocator.isRegistered<AppDatabase>()) {
       serviceLocator.registerSingleton<AppDatabase>(AppDatabase());
-      debugPrint('Registered AppDatabase');
     }
 
     if (!serviceLocator.isRegistered<UserContextService>()) {
       serviceLocator.registerLazySingleton<UserContextService>(
         () => UserContextService(),
       );
-      debugPrint('Registered UserContextService');
     }
 
     // Register interface mapping for AppDatabase
@@ -251,7 +222,6 @@ Future<void> setupServiceLocator({
       serviceLocator.registerLazySingleton<IAppDatabase>(
         () => serviceLocator<AppDatabase>(),
       );
-      debugPrint('Registered IAppDatabase interface');
     }
 
     // Register interface mapping for IDatabase (required by SessionDetailsScreen)
@@ -259,7 +229,6 @@ Future<void> setupServiceLocator({
       serviceLocator.registerLazySingleton<IDatabase>(
         () => _DatabaseAdapter(serviceLocator<AppDatabase>()),
       );
-      debugPrint('Registered IDatabase interface');
     }
 
     // ===== FIREBASE SERVICE (Base registration only) =====
@@ -267,13 +236,11 @@ Future<void> setupServiceLocator({
     // This allows the app to run without Firebase during development
     if (!serviceLocator.isRegistered<FirebaseService>()) {
       serviceLocator.registerSingleton<FirebaseService>(FirebaseService());
-      debugPrint('Registered FirebaseService (base instance)');
     }
 
     // ===== BACKEND SERVICE =====
     if (!serviceLocator.isRegistered<BackendService>()) {
       serviceLocator.registerSingleton<BackendService>(BackendService());
-      debugPrint('Registered BackendService');
     }
 
     // ===== LOCAL DATA SOURCES =====
@@ -285,7 +252,6 @@ Future<void> setupServiceLocator({
       serviceLocator.registerLazySingleton<PrefsManager>(() => PrefsManager());
       final prefsManager = serviceLocator<PrefsManager>();
       await prefsManager.init();
-      debugPrint('Registered and initialized PrefsManager');
     }
 
     // Register DatabaseProvider that uses AppDatabase
@@ -293,7 +259,6 @@ Future<void> setupServiceLocator({
       serviceLocator.registerLazySingleton<DatabaseProvider>(
         () => DatabaseProvider(),
       );
-      debugPrint('Registered DatabaseProvider');
     }
 
     // ===== UTILITY SERVICES =====
@@ -302,26 +267,22 @@ Future<void> setupServiceLocator({
     if (!serviceLocator.isRegistered<ConnectivityChecker>()) {
       serviceLocator.registerLazySingleton<ConnectivityChecker>(
           () => ConnectivityChecker());
-      debugPrint('Registered ConnectivityChecker');
     }
 
     if (!serviceLocator.isRegistered<service_ns.NotificationService>()) {
       serviceLocator.registerLazySingleton<service_ns.NotificationService>(
           () => service_ns.NotificationService());
-      debugPrint('Registered NotificationService');
     }
 
     if (!serviceLocator.isRegistered<PreferencesService>()) {
       serviceLocator.registerLazySingleton<PreferencesService>(
           () => PreferencesService());
-      debugPrint('Registered PreferencesService');
     }
 
     if (!serviceLocator.isRegistered<ThemeService>()) {
       serviceLocator.registerLazySingleton<ThemeService>(() => ThemeService(
             preferencesService: serviceLocator<PreferencesService>(),
           ));
-      debugPrint('Registered ThemeService with dependency injection');
     }
 
     // ===== SIMPLE DOMAIN SERVICES =====
@@ -334,7 +295,6 @@ Future<void> setupServiceLocator({
         // This will now unambiguously refer to the one from custom_langchain.dart
         () => ConversationBufferMemory(maxMessages: 20),
       );
-      debugPrint('Registered ConversationBufferMemory');
     }
 
     // NOTE: MessageProcessor and TherapyService will be registered in
@@ -343,7 +303,6 @@ Future<void> setupServiceLocator({
     if (!serviceLocator.isRegistered<AudioGenerator>()) {
       // Use lazy singleton to prevent immediate initialization
       serviceLocator.registerLazySingleton<AudioGenerator>(() {
-        debugPrint('Creating AudioGenerator instance (lazy initialization)');
         final generator = AudioGenerator(
           ttsService: serviceLocator<ITTSService>(),
           audioFileManager: serviceLocator<IAudioFileManager>(),
@@ -353,42 +312,32 @@ Future<void> setupServiceLocator({
         // Initialize only if needed when first accessed
         generator.initializeOnlyIfNeeded().then((_) {
           DependencyStatus.markInitialized('AudioGenerator');
-          debugPrint('AudioGenerator initialized on first access');
 
           // Set up TTS state callback to coordinate with VoiceService
           // This is done after initialization to avoid circular dependency issues
           if (useRefactoredVoicePipeline) {
-            debugPrint(
-                'ℹ️ AudioGenerator defers TTS callback wiring to VoiceModeFacade');
           } else {
             try {
               final voiceService = serviceLocator<VoiceService>();
               generator.setTTSStateCallback((isSpeaking) {
                 voiceService.updateTTSSpeakingState(isSpeaking);
               });
-              debugPrint(
-                  'AudioGenerator TTS state callback connected to VoiceService');
 
               // VAD callbacks removed - no longer needed with new TTS architecture
-              debugPrint(
-                  'AudioGenerator VAD callbacks disabled (legacy workaround removed)');
-            } catch (e) {
-              debugPrint(
-                  'Warning: Could not connect AudioGenerator callbacks: $e');
+            } catch (_) {
+              // Non-fatal: audio generator wiring is best-effort
             }
           }
         });
 
         return generator;
       });
-      debugPrint('Registered AudioGenerator with true lazy initialization');
     }
 
     // === AUDIO SETTINGS REGISTRATION (Required by all audio services) ===
     if (!serviceLocator.isRegistered<IAudioSettings>()) {
       serviceLocator
           .registerLazySingleton<IAudioSettings>(() => AudioSettings());
-      debugPrint('✅ Registered IAudioSettings for global mute functionality');
     }
 
     // === AUDIO INFRASTRUCTURE REGISTRATION (Always needed by AudioGenerator) ===
@@ -396,7 +345,6 @@ Future<void> setupServiceLocator({
 
     // === VOICE SERVICE REGISTRATION (Feature Flag Controlled) ===
     if (useRefactoredVoicePipeline) {
-      debugPrint('🔄 Using NEW refactored voice pipeline');
 
       // Register refactored audio services using AudioServicesModule
       // Note: TTS service already registered above
@@ -406,8 +354,6 @@ Future<void> setupServiceLocator({
       // This allows VoiceSessionCoordinator to coordinate VAD through legacy service
       if (!serviceLocator.isRegistered<VoiceService>()) {
         serviceLocator.registerLazySingleton<VoiceService>(() {
-          debugPrint(
-              'Creating legacy VoiceService for AutoListeningCoordinator coordination');
           final service = VoiceService(
             apiClient: serviceLocator<ApiClient>(),
             audioSettings: serviceLocator<IAudioSettings>(),
@@ -416,25 +362,19 @@ Future<void> setupServiceLocator({
           // Initialize only if needed when first accessed
           service.initializeOnlyIfNeeded().then((_) {
             DependencyStatus.markInitialized('VoiceService');
-            debugPrint('Legacy VoiceService initialized for VAD coordination');
           });
 
           return service;
         });
-        debugPrint('✅ Legacy VoiceService registered for VAD coordination');
       }
 
       // Mark audio services as initialized for dependency tracking
       DependencyStatus.markInitialized('AudioServicesModule');
-      debugPrint(
-          '✅ Registered refactored audio services via AudioServicesModule');
     } else {
-      debugPrint('🔄 Using LEGACY VoiceService');
 
       // Register the original monolithic VoiceService (legacy)
       if (!serviceLocator.isRegistered<VoiceService>()) {
         serviceLocator.registerLazySingleton<VoiceService>(() {
-          debugPrint('Creating VoiceService instance (lazy initialization)');
           final service = VoiceService(
             apiClient: serviceLocator<ApiClient>(),
             audioSettings: serviceLocator<IAudioSettings>(),
@@ -443,13 +383,10 @@ Future<void> setupServiceLocator({
           // Initialize only if needed when first accessed
           service.initializeOnlyIfNeeded().then((_) {
             DependencyStatus.markInitialized('VoiceService');
-            debugPrint('VoiceService initialized on first access');
           });
 
           return service;
         });
-        debugPrint(
-            '✅ Registered legacy VoiceService with true lazy initialization');
       }
     }
 
@@ -473,7 +410,6 @@ Future<void> setupServiceLocator({
           );
         };
       });
-      debugPrint('✅ Registered VoicePipelineController factory');
     }
 
     // === SESSION FACADE REGISTRATIONS ===
@@ -491,20 +427,17 @@ Future<void> setupServiceLocator({
           therapyService: serviceLocator<ITherapyService>(),
         );
       });
-      debugPrint('✅ Registered VoiceModeFacade factory');
     }
 
     if (!serviceLocator.isRegistered<ChatVoiceFacade>()) {
       serviceLocator.registerFactory<ChatVoiceFacade>(() => ChatVoiceFacade(
             therapyService: serviceLocator<ITherapyService>(),
           ));
-      debugPrint('✅ Registered ChatVoiceFacade factory');
     }
 
     if (!serviceLocator.isRegistered<service_tgs.TherapyGraphService>()) {
       serviceLocator.registerLazySingleton<service_tgs.TherapyGraphService>(
           () => service_tgs.TherapyGraphService());
-      debugPrint('Registered TherapyGraphService');
     }
 
     if (!serviceLocator.isRegistered<ProgressService>()) {
@@ -514,13 +447,11 @@ Future<void> setupServiceLocator({
                     serviceLocator<service_ns.NotificationService>(),
                 databaseProvider: serviceLocator<DatabaseProvider>(),
               ));
-      debugPrint('Registered ProgressService');
     }
 
     if (!serviceLocator.isRegistered<UserProfileService>()) {
       serviceLocator.registerLazySingleton<UserProfileService>(
           () => UserProfileService());
-      debugPrint('Registered UserProfileService');
     }
 
     if (!serviceLocator.isRegistered<service_ms.MemoryService>()) {
@@ -531,27 +462,21 @@ Future<void> setupServiceLocator({
           userProfileService: serviceLocator<UserProfileService>(),
         ),
       );
-      debugPrint('Registered MemoryService with backend sync dependencies');
     }
 
     if (!serviceLocator.isRegistered<MemoryManager>()) {
       serviceLocator.registerLazySingleton<MemoryManager>(() {
-        debugPrint('Creating MemoryManager instance (lazy initialization)');
         final manager = MemoryManager(
           memoryService: serviceLocator<service_ms.MemoryService>(),
         );
-        debugPrint(
-            'MemoryManager instance created - initialization deferred until first use');
         return manager;
       });
-      debugPrint('Registered MemoryManager with backend-aware MemoryService');
     }
 
     // Register OnboardingService
     if (!serviceLocator.isRegistered<OnboardingService>()) {
       serviceLocator
           .registerLazySingleton<OnboardingService>(() => OnboardingService());
-      debugPrint('Registered OnboardingService');
     }
 
     // Register AuthCoordinator with OnboardingService dependency
@@ -560,7 +485,6 @@ Future<void> setupServiceLocator({
           .registerLazySingleton<AuthCoordinator>(() => AuthCoordinator(
                 onboardingService: serviceLocator<OnboardingService>(),
               ));
-      debugPrint('Registered AuthCoordinator');
     }
 
     // Register AuthService with dependencies (migrated to dependency injection)
@@ -569,16 +493,14 @@ Future<void> setupServiceLocator({
             userProfileService: serviceLocator<UserProfileService>(),
             authEventHandler: serviceLocator<AuthCoordinator>(),
           ));
-      debugPrint('Registered AuthService with dependency injection');
     }
 
     // Initialize the coordinator
     try {
       final authCoordinator = serviceLocator<AuthCoordinator>();
       await authCoordinator.init();
-      debugPrint('Initialized AuthCoordinator');
-    } catch (e) {
-      debugPrint('Error initializing AuthCoordinator: $e');
+    } catch (_) {
+      // Non-fatal: auth coordinator init failure handled elsewhere
     }
 
     // TherapyService registration moved to registerApiDependentServices() to avoid duplicates
@@ -587,38 +509,30 @@ Future<void> setupServiceLocator({
     if (!serviceLocator.isRegistered<NavigationService>()) {
       serviceLocator
           .registerLazySingleton<NavigationService>(() => NavigationService());
-      debugPrint('Registered NavigationService');
     }
 
     // Register GroqService
     if (!serviceLocator.isRegistered<GroqService>()) {
       serviceLocator.registerLazySingleton<GroqService>(() => GroqService());
-      debugPrint('Registered GroqService');
     }
 
     // Register VADManager for voice session Bloc and services
     if (!serviceLocator.isRegistered<VADManager>()) {
       serviceLocator.registerLazySingleton<VADManager>(() => VADManager());
-      debugPrint('Registered VADManager');
     }
 
     // Register Phase 5/6 interface mappings from ServicesModule
     await ServicesModule.register(serviceLocator);
-    debugPrint('ServicesModule interface registrations complete');
 
     // Initialize the new DependencyContainer
     await DependencyContainer().initialize();
-    debugPrint('DependencyContainer initialized');
 
     // Mark core services as registered
     DependencyStatus.coreServicesRegistered = true;
-    debugPrint('Core service registration complete');
 
     // Phase 2.2.5: Complete the sync-once setup
     _setupCompleter.complete();
   } catch (e, stackTrace) {
-    debugPrint('ERROR during setupServiceLocator: $e');
-    debugPrint('Stack trace: $stackTrace');
 
     // Phase 2.2.5: Complete with error for sync-once pattern
     _setupCompleter.completeError(e, stackTrace);
@@ -633,24 +547,20 @@ Future<void> setupServiceLocator({
 Future<void> registerApiDependentServices(
     ConfigService configService, ApiClient apiClient) async {
   if (DependencyStatus.apiDependenciesRegistered) {
-    debugPrint('API dependencies already registered');
     DependencyContainer.markReady();
     return;
   }
 
   final stopwatch = Stopwatch()..start();
-  debugPrint('[Startup] Background init started');
 
   try {
     // Register ConfigService and ApiClient
     if (!serviceLocator.isRegistered<ConfigService>()) {
       serviceLocator.registerSingleton<ConfigService>(configService);
-      debugPrint('Registered ConfigService');
     }
 
     if (!serviceLocator.isRegistered<ApiClient>()) {
       serviceLocator.registerSingleton<ApiClient>(apiClient);
-      debugPrint('Registered ApiClient');
     }
 
     // GOLD STANDARD: Opportunistic prefetch (non-blocking)
@@ -662,7 +572,6 @@ Future<void> registerApiDependentServices(
       serviceLocator.registerLazySingleton<IApiClient>(
         () => serviceLocator<ApiClient>(),
       );
-      debugPrint('Registered IApiClient interface');
     }
 
     // Register services that depend on the ApiClient now that it is available
@@ -673,14 +582,12 @@ Future<void> registerApiDependentServices(
           prefsManager: serviceLocator<PrefsManager>(),
         ),
       );
-      debugPrint('Registered SessionScheduleService');
     }
 
     if (!serviceLocator.isRegistered<ISessionScheduleService>()) {
       serviceLocator.registerLazySingleton<ISessionScheduleService>(
         () => serviceLocator<SessionScheduleService>(),
       );
-      debugPrint('Registered ISessionScheduleService interface binding');
     }
 
     // Register repositories that depend on ApiClient and AppDatabase
@@ -688,14 +595,12 @@ Future<void> registerApiDependentServices(
       serviceLocator.registerLazySingleton<AuthRepository>(() => AuthRepository(
             apiClient: serviceLocator<IApiClient>(),
           ));
-      debugPrint('Registered AuthRepository with injected IApiClient');
     }
 
     if (!serviceLocator.isRegistered<UserRepository>()) {
       serviceLocator.registerLazySingleton<UserRepository>(() => UserRepository(
             apiClient: serviceLocator<IApiClient>(),
           ));
-      debugPrint('Registered UserRepository with IApiClient');
     }
 
     if (!serviceLocator.isRegistered<SessionRepository>()) {
@@ -705,7 +610,6 @@ Future<void> registerApiDependentServices(
                 appDatabase: serviceLocator<IAppDatabase>(),
                 userContextService: serviceLocator<UserContextService>(),
               ));
-      debugPrint('Registered SessionRepository with interfaces');
     }
 
     if (!serviceLocator.isRegistered<MessageRepository>()) {
@@ -715,14 +619,12 @@ Future<void> registerApiDependentServices(
                 appDatabase: serviceLocator<IAppDatabase>(),
                 userContextService: serviceLocator<UserContextService>(),
               ));
-      debugPrint('Registered MessageRepository with interfaces');
     }
 
     // Register MessageProcessor now that ApiClient is available
     // (MessageProcessor needs ApiClient for LLM calls)
     if (!serviceLocator.isRegistered<MessageProcessor>()) {
       serviceLocator.registerLazySingleton<MessageProcessor>(() {
-        debugPrint('Creating MessageProcessor instance (lazy initialization)');
 
         final processor = MessageProcessor(
           conversationHistory: serviceLocator<ConversationBufferMemory>(),
@@ -732,10 +634,8 @@ Future<void> registerApiDependentServices(
         );
 
         DependencyStatus.markInitialized('MessageProcessor');
-        debugPrint('MessageProcessor instance created and marked initialized.');
         return processor;
       });
-      debugPrint('Registered MessageProcessor with ApiClient from DI');
     }
 
     // Register TherapyService concrete implementation
@@ -746,7 +646,6 @@ Future<void> registerApiDependentServices(
             memoryManager: serviceLocator<MemoryManager>(),
             apiClient: serviceLocator<ApiClient>(),
           ));
-      debugPrint('Registered TherapyService concrete implementation');
     }
 
     // Register interface mapping after concrete service is available
@@ -754,19 +653,14 @@ Future<void> registerApiDependentServices(
       serviceLocator.registerLazySingleton<ITherapyService>(
         () => serviceLocator<TherapyService>(),
       );
-      debugPrint('Registered ITherapyService interface mapping');
     }
 
     // Re-register interface mappings now that concrete services are available
     await ServicesModule.register(serviceLocator);
-    debugPrint('ServicesModule interface mappings updated after API services');
 
     DependencyStatus.apiDependenciesRegistered = true;
-    debugPrint('API-dependent service registration complete');
 
     stopwatch.stop();
-    debugPrint(
-        '[Startup] Background init complete in ${stopwatch.elapsedMilliseconds}ms');
     DependencyContainer.markReady();
 
     // Optionally pre-warm latency-sensitive services
@@ -774,8 +668,6 @@ Future<void> registerApiDependentServices(
       unawaited(serviceLocator<ITTSService>().initialize());
     }
   } catch (e, stackTrace) {
-    debugPrint('ERROR during registerApiDependentServices: $e');
-    debugPrint('Stack trace: $stackTrace');
     DependencyContainer.markFailed(e, stackTrace);
     rethrow;
   }
@@ -789,8 +681,6 @@ Future<void> registerApiDependentServices(
 void _prefetchTTSConfigNonBlocking(ApiClient apiClient) {
   unawaited(() async {
     try {
-      debugPrint('[TTS Config] Prefetch started (non-blocking)');
-
       final TtsConfigDto? remoteTtsConfig = await apiClient.fetchTtsConfig();
 
       if (remoteTtsConfig != null && remoteTtsConfig.provider.isNotEmpty) {
@@ -815,17 +705,12 @@ void _prefetchTTSConfigNonBlocking(ApiClient apiClient) {
           final ttsService = DependencyContainer().ttsService;
           ttsService.setCachedTTSConfig();
         } catch (e) {
-          debugPrint('[TTS Config] Warning: Could not mark config as cached: $e');
           // Non-fatal - lazy fetch will still work
         }
 
-        debugPrint('[TTS Config] Prefetch succeeded and applied');
-      } else {
-        debugPrint('[TTS Config] Prefetch returned null/empty config');
       }
-    } catch (e) {
+    } catch (_) {
       // Silent failure - lazy load will handle it on first TTS request
-      debugPrint('[TTS Config] Prefetch failed (will lazy load on first TTS): $e');
     }
   }());
 }
@@ -856,7 +741,6 @@ bool validateDependencies() {
   }
 
   if (missing.isNotEmpty) {
-    debugPrint('WARNING: Missing required dependencies: ${missing.join(', ')}');
     return false;
   }
 

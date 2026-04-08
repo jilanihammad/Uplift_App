@@ -51,7 +51,6 @@ class SimpleTTSService implements ITTSService {
 
   void _ttsTrace(String message) {
     if (_ttsTraceEnabled) {
-      debugPrint(message);
     }
   }
 
