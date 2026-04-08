@@ -8,21 +8,17 @@ import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-
 class ProgressScreen extends StatefulWidget {
   final IProgressService? progressService;
   final int initialTabIndex;
-
   const ProgressScreen({
     super.key,
     this.progressService,
     this.initialTabIndex = 0, // Default to 0 (Overview)
   });
-
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
-
 class _ProgressScreenState extends State<ProgressScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
@@ -33,7 +29,6 @@ class _ProgressScreenState extends State<ProgressScreen>
   int _realSessionCount = 0;
   int _currentStreak = 0;
   int _longestStreak = 0;
-
   @override
   void initState() {
     super.initState();
@@ -41,17 +36,10 @@ class _ProgressScreenState extends State<ProgressScreen>
     _progressService = widget.progressService ?? DependencyContainer().progress;
     _progress = _progressService.progress;
     _tasksService = TasksService();
-
-    // Set the initial tab based on the provided argument
     _tabController.index = widget.initialTabIndex;
-
-    // Initialize services and load data
     _initServices();
-
-    // Listen for progress changes
     _progressService.progressChanged.addListener(_onProgressChanged);
   }
-
   Future<void> _initServices() async {
     await _tasksService.init();
     await _loadRealSessionCount();
@@ -61,37 +49,27 @@ class _ProgressScreenState extends State<ProgressScreen>
       });
     }
   }
-
   Future<void> _loadRealSessionCount() async {
     try {
       final sessionRepository = DependencyContainer().sessionRepository;
       final sessions = await sessionRepository.getSessions();
-
-      // Calculate streaks based on session dates
       _calculateStreaks(sessions);
-
       if (mounted) {
         setState(() {
           _realSessionCount = sessions.length;
         });
       }
-    } catch (e) {
-      debugPrint('Error loading session count: $e');
-    }
+    } catch (e) {}
   }
-
   void _calculateStreaks(List<dynamic> sessions) {
     if (sessions.isEmpty) {
       _currentStreak = 0;
       _longestStreak = 0;
       return;
     }
-
-    // Get unique days with sessions, sorted by date
     final sessionDays = sessions
         .map((session) {
           try {
-            // Assuming session has a createdAt or similar field
             final date = session.createdAt ?? DateTime.now();
             return DateTime(date.year, date.month, date.day);
           } catch (e) {
@@ -101,12 +79,9 @@ class _ProgressScreenState extends State<ProgressScreen>
         .toSet()
         .toList()
       ..sort();
-
-    // Calculate current streak (consecutive days up to today)
     _currentStreak = 0;
     final today = DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
-
     for (int i = sessionDays.length - 1; i >= 0; i--) {
       final daysDiff = todayDay.difference(sessionDays[i]).inDays;
       if (daysDiff == _currentStreak ||
@@ -116,11 +91,8 @@ class _ProgressScreenState extends State<ProgressScreen>
         break;
       }
     }
-
-    // Calculate longest streak
     _longestStreak = 0;
     int tempStreak = 1;
-
     for (int i = 1; i < sessionDays.length; i++) {
       if (sessionDays[i].difference(sessionDays[i - 1]).inDays == 1) {
         tempStreak++;
@@ -131,7 +103,6 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
     _longestStreak = math.max(_longestStreak, tempStreak);
   }
-
   void _onProgressChanged() {
     if (mounted) {
       setState(() {
@@ -139,7 +110,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       });
     }
   }
-
   Future<void> _toggleTaskCompletion(String taskId, bool isCompleted) async {
     if (isCompleted) {
       await _tasksService.completeTask(taskId);
@@ -152,14 +122,12 @@ class _ProgressScreenState extends State<ProgressScreen>
       });
     }
   }
-
   @override
   void dispose() {
     _tabController.dispose();
     _progressService.progressChanged.removeListener(_onProgressChanged);
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -184,7 +152,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildOverviewTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -200,7 +167,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildStreakCard() {
     return Card(
       elevation: 2,
@@ -242,7 +208,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildStreakItem(int count, String label, IconData icon, Color color) {
     return Column(
       children: [
@@ -279,7 +244,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ],
     );
   }
-
   Widget _buildStatsCard() {
     return Card(
       elevation: 2,
@@ -312,7 +276,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildStatRow(String label, String value, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -337,13 +300,10 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildRecentSessionsCard() {
     final sessionEntries = _progress.sessionHistory.entries.toList()
       ..sort((a, b) => b.key.compareTo(a.key));
-
     final recentSessions = sessionEntries.take(3).toList();
-
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -400,7 +360,6 @@ class _ProgressScreenState extends State<ProgressScreen>
                   final session = recentSessions[index];
                   final date = session.key;
                   final duration = session.value;
-
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
@@ -431,17 +390,10 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildMoodTab() {
     final moodData = _progressService.getMoodDataForLastDays(30);
-
-    // Debug: Log mood data
-    debugPrint('[ProgressScreen] Mood data for last 30 days: ${moodData.length} entries');
     if (moodData.isNotEmpty) {
-      debugPrint('[ProgressScreen] First entry: ${moodData.first.key} -> ${moodData.first.value}');
-      debugPrint('[ProgressScreen] Last entry: ${moodData.last.key} -> ${moodData.last.value}');
     }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -497,14 +449,12 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildMoodChart(List<MapEntry<DateTime, int>> moodData) {
     if (moodData.isEmpty) {
       return const Center(
         child: Text('No mood data available'),
       );
     }
-
     return SizedBox(
       height: 280,
       child: CustomPaint(
@@ -513,7 +463,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildMoodInsightsCard() {
     return Card(
       elevation: 2,
@@ -556,7 +505,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildInsightItem(String text, IconData icon, Color color) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -574,12 +522,9 @@ class _ProgressScreenState extends State<ProgressScreen>
       ],
     );
   }
-
   Widget _buildTasksTab() {
-    // Show pending tasks first, then completed ones
     final pendingTasks = _tasks.where((task) => !task.isCompleted).toList();
     final completedTasks = _tasks.where((task) => task.isCompleted).toList();
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -631,7 +576,6 @@ class _ProgressScreenState extends State<ProgressScreen>
                 )
               : Column(
                   children: [
-                    // Pending tasks
                     if (pendingTasks.isNotEmpty) ...[
                       const Align(
                         alignment: Alignment.centerLeft,
@@ -648,8 +592,6 @@ class _ProgressScreenState extends State<ProgressScreen>
                       ...pendingTasks.map((task) => _buildTaskCard(task)),
                       const SizedBox(height: 16),
                     ],
-
-                    // Completed tasks
                     if (completedTasks.isNotEmpty) ...[
                       const Align(
                         alignment: Alignment.centerLeft,
@@ -671,7 +613,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
     );
   }
-
   Widget _buildTaskCard(UserTask task) {
     return Card(
       elevation: 2,
@@ -733,47 +674,29 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 }
-
-/// Custom painter for mood wave chart
 class MoodWavePainter extends CustomPainter {
   final List<MapEntry<DateTime, int>> moodData;
-
   MoodWavePainter(this.moodData);
-
   @override
   void paint(Canvas canvas, Size size) {
     if (moodData.isEmpty) return;
-
     const double padding = 40.0;
     const double topPadding = 20.0;
     const double bottomPadding = 30.0;
     final double chartHeight = size.height - topPadding - bottomPadding;
     final double chartWidth = size.width - padding * 2;
-
-    // Draw Y-axis labels
     _drawYAxisLabels(canvas, padding, topPadding, chartHeight);
-
-    // Calculate data points
     final points = _calculatePoints(
       chartWidth,
       chartHeight,
       padding,
       topPadding,
     );
-
-    // Draw gradient fill under the wave
     _drawGradientFill(canvas, points, size, topPadding, chartHeight);
-
-    // Draw the smooth wave line
     _drawWaveLine(canvas, points);
-
-    // Draw emoji mood markers
     _drawMoodEmojis(canvas, points);
-
-    // Draw X-axis date labels
     _drawXAxisLabels(canvas, points, size.height - 15);
   }
-
   List<Offset> _calculatePoints(
     double chartWidth,
     double chartHeight,
@@ -781,45 +704,26 @@ class MoodWavePainter extends CustomPainter {
     double topPadding,
   ) {
     final points = <Offset>[];
-
-    // Limit to last 30 days for better visualization
     final displayData = moodData.length > 30
         ? moodData.sublist(moodData.length - 30)
         : moodData;
-
     final int displayCount = displayData.length;
-
     for (int i = 0; i < displayCount; i++) {
       final x = padding + (i / (displayCount - 1)) * chartWidth;
-
-      // Map mood index to Y position based on emotional valence
-      // Mood indices: 0=happy, 1=neutral, 2=sad, 3=anxious, 4=angry, 5=stressed
       final moodIndex = displayData[i].value;
-
-      // Map moods to emotional ranges:
-      // - Happy (0) → High (0-20% from top)
-      // - Neutral (1) → Middle (40-60%)
-      // - Sad, Anxious, Angry, Stressed (2-5) → Low (70-100% from top)
       double normalizedY;
       if (moodIndex == 0) {
-        // Happy - at the top
         normalizedY = 0.1;
       } else if (moodIndex == 1) {
-        // Neutral - in the middle
         normalizedY = 0.5;
       } else {
-        // Sad, Anxious, Angry, Stressed - in the low range
-        // Map 2-5 to 0.7-1.0 range
         normalizedY = 0.7 + ((moodIndex - 2) / 3.0) * 0.3;
       }
-
       final y = topPadding + normalizedY * chartHeight;
       points.add(Offset(x, y));
     }
-
     return points;
   }
-
   void _drawYAxisLabels(
     Canvas canvas,
     double padding,
@@ -829,13 +733,11 @@ class MoodWavePainter extends CustomPainter {
     final textPainter = TextPainter(
       textDirection: ui.TextDirection.ltr,
     );
-
     final labels = [
       ('High', topPadding),
       ('Neutral', topPadding + chartHeight / 2),
       ('Low', topPadding + chartHeight),
     ];
-
     for (final (label, y) in labels) {
       textPainter.text = TextSpan(
         text: label,
@@ -851,7 +753,6 @@ class MoodWavePainter extends CustomPainter {
       );
     }
   }
-
   void _drawGradientFill(
     Canvas canvas,
     List<Offset> points,
@@ -860,17 +761,13 @@ class MoodWavePainter extends CustomPainter {
     double chartHeight,
   ) {
     if (points.isEmpty) return;
-
     final path = Path();
     path.moveTo(points.first.dx, size.height - 30);
-
     for (final point in points) {
       path.lineTo(point.dx, point.dy);
     }
-
     path.lineTo(points.last.dx, size.height - 30);
     path.close();
-
     final gradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -880,23 +777,17 @@ class MoodWavePainter extends CustomPainter {
         Colors.red.withValues(alpha: 0.1),
       ],
     );
-
     final paint = Paint()
       ..shader = gradient.createShader(
         Rect.fromLTWH(0, topPadding, size.width, chartHeight),
       )
       ..style = PaintingStyle.fill;
-
     canvas.drawPath(path, paint);
   }
-
   void _drawWaveLine(Canvas canvas, List<Offset> points) {
     if (points.length < 2) return;
-
     final path = Path();
     path.moveTo(points[0].dx, points[0].dy);
-
-    // Create smooth curve using quadratic bezier curves
     for (int i = 0; i < points.length - 1; i++) {
       final p0 = points[i];
       final p1 = points[i + 1];
@@ -907,46 +798,34 @@ class MoodWavePainter extends CustomPainter {
       path.quadraticBezierTo(p0.dx, p0.dy, controlPoint.dx, controlPoint.dy);
     }
     path.lineTo(points.last.dx, points.last.dy);
-
     final paint = Paint()
       ..color = Colors.blue.shade700
       ..strokeWidth = 3.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
-
     canvas.drawPath(path, paint);
   }
-
   void _drawMoodEmojis(Canvas canvas, List<Offset> points) {
     final textPainter = TextPainter(
       textDirection: ui.TextDirection.ltr,
     );
-
-    // Only show emoji every few points to avoid crowding
     final step = points.length > 10 ? (points.length / 7).ceil() : 1;
-
     for (int i = 0; i < points.length; i += step) {
       final point = points[i];
       final moodIndex = moodData.length > 30
           ? moodData[moodData.length - 30 + i].value
           : moodData[i].value;
-
       if (moodIndex >= 0 && moodIndex < Mood.values.length) {
         final mood = Mood.values[moodIndex];
-
         textPainter.text = TextSpan(
           text: mood.emoji,
           style: const TextStyle(fontSize: 20),
         );
         textPainter.layout();
-
-        // Draw white circle background
         final circlePaint = Paint()
           ..color = Colors.white
           ..style = PaintingStyle.fill;
         canvas.drawCircle(point, 14, circlePaint);
-
-        // Draw emoji
         textPainter.paint(
           canvas,
           Offset(
@@ -957,28 +836,21 @@ class MoodWavePainter extends CustomPainter {
       }
     }
   }
-
   void _drawXAxisLabels(Canvas canvas, List<Offset> points, double y) {
     final textPainter = TextPainter(
       textDirection: ui.TextDirection.ltr,
     );
-
-    // Show date labels for first, middle, and last points
     final indices = points.length > 3
         ? [0, points.length ~/ 2, points.length - 1]
         : [0, points.length - 1];
-
     for (final i in indices) {
       if (i >= points.length) continue;
-
       final dataIndex = moodData.length > 30
           ? moodData.length - 30 + i
           : i;
-
       if (dataIndex >= 0 && dataIndex < moodData.length) {
         final date = moodData[dataIndex].key;
         final dateStr = '${date.month}/${date.day}';
-
         textPainter.text = TextSpan(
           text: dateStr,
           style: const TextStyle(
@@ -987,7 +859,6 @@ class MoodWavePainter extends CustomPainter {
           ),
         );
         textPainter.layout();
-
         textPainter.paint(
           canvas,
           Offset(
@@ -998,7 +869,6 @@ class MoodWavePainter extends CustomPainter {
       }
     }
   }
-
   @override
   bool shouldRepaint(MoodWavePainter oldDelegate) {
     return oldDelegate.moodData != moodData;

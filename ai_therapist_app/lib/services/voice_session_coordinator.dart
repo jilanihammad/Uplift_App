@@ -1,5 +1,4 @@
 // lib/services/voice_session_coordinator.dart
-
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
@@ -14,34 +13,15 @@ import 'voice_service.dart';
 import 'auto_listening_coordinator.dart' show AutoListeningState;
 import 'auto_listening_snapshot_source.dart';
 import '../config/llm_config.dart';
-// Future enhancement: Direct AutoListeningCoordinator integration
-// import 'vad_manager.dart';
-
-/// Coordinates voice session workflow by orchestrating focused audio services
-/// Acts as a facade implementing IVoiceService while delegating to specialized services
-///
-/// Phase 6 Enhancement: Extended IVoiceService implementation
-/// - Added stopAudio(), resetTTSState(), isTtsActuallySpeaking stream
-/// - Added processRecordedAudioFile(), setSpeakerMuted()
-/// - Added enableAutoMode(), disableAutoMode()
-/// - Smart delegation to legacy VoiceService for unimplemented features
 class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
   final IAudioRecordingService _recordingService;
   final ITTSService _ttsService;
   final IWebSocketAudioManager _wsManager;
   final IAudioFileManager _fileManager;
-
-  // Future enhancement: Direct AutoListeningCoordinator integration
-  // late final AutoListeningCoordinator _autoListening;
-  // late final VADManager _vadManager;
-
   bool _isInitialized = false;
   String? _currentSessionId;
-
-  // Stream controllers for coordination
   final StreamController<double> _audioLevelController =
       StreamController<double>.broadcast();
-
   VoiceSessionCoordinator({
     required IAudioRecordingService recordingService,
     required ITTSService ttsService,
@@ -51,159 +31,94 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
         _ttsService = ttsService,
         _wsManager = wsManager,
         _fileManager = fileManager {
-    _initializeCoordinator();
   }
-
-  void _initializeCoordinator() {
-    // Future enhancement: Initialize VAD manager and auto-listening coordinator
-    // _vadManager = VADManager();
-    // _autoListening = AutoListeningCoordinator(...);
-
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Initialized with focused services');
-    }
-  }
-
   // ========== IVoiceService Interface Implementation ==========
-
   @override
   bool get isRecording => _recordingService.isRecording;
-
   @override
   bool get isInitialized => _isInitialized;
-
   @override
   Stream<double> get audioLevelStream => _recordingService.audioLevelStream;
-
   @override
   Future<void> startRecording() async {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Starting recording...');
-    }
     await _recordingService.startRecording();
   }
-
   @override
   Future<String> stopRecording() async {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Stopping recording...');
-    }
     return await _recordingService.stopRecording();
   }
-
   @override
   Future<String?> tryStopRecording() async {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] Trying to stop recording (idempotent)...');
-    }
     return await _recordingService.tryStopRecording();
   }
-
   @override
   Future<void> pauseRecording() async {
     await _recordingService.pauseRecording();
   }
-
   @override
   Future<void> resumeRecording() async {
     await _recordingService.resumeRecording();
   }
-
   @override
   Future<void> cancelRecording() async {
     await _recordingService.cancelRecording();
   }
-
   @override
   Future<void> playAudio(String audioPath) async {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Playing audio: $audioPath');
-    }
     await _ttsService.playAudio(audioPath);
   }
-
   @override
   Future<void> stopPlayback() async {
     await _ttsService.stopAudio();
   }
-
   @override
   Future<void> pausePlayback() async {
     await _ttsService.pauseAudio();
   }
-
   @override
   Future<void> resumePlayback() async {
     await _ttsService.resumeAudio();
   }
-
   @override
   bool get isPlaying => _ttsService.isPlaying;
-
   @override
   bool get hasPendingOrActiveTts => _ttsService.hasPendingOrActiveTts;
-
   @override
   Future<String> generateSpeech(String text, {String? voice}) async {
     final selectedVoice = voice ?? LLMConfig.activeTTSVoice;
     return await _ttsService.generateSpeech(text, voice: selectedVoice);
   }
-
   @override
   Future<void> speakText(String text, {String? voice}) async {
     final selectedVoice = voice ?? LLMConfig.activeTTSVoice;
     await _ttsService.speak(text, voice: selectedVoice, makeBackupFile: false);
   }
-
   @override
   Future<void> stopSpeaking() async {
     await _ttsService.stopAudio();
   }
-
   @override
   Future<void> stopAudio() async {
     await _ttsService.stopAudio();
   }
-
   @override
   Future<Uint8List?> processAudioWithRNNoise(Uint8List audioData) async {
-    // This would need to be implemented based on RNNoise integration
-    // For now, return the audio data unchanged
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] RNNoise processing not yet implemented');
-    }
     return audioData;
   }
-
   @override
   Future<String> processRecordedAudioFile(String audioPath) async {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] Processing recorded audio file: $audioPath');
-    }
-    // For now, delegate to legacy VoiceService until we implement transcription
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
         final legacyVoiceService = serviceLocator<VoiceService>();
         return await legacyVoiceService.processRecordedAudioFile(audioPath);
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionCoordinator] Error delegating to legacy service: $e');
-      }
-    }
-
+    } catch (e) {}
     throw UnimplementedError(
         'Audio transcription not yet implemented in VoiceSessionCoordinator');
   }
-
   @override
   void setSpeakerMuted(bool isMuted) {
-    // For now, delegate to legacy VoiceService until we implement muting
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
@@ -211,310 +126,162 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
         legacyVoiceService.setSpeakerMuted(isMuted);
         return;
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionCoordinator] Error delegating setSpeakerMuted: $e');
-      }
-    }
-
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] Speaker muting not yet implemented');
-    }
+    } catch (e) {}
   }
-
   @override
   Future<void> connectToBackend() async {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Connecting to backend...');
-    }
     await _wsManager.connectToBackend();
   }
-
   @override
   Future<void> disconnectFromBackend() async {
     await _wsManager.disconnectFromBackend();
   }
-
   @override
   Future<void> streamAudio(Uint8List audioData) async {
     await _wsManager.streamAudio(audioData);
   }
-
   @override
   bool get isConnectedToBackend => _wsManager.isConnected;
-
   @override
   Future<void> startSession(String sessionId) async {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Starting session: $sessionId');
-    }
     _currentSessionId = sessionId;
     await _wsManager.startSession(sessionId);
   }
-
   @override
   Future<void> endSession() async {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] Ending session: $_currentSessionId');
-    }
     if (_currentSessionId != null) {
       await _wsManager.endSession();
       _currentSessionId = null;
     }
   }
-
   @override
   String? get currentSessionId => _currentSessionId;
-
   @override
   void setAudioQuality(String quality) {
     _recordingService.setAudioQuality(quality);
-    // Also configure TTS quality if needed
     _ttsService.setAudioFormat(quality);
   }
-
   @override
   void setVoiceSettings(Map<String, dynamic> settings) {
     final voice = settings['voice'] as String? ?? 'alloy';
     final speed = settings['speed'] as double? ?? 1.0;
     final pitch = settings['pitch'] as double? ?? 1.0;
-
     _ttsService.setVoiceSettings(voice, speed, pitch);
   }
-
   @override
   void updateTTSSpeakingState(bool isSpeaking, {int? playbackToken}) {
-    // Phase 2.2.5: Removed duplicate TTS logging - VoiceSessionBloc logs this
-
-    // For now, try to coordinate with legacy VoiceService AutoListeningCoordinator if available
-    // Future enhancement: Integrate direct AutoListeningCoordinator
     try {
-      // Import at runtime to avoid circular dependency
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
         final legacyVoiceService = serviceLocator<VoiceService>();
-
         // CRITICAL FIX: Update legacy TTS state so streams stay consistent
         legacyVoiceService.updateTTSSpeakingState(isSpeaking,
             playbackToken: playbackToken);
-
-        // Use the legacy coordination logic for TTS-VAD timing
-        // Phase 2.2.5: Removed verbose VAD coordination logging
       } else {
-        if (kDebugMode) {
-          debugPrint(
-              'VoiceSessionCoordinator: Legacy VoiceService not available, VAD coordination skipped');
-        }
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-            'VoiceSessionCoordinator: Error coordinating with legacy AutoListeningCoordinator: $e');
-      }
-    }
+    } catch (e) {}
   }
-
   @override
   Future<void> initialize() async {
     if (_isInitialized) {
-      if (kDebugMode) {
-        debugPrint('[VoiceSessionCoordinator] Already initialized');
-      }
       return;
     }
-
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Initializing all services...');
-    }
-
     try {
-      // Initialize all services in parallel
       await Future.wait([
         _recordingService.initialize(),
         _ttsService.initialize(),
         _wsManager.initialize(),
         _fileManager.initialize(),
       ]);
-
       _isInitialized = true;
-
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionCoordinator] All services initialized successfully');
-      }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[VoiceSessionCoordinator] Initialization failed: $e');
-      }
       rethrow;
     }
   }
-
   @override
   Future<void> initializeOnlyIfNeeded() async {
     if (!_isInitialized) {
       await initialize();
     }
   }
-
-  // IVoiceService dispose implementation (sync)
   @override
   void dispose() {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] Disposing all services...');
-    }
-
-    // Dispose all services synchronously (centralize teardown in VoiceSessionBloc)
     // IMPORTANT: Do not dispose the app-scoped WebSocketAudioManager here.
-    // Disposing it would mark the singleton as permanently disposed, breaking
-    // subsequent sessions. Instead, attempt to gracefully end any active
-    // session and disconnect without disposing the singleton instance.
-    // Delegate stop/reset/cleanup responsibilities to VoiceSessionBloc's centralized teardown.
-    // Only ensure network session is ended and connection dropped to avoid lingering sockets.
     try {
-      // Fire-and-forget since dispose() is sync
       _wsManager.endSession();
     } catch (_) {}
     try {
       _wsManager.disconnectFromBackend();
     } catch (_) {}
-
-    // Close stream controllers (fire and forget)
     _audioLevelController.close();
-
     _isInitialized = false;
-
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionCoordinator] All services disposed');
-    }
-
-    // Call parent dispose
     super.dispose();
   }
-
   @override
   void performDisposal() {
-    // Additional async cleanup if needed - don't duplicate sync work
-    // This is called by the parent dispose method after sync disposal
   }
-
   @override
   Future<void> cleanupTempFiles() async {
     await _fileManager.cleanupTempFiles();
   }
-
   @override
   Future<String> getAudioUrl(String audioPath) async {
-    // Check if it's already a URL
     if (audioPath.startsWith('http')) {
       return audioPath;
     }
-
-    // Check if file exists locally
     if (await _fileManager.fileExists(audioPath)) {
       return audioPath; // Return local path
     }
-
-    // File doesn't exist
     throw Exception('Audio file not found: $audioPath');
   }
-
   // ========== Additional Coordination Methods ==========
-
-  /// Stream and play TTS with proper timing coordination (preserves 125ms buffer)
   Future<void> streamAndPlayTTS(
     String text, {
     void Function()? onDone,
     void Function(String)? onError,
     void Function(double)? onProgress,
   }) async {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] TTS with timing coordination (simplified API)');
-    }
-
     try {
-      // Use new simplified API
       await _ttsService.speak(text, makeBackupFile: false);
-
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionCoordinator] TTS completed, coordinating with auto-listening');
-      }
-
       if (onDone != null) onDone();
     } catch (e) {
       if (onError != null) onError(e.toString());
     }
   }
-
   VoiceService? _resolveLegacyVoiceService() {
     try {
       final serviceLocator = GetIt.instance;
       if (serviceLocator.isRegistered<VoiceService>()) {
         return serviceLocator<VoiceService>();
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionCoordinator] Error resolving legacy VoiceService: $e');
-      }
-    }
+    } catch (e) {}
     return null;
   }
-
   @override
   Future<void> enableAutoMode() async {
     final legacyVoiceService = _resolveLegacyVoiceService();
     if (legacyVoiceService != null) {
-      if (kDebugMode) {
-        debugPrint('[VoiceSessionCoordinator] Enabling auto-listening mode');
-      }
       await legacyVoiceService.enableAutoMode();
       return;
     }
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] Auto-listening not yet implemented');
-    }
   }
-
   @override
   Future<void> disableAutoMode() async {
     final legacyVoiceService = _resolveLegacyVoiceService();
     if (legacyVoiceService != null) {
-      if (kDebugMode) {
-        debugPrint('[VoiceSessionCoordinator] Disabling auto-listening mode');
-      }
       await legacyVoiceService.disableAutoMode();
       return;
     }
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] Auto-listening not yet implemented');
-    }
   }
-
-  /// Get recording state stream from recording service
   Stream<RecordingState> get recordingStateStream =>
       _recordingService.recordingStateStream;
-
-  /// Get TTS speaking state stream
   @override
   Stream<bool> get isTtsActuallySpeaking => _ttsService.speakingStateStream;
-
-  /// Get audio playback state stream
   Stream<bool> get audioPlaybackStream => _ttsService.playbackStateStream;
-
-  /// Reset TTS state
   @override
   void resetTTSState() {
     _ttsService.resetTTSState();
   }
-
   @override
   Future<void> initializeAutoListening() async {
     final legacyVoiceService = _resolveLegacyVoiceService();
@@ -522,69 +289,55 @@ class VoiceSessionCoordinator with SessionDisposable implements IVoiceService {
       await legacyVoiceService.initializeAutoListening();
       return;
     }
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionCoordinator] Auto-listening initialization not yet available');
-    }
   }
-
   @override
   void resetAutoListening({bool full = false, bool? preserveAutoMode}) {
     final legacyVoiceService = _resolveLegacyVoiceService();
     legacyVoiceService?.resetAutoListening(
         full: full, preserveAutoMode: preserveAutoMode);
   }
-
   @override
   void setAutoListeningRecordingCallback(
       void Function(String audioPath)? callback) {
     final legacyVoiceService = _resolveLegacyVoiceService();
     legacyVoiceService?.setAutoListeningRecordingCallback(callback);
   }
-
   @override
   void setAutoListeningTtsActivityStream(Stream<bool> stream) {
     final legacyVoiceService = _resolveLegacyVoiceService();
     legacyVoiceService?.setAutoListeningTtsActivityStream(stream);
   }
-
   @override
   AutoListeningState get autoListeningState {
     final legacyVoiceService = _resolveLegacyVoiceService();
     return legacyVoiceService?.autoListeningState ?? AutoListeningState.idle;
   }
-
   @override
   Stream<AutoListeningState> get autoListeningStateStream {
     final legacyVoiceService = _resolveLegacyVoiceService();
     return legacyVoiceService?.autoListeningStateStream ?? const Stream.empty();
   }
-
   @override
   Stream<bool> get autoListeningModeEnabledStream {
     final legacyVoiceService = _resolveLegacyVoiceService();
     return legacyVoiceService?.autoListeningModeEnabledStream ??
         const Stream.empty();
   }
-
   @override
   bool get isAutoModeEnabled {
     final legacyVoiceService = _resolveLegacyVoiceService();
     return legacyVoiceService?.isAutoModeEnabled ?? false;
   }
-
   @override
   AutoListeningSnapshotSource? get autoListeningSnapshotSource {
     final legacyVoiceService = _resolveLegacyVoiceService();
     return legacyVoiceService?.autoListeningSnapshotSource;
   }
-
   @override
   dynamic get autoListeningVadManager {
     final legacyVoiceService = _resolveLegacyVoiceService();
     return legacyVoiceService?.autoListeningVadManager;
   }
-
   @override
   void triggerListening() {
     final legacyVoiceService = _resolveLegacyVoiceService();

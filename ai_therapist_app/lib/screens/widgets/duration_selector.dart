@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
-
 class DurationSelector extends StatelessWidget {
   final int? selectedDuration;
   final void Function(int) onDurationSelected;
-
   const DurationSelector({
     super.key,
     this.selectedDuration,
     required this.onDurationSelected,
   });
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -53,7 +50,6 @@ class DurationSelector extends StatelessWidget {
       ),
     );
   }
-
   Widget _buildDurationButton(BuildContext context, int minutes) {
     final isSelected = selectedDuration == minutes;
     return Container(

@@ -4,40 +4,33 @@ import 'package:go_router/go_router.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_bloc.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
-
 class PhoneLoginScreen extends StatefulWidget {
   const PhoneLoginScreen({super.key});
-
   @override
   State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
 }
-
 class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   final _phoneController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   String? _verificationId;
   String _phoneNumber = '';
-
   @override
   void dispose() {
     _phoneController.dispose();
     super.dispose();
   }
-
   Future<void> _verifyPhoneNumber() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
         _phoneNumber = _phoneController.text;
       });
-
       context.read<AuthBloc>().add(
             PhoneVerificationEvent(phoneNumber: _phoneNumber),
           );
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
@@ -51,16 +44,12 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
             _isLoading = false;
           });
         }
-
         if (state is AuthAuthenticated) {
-          // Navigate to home screen when authenticated
           context.go('/home');
         } else if (state is PhoneCodeSent) {
           _verificationId = state.verificationId;
-          // Show OTP entry dialog
           _showOtpDialog(context);
         } else if (state is AuthError) {
-          // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(state.message)),
           );
@@ -108,7 +97,6 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your phone number';
                     }
-                    // E.164 format: + followed by 7-15 digits
                     final cleaned = value.replaceAll(RegExp(r'[\s\-\(\)]'), '');
                     if (!RegExp(r'^\+[1-9]\d{6,14}$').hasMatch(cleaned)) {
                       return 'Enter a valid phone number (e.g. +1234567890)';
@@ -135,11 +123,9 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       ),
     );
   }
-
   void _showOtpDialog(BuildContext context) {
     final otpController = TextEditingController();
     bool isVerifying = false;
-
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -181,15 +167,12 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                           setState(() {
                             isVerifying = true;
                           });
-
-                          // Verify OTP
                           context.read<AuthBloc>().add(
                                 PhoneCodeSubmitEvent(
                                   verificationId: _verificationId!,
                                   smsCode: otpController.text,
                                 ),
                               );
-
                           Navigator.pop(context);
                         }
                       },

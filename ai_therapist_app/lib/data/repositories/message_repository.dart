@@ -7,22 +7,17 @@ import '../../di/interfaces/i_app_database.dart';
 import 'dart:collection';
 import '../../services/user_context_service.dart';
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
 class MessageRepository implements IMessageRepository {
   final IApiClient apiClient;
   final IAppDatabase appDatabase;
   final UserContextService userContextService;
-
-  // Queue to hold unsent messages for batching
   final Queue<Map<String, dynamic>> _messageQueue =
       Queue<Map<String, dynamic>>();
-
   MessageRepository({
     required this.apiClient,
     required this.appDatabase,
     required this.userContextService,
   });
-
   String _requireUserId(String operation) {
     final userId = userContextService.getSignedInUserId(operation: operation);
     if (userId == null || userId.isEmpty) {
@@ -32,15 +27,11 @@ class MessageRepository implements IMessageRepository {
     }
     return userId;
   }
-
-  // Send a message
   @override
   Future<Message> sendMessage(String sessionId, String content) async {
     final userId = _requireUserId('MessageRepository.sendMessage');
     final now = DateTime.now();
     final String localId = 'local_${now.millisecondsSinceEpoch}';
-
-    // Save user message to local database first
     await appDatabase.insert('messages', {
       'id': localId,
       'session_id': sessionId,
@@ -50,9 +41,7 @@ class MessageRepository implements IMessageRepository {
       'timestamp': now.toIso8601String(),
       'is_synced': 0,
     });
-
     try {
-      // Prepare message data
       final messageData = {
         'content': content,
         'is_user': true,
@@ -60,11 +49,7 @@ class MessageRepository implements IMessageRepository {
         'local_id': localId,
         'user_id': userId,
       };
-
-      // Add to message queue for batch sending
       _messageQueue.add(messageData);
-
-      // For immediate response, create a local message
       return Message(
         id: localId,
         sessionId: sessionId,
@@ -75,7 +60,6 @@ class MessageRepository implements IMessageRepository {
       );
     } catch (e) {
       logger.error('Error queueing message: $e');
-      // Return local message if error
       return Message(
         id: localId,
         sessionId: sessionId,
@@ -86,8 +70,6 @@ class MessageRepository implements IMessageRepository {
       );
     }
   }
-
-  // Send all queued messages in a batch
   @override
   Future<bool> sendQueuedMessages(String sessionId) async {
     final userId = userContextService.getSignedInUserId(
@@ -104,30 +86,20 @@ class MessageRepository implements IMessageRepository {
       logger.debug('No messages queued for batch sending');
       return true;
     }
-
     logger.debug(
         'Sending batch of ${_messageQueue.length} messages for session $sessionId');
-
     try {
-      // Convert queue to list for the API call
       final List<Map<String, dynamic>> messages = List.from(_messageQueue);
-
-      // Send batch request to server
       final response = await apiClient.post(
         '/sessions/$sessionId/messages/batch',
         {'messages': messages},
       );
-
-      // Mark messages as synced in the database
       for (int i = 0; i < messages.length; i++) {
         final message = messages[i];
         final localId = message['local_id'];
-
         if (response['message_ids'] != null &&
             i < response['message_ids'].length) {
           final serverId = response['message_ids'][i];
-
-          // Update local database with server ID
           await appDatabase.update(
             'messages',
             {
@@ -139,8 +111,6 @@ class MessageRepository implements IMessageRepository {
           );
         }
       }
-
-      // Clear the queue after successful sync
       _messageQueue.clear();
       return true;
     } on AuthRequiredException catch (e) {
@@ -159,28 +129,21 @@ class MessageRepository implements IMessageRepository {
         );
         return false;
       }
-
       logger.error('Error sending batch messages: $e');
       return false;
     }
   }
-
-  // Get response from AI
   @override
   Future<Message> getAiResponse(String sessionId, String userMessage) async {
     final userId = _requireUserId('MessageRepository.getAiResponse');
     try {
-      // Get AI response from server
       final response = await apiClient.post(
         '/api/v1/sessions/$sessionId/ai-response',
         {
           'user_message': userMessage,
         },
       );
-
       final message = Message.fromJson(response);
-
-      // Save AI response to local database
       await appDatabase.insert('messages', {
         'id': message.id,
         'session_id': sessionId,
@@ -190,16 +153,13 @@ class MessageRepository implements IMessageRepository {
         'timestamp': message.timestamp.toIso8601String(),
         'is_synced': 1,
       });
-
       return message;
     } catch (e) {
-      // Generate a simple local response if API call fails
       final now = DateTime.now();
       final String localId = 'local_ai_${now.millisecondsSinceEpoch}';
       const String fallbackResponse =
           "I'm having trouble connecting to the server. "
           "Can you tell me more about how you're feeling?";
-
       await appDatabase.insert('messages', {
         'id': localId,
         'session_id': sessionId,
@@ -209,7 +169,6 @@ class MessageRepository implements IMessageRepository {
         'timestamp': now.toIso8601String(),
         'is_synced': 0,
       });
-
       return Message(
         id: localId,
         sessionId: sessionId,
@@ -220,8 +179,6 @@ class MessageRepository implements IMessageRepository {
       );
     }
   }
-
-  // Get messages for a session
   @override
   Future<List<Message>> getSessionMessages(String sessionId) async {
     final userId = userContextService.getSignedInUserId(
@@ -231,16 +188,12 @@ class MessageRepository implements IMessageRepository {
       return const <Message>[];
     }
     try {
-      // Try to get messages from server
       final response =
           await apiClient.get('/api/v1/sessions/$sessionId/messages');
       final List<dynamic> messagesJson =
           response['data'] ?? response['messages'] ?? response;
-
       final messages =
           messagesJson.map((json) => Message.fromJson(json)).toList();
-
-      // Update local database
       for (final message in messages) {
         await appDatabase.insert('messages', {
           'id': message.id,
@@ -252,17 +205,14 @@ class MessageRepository implements IMessageRepository {
           'is_synced': 1,
         });
       }
-
       return messages;
     } catch (e) {
-      // Get messages from local database if API call fails
       final results = await appDatabase.query(
         'messages',
         where: 'session_id = ? AND user_id = ?',
         whereArgs: [sessionId, userId],
         orderBy: 'timestamp ASC',
       );
-
       return results
           .map((data) => Message(
                 id: data['id'] as String,

@@ -1,5 +1,4 @@
 // lib/services/audio_file_manager.dart
-
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -7,169 +6,95 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import '../di/interfaces/i_audio_file_manager.dart';
 import 'path_manager.dart';
-
-/// File cleanup manager to prevent race conditions from multiple deletion attempts
-/// Extracted from VoiceService to maintain existing safety mechanisms
 class FileCleanupManager {
   static final Set<String> _deletingFiles = <String>{};
-
-  /// Safely delete a file, preventing race conditions from multiple deletion attempts
   static Future<void> safeDelete(String filePath) async {
     if (_deletingFiles.contains(filePath)) {
-      if (kDebugMode) {
-        debugPrint('🗑️ File deletion already in progress for: $filePath');
-      }
       return;
     }
-
     _deletingFiles.add(filePath);
     try {
       final file = File(filePath);
       if (await file.exists()) {
         await file.delete();
-        if (kDebugMode) {
-          debugPrint('🗑️ Successfully deleted file: $filePath');
-        }
       } else {
-        if (kDebugMode) {
-          debugPrint('🗑️ File already deleted: $filePath');
-        }
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('🗑️ Error deleting file $filePath: $e');
-      }
     } finally {
       _deletingFiles.remove(filePath);
     }
   }
 }
-
-/// Audio file manager implementation
-/// Handles file operations, caching, and cleanup for audio files
 class AudioFileManager implements IAudioFileManager {
-  // Stream controllers for events
   final StreamController<String> _fileDeletedController =
       StreamController<String>.broadcast();
   final StreamController<String> _fileCachedController =
       StreamController<String>.broadcast();
-
-  // Cache management
   final Map<String, String> _urlToPathCache = {};
   final Map<String, DateTime> _cacheTimestamps = {};
-
-  // Configuration
   static const List<String> _supportedFormats = ['wav', 'mp3', 'ogg', 'm4a'];
-
-  // Self-initializing pattern: start initialization immediately in constructor
   late final Future<void> _initFuture;
   bool _initialized = false;
-
-  // Constructor kicks off initialization immediately
   AudioFileManager() {
     _initFuture = _realInit();
   }
-
   @override
   Stream<String> get fileDeletedStream => _fileDeletedController.stream;
-
   @override
   Stream<String> get fileCachedStream => _fileCachedController.stream;
-
   @override
   Future<void> initialize() =>
       _initFuture; // Idempotent - just returns the same Future
-
-  // Private method that does the actual initialization work
   Future<void> _realInit() async {
     if (_initialized) return;
-
     try {
-      // Initialize PathManager if not already done
       await PathManager.instance.init();
-
-      // Create cache directories (use PathManager directly to avoid circular dependency)
       final cacheDir = p.join(PathManager.instance.cacheDir, 'audio_cache');
       final tempDir = p.join(PathManager.instance.cacheDir, 'temp');
       await _ensureDirectoryExists(cacheDir);
       await _ensureDirectoryExists(tempDir);
-
-      if (kDebugMode) {
-        debugPrint('🎵 AudioFileManager initialized successfully');
-      }
-
       _initialized = true;
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ AudioFileManager initialization error: $e');
-      }
       rethrow;
     }
   }
-
   @override
   Future<String> saveAudioFile(Uint8List data,
       {String? fileName, String? extension}) async {
     _ensureInitialized();
-
     if (data.isEmpty) {
       throw ArgumentError('Audio data cannot be empty');
     }
-
     final ext = extension ?? 'wav';
     if (!_supportedFormats.contains(ext.toLowerCase())) {
       throw ArgumentError('Unsupported audio format: $ext');
     }
-
     final name = fileName ?? generateTempFileName(ext);
     final filePath = await getAudioFilePath(name);
-
     try {
       final file = File(filePath);
       await file.writeAsBytes(data);
-
-      if (kDebugMode) {
-        debugPrint('💾 Saved audio file: $filePath (${data.length} bytes)');
-      }
-
       return filePath;
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error saving audio file: $e');
-      }
       rethrow;
     }
   }
-
   @override
   Future<String?> downloadAndCacheAudio(String url) async {
     _ensureInitialized();
-
     if (url.isEmpty) {
       throw ArgumentError('URL cannot be empty');
     }
-
-    // Check if already cached
     final cachedPath = await getCachedAudioPath(url);
     if (cachedPath != null && await fileExists(cachedPath)) {
-      if (kDebugMode) {
-        debugPrint('📂 Using cached audio: $cachedPath');
-      }
       return cachedPath;
     }
-
     try {
       final uri = Uri.parse(url);
       final response = await http.get(uri);
-
       if (response.statusCode != 200) {
-        if (kDebugMode) {
-          debugPrint('❌ Failed to download audio: HTTP ${response.statusCode}');
-        }
         return null;
       }
-
-      // Determine file extension from URL or content-type
       String extension = 'mp3'; // default
       final contentType = response.headers['content-type'];
       if (contentType != null) {
@@ -181,7 +106,6 @@ class AudioFileManager implements IAudioFileManager {
           extension = 'm4a';
         }
       } else {
-        // Try to get extension from URL
         final urlPath = uri.path.toLowerCase();
         for (final format in _supportedFormats) {
           if (urlPath.endsWith('.$format')) {
@@ -190,50 +114,30 @@ class AudioFileManager implements IAudioFileManager {
           }
         }
       }
-
-      // Generate cache file path
       final fileName = 'cached_${_generateUrlHash(url)}.$extension';
       final cacheDir = await getCacheDirectory();
       final filePath = p.join(cacheDir, fileName);
-
-      // Write to cache
       final file = File(filePath);
       await file.writeAsBytes(response.bodyBytes);
-
-      // Update cache tracking
       await cacheAudioFile(url, filePath);
-
-      if (kDebugMode) {
-        debugPrint(
-            '⬇️ Downloaded and cached audio: $filePath (${response.bodyBytes.length} bytes)');
-      }
-
       _fileCachedController.add(filePath);
       return filePath;
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error downloading audio: $e');
-      }
       return null;
     }
   }
-
   @override
   Future<void> cleanupTempFiles() async {
     await _ensureInitialized();
-
     try {
       final tempDirPath = await getTempDirectory();
       final tempDir = Directory(tempDirPath);
       if (!await tempDir.exists()) return;
-
       final entities = await tempDir.list().toList();
       int deletedCount = 0;
-
       for (final entity in entities) {
         if (entity is File) {
           final fileName = p.basename(entity.path);
-          // Clean up temp files (those starting with tts_stream_ or similar patterns)
           if (fileName.startsWith('tts_stream_') ||
               fileName.startsWith('temp_') ||
               fileName.startsWith('audio_temp_')) {
@@ -243,73 +147,43 @@ class AudioFileManager implements IAudioFileManager {
           }
         }
       }
-
-      if (kDebugMode && deletedCount > 0) {
-        debugPrint('🧹 Cleaned up $deletedCount temporary files');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error cleaning temp files: $e');
-      }
-    }
+    } catch (e) {}
   }
-
   @override
   Future<void> cleanupOldFiles(Duration maxAge) async {
     await _ensureInitialized();
-
     try {
       final now = DateTime.now();
       final directories = [await getTempDirectory(), await getCacheDirectory()];
       int deletedCount = 0;
-
       for (final dirPath in directories) {
         final dir = Directory(dirPath);
         if (!await dir.exists()) continue;
-
         final entities = await dir.list().toList();
-
         for (final entity in entities) {
           if (entity is File) {
             final stat = await entity.stat();
             final age = now.difference(stat.modified);
-
             if (age > maxAge) {
               await FileCleanupManager.safeDelete(entity.path);
               _fileDeletedController.add(entity.path);
               deletedCount++;
-
-              // Remove from cache tracking if it was cached
               _removeFromCacheTracking(entity.path);
             }
           }
         }
       }
-
-      if (kDebugMode && deletedCount > 0) {
-        debugPrint(
-            '🧹 Cleaned up $deletedCount old files (older than ${maxAge.inHours}h)');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error cleaning old files: $e');
-      }
-    }
+    } catch (e) {}
   }
-
   @override
   Future<bool> fileExists(String path) async {
     try {
       final file = File(path);
       return await file.exists();
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error checking file existence: $e');
-      }
       return false;
     }
   }
-
   @override
   Future<void> deleteFile(String path) async {
     try {
@@ -317,13 +191,9 @@ class AudioFileManager implements IAudioFileManager {
       _fileDeletedController.add(path);
       _removeFromCacheTracking(path);
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error deleting file: $e');
-      }
       rethrow;
     }
   }
-
   @override
   Future<Uint8List?> readAudioFile(String path) async {
     try {
@@ -331,20 +201,12 @@ class AudioFileManager implements IAudioFileManager {
       if (!await file.exists()) {
         return null;
       }
-
       final bytes = await file.readAsBytes();
-      if (kDebugMode) {
-        debugPrint('📖 Read audio file: $path (${bytes.length} bytes)');
-      }
       return bytes;
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error reading audio file: $e');
-      }
       return null;
     }
   }
-
   @override
   Future<int> getFileSize(String path) async {
     try {
@@ -354,67 +216,49 @@ class AudioFileManager implements IAudioFileManager {
       }
       return await file.length();
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error getting file size: $e');
-      }
       return 0;
     }
   }
-
   @override
   String generateTempFileName(String extension) {
     final timestamp = DateTime.now().microsecondsSinceEpoch;
     final cleanExt = extension.replaceAll(RegExp(r'[./\\]'), '');
     return 'temp_audio_$timestamp.$cleanExt';
   }
-
   @override
   Future<String> getTempDirectory() async {
     await _ensureInitialized();
     return p.join(PathManager.instance.cacheDir, 'temp');
   }
-
   @override
   Future<String> getCacheDirectory() async {
     await _ensureInitialized();
     return p.join(PathManager.instance.cacheDir, 'audio_cache');
   }
-
   @override
   Future<String> getAudioFilePath(String fileName) async {
     await _ensureInitialized();
-
     final sanitizedName = PathManager.instance.sanitizeFileName(fileName);
     final tempDir = await getTempDirectory();
     return p.join(tempDir, sanitizedName);
   }
-
   @override
   Future<void> cacheAudioFile(String url, String localPath) async {
     _urlToPathCache[url] = localPath;
     _cacheTimestamps[url] = DateTime.now();
-
-    if (kDebugMode) {
-      debugPrint('📂 Cached audio mapping: $url -> $localPath');
-    }
   }
-
   @override
   Future<String?> getCachedAudioPath(String url) async {
     final cachedPath = _urlToPathCache[url];
     if (cachedPath != null && await fileExists(cachedPath)) {
       return cachedPath;
     }
-
-    // Remove from cache if file no longer exists
     if (cachedPath != null) {
       _urlToPathCache.remove(url);
       _cacheTimestamps.remove(url);
     }
-
     return null;
   }
-
   @override
   Future<void> clearCache() async {
     try {
@@ -423,7 +267,6 @@ class AudioFileManager implements IAudioFileManager {
       if (await cacheDir.exists()) {
         final entities = await cacheDir.list().toList();
         int deletedCount = 0;
-
         for (final entity in entities) {
           if (entity is File) {
             await FileCleanupManager.safeDelete(entity.path);
@@ -431,30 +274,16 @@ class AudioFileManager implements IAudioFileManager {
             deletedCount++;
           }
         }
-
-        if (kDebugMode) {
-          debugPrint('🧹 Cleared cache: deleted $deletedCount files');
-        }
       }
-
-      // Clear in-memory cache
       _urlToPathCache.clear();
       _cacheTimestamps.clear();
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error clearing cache: $e');
-      }
-    }
+    } catch (e) {}
   }
-
   @override
   Future<String> convertAudioFormat(
       String inputPath, String outputFormat) async {
-    // This is a placeholder implementation - audio format conversion would require
-    // native platform-specific code or FFmpeg integration
     throw UnimplementedError('Audio format conversion not yet implemented');
   }
-
   @override
   Future<bool> isValidAudioFile(String path) async {
     try {
@@ -462,40 +291,28 @@ class AudioFileManager implements IAudioFileManager {
       if (!await file.exists()) {
         return false;
       }
-
-      // Basic validation based on file extension and size
       final extension = p.extension(path).toLowerCase();
       if (!_supportedFormats.any((format) => extension.endsWith(format))) {
         return false;
       }
-
       final size = await file.length();
       if (size == 0) {
         return false;
       }
-
-      // Could add more sophisticated validation here (magic number check, etc.)
       return true;
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error validating audio file: $e');
-      }
       return false;
     }
   }
-
   @override
   Future<int> getTotalCacheSize() async {
     int totalSize = 0;
-
     try {
       final directories = [await getCacheDirectory(), await getTempDirectory()];
-
       for (final dirPath in directories) {
         final dir = Directory(dirPath);
         if (await dir.exists()) {
           final entities = await dir.list().toList();
-
           for (final entity in entities) {
             if (entity is File) {
               final stat = await entity.stat();
@@ -504,38 +321,22 @@ class AudioFileManager implements IAudioFileManager {
           }
         }
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error calculating cache size: $e');
-      }
-    }
-
+    } catch (e) {}
     return totalSize;
   }
-
   @override
   Future<void> limitCacheSize(int maxSizeBytes) async {
     try {
       int currentSize = await getTotalCacheSize();
-
       if (currentSize <= maxSizeBytes) {
         return; // Cache size is within limit
       }
-
-      if (kDebugMode) {
-        debugPrint(
-            '📊 Cache size ${_formatBytes(currentSize)} exceeds limit ${_formatBytes(maxSizeBytes)}, cleaning up...');
-      }
-
-      // Get all cached files with their timestamps
       final List<FileInfo> fileInfos = [];
       final directories = [await getCacheDirectory(), await getTempDirectory()];
-
       for (final dirPath in directories) {
         final dir = Directory(dirPath);
         if (await dir.exists()) {
           final entities = await dir.list().toList();
-
           for (final entity in entities) {
             if (entity is File) {
               final stat = await entity.stat();
@@ -548,100 +349,57 @@ class AudioFileManager implements IAudioFileManager {
           }
         }
       }
-
-      // Sort by last modified (oldest first)
       fileInfos.sort((a, b) => a.lastModified.compareTo(b.lastModified));
-
-      // Delete oldest files until we're under the limit
       int deletedSize = 0;
       int deletedCount = 0;
-
       for (final fileInfo in fileInfos) {
         if (currentSize - deletedSize <= maxSizeBytes) {
           break; // We've freed enough space
         }
-
         await FileCleanupManager.safeDelete(fileInfo.path);
         _fileDeletedController.add(fileInfo.path);
         _removeFromCacheTracking(fileInfo.path);
-
         deletedSize += fileInfo.size;
         deletedCount++;
       }
-
-      if (kDebugMode) {
-        debugPrint(
-            '🧹 Cache cleanup: deleted $deletedCount files (${_formatBytes(deletedSize)})');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error limiting cache size: $e');
-      }
-    }
+    } catch (e) {}
   }
-
   @override
   void dispose() {
     _fileDeletedController.close();
     _fileCachedController.close();
     _urlToPathCache.clear();
     _cacheTimestamps.clear();
-
-    if (kDebugMode) {
-      debugPrint('🎵 AudioFileManager disposed');
-    }
   }
-
-  // Private helper methods
-
   Future<void> _ensureInitialized() => _initFuture;
-
   Future<void> _ensureDirectoryExists(String dirPath) async {
     try {
       final dir = Directory(dirPath);
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Error creating directory $dirPath: $e');
-      }
-    }
+    } catch (e) {}
   }
-
   String _generateUrlHash(String url) {
-    // Simple hash using URL's hashCode
     final hash = url.hashCode.abs().toString();
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     return '${hash}_$timestamp';
   }
-
   void _removeFromCacheTracking(String filePath) {
-    // Remove from cache tracking by finding the URL that maps to this path
     final urlToRemove = _urlToPathCache.entries
         .where((entry) => entry.value == filePath)
         .map((entry) => entry.key)
         .toList();
-
     for (final url in urlToRemove) {
       _urlToPathCache.remove(url);
       _cacheTimestamps.remove(url);
     }
   }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '${bytes}B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-  }
 }
-
-/// Helper class for file information during cache management
 class FileInfo {
   final String path;
   final int size;
   final DateTime lastModified;
-
   FileInfo({
     required this.path,
     required this.size,

@@ -1,11 +1,4 @@
-/// Centralized LLM Configuration - Change LLM providers and models in one place
-/// This configuration system allows easy switching between OpenAI, Anthropic, Google, and other providers
-/// by simply changing the active provider and model IDs in one location.
 library;
-
-import 'package:flutter/foundation.dart';
-
-/// Supported LLM Providers
 enum LLMProvider {
   openai,
   anthropic,
@@ -13,8 +6,6 @@ enum LLMProvider {
   groq,
   custom,
 }
-
-/// LLM Model Configuration
 class LLMModelConfig {
   final String modelId;
   final String endpoint;
@@ -23,7 +14,6 @@ class LLMModelConfig {
   final String apiKeyEnvVar;
   final double? maxTokens;
   final double? temperature;
-
   const LLMModelConfig({
     required this.modelId,
     required this.endpoint,
@@ -34,8 +24,6 @@ class LLMModelConfig {
     this.temperature,
   });
 }
-
-/// TTS Provider Configuration
 class TTSModelConfig {
   final String modelId;
   final String endpoint;
@@ -43,7 +31,6 @@ class TTSModelConfig {
   final Map<String, dynamic> defaultParams;
   final String apiKeyEnvVar;
   final String? voice;
-
   const TTSModelConfig({
     required this.modelId,
     required this.endpoint,
@@ -53,44 +40,25 @@ class TTSModelConfig {
     this.voice,
   });
 }
-
-/// Centralized LLM Configuration Class
 class LLMConfig {
   // =================================================================
-  // CONFIGURATION SECTION - CHANGE THESE TO SWITCH PROVIDERS/MODELS
   // =================================================================
-
-  /// Active LLM Provider - Change this to switch providers
   static const LLMProvider _activeLLMProvider = LLMProvider.groq;
-
-  /// Active LLM Model ID for the selected provider
   static const String _activeLLMModelId = 'llama-4-scout-17b-16e-instruct';
-
-  /// Default TTS Provider (if different from LLM provider)
   static const LLMProvider _defaultTTSProvider = LLMProvider.openai;
-
-  /// Default TTS Model ID
   static const String _defaultTTSModelId = 'gpt-4o-mini-tts';
-
-  /// Default TTS Voice (internal voice id as used by backend)
   static const String _defaultTTSVoice = 'sage';
-
-  /// Supported voice ids mapped to user-facing display names
   static const Map<String, String> _voiceDisplayNames = {
     'sage': 'Maya',
     'coral': 'Alie',
     'nova': 'Cindy',
   };
-
-  /// Default audio characteristics used when backend doesn't supply overrides
   static const int _defaultTTSSampleRate = 24000;
   static const String _defaultTTSAudioEncoding = 'LINEAR16';
   static const String _defaultTTSResponseFormat = 'wav';
   static const bool _defaultTTSSupportsStreaming = true;
   static const String _defaultTTSMode = 'rest';
   static const String _defaultTtsMimeType = 'audio/wav';
-
-  /// Runtime overrides supplied by backend configuration
   static LLMProvider? _overrideTTSProvider;
   static String? _overrideTTSModelId;
   static String? _overrideTTSVoice;
@@ -100,12 +68,8 @@ class LLMConfig {
   static bool? _overrideTTSSupportsStreaming;
   static String? _overrideTTSMode;
   static String? _overrideTtsMimeType;
-
   // =================================================================
-  // PROVIDER CONFIGURATIONS - Add new providers here
   // =================================================================
-
-  /// OpenAI Configuration
   static const Map<String, LLMModelConfig> _openaiModels = {
     'gpt-4o': LLMModelConfig(
       modelId: 'gpt-4o',
@@ -138,8 +102,6 @@ class LLMConfig {
       temperature: 0.7,
     ),
   };
-
-  /// Anthropic Configuration
   static const Map<String, LLMModelConfig> _anthropicModels = {
     'claude-3-5-sonnet-20241022': LLMModelConfig(
       modelId: 'claude-3-5-sonnet-20241022',
@@ -172,8 +134,6 @@ class LLMConfig {
       temperature: 0.7,
     ),
   };
-
-  /// Google Configuration
   static const Map<String, LLMModelConfig> _googleModels = {
     'gemini-1.5-pro': LLMModelConfig(
       modelId: 'gemini-1.5-pro',
@@ -210,8 +170,6 @@ class LLMConfig {
       temperature: 0.7,
     ),
   };
-
-  /// Groq Configuration
   static const Map<String, LLMModelConfig> _groqModels = {
     'llama-3.1-70b-versatile': LLMModelConfig(
       modelId: 'llama-3.1-70b-versatile',
@@ -244,8 +202,6 @@ class LLMConfig {
       temperature: 0.7,
     ),
   };
-
-  /// TTS Model Configurations
   static const Map<String, TTSModelConfig> _openaiTTSModels = {
     'tts-1': TTSModelConfig(
       modelId: 'tts-1',
@@ -274,7 +230,6 @@ class LLMConfig {
       voice: 'alloy',
     ),
   };
-
   static const Map<String, TTSModelConfig> _googleTTSModels = {
     'gemini-2.5-flash-preview-tts': TTSModelConfig(
       modelId: 'gemini-2.5-flash-preview-tts',
@@ -292,46 +247,27 @@ class LLMConfig {
       voice: 'kore',
     ),
   };
-
   // =================================================================
-  // PUBLIC API - Use these methods to get current configurations
   // =================================================================
-
-  /// Get the current active LLM configuration
   static LLMModelConfig get currentLLMConfig {
     final models = _getModelsForProvider(_activeLLMProvider);
     final config = models[_activeLLMModelId];
-
     if (config == null) {
       throw Exception(
           'Model $_activeLLMModelId not found for provider $_activeLLMProvider. '
           'Available models: ${models.keys.join(', ')}');
     }
-
-    if (kDebugMode) {
-      debugPrint(
-          '[LLMConfig] Using LLM: $_activeLLMProvider - $_activeLLMModelId');
-    }
-
     return config;
   }
-
-  /// Get the current active TTS configuration
   static TTSModelConfig get currentTTSConfig {
     final provider = activeTTSProvider;
     final modelId = activeTTSModelId;
     final models = _getTTSModelsForProvider(provider);
     final baseConfig = models[modelId];
-
     if (baseConfig == null) {
       throw Exception('TTS Model $modelId not found for provider $provider. '
           'Available models: ${models.keys.join(', ')}');
     }
-
-    if (kDebugMode) {
-      debugPrint('[LLMConfig] Using TTS: $provider - $modelId');
-    }
-
     final mergedParams = Map<String, dynamic>.from(baseConfig.defaultParams);
     mergedParams['voice'] = activeTTSVoice;
     mergedParams['sample_rate_hz'] = activeTTSSampleRate;
@@ -339,7 +275,6 @@ class LLMConfig {
     mergedParams['response_format'] = activeTTSResponseFormat;
     mergedParams['mode'] = activeTTSMode;
     mergedParams['mime_type'] = activeTtsMimeType;
-
     return TTSModelConfig(
       modelId: modelId,
       endpoint: baseConfig.endpoint,
@@ -349,8 +284,6 @@ class LLMConfig {
       voice: activeTTSVoice,
     );
   }
-
-  /// Get active provider information
   static LLMProvider get activeLLMProvider => _activeLLMProvider;
   static LLMProvider get activeTTSProvider =>
       _overrideTTSProvider ?? _defaultTTSProvider;
@@ -369,30 +302,18 @@ class LLMConfig {
   static String get activeTTSMode => _overrideTTSMode ?? _defaultTTSMode;
   static String get activeTtsMimeType =>
       _overrideTtsMimeType ?? _defaultTtsMimeType;
-
-  /// Voice helpers for UI/feature code
   static Map<String, String> get voiceDisplayNames =>
       Map.unmodifiable(_voiceDisplayNames);
-
   static List<String> get availableVoiceIds =>
       List.unmodifiable(_voiceDisplayNames.keys);
-
   static String displayNameForVoice(String voiceId) =>
       _voiceDisplayNames[voiceId] ?? voiceId;
-
   static void setPreferredTtsVoice(String voiceId) {
     if (voiceId.isEmpty) {
       return;
     }
-
     _overrideTTSVoice = voiceId;
-
-    if (kDebugMode) {
-      debugPrint('[LLMConfig] Preferred TTS voice set to $voiceId');
-    }
   }
-
-  /// Allow runtime overrides provided by the backend configuration endpoint.
   static void applyRemoteTtsConfig({
     required String provider,
     String? model,
@@ -408,57 +329,35 @@ class LLMConfig {
     if (normalizedProvider != null) {
       _overrideTTSProvider = normalizedProvider;
     }
-
     if (model != null && model.isNotEmpty) {
       _overrideTTSModelId = model;
     }
-
     if (voice != null && voice.isNotEmpty) {
       setPreferredTtsVoice(voice);
     }
-
     if (sampleRateHz != null && sampleRateHz > 0) {
       _overrideTTSSampleRate = sampleRateHz;
     }
-
     if (audioEncoding != null && audioEncoding.isNotEmpty) {
       _overrideTTSAudioEncoding = audioEncoding;
     }
-
     if (responseFormat != null && responseFormat.isNotEmpty) {
       _overrideTTSResponseFormat = responseFormat;
     }
-
     if (supportsStreaming != null) {
       _overrideTTSSupportsStreaming = supportsStreaming;
     }
-
     if (mode != null && mode.isNotEmpty) {
       _overrideTTSMode = mode;
     }
-
     if (mimeType != null && mimeType.isNotEmpty) {
       _overrideTtsMimeType = mimeType;
     }
-
-    if (kDebugMode) {
-      debugPrint('[LLMConfig] Applied remote TTS config override: '
-          'provider=${activeTTSProvider.name}, '
-          'model=$activeTTSModelId, '
-          'voice=$activeTTSVoice, '
-          'sampleRate=$activeTTSSampleRate, '
-          'encoding=$activeTTSAudioEncoding, '
-          'format=$activeTTSResponseFormat, '
-          'mode=$activeTTSMode, '
-          'mime=$activeTtsMimeType');
-    }
   }
-
   static LLMProvider? _providerFromString(String? value) {
     if (value == null || value.isEmpty) {
       return null;
     }
-
     final normalized = value.toLowerCase();
     for (final provider in LLMProvider.values) {
       if (provider.name.toLowerCase() == normalized) {
@@ -467,23 +366,16 @@ class LLMConfig {
     }
     return null;
   }
-
-  /// Get all available models for a provider
   static Map<String, LLMModelConfig> getAvailableModelsForProvider(
       LLMProvider provider) {
     return _getModelsForProvider(provider);
   }
-
-  /// Get all available TTS models for a provider
   static Map<String, TTSModelConfig> getAvailableTTSModelsForProvider(
       LLMProvider provider) {
     return _getTTSModelsForProvider(provider);
   }
-
   // =================================================================
-  // PRIVATE HELPER METHODS
   // =================================================================
-
   static Map<String, LLMModelConfig> _getModelsForProvider(
       LLMProvider provider) {
     switch (provider) {
@@ -499,7 +391,6 @@ class LLMConfig {
         return {}; // Custom configurations would be loaded differently
     }
   }
-
   static Map<String, TTSModelConfig> _getTTSModelsForProvider(
       LLMProvider provider) {
     switch (provider) {
@@ -513,24 +404,12 @@ class LLMConfig {
         return {}; // These providers don't have TTS models configured yet
     }
   }
-
-  /// Validate current configuration
   static bool validateConfiguration() {
     try {
       final llmConfig = currentLLMConfig;
       final ttsConfig = currentTTSConfig;
-
-      if (kDebugMode) {
-        debugPrint('[LLMConfig] Configuration validation passed');
-        debugPrint('  LLM: ${llmConfig.modelId} (${llmConfig.endpoint})');
-        debugPrint('  TTS: ${ttsConfig.modelId} (${ttsConfig.endpoint})');
-      }
-
       return true;
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[LLMConfig] Configuration validation failed: $e');
-      }
       return false;
     }
   }

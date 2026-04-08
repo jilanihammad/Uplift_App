@@ -9,125 +9,59 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
 import 'dart:async';
 import '../di/interfaces/i_groq_service.dart';
-
-/// Service for handling text completions via Groq LLM
-/// This service is only used for text generation - TTS and transcription are handled by OpenAI
 class GroqService implements IGroqService {
-  // Dependencies
   final ConfigService _configService;
   final ApiClient _apiClient;
-
-  // Constructor with dependency injection
   GroqService({
     ConfigService? configService,
     ApiClient? apiClient,
   })  : _configService = configService ?? DependencyContainer().configService,
         _apiClient = apiClient ?? DependencyContainer().apiClientConcrete;
-
-  // API connection details
   late String _llmModelId;
-
-  // Flag to track if service is available
   bool _isAvailable = false;
-
-  // LangChain conversation buffer memory
   ConversationBufferMemory? _memory;
-
   String? _sessionId;
-
-  // Getter and setter for sessionId
   @override
   String? get sessionId => _sessionId;
   @override
   set sessionId(String? value) => _sessionId = value;
-
-  // Initialize the service
   @override
   Future<void> init() async {
     try {
-      // Set model ID - only care about LLM, not TTS or transcription
       _llmModelId = _configService.llmModelId.isNotEmpty
           ? _configService.llmModelId
           : "llama3-70b-8192"; // Default to Llama 3 if not specified
-
-      // Initialize LangChain memory
       _memory = ConversationBufferMemory();
-
-      if (kDebugMode) {
-        debugPrint('GroqService: Initialized with LLM model: $_llmModelId');
-        debugPrint('GroqService: Using API base URL: ${ApiConfig.baseUrl}');
-        debugPrint('GroqService: Initialized LangChain memory');
-      }
-
-      // Check if backend LLM service is available
       try {
-        // Use backend's status endpoint
         final response = await _apiClient.get('/llm/status');
-
-        if (kDebugMode) {
-          debugPrint('GroqService: Status response: $response');
-        }
-
         if (response['status'] == 'available') {
           _isAvailable = true;
-          if (kDebugMode) {
-            debugPrint('GroqService: API is available');
-          }
         } else {
           _isAvailable = false;
-          if (kDebugMode) {
-            debugPrint(
-                'GroqService: API reported as unavailable. Response: $response');
-          }
         }
       } catch (e) {
-        if (kDebugMode) {
-          debugPrint('GroqService: Error checking API availability: $e');
-          debugPrint('GroqService: Will continue with isAvailable=false');
-        }
         _isAvailable = false;
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('GroqService initialization error: $e');
-      }
       _isAvailable = false;
     }
   }
-
-  // Reset conversation memory
   @override
   void resetConversationMemory() {
     _memory = ConversationBufferMemory();
-    if (kDebugMode) {
-      debugPrint('GroqService: Reset conversation memory');
-    }
   }
-
-  // Get current memory as formatted context
   @override
   String? get conversationMemory {
     return _memory?.getBuffer();
   }
-
-  // Check if service is available
   @override
   bool get isConfigured => _isAvailable;
-
-  // Override isConfigured if needed for testing
   @override
   void setAvailable(bool available) {
     _isAvailable = available;
-    if (kDebugMode) {
-      debugPrint('GroqService: Manually set isAvailable=$available');
-    }
   }
-
-  // Get LLM model ID
   @override
   String get llmModelId => _llmModelId;
-
-  // Generate chat completion using the LLM model
   @override
   Future<String> generateChatCompletion({
     required String userMessage,
@@ -139,12 +73,8 @@ class GroqService implements IGroqService {
     if (!_isAvailable) {
       throw Exception('GroqService is not available');
     }
-
     try {
-      // Add message to memory
       _memory?.addUserMessage(userMessage);
-
-      // Make API request to backend proxy for Groq
       final response = await _apiClient.post('/ai/generate', {
         'message': userMessage,
         'system_prompt': systemPrompt,
@@ -152,50 +82,31 @@ class GroqService implements IGroqService {
         'temperature': temperature,
         'max_tokens': maxTokens,
       });
-
       if (response.containsKey('response')) {
         final aiResponse = response['response'];
-
-        // Add response to memory
         _memory?.addAIMessage(aiResponse);
-
         return aiResponse;
       } else {
         throw Exception('Invalid response format from LLM API');
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('GroqService: Error generating chat completion: $e');
-      }
       rethrow;
     }
   }
-
-  // Test the connection to the backend LLM API
   @override
   Future<Map<String, dynamic>> testConnection() async {
     try {
-      // Make API request to test the connection
       final response = await _apiClient.get('/ai/test-key');
-
-      // Update availability based on test result
       if (response.containsKey('groq_api') &&
           response['groq_api'] is Map<String, dynamic> &&
           response['groq_api'].containsKey('available')) {
         _isAvailable = response['groq_api']['available'] == true;
       }
-
       return response;
         } catch (e) {
-      if (kDebugMode) {
-        debugPrint('GroqService: Error testing connection: $e');
-      }
       return {'available': false, 'error': e.toString()};
     }
   }
-
-  /// Stream chat completion from backend via WebSocket
-  /// [history] should be a list of message objects: [{"role": ..., "content": ...}]
   @override
   Stream<Map<String, dynamic>> streamChatCompletionViaWebSocket({
     required String message,
@@ -216,7 +127,6 @@ class GroqService implements IGroqService {
     }
     final String host = httpBase.replaceFirst(RegExp(r'^https?://'), '');
     final String wsUrl = '$wsProtocol$host/api/v1/llm/ws/chat';
-
     int attempt = 0;
     while (attempt < maxRetries) {
       attempt++;
@@ -243,10 +153,8 @@ class GroqService implements IGroqService {
         await for (final event in channel.stream) {
           lastMessageTime = DateTime.now();
           if (event is String) {
-            debugPrint('RAW WS EVENT: $event'); // <-- Debug print for raw WebSocket response
             try {
               final data = jsonDecode(event);
-              // Store session_id if present in the first chunk or done message
               if (data is Map<String, dynamic> &&
                   data.containsKey('session_id')) {
                 _sessionId = data['session_id'];

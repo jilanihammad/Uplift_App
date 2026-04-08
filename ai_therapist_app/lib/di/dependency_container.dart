@@ -1,7 +1,5 @@
 // lib/di/dependency_container.dart
-
 import 'dart:async';
-
 import 'package:get_it/get_it.dart';
 import 'interfaces/interfaces.dart';
 import 'interfaces/i_audio_settings.dart';
@@ -17,41 +15,26 @@ import '../services/memory_manager.dart';
 import '../services/config_service.dart';
 import '../services/recording_manager.dart';
 import '../services/user_context_service.dart';
-
-/// New dependency injection container to replace service locator pattern
-/// This provides a clean interface for dependency injection with proper lifecycle management
 class DependencyContainer {
   static final DependencyContainer _instance = DependencyContainer._internal();
   factory DependencyContainer() => _instance;
   DependencyContainer._internal();
-
   final GetIt _locator = GetIt.instance;
   bool _isInitialized = false;
   static Completer<void>? _readyCompleter;
-
-  /// Initialize the dependency container with all required modules
   Future<void> initialize({bool testing = false}) async {
     if (_isInitialized) {
       return;
     }
-
     try {
-      // The DependencyContainer now acts as a wrapper around the existing
-      // service locator registrations. We don't need to re-register services
-      // that are already registered in setupServiceLocator.
-
-      // Just mark as initialized since services are already registered
       _isInitialized = true;
     } catch (e) {
       _isInitialized = false;
       rethrow;
     }
   }
-
-  /// Get a dependency by type
   T get<T extends Object>() {
     if (!_isInitialized) {
-      // Fallback to service locator for backward compatibility during initialization
       if (_locator.isRegistered<T>()) {
         return _locator.get<T>();
       }
@@ -60,53 +43,36 @@ class DependencyContainer {
     }
     return _locator.get<T>();
   }
-
-  /// Check if a dependency is registered
   bool isRegistered<T extends Object>() {
     return _locator.isRegistered<T>();
   }
-
-  /// Reset the container (useful for testing)
   Future<void> reset() async {
     await _locator.reset();
     _isInitialized = false;
   }
-
-  /// Dispose resources
   void dispose() {
-    // Future implementation for proper resource cleanup
   }
-
-  /// Signal that dependency graph is ready
   static void markReady() {
     final completer = _readyCompleter ??= Completer<void>();
     if (!completer.isCompleted) {
       completer.complete();
     }
   }
-
-  /// Signal that dependency graph failed to initialize
   static void markFailed(Object error, [StackTrace? stackTrace]) {
     final completer = _readyCompleter ??= Completer<void>();
     if (!completer.isCompleted) {
       completer.completeError(error, stackTrace);
     }
   }
-
-  /// Reset the readiness completer so callers can await a new initialization cycle
   static void resetReady() {
     if (_readyCompleter == null || _readyCompleter!.isCompleted) {
       _readyCompleter = Completer<void>();
     }
   }
-
-  /// Await until dependencies are ready
   static Future<void> whenReady() {
     _readyCompleter ??= Completer<void>();
     return _readyCompleter!.future;
   }
-
-  // Convenience getters for commonly used services
   IConfigService get config => get<IConfigService>();
   ConfigService get configService => get<
       ConfigService>(); // Concrete implementation for backward compatibility
@@ -140,8 +106,6 @@ class DependencyContainer {
   ITherapyService get therapy => get<ITherapyService>();
   ISessionScheduleService get sessionSchedule => get<ISessionScheduleService>();
   UserContextService get userContextService => get<UserContextService>();
-
-  // Audio services
   IVoiceService get voiceService => get<IVoiceService>();
   AudioGenerator get audioGenerator => get<AudioGenerator>();
   ITTSService get ttsService => get<ITTSService>();
@@ -151,12 +115,8 @@ class DependencyContainer {
   VoiceModeFacade get voiceModeFacade => get<VoiceModeFacade>();
   ChatVoiceFacade get chatVoiceFacade => get<ChatVoiceFacade>();
   SessionVoiceFacade get sessionVoiceFacade => get<VoiceModeFacade>();
-
-  // Legacy compatibility - gradually remove these
   bool get hasLegacyServices => _isInitialized;
 }
-
-/// Extension to provide easy access to dependency container
 extension DependencyContainerExtension on Object {
   DependencyContainer get dependencies => DependencyContainer();
 }

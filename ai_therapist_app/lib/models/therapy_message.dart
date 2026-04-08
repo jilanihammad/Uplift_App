@@ -1,6 +1,5 @@
 // Model class for chat messages in therapy sessions
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
 class TherapyMessage {
   final String id;
   final String content;
@@ -8,7 +7,6 @@ class TherapyMessage {
   final DateTime timestamp;
   final String? audioUrl;
   final int sequence;
-
   TherapyMessage({
     required this.id,
     required this.content,
@@ -17,8 +15,6 @@ class TherapyMessage {
     this.audioUrl,
     required this.sequence,
   });
-
-  // Create a copy of this message with modified fields
   TherapyMessage copyWith({
     String? id,
     String? content,
@@ -36,8 +32,6 @@ class TherapyMessage {
       sequence: sequence ?? this.sequence,
     );
   }
-
-  // Serialize to JSON
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -48,8 +42,6 @@ class TherapyMessage {
       'sequence': sequence,
     };
   }
-
-  // Deserialize from JSON
   factory TherapyMessage.fromJson(Map<String, dynamic> json) {
     return TherapyMessage(
       id: json['id'],

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 class TextInputBar extends StatelessWidget {
   final TextEditingController messageController;
   final Widget micButton;
@@ -8,7 +7,6 @@ class TextInputBar extends StatelessWidget {
   final VoidCallback onSwitchMode;
   final bool enabled;
   final bool switchEnabled;
-
   const TextInputBar({
     super.key,
     required this.messageController,
@@ -19,7 +17,6 @@ class TextInputBar extends StatelessWidget {
     this.enabled = true,
     this.switchEnabled = true,
   });
-
   @override
   Widget build(BuildContext context) {
     return Container(

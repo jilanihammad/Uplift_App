@@ -1,28 +1,22 @@
 // lib/utils/date_formatter.dart
-
 import 'package:intl/intl.dart';
-
 class DateFormatter {
   static String formatDate(DateTime date) {
     final localDate = date.toLocal();
     return DateFormat('MMM d, yyyy').format(localDate);
   }
-
   static String formatDateTime(DateTime date) {
     final localDate = date.toLocal();
     return DateFormat('MMM d, yyyy - h:mm a').format(localDate);
   }
-
   static String formatTime(DateTime date) {
     final localDate = date.toLocal();
     return DateFormat('h:mm a').format(localDate);
   }
-
   static String formatRelativeDate(DateTime date) {
     final localDate = date.toLocal();
     final now = DateTime.now();
     final difference = now.difference(localDate);
-
     if (difference.inDays == 0) {
       return 'Today';
     } else if (difference.inDays == 1) {
@@ -40,7 +34,6 @@ class DateFormatter {
       return '$years ${years == 1 ? 'year' : 'years'} ago';
     }
   }
-
   static String formatDuration(Duration duration) {
     if (duration.inMinutes < 1) {
       return '${duration.inSeconds} seconds';

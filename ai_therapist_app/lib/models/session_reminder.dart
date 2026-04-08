@@ -1,13 +1,7 @@
 // lib/models/session_reminder.dart
-
 import 'package:flutter/foundation.dart';
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
-/// Source of the reminder data, used to track whether it came from
-/// the backend or a local fallback.
 enum SessionReminderSource { backend, local }
-
-/// Model representing a scheduled therapy session reminder.
 @immutable
 class SessionReminder {
   final String? id;
@@ -16,7 +10,6 @@ class SessionReminder {
   final String? description;
   final bool isCompleted;
   final SessionReminderSource source;
-
   const SessionReminder({
     this.id,
     this.scheduledTime,
@@ -25,7 +18,6 @@ class SessionReminder {
     this.isCompleted = false,
     this.source = SessionReminderSource.backend,
   });
-
   SessionReminder copyWith({
     String? id,
     DateTime? scheduledTime,
@@ -43,7 +35,6 @@ class SessionReminder {
       source: source ?? this.source,
     );
   }
-
   factory SessionReminder.fromJson(Map<String, dynamic> json,
       {SessionReminderSource source = SessionReminderSource.backend}) {
     DateTime? scheduledTime;
@@ -56,7 +47,6 @@ class SessionReminder {
         scheduledTime = null;
       }
     }
-
     return SessionReminder(
       id: json['id']?.toString(),
       scheduledTime: scheduledTime,
@@ -66,7 +56,6 @@ class SessionReminder {
       source: source,
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -74,7 +63,7 @@ class SessionReminder {
       'title': title,
       'description': description,
       'is_completed': isCompleted,
-      'source': describeEnum(source),
+      'source': source.name,
     };
   }
 }

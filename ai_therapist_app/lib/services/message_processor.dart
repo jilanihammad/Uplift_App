@@ -12,22 +12,15 @@ import '../di/interfaces/i_groq_service.dart'; // Added for GroqService streamin
 import '../utils/box_logger.dart';
 import '../utils/log_channels.dart';
 import '../di/dependency_container.dart'; // Added for user profile access
-
-/// Handles processing of user messages and generating AI responses
 class MessageProcessor {
   final ConversationBufferMemory _conversationHistory;
   final ConfigService _configService;
   final ApiClient apiClient;
   final IGroqService _groqService;
-
   bool _directLLMEnabled = false;
   static const String _directLLMLogTag = '[MessageProcessorDirectLLM]';
-
-  // Cache for API responses to avoid redundant processing
   final Map<String, String> _responseCache = {};
   String? _lastFallbackResponse;
-
-  // List of predefined therapist responses based on keywords
   final Map<String, List<String>> _responseTemplates = {
     'anxious': [
       "It sounds like you're experiencing anxiety. Let's explore what might be triggering these feelings.",
@@ -60,7 +53,6 @@ class MessageProcessor {
       "Asking for help is a sign of strength. What specific areas would you like to focus on in our conversations?"
     ]
   };
-
   MessageProcessor({
     required ConversationBufferMemory conversationHistory,
     required ConfigService configService,
@@ -70,19 +62,10 @@ class MessageProcessor {
         _configService = configService,
         _groqService = groqService {
     _init();
-    debugPrint(
-        '[MessageProcessor] Initialized. ApiClient hash: ${apiClient.hashCode}');
   }
-
   Future<void> _init() async {
-    // Initialize _directLLMEnabled, perhaps from _configService or AppConfig
-    // Assuming ConfigService holds this mode flag or can derive it
     _directLLMEnabled = _configService.directLLMModeEnabled;
-    debugPrint(
-        '[MessageProcessor] _init complete. Direct LLM Mode: $_directLLMEnabled');
   }
-
-  /// Process a user message and get an AI response
   Future<String> processMessage(
     String userMessage,
     String systemPrompt,
@@ -93,26 +76,20 @@ class MessageProcessor {
       if (userMessage.trim().isEmpty) {
         return "I didn't catch that. Could you please repeat?";
       }
-
       log.d(
           'Processing message with graph state: ${graphResult['state'] ?? 'unknown'}');
       if (history != null && history.isNotEmpty) {
         log.d('MessageProcessor received history of length: ${history.length}');
-        // Log the actual history content for debugging if needed (be mindful of PII in production logs)
-        // history.forEach((msg) => log.d('History: Role: ${msg["role"]}, Content: ${msg["content"]?.substring(0, min(msg["content"]?.length ?? 0, 50))}...'));
       } else {
         log.d('MessageProcessor received no history or empty history.');
       }
-
       final cacheKey =
           '$userMessage-${systemPrompt.hashCode}-${graphResult.toString()}-${history?.toString().hashCode ?? 0}';
       if (_responseCache.containsKey(cacheKey)) {
         log.d('Cache hit! Using cached response for key: $cacheKey');
         return _responseCache[cacheKey]!;
       }
-
       String response;
-
       if (_directLLMEnabled) {
         response = await _processMessageDirectLLM(
             userMessage, systemPrompt, graphResult,
@@ -122,22 +99,17 @@ class MessageProcessor {
             userMessage, systemPrompt, graphResult,
             history: history);
       }
-
       _responseCache[cacheKey] = response;
-
       if (_responseCache.length > 100) {
         final oldestKey = _responseCache.keys.first;
         _responseCache.remove(oldestKey);
       }
-
       return response;
     } catch (e, stackTrace) {
       log.e('General error processing message', e, stackTrace);
       return "I'm having trouble understanding that right now. Could you try expressing that differently?";
     }
   }
-
-  /// Process message using direct LLM API calls
   Future<String> _processMessageDirectLLM(
     String userMessage,
     String systemPrompt,
@@ -147,15 +119,11 @@ class MessageProcessor {
     try {
       log.d(
           'Using direct LLM calls (${LLMConfig.activeLLMProvider} - ${LLMConfig.activeLLMModelId})');
-
       final effectiveSystemPrompt =
           _buildSystemPrompt(systemPrompt, graphResult);
-
-      // Use the internal conversation history
       final currentLLMHistory = _conversationHistory.getMessages();
       log.d(
           '[MessageProcessorDirectLLM] Using internal history of length: ${currentLLMHistory.length}');
-
       final response = await apiClient.callLLMDirect(
         effectiveSystemPrompt,
         userMessage,
@@ -165,18 +133,7 @@ class MessageProcessor {
           'max_tokens': 1000,
         },
       );
-
-      // Future-proof version validation for direct LLM calls
       final responseText = _validateAndExtractResponse(response, 'direct LLM');
-
-      if (kDebugMode) {
-        debugPrint(
-            '$_directLLMLogTag Direct LLM response received: ${responseText.length} characters');
-        if (response.containsKey('usage')) {
-          debugPrint('$_directLLMLogTag Token usage: ${response['usage']}');
-        }
-      }
-
       return responseText.trim();
     } catch (e) {
       log.e(
@@ -185,8 +142,6 @@ class MessageProcessor {
       return _generateFallbackResponseLocally(userMessage);
     }
   }
-
-  /// Process message using backend proxy (original behavior)
   Future<String> _processMessageViaBackend(
     String userMessage,
     String systemPrompt,
@@ -196,8 +151,6 @@ class MessageProcessor {
     try {
       final effectiveSystemPrompt =
           _buildSystemPrompt(systemPrompt, graphResult);
-
-      // Use the internal conversation history
       final currentLLMHistory = _conversationHistory.getMessages();
       log.d(
           '[MessageProcessorBackend] Using internal history of length: ${currentLLMHistory.length}');
@@ -207,7 +160,6 @@ class MessageProcessor {
       } else {
         log.d('[MessageProcessorBackend] Received null history parameter.');
       }
-
       final payload = {
         'message': userMessage,
         'system_prompt': effectiveSystemPrompt,
@@ -217,7 +169,6 @@ class MessageProcessor {
         'history': history ??
             currentLLMHistory, // Ensure we use the passed-in history if available
       };
-
       try {
         final payloadPreview = json.encode({
           'message': payload['message'],
@@ -235,15 +186,7 @@ class MessageProcessor {
             details: {'payload': payloadPreview},
           );
         }
-        // The AppConfig().backendUrl might be slightly different from _configService.llmApiEndpoint
-        // if directLLMMode is true, but for backend calls, this should be fine.
-        // ApiClient will use the correct base URL from ConfigService.llmApiEndpoint getter.
-        // REMOVED: final backendApiUrl = _configService.backendBaseUrl;
-        // log.d('Using API URL: $backendApiUrl/ai/response');
-
         final response = await apiClient.post('/ai/response', payload);
-
-        // Future-proof version validation - prepare for schema versioning
         return _validateAndExtractResponse(response, 'backend API');
       } catch (e, stackTrace) {
         log.e('Backend API Error', e, stackTrace);
@@ -255,8 +198,6 @@ class MessageProcessor {
       return _generateFallbackResponseLocally(userMessage);
     }
   }
-
-  /// Process parameters and generate a fallback response
   String _pickNonRepeating(List<String> options, int index) {
     if (options.isEmpty) {
       return '';
@@ -270,59 +211,40 @@ class MessageProcessor {
     _lastFallbackResponse = choice;
     return choice;
   }
-
-  /// Generate a fallback response locally (without compute)
   String _generateFallbackResponseLocally(String userMessage) {
     final lowerMessage = userMessage.toLowerCase();
-
-    // Generate a seed based on the message content for consistent but varied responses
     int seed = 0;
     for (int i = 0; i < userMessage.length; i++) {
       seed += userMessage.codeUnitAt(i);
     }
-
-    // Find matching keywords
     List<String> matchedKeywords = [];
     for (final keyword in _responseTemplates.keys) {
       if (lowerMessage.contains(keyword)) {
         matchedKeywords.add(keyword);
       }
     }
-
-    // If we found matches, use those templates
     if (matchedKeywords.isNotEmpty) {
       final keyword = matchedKeywords[seed % matchedKeywords.length];
       final responses = _responseTemplates[keyword]!;
       return _pickNonRepeating(responses, seed);
     }
-
-    // Default responses for when no keywords match
     final List<String> defaultResponses = [
       "Thank you for sharing that with me. Could you tell me more about how that makes you feel?",
       "I appreciate you opening up. How long have you been experiencing this?",
       "I'm listening and I'm here to support you. What would be helpful for you right now?",
       "That sounds challenging. Would you like to explore this further together?",
     ];
-
     return _pickNonRepeating(defaultResponses, seed);
   }
-
-  /// Build system prompt based on graph analysis results
   String _buildSystemPrompt(
       String basePrompt, Map<String, dynamic> graphResult) {
     String prompt = basePrompt;
-
-    // Add graph-specific prompt guidance if available
     if (graphResult.containsKey('prompt') && graphResult['prompt'] != null) {
       prompt = '$prompt\n\n${graphResult['prompt']}';
     }
-
-    // Add state context
     if (graphResult.containsKey('state') && graphResult['state'] != null) {
       prompt = '$prompt\n\nCurrent conversation state: ${graphResult['state']}';
     }
-
-    // Add technique guidance if available
     if (graphResult.containsKey('techniques') &&
         graphResult['techniques'] != null) {
       final techniques = graphResult['techniques'];
@@ -331,11 +253,8 @@ class MessageProcessor {
             '$prompt\n\nUse these therapeutic techniques: ${techniques.join(', ')}';
       }
     }
-
     return prompt;
   }
-
-  /// Log detailed error information based on error type
   void _logDetailedError(dynamic e) {
     if (e is SocketException) {
       log.e(
@@ -348,26 +267,19 @@ class MessageProcessor {
       log.e('HTTP exception: ${e.message}');
     }
   }
-
-  /// Generate end of session summary
   Future<Map<String, dynamic>> generateSessionSummary(
     List<Map<String, dynamic>> messages,
     String systemPrompt, {
     String? sessionTitle,
     int? userId,
   }) async {
-    // Get user's name for personalization
     final userProfileService = DependencyContainer().userProfile;
     final displayName = userProfileService.profile?.displayName ?? 'you';
-
     try {
       log.i('Generating session summary for ${messages.length} messages');
-
       if (_directLLMEnabled) {
-        // Use direct LLM call for session summary
         return await _generateSessionSummaryDirectLLM(messages, systemPrompt, displayName);
       } else {
-        // Use backend proxy (original behavior)
         return await _generateSessionSummaryViaBackend(messages, systemPrompt, displayName,
             sessionTitle: sessionTitle, userId: userId);
       }
@@ -384,40 +296,28 @@ class MessageProcessor {
       };
     }
   }
-
-  /// Generate session summary using direct LLM call
   Future<Map<String, dynamic>> _generateSessionSummaryDirectLLM(
       List<Map<String, dynamic>> messages, String systemPrompt, String displayName) async {
     try {
       log.d('Using direct LLM call for session summary');
-
-      // Build conversation text
       final conversationText = messages.map((msg) {
         final role = msg['isUser'] == true ? displayName : 'Maya';
         return '$role: ${msg['content']}';
       }).join('\n\n');
-
-      // Create summary prompt
       final summaryPrompt =
           '''Based on this conversation with Maya (an AI companion), please provide:
-
 1. A compassionate summary of the conversation (2-3 sentences). Address $displayName directly using "you" language.
 2. 3-5 actionable items for $displayName to consider
 3. Key topics discussed
-
 IMPORTANT: Refer to the AI companion as "Maya" (never "therapist"). Address $displayName directly using "you" language (never "the client").
-
 Return your response in JSON format:
 {
   "summary": "...",
   "action_items": ["...", "...", "..."],
   "topics": ["...", "...", "..."]
 }
-
 Conversation:
 $conversationText''';
-
-      // Make direct LLM call
       final response = await apiClient.callLLMDirect(
         'You are a compassionate AI assistant creating conversation summaries for Maya, an AI companion app. Provide thoughtful, actionable insights while maintaining a warm, supportive tone. Never refer to Maya as a therapist or the user as a client.',
         summaryPrompt,
@@ -426,17 +326,13 @@ $conversationText''';
           'max_tokens': 1500,
         },
       );
-
       if (response.containsKey('response') && response['response'] != null) {
         final responseText = response['response'] as String;
-
-        // Try to parse as JSON with improved format validation
         final jsonCandidate = _extractJsonFromResponse(responseText);
         if (jsonCandidate != null && _isValidJsonFormat(jsonCandidate)) {
           try {
             final parsedJson =
                 json.decode(jsonCandidate) as Map<String, dynamic>;
-
             log.i(
                 'Session summary generated successfully via direct LLM (JSON format)');
             return {
@@ -449,17 +345,13 @@ $conversationText''';
             };
           } on FormatException catch (e) {
             log.w('FormatException parsing LLM response as JSON: ${e.message}');
-            // Continue to plain text processing
           } catch (e) {
             log.w('Unexpected error parsing LLM response as JSON: $e');
-            // Continue to plain text processing
           }
         } else {
           log.i(
               'LLM response detected as plain text format, processing accordingly');
         }
-
-        // If JSON parsing fails, create summary from text
         return {
           'summary': responseText.length > 500
               ? '${responseText.substring(0, 500)}...'
@@ -469,15 +361,12 @@ $conversationText''';
           'generated_via': 'direct_llm_text',
         };
       }
-
       throw Exception('No response from direct LLM call');
     } catch (e) {
       log.e('Error with direct LLM session summary, falling back', e);
       return _generateFallbackSummary(messages, displayName);
     }
   }
-
-  /// Generate session summary using backend proxy (original behavior)
   Future<Map<String, dynamic>> _generateSessionSummaryViaBackend(
     List<Map<String, dynamic>> messages,
     String systemPrompt,
@@ -490,23 +379,17 @@ $conversationText''';
             'messages_count': messages.length,
             'system_prompt_length': systemPrompt.length
           })}');
-
-      // Make API call to end session and get summary
       final payload = {
         'messages': messages,
         'system_prompt': systemPrompt,
       };
-
-      // Add optional session metadata if provided
       if (sessionTitle != null) {
         payload['session_title'] = sessionTitle;
       }
       if (userId != null) {
         payload['user_id'] = userId;
       }
-
       final response = await apiClient.post('/therapy/end_session', payload);
-
       log.i('Received response from end_session API: ${json.encode(response)}');
       log.i('Session summary generated successfully');
       return response;
@@ -516,21 +399,15 @@ $conversationText''';
       return _generateFallbackSummary(messages, displayName);
     }
   }
-
-  /// Generate a fallback summary when the API call fails
   Map<String, dynamic> _generateFallbackSummary(
       List<Map<String, dynamic>> messages,
       String displayName) {
     try {
       log.i('Generating fallback summary for ${messages.length} messages');
-
-      // Extract user messages for topics
       final userMessages = messages
           .where((m) => m['isUser'] == true)
           .map((m) => m['content'] as String)
           .toList();
-
-      // Simple topic extraction
       final List<String> possibleTopics = [
         'anxiety',
         'stress',
@@ -544,7 +421,6 @@ $conversationText''';
         'goals',
         'challenges'
       ];
-
       final List<String> detectedTopics = [];
       for (final topic in possibleTopics) {
         if (userMessages
@@ -552,19 +428,16 @@ $conversationText''';
           detectedTopics.add(topic);
         }
       }
-
       final summary = 'Thank you for connecting with Maya today${displayName != 'you' ? ', $displayName' : ''}. '
           'You discussed ${detectedTopics.isEmpty ? 'some important topics' : 'topics including ${detectedTopics.take(3).join(', ')}'}, '
           'and explored ways to approach these areas in your life. '
           'Remember that personal growth takes time, and it\'s important to be patient with yourself.';
-
       final actionItems = [
         'Take time for self-reflection',
         'Practice the strategies you discussed with Maya',
         'Be kind to yourself',
         'Connect with Maya again when you feel ready'
       ];
-
       return {
         'summary': summary,
         'action_items': actionItems,
@@ -573,8 +446,6 @@ $conversationText''';
       };
     } catch (e) {
       log.e('Error generating fallback summary', e);
-
-      // Most basic fallback
       return {
         'summary':
             'Thank you for connecting with Maya today${displayName != 'you' ? ', $displayName' : ''}. I hope our conversation was helpful.',
@@ -586,24 +457,18 @@ $conversationText''';
       };
     }
   }
-
-  /// Check the status of all backend services
   Future<Map<String, dynamic>> checkServiceStatus() async {
     try {
       log.d('Checking service status...');
       final backendUrl = AppConfig().backendUrl;
-
       try {
-        // Make a request to the service status endpoint
         log.d('Making request to $backendUrl/llm/status');
         final response = await apiClient.get('/llm/status');
-
         log.d('Service status response: $response');
         return response;
       } catch (e) {
         log.e('Error checking service status', e);
         _logDetailedError(e);
-
         if (e is SocketException) {
           return {
             'error': 'Network error: ${e.message}',
@@ -617,7 +482,6 @@ $conversationText''';
             'details': 'Server took too long to respond'
           };
         }
-
         return {'error': 'Unknown error: ${e.toString()}', 'status': 'error'};
       }
     } catch (e) {
@@ -628,8 +492,6 @@ $conversationText''';
       };
     }
   }
-
-  /// Stream a user message and get an AI response via WebSocket
   Stream<Map<String, dynamic>> streamMessage(
     String userMessage,
     String systemPrompt,
@@ -644,24 +506,16 @@ $conversationText''';
         };
         return;
       }
-
       log.d(
           'Starting message streaming with graph state: ${graphResult['state'] ?? 'unknown'}');
-
-      // Prepare the conversation history
       List<Map<String, dynamic>> conversationHistory = history ?? [];
-
-      // Add system prompt to history if provided
       if (systemPrompt.isNotEmpty) {
         conversationHistory.insert(0, {
           'role': 'system',
           'content': _buildSystemPrompt(systemPrompt, graphResult),
         });
       }
-
       log.d('Streaming message via WebSocket to LLM...');
-
-      // Stream the response from GroqService
       await for (final chunk in _groqService.streamChatCompletionViaWebSocket(
         message: userMessage,
         history: conversationHistory,
@@ -676,65 +530,41 @@ $conversationText''';
       };
     }
   }
-
-  /// Extract potential JSON content from LLM response text
   String? _extractJsonFromResponse(String responseText) {
-    // First try to find JSON wrapped in code blocks
     final codeBlockRegex =
         RegExp(r'```(?:json)?\s*(\{.*?\})\s*```', dotAll: true);
     final codeBlockMatch = codeBlockRegex.firstMatch(responseText);
     if (codeBlockMatch != null) {
       return codeBlockMatch.group(1)?.trim();
     }
-
-    // Then try to find standalone JSON object
     final jsonRegex = RegExp(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', dotAll: true);
     final jsonMatch = jsonRegex.firstMatch(responseText);
     if (jsonMatch != null) {
       return jsonMatch.group(0)?.trim();
     }
-
     return null;
   }
-
-  /// Enhanced JSON format validation to reduce false positives
   bool _isValidJsonFormat(String text) {
     final trimmed = text.trim();
-
-    // Basic structure check - must start with { and end with }
     if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
       return false;
     }
-
-    // Must contain at least one colon (key-value pairs)
     if (!trimmed.contains(':')) {
       return false;
     }
-
-    // Should have matching braces
     int braceCount = 0;
     for (int i = 0; i < trimmed.length; i++) {
       if (trimmed[i] == '{') braceCount++;
       if (trimmed[i] == '}') braceCount--;
       if (braceCount < 0) return false; // More closing than opening braces
     }
-
-    // Final brace count should be zero
     if (braceCount != 0) return false;
-
-    // Quick validation for common JSON patterns
     if (trimmed.contains('"') &&
         (trimmed.contains('":') || trimmed.contains('" :'))) {
       return true;
     }
-
-    // If it looks like JSON but doesn't have quotes, it might be malformed
-    // In this case, we'll let jsonDecode handle it and catch the FormatException
     return true;
   }
-
-  /// Future-proof response validation with version awareness
-  /// Validates API response format and extracts content with explicit type safety
   String _validateAndExtractResponse(
       Map<String, dynamic>? response, String source) {
     if (response == null) {
@@ -744,19 +574,13 @@ $conversationText''';
         receivedResponse: response,
       );
     }
-
-    // Future enhancement: Check for schema version if present
     if (response.containsKey('schema')) {
       final schema = response['schema'];
       log.d('Response includes schema version: $schema');
-
-      // Future: Handle different schema versions here
       switch (schema) {
         case 'v1':
-          // Current format: {"schema": "v1", "response": "text"}
           break;
         case 'v2':
-          // Future format: {"schema": "v2", "content": "text", "metadata": {...}}
           if (response.containsKey('content')) {
             return response['content'] as String;
           }
@@ -770,11 +594,8 @@ $conversationText''';
               'Unknown schema version: $schema, falling back to default parsing');
       }
     }
-
-    // Current format validation: expect "response" field
     if (response.containsKey('response') && response['response'] != null) {
       log.d('$source call successful. Response received.');
-      // Explicit cast for type safety - fails fast if backend sends wrong type
       return response['response'] as String;
     } else {
       log.w('Invalid response format from $source. Response was: $response');

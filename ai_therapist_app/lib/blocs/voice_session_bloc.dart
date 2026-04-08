@@ -1,26 +1,4 @@
-/// VoiceSessionBloc manages the entire therapy session state including voice/text mode switching,
-/// audio recording, TTS playback, message processing, and session lifecycle (mood selection, timer, etc).
-/// This is the central brain that coordinates all real-time interactions during a therapy session.
-///
-/// Phase 1.1.4 Migration Status: ✅ REFACTORED WITH MANAGER FACADE
-/// - Uses SessionStateManager, TimerManager, and MessageCoordinator internally
-/// - Maintains exact public API compatibility (all 30+ events, full state contract)
-/// - Facade pattern preserves backward compatibility while improving internal structure
-/// - Thread safety and timing requirements preserved
-///
-/// Phase 6 Migration Status: ✅ COMPLETED
-/// - Supports both legacy VoiceService and new IVoiceService interface
-/// - Uses _safeVoiceService helper for gradual migration
-/// - 18 method calls migrated to interface pattern
-/// - Maintains full backward compatibility
-///
-/// Phase 2.2.2 Migration Status: ✅ COMPLETED
-/// - Constructor uses VoiceSessionCoordinator streams when available
-/// - All service method calls use interface pattern via _safeVoiceService
-/// - AutoListeningCoordinator methods use temporary helpers pending interface extension
-/// - Full migration to VoiceSessionCoordinator architecture achieved
 library;
-
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rxdart/rxdart.dart';
@@ -47,20 +25,15 @@ import '../services/pipeline/audio_capture.dart';
 import '../services/pipeline/audio_playback.dart';
 import '../services/pipeline/ai_gateway.dart';
 import '../services/pipeline/mic_auto_mode_controller.dart';
-
-// Phase 1.1.4: Import new managers
 import 'managers/session_state_manager.dart';
 import 'managers/timer_manager.dart';
 import 'managers/message_coordinator.dart';
-
 class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   final VoiceService voiceService;
   final SessionVoiceFacade voiceFacade;
   final VADManager vadManager;
   final ITherapyService? therapyService;
-  // Phase 6B-1: Optional IVoiceService parameter for gradual migration
   final IVoiceService? interfaceVoiceService;
-  // Phase 1B.1: Standardized service injection
   final IProgressService? progressService;
   final INavigationService? navigationService;
   final VoicePipelineControllerFactory? _voicePipelineControllerFactory;
@@ -75,83 +48,45 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
   StreamSubscription? _amplitudeSub;
   StreamSubscription<VoicePipelineSnapshot>? _pipelineSnapshotSub;
   Completer<void>? _voiceModeSwitchCompleter;
-
-  // Amplitude smoothing state
   double _lastSmoothedAmplitude = 0.0;
-
-  // Phase 1.1.4: Manager instances (internal implementation details)
   late final SessionStateManager _sessionManager;
   late final TimerManager _timerManager;
   late final MessageCoordinator _messageCoordinator;
-
-  // Session scope management for clean resource disposal
   final SessionScopeManager _scopeManager = SessionScopeManager();
   void Function(String audioPath)? _autoRecordingCompleteHandler;
-
-  // Lifecycle management for app backgrounding/resuming (using WidgetsBindingObserver)
   late WidgetsBindingObserver _lifecycleObserver;
-
-  // PHASE 2A: Generation counter to prevent dangling future race conditions
   int _modeGeneration = 0;
-
-  // PHASE 2B: Cancelable operation for pending auto-enable operations
   bool _welcomeAutoModeArmed = false;
-
-  // Simple guard depth counter for mic control availability
   int _micControlGuardDepth = 0;
-
-  // Gate to prevent TTS from starting during atomic audio reset
   Completer<void>? _atomicResetCompleter;
-
-  // NATURAL UX: Flag to defer VAD start until current TTS naturally finishes
   bool _deferAutoMode = false;
-
-  // Session start guard: Prevents duplicate session initialization
   bool _sessionStarted = false;
-
   final bool _usesGeminiLive;
   StreamSubscription<GeminiLiveEvent>? _geminiLiveSub;
   StringBuffer? _geminiResponseBuffer;
-
-  /// Whether a session is currently active (has session scope)
   bool get inSession => _scopeManager.inSession;
-
-  /// Debug-only getter for accessing mode generation counter in tests
   @visibleForTesting
   int get debugModeGeneration => _modeGeneration;
-
-  /// Current generation counter for TTS callback wiring
   int get currentGeneration => _modeGeneration;
-
-  /// Session validity check for TTS service guards
-  /// Returns true if session is active, not ending, AND in voice mode
-  /// This prevents TTS from playing in chat mode or after session ends
   bool _isSessionValid() {
     return inSession &&
         _sessionManager.state.status != VoiceSessionStatus.ended &&
         state.isVoiceMode; // CRITICAL: Must be in voice mode for TTS
   }
-
-  /// Single source of truth for TTS activity across all components
-  /// Returns true if TTS is actively streaming or playing
   bool get isTtsActive =>
       state.ttsStatus == TtsStatus.streaming ||
       state.ttsStatus == TtsStatus.playing;
-
-  /// Stream of TTS activity state for reactive components
   Stream<bool> get isTtsActiveStream => stream
       .map((state) =>
           state.ttsStatus == TtsStatus.streaming ||
           state.ttsStatus == TtsStatus.playing)
       .distinct();
-
   VoiceSessionBloc({
     required this.voiceFacade,
     required this.voiceService,
     required this.vadManager,
     this.therapyService,
     this.interfaceVoiceService, // Optional for backward compatibility
-    // Phase 1B.1: Standardized service injection
     this.progressService,
     this.navigationService,
     VoicePipelineControllerFactory? voicePipelineControllerFactory,
@@ -163,13 +98,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           identical(voiceFacade.voiceService, voiceService),
       'VoiceSessionBloc received mismatched VoiceService and facade instance',
     );
-
-    // Phase 1.1.4: Initialize managers
     _sessionManager = SessionStateManager();
     _timerManager = TimerManager();
     _messageCoordinator = MessageCoordinator();
-
-    // Set up timer callbacks for session coordination
     _timerManager.onTimeUpdate = _onTimerUpdate;
     _timerManager.onSessionExpired = _onSessionExpired;
     _timerManager.onTimeWarning = _onTimeWarning;
@@ -179,7 +110,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<StopListening>(_onStopListening);
     on<SelectMood>(_onSelectMood);
     on<ChangeDuration>(_onChangeDuration);
-    // Phase 1A.3: New event handlers for refactoring
     on<SessionStarted>(_onSessionStarted);
     on<MoodSelected>(_onMoodSelected);
     on<DurationSelected>(_onDurationSelected);
@@ -212,34 +142,22 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     on<UpdateSessionTimer>(_onUpdateSessionTimer);
     on<AutoEndTriggered>(_onAutoEndTriggered);
     on<ClearAutoEndTrigger>(_onClearAutoEndTrigger);
-    // Two-step session start flow to prevent premature audio activation
     on<StartSessionRequested>(_onStartSessionRequested);
     on<InitialMoodSelected>(_onInitialMoodSelected);
     on<GeminiLiveEventReceived>(_onGeminiLiveEventReceived);
     on<VoicePipelineSnapshotUpdated>(_onVoicePipelineSnapshotUpdated);
-
-    // Phase 2.2.5: Optimized streams with distinct/shareReplay to eliminate spam
     if (interfaceVoiceService != null) {
-      // Hot, deduplicated TTS state stream (prevents duplicate logging)
       final ttsState$ = _safeVoiceService.isTtsActuallySpeaking
           .distinct() // Remove identical edges
           .shareReplay(maxSize: 1); // Hot, single subscription
-
       _ttsStateSub = ttsState$.listen((isSpeaking) {
-        if (kDebugMode) {
-          debugPrint('🎯 [TTS-TRACK] TTS state: $isSpeaking');
-        }
         add(TtsStateChanged(isSpeaking));
-
-        // NATURAL UX: Auto-enable voice mode when TTS naturally finishes
         if (!isSpeaking && _deferAutoMode) {
           _deferAutoMode = false;
           unawaited(_enableAutoModeIfGenerationMatches(
               context: 'ControllerSnapshot'));
         }
       });
-
-      // VAD with hysteresis to reduce flipping by 20-30%
       final audioLevel$ = _safeVoiceService.audioLevelStream
           .scan<bool>((prev, curr, _) {
             const hi = 0.85, lo = 0.65; // Hysteresis thresholds
@@ -247,147 +165,89 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           }, false)
           .distinct() // Remove identical states
           .shareReplay(maxSize: 1); // Single subscription
-
       _recordingStateSub = audioLevel$.listen((isRecording) {
         add(SetRecordingState(isRecording));
       });
-
-      // Deduplicated audio playback stream
       final playbackState$ = DependencyContainer()
           .ttsService
           .playbackStateStream
           .distinct()
           .shareReplay(maxSize: 1);
-
       _audioPlaybackSub = playbackState$.listen((isPlaying) {
         add(AudioPlaybackStateChanged(isPlaying));
       });
     } else {
-      // Fallback to legacy VoiceService streams (also optimized)
       final recordingState$ = voiceService.recordingState
           .map((recState) => recState.toString().contains('recording'))
           .distinct()
           .shareReplay(maxSize: 1);
-
       _recordingStateSub = recordingState$.listen((isRecording) {
         add(SetRecordingState(isRecording));
       });
-
       final playbackState$ = voiceService
           .getAudioPlayerManager()
           .isPlayingStream
           .distinct()
           .shareReplay(maxSize: 1);
-
       _audioPlaybackSub = playbackState$.listen((isPlaying) {
         add(AudioPlaybackStateChanged(isPlaying));
       });
-
       final ttsState$ =
           voiceService.isTtsActuallySpeaking.distinct().shareReplay(maxSize: 1);
-
       _ttsStateSub = ttsState$.listen((isSpeaking) {
-        if (kDebugMode) {
-          debugPrint('🎯 [TTS-TRACK] TTS state (legacy): $isSpeaking');
-        }
         add(TtsStateChanged(isSpeaking));
       });
     }
-
-    // Set up amplitude stream with throttling and smoothing
     _setupAmplitudeStream();
-
-    // Initialize lifecycle observer for app backgrounding/resuming
     _lifecycleObserver = _VoiceSessionLifecycleObserver(this);
     WidgetsBinding.instance.addObserver(_lifecycleObserver);
-
-    // PHASE 3: Set up safety gate callback for AutoListeningCoordinator
     voiceService.isVoiceModeCallback = () => state.isVoiceMode;
     voiceService.canStartListeningCallback = () =>
         state.isVoiceMode &&
         state.isInitialGreetingPlayed &&
         state.isMicEnabled && // CRITICAL: Include mic state to handle toggles during TTS
         !state.isVoiceModeSwitching;
-
-    // BATCH 1 PHASE 1: Wire session validity callback to TTS service
     DependencyContainer().ttsService.setSessionValidityCallback(_isSessionValid);
-
-    // BATCH 2 PHASE 7: Wire session validity callback to VoiceService
     voiceService.isSessionValidCallback = _isSessionValid;
-
     if (_usesGeminiLive) {
       _geminiLiveSub = voiceService.geminiLiveEventStream
           .listen((event) => add(GeminiLiveEventReceived(event)));
     }
   }
-
-  // Phase 6B-3: Helper method to safely choose between interface and legacy service
-  // For methods that exist in IVoiceService interface, use interface service
-  // For methods that don't exist yet, fall back to legacy service
   IVoiceService get _safeVoiceService {
-    // If we have the interface service, use it; otherwise cast legacy service to interface
     return interfaceVoiceService ?? voiceService as IVoiceService;
   }
-
   void _wireAutoListeningCallbacks() {
     // NOTE: Recording callback MUST be wired even when controller is authoritative.
-    // AutoListeningCoordinator still manages recordings; only auto-mode control
-    // is delegated to the controller. Without this callback, recordings complete
-    // but ProcessAudio event never fires.
     _autoRecordingCompleteHandler ??= (audioPath) {
-      if (kDebugMode) {
-        debugPrint('[VoiceSessionBloc] AutoListening recording complete '
-            '(path=$audioPath, voiceMode=${state.isVoiceMode})');
-      }
       if (audioPath.isEmpty) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionBloc] Ignoring empty recording path from AutoListeningCoordinator');
-        }
         return;
       }
       if (isClosed) {
-        if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Dropping recording callback '
-              'because bloc is closed');
-        }
         return;
       }
       add(ProcessAudio(audioPath));
     };
     _safeVoiceService
         .setAutoListeningRecordingCallback(_autoRecordingCompleteHandler);
-
-    // Controller has its own TTS subscription — no legacy TTS stream wiring needed
   }
-
   void _clearAutoListeningCallbacks() {
-    // Always clear the recording callback since it's always wired (see _wireAutoListeningCallbacks)
     if (_autoRecordingCompleteHandler != null) {
       _safeVoiceService.setAutoListeningRecordingCallback(null);
       _autoRecordingCompleteHandler = null;
     }
   }
-
   bool get _shouldAbortVoicePrep => isClosed || !state.isVoiceMode;
-
   void _guardMicControl({String reason = ''}) {
     if (isClosed) {
       return;
     }
     _micControlGuardDepth++;
     if (state.isMicControlGuarded) {
-      if (kDebugMode && reason.isNotEmpty) {
-        debugPrint('[MicControl] Guard depth=$_micControlGuardDepth ($reason)');
-      }
       return;
-    }
-    if (kDebugMode && reason.isNotEmpty) {
-      debugPrint('[MicControl] Guard engaged ($reason)');
     }
     emit(state.copyWith(isMicControlGuarded: true));
   }
-
   void _releaseMicControlGuard({String reason = ''}) {
     if (_micControlGuardDepth > 0) {
       _micControlGuardDepth--;
@@ -396,60 +256,39 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       return;
     }
     if (_micControlGuardDepth > 0) {
-      if (kDebugMode && reason.isNotEmpty) {
-        debugPrint('[MicControl] Guard depth=$_micControlGuardDepth ($reason)');
-      }
       return;
     }
     if (!state.isMicControlGuarded) {
       return;
     }
-    if (kDebugMode && reason.isNotEmpty) {
-      debugPrint('[MicControl] Guard released ($reason)');
-    }
     emit(state.copyWith(isMicControlGuarded: false));
   }
-
   void _forceReleaseMicControlGuard({String reason = ''}) {
     _micControlGuardDepth = 0;
     if (isClosed || !state.isMicControlGuarded) {
       return;
     }
-    if (kDebugMode && reason.isNotEmpty) {
-      debugPrint('[MicControl] Guard force released ($reason)');
-    }
     emit(state.copyWith(isMicControlGuarded: false));
   }
-
   void _updateListeningState({
     required bool listening,
     String source = '',
   }) {
     final pipelineReady = listening && state.isInitialGreetingPlayed;
-
     final nextListening = listening;
     final nextAutoMode = listening;
     final nextPipelineReady = listening ? pipelineReady : false;
-
     if (state.isListening == nextListening &&
         state.isAutoListeningEnabled == nextAutoMode &&
         state.isVoicePipelineReady == nextPipelineReady) {
       return;
     }
-
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] isListening -> $nextListening (source=$source)');
-    }
-
-    // ignore: invalid_use_of_visible_for_testing_member
     emit(state.copyWith(
       isListening: nextListening,
       isAutoListeningEnabled: nextAutoMode,
       isVoicePipelineReady: nextPipelineReady,
     ));
   }
-
   Future<void> _awaitVoiceFacadeStable() async {
     var attempts = 0;
     while (voiceFacade.isTransitioning && attempts < 40) {
@@ -461,16 +300,12 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           '[VoiceSessionBloc] voiceFacade transition still in progress after wait window');
     }
   }
-
-
   Future<void> _prepareForVoiceMode(AudioPlayerManager audioPlayerManager,
       Emitter<VoiceSessionState> emit) async {
     _guardMicControl(reason: 'Voice mode prep start');
-
     if (_voiceModeSwitchCompleter?.isCompleted == false) {
       await _voiceModeSwitchCompleter!.future;
     }
-
     final transitionCompleter = Completer<void>();
     _voiceModeSwitchCompleter = transitionCompleter;
     const settleDelay = Duration(milliseconds: 150);
@@ -480,27 +315,15 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     final hadMessages = state.messages.isNotEmpty;
     final bool isInitialVoicePrep = !state.isInitialGreetingPlayed;
     final bool shouldTriggerListeningOnEnable = !isInitialVoicePrep;
-
     try {
       _atomicResetCompleter = Completer<void>();
-
       // CRITICAL: Always call startSession during voice mode preparation.
-      // The previous check `if (state.isVoiceMode)` caused a race condition:
-      // During chat→voice switch, state.isVoiceMode is still false here
-      // (emit happens later), so the TTS callback was never re-wired.
       await _awaitVoiceFacadeStable();
       await voiceFacade.startSession();
-
       audioPlayerManager.mute(false);
-
       if (isClosed) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionBloc] Voice prep aborted before initial emit');
-        }
         return;
       }
-
       emit(state.copyWith(
         isVoiceMode: true,
         ttsAudible: true,
@@ -510,50 +333,29 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         isVoicePipelineReady: false,
         isVoiceModeSwitching: true,
       ));
-
       if (_shouldAbortVoicePrep) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionBloc] Voice prep aborted immediately after state emit');
-        }
         return;
       }
-
       await audioPlayerManager.lightweightReset();
       await Future.sync(() => _safeVoiceService.resetTTSState());
       _wireAutoListeningCallbacks();
-
-
       if (!(_atomicResetCompleter?.isCompleted ?? true)) {
         _atomicResetCompleter?.complete();
       }
-
       if (_shouldAbortVoicePrep) {
-        if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Voice prep aborted after resets');
-        }
         return;
       }
-
       if (settleDelay > Duration.zero) {
         await Future.delayed(settleDelay);
       }
-
       if (_shouldAbortVoicePrep) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionBloc] Voice prep aborted after settle delay');
-        }
         return;
       }
-
       if (isInitialVoicePrep) {
         await _voicePipelineController?.requestEnableAutoMode();
-
         final shouldDeferAutoEnable = !state.isInitialGreetingPlayed ||
             isTtsActive ||
             audioPlayerManager.isPlaybackActive;
-
         if (shouldDeferAutoEnable) {
           _deferAutoMode = true;
         } else {
@@ -563,7 +365,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         if (!_welcomeAutoModeArmed) {
           _welcomeAutoModeArmed = true;
         }
-
         try {
           await _voicePipelineController?.requestEnableAutoMode();
           if (shouldTriggerListeningOnEnable) {
@@ -573,63 +374,37 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           emit(state.copyWith(errorMessage: e.toString()));
         }
       }
-
       if (_shouldAbortVoicePrep) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionBloc] Voice prep aborted post auto-mode enable');
-        }
         return;
       }
-
       bool pipelineReady = false;
       if (isInitialVoicePrep) {
         final autoState = _safeVoiceService.autoListeningState;
         pipelineReady = autoState == AutoListeningState.listening ||
             autoState == AutoListeningState.listeningForVoice;
       }
-
       if (_shouldAbortVoicePrep) {
-        if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Voice prep aborted before final emit');
-        }
         return;
       }
-
       emit(state.copyWith(
         isAutoListeningEnabled: true,
         isVoicePipelineReady: isInitialVoicePrep ? pipelineReady : true,
         ttsStatus: TtsStatus.idle,
         isVoiceModeSwitching: false,
       ));
-
       if (isInitialVoicePrep) {
         // CRITICAL FIX: Don't start listening if we deferred for welcome TTS
         if (_deferAutoMode) {
-          if (kDebugMode) {
-            debugPrint(
-                '[VoiceSessionBloc] Skipping triggerListening - deferred for welcome TTS');
-          }
         } else if (!pipelineReady) {
           _triggerListening();
-          if (kDebugMode) {
-            debugPrint(
-                '[VoiceSessionBloc] Voice pipeline scheduled listening restart (controller)');
-          }
         } else if (hadMessages) {
           _triggerListening();
         }
       }
-
       if (wasAiSpeaking || isTtsActive) {
         _deferAutoMode = true;
       }
-
     } catch (e, stackTrace) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Failed during voice mode preparation: $e\n$stackTrace');
-      }
       if (!_shouldAbortVoicePrep) {
         emit(state.copyWith(errorMessage: e.toString()));
       }
@@ -650,62 +425,37 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       _releaseMicControlGuard(reason: 'Voice mode prep complete');
     }
   }
-
-  // Enhanced state tracking for VAD coordination
-  // Separate "AI speaking" from "user can hear it" for better control
   bool get aiSpeakingForVAD => state.isAiSpeaking;
   bool get aiSpeakingForUI => state.isAiSpeaking && state.ttsAudible;
-
-  /// Wait for TTS completion using ExoPlayer events instead of fixed delays
-  /// Guards against rapid state transitions with distinct() and take(1)
-
   Future<void> _enableAutoModeIfGenerationMatches({String context = ''}) async {
     if (!state.isVoiceMode ||
         state.isAutoListeningEnabled ||
         state.isRecording) {
       return;
     }
-
     await _voicePipelineController?.requestEnableAutoMode();
     emit(state.copyWith(isAutoListeningEnabled: true));
     _triggerListening();
   }
-
-  // Phase 6B-3: Helper for legacy-only methods that haven't migrated to interface yet
-
-  // Phase 2.2.2: Temporary helpers for AutoListeningCoordinator methods not yet in interface
   void _triggerListening() {
     _voicePipelineController?.notifyListeningReady(context: 'blocTrigger');
   }
-
   void _onProcessingComplete() {}
-
   Future<void> _onStartSession(
       StartSession event, Emitter<VoiceSessionState> emit) async {
-
-    // Re-entrancy guard
     if (inSession) {
       return;
     }
-
     _welcomeAutoModeArmed = false;
-
     try {
-      // Performance monitoring
       final stopwatch = Stopwatch()..start();
-
       await _awaitVoiceFacadeStable();
       await voiceFacade.startSession();
-
-      // Create fresh session scope with new service instances
       await _scopeManager.createSessionScope();
-
-      // Get fresh session-scoped services
       final voiceCoordinator = _scopeManager.get<VoiceSessionCoordinator>();
       _wireAutoListeningCallbacks();
       final sessionAudioPlayer = _scopeManager.get<AudioPlayerManager>();
       final recordingManager = voiceService.getRecordingManager();
-
       AudioCapture? audioCapture;
       AudioPlayback? audioPlayback;
       AiGateway? aiGateway;
@@ -719,7 +469,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         aiGateway = VoiceCoordinatorAiGateway(voiceCoordinator);
         micController = VoiceServiceMicController(_safeVoiceService);
       }
-
       if (_voicePipelineControllerFactory != null &&
           autoListeningSnapshot != null) {
         _attachPipelineController(
@@ -737,36 +486,19 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         );
       } else if (_voicePipelineControllerFactory != null && kDebugMode) {
       }
-
-      // Initialize session services
       await voiceCoordinator.initialize();
-
-      // Wire unified TTS activity stream for improved VAD coordination
       _safeVoiceService.setAutoListeningTtsActivityStream(isTtsActiveStream);
-
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Session initialized in ${stopwatch.elapsedMilliseconds}ms');
-      }
-
-      // Phase 1.1.4: Use SessionStateManager for session start
       final newState = _sessionManager.startNewSession();
-
-      // Reset managers
       _messageCoordinator.resetMessages();
-      // Prepare timer to count down from selected duration (if any)
       _timerManager.stopTimer();
       if (state.selectedDuration != null) {
         _timerManager.setSessionDuration(state.selectedDuration!);
         _timerManager.startTimer();
-        // Initialize displayed remaining time immediately
         add(const UpdateSessionTimer());
       }
-
       if (_usesGeminiLive) {
         await voiceService.startGeminiLiveSession();
       }
-
       emit(newState);
       await _voicePipelineController?.startSession(
         VoiceSessionConfig(
@@ -781,133 +513,88 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
-
   Future<void> _onEndSession(
       EndSession event, Emitter<VoiceSessionState> emit) async {
     if (!inSession) {
       return;
     }
-
-
     try {
-      // BATCH 2 PHASE 4: Force-cancel TTS before cleanup to prevent late playback
       if (_safeVoiceService.hasPendingOrActiveTts) {
         await DependencyContainer().ttsService.cancelAllStreams();
         await Future.delayed(const Duration(milliseconds: 50));
       }
-
-      // Async teardown order - stop services gracefully first
       await _safeVoiceService.stopAudio(); // Await playback completion
-
       _safeVoiceService.resetTTSState(); // Flush TTS monitor (sync operation)
       await _safeVoiceService.disableAutoMode(); // Disable auto listening
-
       await _safeVoiceService
           .tryStopRecording(); // Stop VAD/recording (idempotent)
-
-
-      // Destroy entire session scope (automatic disposal)
       _clearAutoListeningCallbacks();
       await _scopeManager.destroySessionScope();
-
       await _awaitVoiceFacadeStable();
       await voiceFacade.endSession();
       await _voicePipelineController?.teardown();
       await _detachPipelineController();
-
       if (_usesGeminiLive) {
         await voiceService.stopGeminiLiveSession();
       }
-
-      // Reset session start flag for next session
       _sessionStarted = false;
       _welcomeAutoModeArmed = false;
-
     } catch (e) {
       await _forceSessionCleanup();
     }
-
     emit(state.copyWith(
       isListening: false,
       isRecording: false,
       isProcessingAudio: false,
       isAiSpeaking: false,
     ));
-    // Ensure timer is stopped and UI reflects 0
     _timerManager.stopTimer();
     add(const UpdateSessionTimer());
   }
-
   void _onStartListening(
       StartListening event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] StartListening received – marking pipeline ready');
-    }
     _updateListeningState(
       listening: true,
       source: 'StartListeningEvent',
     );
   }
-
   void _onStopListening(StopListening event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] StopListening received – guarding mic toggle');
-    }
     _updateListeningState(
       listening: false,
       source: 'StopListeningEvent',
     );
   }
-
   void _onSelectMood(SelectMood event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(selectedMood: event.mood));
   }
-
   void _onChangeDuration(
       ChangeDuration event, Emitter<VoiceSessionState> emit) {
-    // Sync current state to manager first to preserve status
     _sessionManager.updateState(state);
-
-    // Use SessionStateManager for single source of truth
     final updatedState =
         _sessionManager.selectDuration(Duration(minutes: event.minutes));
     emit(updatedState);
   }
-
   Future<void> _onSwitchMode(
       SwitchMode event, Emitter<VoiceSessionState> emit) async {
-    // PHASE 2A: Increment generation counter with overflow protection
     if (++_modeGeneration == 0) {
       _modeGeneration = 1; // Skip 0, avoid wrap-around
     }
-
-    // NATURAL UX: Clear deferred auto mode flag on generation change
     _deferAutoMode = false;
-
-
-    // Get audio player manager for soft mute functionality (use legacy service)
     final audioPlayerManager = voiceService.getAudioPlayerManager();
-
     if (event.isVoiceMode) {
       try {
         await _prepareForVoiceMode(audioPlayerManager, emit);
-      } catch (_) {
-        // Errors already logged and emitted in helper
-      }
+      } catch (_) {}
     } else {
       if (_voiceModeSwitchCompleter?.isCompleted == false) {
         await _voiceModeSwitchCompleter!.future;
       }
       try {
-        // BATCH 2 PHASE 3: Cancel TTS immediately instead of just muting
         if (_safeVoiceService.hasPendingOrActiveTts) {
           await DependencyContainer().ttsService.cancelAllStreams();
         }
         await _safeVoiceService.stopAudio();
         audioPlayerManager.mute(true); // Backup safety
-
         emit(state.copyWith(
           isVoiceMode: event.isVoiceMode,
           ttsAudible: false,
@@ -917,12 +604,7 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           isAutoListeningEnabled: false,
         ));
         _forceReleaseMicControlGuard(reason: 'Switched to chat mode');
-
-        // PHASE 2B: Cancel any pending auto-enable operations
-
-        // Phase 2.2.2: Use interface when available
         await _safeVoiceService.disableAutoMode();
-
         String? path = await _safeVoiceService.tryStopRecording();
         if (path != null && path.isNotEmpty) {
           add(ProcessAudio(path));
@@ -930,7 +612,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           emit(state.copyWith(isProcessingAudio: false));
         }
         emit(state.copyWith(isAutoListeningEnabled: false, isRecording: false));
-
         await _awaitVoiceFacadeStable();
         await voiceFacade.endSession();
         _clearAutoListeningCallbacks();
@@ -939,7 +620,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
     }
   }
-
   Future<void> _onProcessAudio(
       ProcessAudio event, Emitter<VoiceSessionState> emit) async {
     if (_usesGeminiLive) {
@@ -951,59 +631,42 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
       return;
     }
-
     if (_sessionManager.state.status == VoiceSessionStatus.ended) {
       return;
     }
     emit(state.copyWith(isProcessingAudio: true));
-
     try {
       final transcription =
           await _safeVoiceService.processRecordedAudioFile(event.audioPath);
-
       if (transcription.trim().isEmpty || transcription.startsWith("Error:")) {
         emit(state.copyWith(
             isProcessingAudio: false,
             errorMessage: 'Could not understand audio'));
         return;
       }
-
       if (_sessionManager.state.status == VoiceSessionStatus.ended) {
         emit(state.copyWith(isProcessingAudio: false));
         return;
       }
-
-      // Phase 1.1.4: Use MessageCoordinator for user message (consistent with text mode)
       _messageCoordinator.addUserMessage(transcription);
-
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
         currentMessageSequence: _messageCoordinator.currentSequence,
       ));
-
-      // Use MessageCoordinator for conversation history
       final history = _messageCoordinator.buildConversationHistory();
-
       if (state.isVoiceMode) {
         emit(
             state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.preparing));
-
         final therapyServiceInstance =
             therapyService ?? DependencyContainer().therapy;
-
-        // Debug assertion to catch parallel TTS sessions
         assert(!isTtsActive,
             'Attempted to start TTS while another session is active (status: ${state.ttsStatus})');
-
         final responseData =
             await therapyServiceInstance.processUserMessageWithStreamingAudio(
           transcription,
           history,
           onTTSStart: (responseText) {
-
-            // Phase 1.1.4: Add Maya's message to chat IMMEDIATELY when TTS starts
             _messageCoordinator.addAIMessage(responseText);
-
             emit(state.copyWith(
               ttsStatus: TtsStatus.streaming,
               messages: _messageCoordinator.messages,
@@ -1015,7 +678,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
                 isProcessingAudio: false,
                 isAiSpeaking: false,
                 ttsStatus: TtsStatus.idle));
-            // Phase 2.2.2: Use helper method for legacy AutoListeningCoordinator
             _onProcessingComplete();
           },
           onTTSError: (error) async {
@@ -1024,19 +686,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
                 errorMessage: error.toString(),
                 isAiSpeaking: false,
                 ttsStatus: TtsStatus.idle));
-            // Phase 2.2.2: Use helper method for legacy AutoListeningCoordinator
             _onProcessingComplete();
           },
         );
-
         final mayaResponseText = responseData['text'] as String? ??
             'I\'m having trouble responding right now.';
-
-
         // Note: Maya's message is now added to MessageCoordinator in onTTSStart callback
-        // This ensures it appears in chat immediately when TTS begins, not when it completes
       } else {
-        // Text mode - only get text response without TTS
         final therapyServiceInstance =
             therapyService ?? DependencyContainer().therapy;
         final mayaResponseText =
@@ -1044,18 +700,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           transcription,
           history: history,
         );
-
         if (mayaResponseText.trim().isEmpty) {
           emit(state.copyWith(
               isProcessingAudio: false,
               errorMessage: 'Failed to get response from Maya'));
           return;
         }
-
-
-        // Phase 1.1.4: Use MessageCoordinator for AI message (consistent with voice mode)
         _messageCoordinator.addAIMessage(mayaResponseText);
-
         emit(state.copyWith(
           messages: _messageCoordinator.messages,
           currentMessageSequence: _messageCoordinator.currentSequence,
@@ -1067,11 +718,9 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           state.copyWith(isProcessingAudio: false, errorMessage: e.toString()));
     }
   }
-
   Future<void> _onGeminiLiveEventReceived(
       GeminiLiveEventReceived wrapper, Emitter<VoiceSessionState> emit) async {
     final event = wrapper.event;
-
     if (event is GeminiLiveReadyEvent) {
       emit(state.copyWith(
         geminiLiveSessionId: event.sessionId,
@@ -1079,22 +728,18 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
       return;
     }
-
     if (event is GeminiLiveTextEvent) {
       _geminiResponseBuffer ??= StringBuffer();
       _geminiResponseBuffer!.write(event.text);
       final partial = _geminiResponseBuffer!.toString();
-
       emit(state.copyWith(
         geminiLivePartialText: partial,
         isProcessingAudio: true,
         status: VoiceSessionStatus.processing,
       ));
-
       if (event.isFinal) {
         final finalText = partial.trim();
         _geminiResponseBuffer = null;
-
         if (finalText.isNotEmpty) {
           _messageCoordinator.addAIMessage(finalText);
           emit(state.copyWith(
@@ -1112,7 +757,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
       return;
     }
-
     if (event is GeminiLiveAudioStartedEvent) {
       emit(state.copyWith(
         ttsStatus: TtsStatus.streaming,
@@ -1121,7 +765,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
       return;
     }
-
     if (event is GeminiLiveAudioCompletedEvent) {
       emit(state.copyWith(
         ttsStatus: TtsStatus.idle,
@@ -1132,7 +775,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       _onProcessingComplete();
       return;
     }
-
     if (event is GeminiLiveTurnCompleteEvent) {
       _geminiResponseBuffer = null;
       emit(state.copyWith(
@@ -1142,7 +784,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
       return;
     }
-
     if (event is GeminiLiveErrorEvent) {
       _geminiResponseBuffer = null;
       emit(state.copyWith(
@@ -1153,7 +794,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
       return;
     }
-
     if (event is GeminiLiveDisconnectedEvent) {
       _geminiResponseBuffer = null;
       emit(state.copyWith(
@@ -1163,58 +803,35 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
     }
   }
-
   void _onHandleError(HandleError event, Emitter<VoiceSessionState> emit) {
-    // Enhanced error handling with specific BackendSchemaException support
     String userFriendlyMessage;
-
-    // Parse the error string back to get the actual exception type
     final errorString = event.error.toString();
-
     if (errorString.startsWith('BackendSchemaException:')) {
-      // Handle schema validation errors specifically
       userFriendlyMessage =
           "Update required - please restart the app and try again. "
           "If this continues, contact support.";
-
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Schema validation error detected: $errorString');
-      }
     } else if (errorString.contains('Connection error:') ||
         errorString.contains('SocketException') ||
         errorString.contains('TimeoutException')) {
-      // Handle network connectivity issues
       userFriendlyMessage =
           "Connection issue. Please check your internet connection and try again.";
     } else if (errorString.contains('Authentication required') ||
         errorString.contains('401')) {
-      // Handle authentication issues
       userFriendlyMessage =
           "Session expired. Please restart the app to continue.";
     } else {
-      // Generic error fallback
       userFriendlyMessage = "Something went wrong. Please try again.";
-
-      if (kDebugMode) {
-        debugPrint('[VoiceSessionBloc] General error: $errorString');
-      }
     }
-
     emit(state.copyWith(
       errorMessage: userFriendlyMessage,
       hasError: true,
     ));
   }
-
   void _onClearError(ClearErrorEvent event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(hasError: false, clearErrorMessage: true));
   }
-
   void _onRetryLastAction(RetryLastActionEvent event, Emitter<VoiceSessionState> emit) {
-    // Clear the error state first
     emit(state.copyWith(hasError: false, clearErrorMessage: true));
-    // Re-send the last user message if available
     final messages = state.messages;
     if (messages.isNotEmpty) {
       final lastUserMsg = messages.lastWhere(
@@ -1226,45 +843,35 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       }
     }
   }
-
   void _onUpdateAmplitude(
       UpdateAmplitude event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(amplitude: event.amplitude));
   }
-
   Future<void> _onAddMessage(
       AddMessage event, Emitter<VoiceSessionState> emit) async {
     try {
-      // Phase 1.1.4: Use MessageCoordinator for message addition
       _messageCoordinator.addMessage(event.message);
-
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
         currentMessageSequence: _messageCoordinator.currentSequence,
       ));
-
-      // Session persistence handled by session manager
     } catch (e) {
       emit(state.copyWith(
           errorMessage: 'Failed to add message: $e', hasError: true));
     }
   }
-
   void _onSetProcessing(SetProcessing event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(isProcessingAudio: event.isProcessing));
   }
-
   void _onSetRecordingState(
       SetRecordingState event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(isRecording: event.isRecording));
   }
-
   Future<void> _onProcessTextMessage(
       ProcessTextMessage event, Emitter<VoiceSessionState> emit) async {
     if (_sessionManager.state.status == VoiceSessionStatus.ended) {
       return;
     }
-
     if (_usesGeminiLive) {
       _messageCoordinator.addUserMessage(event.text);
       emit(state.copyWith(
@@ -1275,43 +882,28 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       await voiceService.sendGeminiLiveText(event.text, turnComplete: true);
       return;
     }
-
     emit(state.copyWith(isProcessingAudio: true));
-
     try {
-      // Phase 1.1.4: Use MessageCoordinator for user message
       _messageCoordinator.addUserMessage(event.text);
-
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
         currentMessageSequence: _messageCoordinator.currentSequence,
       ));
-
-      // Use MessageCoordinator for conversation history
       final history = _messageCoordinator.buildConversationHistory();
-
       final therapyServiceInstance =
           therapyService ?? DependencyContainer().therapy;
       String mayaResponseText;
-
       if (state.isVoiceMode) {
-
         emit(
             state.copyWith(isAiSpeaking: true, ttsStatus: TtsStatus.preparing));
-
-        // Debug assertion to catch parallel TTS sessions
         assert(!isTtsActive,
             'Attempted to start TTS while another session is active (status: ${state.ttsStatus})');
-
         final responseData =
             await therapyServiceInstance.processUserMessageWithStreamingAudio(
           event.text,
           history,
           onTTSStart: (responseText) {
-
-            // Phase 1.1.4: Add Maya's message to chat IMMEDIATELY when TTS starts
             _messageCoordinator.addAIMessage(responseText);
-
             emit(state.copyWith(
               ttsStatus: TtsStatus.streaming,
               messages: _messageCoordinator.messages,
@@ -1335,65 +927,45 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           history: history,
         );
       }
-
-      // Phase 1.1.4: Use MessageCoordinator for AI message
-      // Only add message for text mode - voice mode already adds it in onTTSStart callback
       if (!state.isVoiceMode) {
         _messageCoordinator.addAIMessage(mayaResponseText);
       }
-
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
         isProcessingAudio: false,
         currentMessageSequence: _messageCoordinator.currentSequence,
       ));
-
     } catch (e) {
-      // Ensure processing state is cleared and error is shown to user
       emit(state.copyWith(
         isProcessingAudio: false,
         errorMessage: 'Failed to get response: ${e.toString()}',
         hasError: true,
       ));
-
-      // Phase 1.1.4: Add fallback error message using MessageCoordinator
       _messageCoordinator.addAIMessage(
           "I'm sorry, I'm having trouble responding right now. Please try again.");
-
       emit(state.copyWith(
         messages: _messageCoordinator.messages,
         currentMessageSequence: _messageCoordinator.currentSequence,
       ));
     }
   }
-
   void _onShowMoodSelector(
       ShowMoodSelector event, Emitter<VoiceSessionState> emit) {
-    // Phase 1.1.4: Use SessionStateManager for UI state
     final newState = _sessionManager.setMoodSelectorVisibility(event.show);
     emit(newState);
   }
-
   void _onShowDurationSelector(
       ShowDurationSelector event, Emitter<VoiceSessionState> emit) {
-    // Phase 1.1.4: Use SessionStateManager for UI state
     final newState = _sessionManager.setDurationSelectorVisibility(event.show);
     emit(newState);
   }
-
   void _onToggleMicMute(ToggleMicMute event, Emitter<VoiceSessionState> emit) {
     if (state.isMicControlGuarded) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Ignoring mic toggle while guard is active');
-      }
       return;
     }
-
     final newMicEnabledState = !state.isMicEnabled;
     emit(state.copyWith(isMicEnabled: newMicEnabledState));
     _voicePipelineController?.updateExternalMicState(!newMicEnabledState);
-
     if (newMicEnabledState) {
       if (state.isVoiceMode && !state.isRecording) {
         unawaited(_enableAutoModeIfGenerationMatches(context: 'MicToggle'));
@@ -1401,40 +973,32 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
         _deferAutoMode = true;
       }
     } else {
-      // Muted: stop listening safely via bloc event; underlying coordinator will pause VAD/recording
       _voicePipelineController?.requestDisableAutoMode();
     }
   }
-
   void _onEnsureMicToggleEnabled(
       EnsureMicToggleEnabled event, Emitter<VoiceSessionState> emit) {
     _forceReleaseMicControlGuard(reason: 'EnsureMicToggleEnabled event');
   }
-
   void _onSetSpeakerMuted(
       SetSpeakerMuted event, Emitter<VoiceSessionState> emit) {
     _safeVoiceService.setSpeakerMuted(event.isMuted);
     emit(state.copyWith(speakerMuted: event.isMuted));
   }
-
   Future<void> _onInitializeService(
       InitializeService event, Emitter<VoiceSessionState> emit) async {
     emit(state.copyWith(isProcessingAudio: true));
-
     try {
       await _safeVoiceService.initialize();
-
       final therapyServiceInstance =
           therapyService ?? DependencyContainer().therapy;
       await therapyServiceInstance.init();
-
       emit(state.copyWith(isProcessingAudio: false));
     } catch (e) {
       emit(
           state.copyWith(isProcessingAudio: false, errorMessage: e.toString()));
     }
   }
-
   Future<void> _onStopAudio(
       StopAudio event, Emitter<VoiceSessionState> emit) async {
     try {
@@ -1444,7 +1008,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
-
   Future<void> _onPlayAudio(
       PlayAudio event, Emitter<VoiceSessionState> emit) async {
     try {
@@ -1453,58 +1016,23 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
-
   Future<void> _onPlayWelcomeMessage(
       PlayWelcomeMessage event, Emitter<VoiceSessionState> emit) async {
-
     if (state.isMicControlGuarded) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Welcome TTS already guarded, skipping re-entry');
-      }
       return;
     }
-
     _guardMicControl(reason: 'Welcome TTS');
-
     try {
-      // Ensure any in-flight atomic reset has finished before starting TTS
       if (_atomicResetCompleter != null &&
           !_atomicResetCompleter!.isCompleted) {
-        if (kDebugMode) {
-          debugPrint(
-              '[VoiceSessionBloc] Waiting for atomic reset to finish before welcome TTS');
-        }
         await _atomicResetCompleter!.future;
       }
-      // Use VoiceService TTS state management to properly coordinate with auto-listening
-      if (kDebugMode) {
-        debugPrint(
-            '🎯 [TTS-TRACK] updateTTSSpeakingState(true) - Welcome message starting');
-      }
       _safeVoiceService.updateTTSSpeakingState(true); // Stops auto-listening
-
-      // Use SimpleTTSService directly for welcome messages
       final ttsService = DependencyContainer().ttsService;
       await ttsService.speak(event.welcomeMessage, makeBackupFile: false);
-
-
-      // Use VoiceService TTS state management to trigger auto-listening
-      if (kDebugMode) {
-        debugPrint(
-            '🎯 [TTS-TRACK] updateTTSSpeakingState(false) - Welcome message completed');
-      }
       _safeVoiceService.updateTTSSpeakingState(false); // Starts auto-listening
-
-      // Welcome completion will handle deferred auto-mode resume.
-
-      // Fire the welcome message completed event if needed
       add(const WelcomeMessageCompleted());
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-            '🎯 [TTS-TRACK] updateTTSSpeakingState(false) - Welcome message error recovery');
-      }
       _safeVoiceService.updateTTSSpeakingState(false); // Reset state on error
       emit(state.copyWith(errorMessage: e.toString()));
     } finally {
@@ -1512,21 +1040,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       _releaseMicControlGuard(reason: 'Welcome TTS complete');
     }
   }
-
   void _onAudioPlaybackStateChanged(
       AudioPlaybackStateChanged event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] Audio playback state changed: ${event.isPlaying}');
-    }
   }
-
   void _onTtsStateChanged(
       TtsStateChanged event, Emitter<VoiceSessionState> emit) {
-
     final bool wasSpeaking = state.isAiSpeaking;
     emit(state.copyWith(isAiSpeaking: event.isSpeaking));
-
     if (wasSpeaking &&
         !event.isSpeaking &&
         !state.isInitialGreetingPlayed &&
@@ -1535,16 +1055,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       _welcomeAutoModeArmed = true;
       unawaited(_enableAutoModeIfGenerationMatches(context: 'InitialGreeting'));
     }
-
     if (!event.isSpeaking && _deferAutoMode) {
       _deferAutoMode = false;
       unawaited(_enableAutoModeIfGenerationMatches(context: 'DeferredAuto'));
     }
-
     // CRITICAL FIX: When TTS finishes mid-session in voice mode with mic enabled,
-    // re-enable auto mode regardless of _deferAutoMode state.
-    // This handles the case where mic was toggled during TTS (which disabled auto mode)
-    // but user still wants Maya to resume listening.
     if (wasSpeaking &&
         !event.isSpeaking &&
         state.isInitialGreetingPlayed &&
@@ -1554,27 +1069,21 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       unawaited(_enableAutoModeIfGenerationMatches(context: 'TtsCompletionRestore'));
     }
   }
-
   void _onWelcomeMessageCompleted(
       WelcomeMessageCompleted event, Emitter<VoiceSessionState> emit) {
-    // Phase 1.1.4: Use SessionStateManager for greeting played state
     final newState = _sessionManager.setInitialGreetingPlayed();
     emit(newState);
-
     _welcomeAutoModeArmed = true;
     if (!isClosed) {
       unawaited(
           _enableAutoModeIfGenerationMatches(context: 'WelcomeCompletion'));
     }
   }
-
   void _onSetInitializing(
       SetInitializing event, Emitter<VoiceSessionState> emit) {
-    // Phase 1.1.4: Use SessionStateManager for initialization state
     final newState = _sessionManager.setInitializing(event.isInitializing);
     emit(newState);
   }
-
   void _onSetEndingSession(
       SetEndingSession event, Emitter<VoiceSessionState> emit) {
     emit(state.copyWith(
@@ -1582,59 +1091,31 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
             ? VoiceSessionStatus.ended
             : VoiceSessionStatus.idle));
   }
-
   void _onUpdateSessionTimer(
       UpdateSessionTimer event, Emitter<VoiceSessionState> emit) {
-    // Pull remaining time from TimerManager and reflect in state
     final remaining = _timerManager.remainingSeconds;
     if (state.timerRemainingSeconds != remaining) {
       emit(state.copyWith(timerRemainingSeconds: remaining));
     }
   }
-
   // ========== Two-Step Session Start Flow ==========
-
-  /// Handles the first step: "Talk Now" button tap -> show duration selector first, NO audio initialization
   void _onStartSessionRequested(
       StartSessionRequested event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint('🎯 [VoiceSessionBloc] StartSessionRequested received!');
-      debugPrint('   Current status: ${state.status}');
-      debugPrint(
-          '   Current duration: ${state.selectedDuration?.inMinutes} minutes');
-      debugPrint('   Current mood: ${state.selectedMood}');
-      // Print stack trace to identify where this is being called from
-      debugPrint('   Stack trace:');
-      debugPrint(StackTrace.current.toString().split('\n').take(10).join('\n'));
-    }
-
     if (state.status == VoiceSessionStatus.idle ||
         state.status == VoiceSessionStatus.initial) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] StartSessionRequested: ${state.status} → awaitingMood, showing duration selector');
-      }
       emit(state.copyWith(
         status: VoiceSessionStatus.awaitingMood,
         showDurationSelector: true,
         showMoodSelector: false,
       ));
     } else {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] StartSessionRequested ignored, current status: ${state.status}');
-      }
     }
   }
-
-  /// Handles the second step: mood selected -> start actual session with audio pipeline
   void _onInitialMoodSelected(
       InitialMoodSelected event, Emitter<VoiceSessionState> emit) async {
-    // Validate we're in the correct state to accept mood selection
     if (state.status != VoiceSessionStatus.awaitingMood) {
       return;
     }
-
     _guardMicControl(reason: 'Initial mood selection');
     try {
       await _beginSessionIfNeeded(event.mood, emit);
@@ -1642,19 +1123,11 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       _releaseMicControlGuard(reason: 'Initial mood selection complete');
     }
   }
-
-  /// Reusable helper for session start with re-entrancy guard
   Future<void> _beginSessionIfNeeded(
       Mood mood, Emitter<VoiceSessionState> emit) async {
     if (_sessionStarted) {
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Session already started, ignoring duplicate request');
-      }
       return;
     }
-
-    // Validate duration is selected before starting session
     if (state.selectedDuration == null) {
       emit(state.copyWith(
         errorMessage: 'Please select a session duration first',
@@ -1664,102 +1137,44 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       ));
       return;
     }
-
     _sessionStarted = true;
-
-    // Now it is safe to enable voice mode
     add(const SwitchMode(true));
-
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] InitialMoodSelected: awaitingMood → active, starting audio pipeline');
-      debugPrint(
-          '[VoiceSessionBloc] Duration: ${state.selectedDuration?.inMinutes} minutes, Mood: $mood');
-    }
-
     try {
-      // Start the actual session with audio/VAD pipeline - reuse existing logic
       await _startSessionWithMood(mood, emit);
     } catch (e) {
       _sessionStarted = false; // Reset flag on error
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
-
-  /// Extract session start logic to be called only after mood selection
   Future<void> _startSessionWithMood(
       Mood mood, Emitter<VoiceSessionState> emit) async {
-
     try {
-      // Performance monitoring
       final stopwatch = Stopwatch()..start();
-
-      // Create fresh session scope with new service instances (HEAVY INITIALIZATION)
       await _scopeManager.createSessionScope();
-
-      // Get fresh session-scoped services
       final voiceCoordinator = _scopeManager.get<VoiceSessionCoordinator>();
       _wireAutoListeningCallbacks();
-
-      // Initialize session services (AUDIO/VAD INITIALIZATION)
       await voiceCoordinator.initialize();
-
-      // Wire unified TTS activity stream for improved VAD coordination
       _safeVoiceService.setAutoListeningTtsActivityStream(isTtsActiveStream);
-
-      if (kDebugMode) {
-        debugPrint(
-            '[VoiceSessionBloc] Session services initialized in ${stopwatch.elapsedMilliseconds}ms');
-      }
-
-      // Use SessionStateManager for mood selection and session setup
       final newState = _sessionManager.selectMood(mood);
-
-      // Log the mood entry to ProgressService (same as home screen mood logging)
       try {
         await progressService?.logMood(mood);
-        if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Mood logged to ProgressService: $mood');
-        }
-      } catch (e) {
-        // Don't block session start if mood logging fails
-      }
-
-      // Reset managers for fresh session
+      } catch (e) {}
       _messageCoordinator.resetMessages();
-
-      // Add welcome message using MessageCoordinator (after reset)
       final welcomeMessage = _messageCoordinator.addWelcomeMessage(mood);
-      // Start or restart session countdown timer now that session is active
       _timerManager.stopTimer();
       if (state.selectedDuration != null) {
         _timerManager.setSessionDuration(state.selectedDuration!);
         _timerManager.startTimer();
         add(const UpdateSessionTimer());
       }
-
-      // Update state with new message and sequence - SET TO ACTIVE (not idle)
       final finalState = newState.copyWith(
         messages: _messageCoordinator.messages,
         currentMessageSequence: _messageCoordinator.currentSequence,
         status: VoiceSessionStatus.voiceModeActive, // SESSION IS NOW ACTIVE
       );
-
-      // Sync managers with updated state
       _sessionManager.updateState(finalState);
-
-      // Emit the active state
       emit(finalState);
-
-      if (kDebugMode) {
-        debugPrint('🚀 SESSION ACTIVE'); // Verification log
-      }
-
-      // If in voice mode, generate TTS for welcome message
       if (finalState.isVoiceMode) {
-        if (kDebugMode) {
-          debugPrint('[VoiceSessionBloc] Starting welcome TTS for voice mode');
-        }
         add(PlayWelcomeMessage(welcomeMessage.content));
       }
     } catch (e) {
@@ -1768,107 +1183,44 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       emit(state.copyWith(errorMessage: e.toString()));
     }
   }
-
   // ========== Phase 1A.3: New Event Handlers for Refactoring ==========
-
-  /// Handles session initialization with optional sessionId
   void _onSessionStarted(
       SessionStarted event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] Session started with ID: ${event.sessionId}');
-    }
-
-    // Phase 1.1.4: Use SessionStateManager for session started
     final newState = _sessionManager.setSessionStarted(event.sessionId);
     emit(newState);
   }
-
-  /// Handles mood selection - moves logic from ChatScreen._handleMoodSelection
   void _onMoodSelected(MoodSelected event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionBloc] Mood selected: ${event.mood}');
-    }
-
-    // Phase 1.1.4: Use SessionStateManager for mood selection
     var newState = _sessionManager.selectMood(event.mood);
-
-    // Add welcome message using MessageCoordinator
     final welcomeMessage = _messageCoordinator.addWelcomeMessage(event.mood);
-
-    // Update state with new message and sequence
     newState = newState.copyWith(
       messages: _messageCoordinator.messages,
       currentMessageSequence: _messageCoordinator.currentSequence,
       status: VoiceSessionStatus.idle, // Session ready after welcome message
     );
-
-    // Sync managers with updated state
     _sessionManager.updateState(newState);
-
     emit(newState);
-
-    // If in voice mode, generate TTS for welcome message
     if (newState.isVoiceMode) {
-      if (kDebugMode) {
-        debugPrint('[VoiceSessionBloc] Starting welcome TTS for voice mode');
-      }
       add(PlayWelcomeMessage(welcomeMessage.content));
     }
   }
-
-  /// Handles duration selection with Duration object
   void _onDurationSelected(
       DurationSelected event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] Duration selected: ${event.duration.inMinutes} minutes');
-    }
-
-    // Phase 1.1.4: Use SessionStateManager and TimerManager for duration
     final newState = _sessionManager.selectDuration(event.duration);
     _timerManager.setSessionDuration(event.duration);
-
     emit(newState);
   }
-
-  /// Handles text message sending - delegates to existing ProcessTextMessage
   void _onTextMessageSent(
       TextMessageSent event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionBloc] Text message sent: "${event.message}"');
-    }
-
-    // Delegate to existing ProcessTextMessage handler
     add(ProcessTextMessage(event.message));
   }
-
-  /// Handles session end request - moves core logic from ChatScreen._endSession
   void _onEndSessionRequested(
       EndSessionRequested event, Emitter<VoiceSessionState> emit) {
-    if (kDebugMode) {
-      debugPrint('[VoiceSessionBloc] Session end requested');
-    }
-
-    // Phase 1.1.4: Use SessionStateManager for session ending
     final newState = _sessionManager.setSessionEnding();
-
-    // Stop timer
     _timerManager.stopTimer();
-
-    // Reset session start flag
     _sessionStarted = false;
-
     emit(newState);
-
     // Note: Wakelock, navigation, VAD stopping remain in UI layer for now
-    // These are UI concerns that will be handled by ChatScreen
   }
-
-  // Phase 1.1.4: Welcome message generation moved to MessageCoordinator
-  // Old _addInitialAIMessage and _getWelcomeMessage methods removed
-  // All welcome message logic now handled by MessageCoordinator.addWelcomeMessage()
-
   void _onAutoEndTriggered(
       AutoEndTriggered event, Emitter<VoiceSessionState> emit) {
     if (state.autoEndTriggered) {
@@ -1878,7 +1230,6 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _sessionManager.updateState(newState);
     emit(newState);
   }
-
   void _onClearAutoEndTrigger(
       ClearAutoEndTrigger event, Emitter<VoiceSessionState> emit) {
     if (!state.autoEndTriggered) {
@@ -1888,40 +1239,20 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     _sessionManager.updateState(newState);
     emit(newState);
   }
-
-  // Phase 1.1.4: Timer callback methods for coordination
   void _onTimerUpdate(int elapsedSeconds, int remainingSeconds) {
-    // Timer updates can trigger state updates for UI refresh
-    // For now, we emit the current state with updated timer info
-    // This preserves the existing timer behavior without breaking changes
     add(const UpdateSessionTimer());
   }
-
   void _onSessionExpired() {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] Session time expired - requesting session end');
-    }
     add(const AutoEndTriggered());
     add(const EndSessionRequested());
   }
-
   void _onTimeWarning() {
-    if (kDebugMode) {
-      debugPrint(
-          '[VoiceSessionBloc] Session time warning - 5 minutes remaining');
-    }
-    // Could add a warning state or event here if needed in the future
   }
-
-  /// Cleanup after failed session initialization
   Future<void> _cleanupFailedSession() async {
     _welcomeAutoModeArmed = false;
     _clearAutoListeningCallbacks();
     await _scopeManager.destroySessionScope();
   }
-
-  /// Force cleanup for emergency situations
   Future<void> _forceSessionCleanup() async {
     _welcomeAutoModeArmed = false;
     _clearAutoListeningCallbacks();
@@ -1929,97 +1260,55 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     await _awaitVoiceFacadeStable();
     await voiceFacade.endSession();
   }
-
-  /// Handle app lifecycle changes for proper audio management
   void _onAppLifecycleStateChanged(AppLifecycleState state) {
-    if (kDebugMode) {
-      debugPrint('🌍 [LIFECYCLE] App state changed to: $state');
-    }
-
     switch (state) {
       case AppLifecycleState.paused:
-        // Force-mute audio when app goes to background
         if (this.state.isVoiceMode) {
           try {
             final audioPlayerManager = voiceService.getAudioPlayerManager();
             audioPlayerManager.mute(true);
-            if (kDebugMode) {
-              debugPrint('🔇 [LIFECYCLE] Force-muted audio due to app pause');
-            }
-          } catch (e) {
-            if (kDebugMode) {
-              debugPrint('⚠️ [LIFECYCLE] Error muting audio on pause: $e');
-            }
-          }
+          } catch (e) {}
         }
         break;
-
       case AppLifecycleState.resumed:
-        // Un-mute only if in voice mode and TTS is audible
         if (this.state.isVoiceMode && this.state.ttsAudible) {
           try {
             final audioPlayerManager = voiceService.getAudioPlayerManager();
             audioPlayerManager.mute(false);
-            if (kDebugMode) {
-              debugPrint(
-                  '🔊 [LIFECYCLE] Un-muted audio due to app resume (voice mode + TTS audible)');
-            }
           } catch (e) {
-            if (kDebugMode) {
-              debugPrint('⚠️ [LIFECYCLE] Error un-muting audio on resume: $e');
-            }
-            // Fallback: Try to recover audio state
             try {
               final audioPlayerManager = voiceService.getAudioPlayerManager();
-              // Samsung Android 14 AudioTrack pause issue: Force reset audio session
               audioPlayerManager.mute(true);
               Future.delayed(const Duration(milliseconds: 100), () {
                 audioPlayerManager.mute(false);
               });
-            } catch (fallbackError) {
-              if (kDebugMode) {
-                debugPrint(
-                    '⚠️ [LIFECYCLE] Fallback audio recovery also failed: $fallbackError');
-              }
-            }
+            } catch (fallbackError) {}
           }
         }
         break;
-
       case AppLifecycleState.detached:
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
-        // No special handling needed for these states
         break;
     }
   }
-
-  /// Set up amplitude stream with throttling and smoothing for UI visualization
   void _setupAmplitudeStream() {
     try {
-      // Access the VAD manager's amplitude stream
       Stream<double> amplitudeStream;
-
       if (AutoListeningCoordinator.isEnhancedVADEnabled) {
-        // Use enhanced VAD manager
         final enhancedVAD = _safeVoiceService.autoListeningVadManager;
         if (enhancedVAD is EnhancedVADManager) {
           amplitudeStream = enhancedVAD.amplitudeStream;
         } else {
-          // Fallback to regular VAD
           amplitudeStream = vadManager.amplitudeStream;
         }
       } else {
-        // Use regular VAD manager
         amplitudeStream = vadManager.amplitudeStream;
       }
-
-      // Create throttled and processed amplitude stream (engineer feedback: 30fps)
       final processedAmplitudeStream = amplitudeStream
           .map((dbValue) =>
               AmplitudeUtils.dbToLinear(dbValue)) // Convert dB to linear
           .map((linearValue) {
-            // Apply EMA smoothing (engineer feedback: α ≈ 0.4)
             _lastSmoothedAmplitude = AmplitudeUtils.applySmoothing(
                 linearValue, _lastSmoothedAmplitude);
             return _lastSmoothedAmplitude;
@@ -2027,32 +1316,19 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
           .throttleTime(const Duration(milliseconds: 33)) // 30fps throttling
           .distinct((prev, curr) =>
               (prev - curr).abs() < 0.02); // Reduce micro-changes
-
       _amplitudeSub = processedAmplitudeStream.listen((amplitude) {
-        // Only update if in voice mode and listening state
         if (state.isVoiceMode &&
             (state.isListeningForVoice || state.isRecording)) {
           add(UpdateAmplitude(amplitude));
         }
       });
-
-      if (kDebugMode) {
-        debugPrint('🎵 [AMPLITUDE] Amplitude stream connected with throttling');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('⚠️ [AMPLITUDE] Failed to set up amplitude stream: $e');
-      }
-    }
+    } catch (e) {}
   }
-
   void _attachPipelineController(VoicePipelineDependencies dependencies) {
     if (_voicePipelineControllerFactory == null) {
       return;
     }
     _pipelineSnapshotSub?.cancel();
-    // Fire-and-forget async disposal of old controller.
-    // New controller is attached immediately; old one cleans up in background.
     _voicePipelineController?.disposeAsync();
     final controller = _voicePipelineControllerFactory!(
       dependencies: dependencies,
@@ -2069,16 +1345,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       add(VoicePipelineSnapshotUpdated(snapshot));
     });
   }
-
   Future<void> _detachPipelineController() async {
     await _pipelineSnapshotSub?.cancel();
     _pipelineSnapshotSub = null;
-    // Await async disposal to ensure pending operations complete before nulling.
     await _voicePipelineController?.disposeAsync();
     voiceService.attachPipelineController(null);
     _voicePipelineController = null;
   }
-
   Future<void> _onVoicePipelineSnapshotUpdated(
       VoicePipelineSnapshotUpdated event,
       Emitter<VoiceSessionState> emit) async {
@@ -2087,16 +1360,10 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     final recordingExpected = snapshot.phase == VoicePipelinePhase.recording;
     final speakingExpected =
         snapshot.phase == VoicePipelinePhase.speaking || snapshot.isTtsActive;
-    if (kDebugMode &&
-        (listeningExpected != state.isListening ||
-            recordingExpected != state.isRecording ||
-            speakingExpected != state.isAiSpeaking)) {
-    }
     final bool phaseListening = snapshot.phase == VoicePipelinePhase.listening;
     final bool phaseRecording = snapshot.phase == VoicePipelinePhase.recording;
     final bool phaseSpeaking =
         snapshot.phase == VoicePipelinePhase.speaking || snapshot.isTtsActive;
-
     emit(state.copyWith(
       pipelinePhase: snapshot.phase,
       pipelineMicMuted: snapshot.micMuted,
@@ -2107,17 +1374,13 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
       isAiSpeaking: _pipelineControlsPlayback ? phaseSpeaking : null,
     ));
   }
-
   @override
   Future<void> close() async {
-    // Cleanup any active session before closing bloc
     if (inSession) {
       await _forceSessionCleanup();
     }
-
     await _awaitVoiceFacadeStable();
     await voiceFacade.endSession();
-
     _recordingStateSub?.cancel();
     _audioPlaybackSub?.cancel();
     _ttsStateSub?.cancel();
@@ -2125,28 +1388,17 @@ class VoiceSessionBloc extends Bloc<VoiceSessionEvent, VoiceSessionState> {
     await _detachPipelineController();
     await _geminiLiveSub?.cancel();
     _geminiLiveSub = null;
-
     if (_usesGeminiLive) {
       await voiceService.stopGeminiLiveSession();
     }
-
-    // PHASE 2B: Cancel any pending auto-enable operations
-
-    // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(_lifecycleObserver);
-
-    // Phase 1.1.4: Dispose managers
     _timerManager.dispose();
     return super.close();
   }
 }
-
-/// Custom WidgetsBindingObserver for handling app lifecycle changes
 class _VoiceSessionLifecycleObserver with WidgetsBindingObserver {
   final VoiceSessionBloc _bloc;
-
   _VoiceSessionLifecycleObserver(this._bloc);
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _bloc._onAppLifecycleStateChanged(state);

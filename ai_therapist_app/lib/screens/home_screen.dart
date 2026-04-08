@@ -1,8 +1,5 @@
 // lib/screens/home_screen.dart
-// import 'package:flutter/material.dart';
-
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -16,23 +13,19 @@ import 'package:flutter/services.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/models/session_reminder.dart';
 import 'package:ai_therapist_app/utils/feature_flags.dart';
-
 class HomeScreen extends StatefulWidget {
   final IProgressService? progressService;
   final IUserProfileService? userProfileService;
   final ISessionScheduleService? sessionScheduleService;
-
   const HomeScreen({
     super.key,
     this.progressService,
     this.userProfileService,
     this.sessionScheduleService,
   });
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
-
 class _HomeScreenState extends State<HomeScreen> {
   Mood _currentMood = Mood.neutral;
   DateTime? _nextSessionDate;
@@ -41,7 +34,6 @@ class _HomeScreenState extends State<HomeScreen> {
   late ISessionScheduleService _sessionScheduleService;
   late UserProgress _progress;
   bool _progressInitialized = false;
-
   @override
   void initState() {
     super.initState();
@@ -51,18 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _sessionScheduleService =
         widget.sessionScheduleService ?? DependencyContainer().sessionSchedule;
     _progress = _progressService.progress;
-
     unawaited(_progressService.init());
-
-    // Listen for progress changes
     _progressService.progressChanged.addListener(_onProgressChanged);
-
     _loadUserData();
-
-    // Services are automatically initialized through dependency injection
-    // No manual initialization needed here - services initialize when first accessed
   }
-
   void _onProgressChanged() {
     if (mounted) {
       setState(() {
@@ -70,40 +54,31 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
   }
-
   @override
   void dispose() {
     _progressService.progressChanged.removeListener(_onProgressChanged);
     super.dispose();
   }
-
   Future<void> _loadUserData() async {
     try {
       await _progressService.syncSessionData();
       if (FeatureFlags.isMoodPersistenceEnabled) {
         await _progressService.syncMoodEntries(force: true);
       }
-    } catch (e) {
-      debugPrint('Error syncing session data: $e');
-    }
-
+    } catch (e) {}
     SessionReminder? reminder;
     try {
       reminder = await _sessionScheduleService.loadReminder(forceRefresh: true);
     } catch (e) {
-      debugPrint('Error loading session reminder: $e');
       reminder = _sessionScheduleService.currentReminder;
     }
-
     if (!mounted) return;
-
     setState(() {
       _currentMood = Mood.neutral;
       _nextSessionDate = reminder?.scheduledTime;
       _progressInitialized = true;
     });
   }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -112,7 +87,6 @@ class _HomeScreenState extends State<HomeScreen> {
         if (didPop) {
           return;
         }
-
         final shouldExit = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
@@ -131,10 +105,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         );
-
         if (shouldExit == true) {
           Future.delayed(const Duration(milliseconds: 100), () {
-            // Add any cleanup logic here if needed
           });
           SystemNavigator.pop();
         }
@@ -149,7 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
             fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
             errorBuilder: (context, error, stackTrace) {
-              // Fallback to uplift_logo.png if hs_logo.png doesn't exist
               return Image.asset(
                 'assets/images/uplift_logo.png',
                 height: 60,
@@ -173,36 +144,13 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Greeting card
                 _buildGreetingCard(),
-
                 const SizedBox(height: 16),
-
-                // Next session card moved up to position #2
                 _buildNextSessionCard(),
-
                 const SizedBox(height: 16),
-
-                // Progress tracking
                 _buildProgressCard(),
-
                 const SizedBox(height: 16),
-
-                // Quick mood check
                 _buildMoodCheckCard(),
-
-                // Remove the "View Past Sessions" section and spacing
-                // const SizedBox(height: 24),
-                // Center(
-                //   child: _buildActionCard(
-                //     'View Past Sessions',
-                //     Icons.history,
-                //     Colors.purple.shade100,
-                //     Colors.purple,
-                //     () => context.go('/history'),
-                //   ),
-                // ),
-                // const SizedBox(height: 16),
               ],
             ),
           ),
@@ -211,17 +159,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildGreetingCard() {
     final hour = DateTime.now().hour;
     String greeting;
-
-    // Get display name using consistent logic
     String userName = _userProfileService.profile?.displayName ?? "there";
-
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     if (hour < 12) {
       greeting = 'Good Morning';
     } else if (hour < 17) {
@@ -229,7 +172,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       greeting = 'Good Evening';
     }
-
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(
@@ -281,12 +223,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildMoodCheckCard() {
-    // Get today's mood logs count
     final todayLogsCount = _progress.getTodayMoodLogsCount();
     final hasReachedLimit = todayLogsCount >= 3;
-
     return Card(
       elevation: 2,
       child: Padding(
@@ -347,14 +286,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   final messenger = ScaffoldMessenger.of(context);
                   final success =
                       await _progressService.logMood(_currentMood);
-
                   if (success) {
                     messenger.showSnackBar(
                       const SnackBar(
                         content: Text('Mood logged successfully'),
                       ),
                     );
-
                     final showLocalMessage = _progressService
                             .consumeLastMoodLogWasLocalOnly() ||
                         _progressService.consumePendingMoodSyncError();
@@ -394,10 +331,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildMoodOption(Mood mood, String emoji) {
     final isSelected = mood == _currentMood;
-
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -434,13 +369,11 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildNextSessionCard() {
     final dateFormat = DateFormat.yMMMd().add_jm();
     final hasSession = _nextSessionDate != null;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -534,7 +467,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               );
                               return;
                             }
-
                             try {
                               await NotificationService().scheduleNotification(
                                 id: 1001,
@@ -543,7 +475,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                     'You have a therapy session scheduled now.',
                                 scheduledDateTime: _nextSessionDate!,
                               );
-
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('Reminder set!')),
                               );
@@ -565,7 +496,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   void _showRescheduleDialog() {
     final hasExistingSchedule = _nextSessionDate != null;
     DateTime selectedDate = hasExistingSchedule
@@ -574,7 +504,6 @@ class _HomeScreenState extends State<HomeScreen> {
     TimeOfDay selectedTime = TimeOfDay.fromDateTime(selectedDate);
     final dialogTitle =
         hasExistingSchedule ? 'Reschedule Session' : 'Schedule Session';
-
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -600,7 +529,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     final effectiveInitialDate = selectedDate.isBefore(firstDate)
                         ? firstDate
                         : selectedDate;
-
                     final date = await showDatePicker(
                       context: context,
                       initialDate: effectiveInitialDate,
@@ -653,25 +581,20 @@ class _HomeScreenState extends State<HomeScreen> {
               ElevatedButton(
                 onPressed: () async {
                   Navigator.pop(context);
-
                   try {
                     final reminder =
                         await _sessionScheduleService.scheduleSession(
                       selectedDate,
                       title: 'Next Therapy Session',
                     );
-
                     if (!mounted) return;
-
                     setState(() {
                       _nextSessionDate =
                           reminder?.scheduledTime ?? selectedDate;
                     });
-
                     final formattedDate = DateFormat.yMMMd().add_jm().format(
                           (_nextSessionDate ?? selectedDate),
                         );
-
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(hasExistingSchedule
@@ -680,8 +603,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     );
                   } catch (e) {
-                    debugPrint('Error scheduling session reminder: $e');
-
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -699,7 +620,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildStreakBadge(int streak) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -726,17 +646,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildProgressCard() {
     if (!_progressInitialized) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    // Get consistency information from the progress service
     final consistencyStatus = _progressService.getConsistencyStatus();
     final consistencyColor = _progressService.getConsistencyColor(context);
-
-    // Determine icon based on consistency status
     IconData consistencyIcon;
     if (consistencyStatus == 'Very Consistent') {
       consistencyIcon = Icons.star;
@@ -745,7 +660,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       consistencyIcon = Icons.timelapse;
     }
-
     return Card(
       elevation: 2,
       child: InkWell(
@@ -768,7 +682,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // Consistency badge
                       Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
@@ -813,8 +726,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-
-              // Stats row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -841,12 +752,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildStatItem(String value, String label, IconData icon) {
     final theme = Theme.of(context);
     final palette = theme.extension<AppPalette>();
     final isLight = theme.brightness == Brightness.light;
-
     Color resolveColor() {
       if (icon == Icons.favorite) {
         return palette?.accentPrimary ?? theme.colorScheme.secondary;
@@ -859,13 +768,11 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       return theme.colorScheme.primary;
     }
-
     final iconColor = resolveColor();
     final backgroundOpacity = isLight ? 0.14 : 0.22;
     final bgColor = iconColor.withValues(alpha: backgroundOpacity);
     final textColor =
         theme.textTheme.bodyMedium?.color ?? theme.colorScheme.onSurface;
-
     return Column(
       children: [
         Container(

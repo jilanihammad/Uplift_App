@@ -29,68 +29,38 @@ import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'package:ai_therapist_app/services/firebase_service.dart';
 import 'package:ai_therapist_app/config/theme.dart';
 import 'package:ai_therapist_app/config/app_config.dart';
-
 import 'package:ai_therapist_app/services/config_service.dart';
 import 'package:ai_therapist_app/utils/error_handling.dart';
 import 'package:ai_therapist_app/services/theme_service.dart';
 import 'package:ai_therapist_app/data/datasources/local/database_provider.dart';
 import 'services/path_manager.dart';
 import 'services/foreground_audio_guard.dart';
-
-// Import the shared Firebase initialization utility
 import 'package:ai_therapist_app/utils/firebase_init.dart';
 import 'package:ai_therapist_app/utils/logging_service.dart';
-
-// Import the new logging config
 import 'utils/logging_config.dart';
-
-// Import the new database helper
 import 'utils/database_helper.dart';
-
-// Import the new database health checker
-
-// Import feature flags
 import 'utils/feature_flags.dart';
-
-// Global variables for crucial service references
 ConfigService? _configService;
 ApiClient? _apiClient;
 bool _crashlyticsEnabled = false;
-
-// Firebase messaging background handler
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // This handler runs in its own isolate, so we need to re-initialize Firebase
   await ensureFirebaseInitialized();
-
-  // Background message handling - no logging available in this isolate
 }
-
-// Error handling bloc observer for logging
 class SimpleBlocObserver extends BlocObserver {
   @override
   void onError(BlocBase bloc, Object error, StackTrace stackTrace) {
-    if (kDebugMode) {
-      debugPrint('Bloc error: $error');
-      debugPrint('Stack trace: $stackTrace');
-    }
     super.onError(bloc, error, stackTrace);
   }
 }
-
-// Global error handler for unhandled exceptions
 void _handleGlobalError(dynamic error, StackTrace stack) {
-  // Log the error details properly with LoggingService
   logger.error(
     'Uncaught global error',
     error: error,
     stackTrace: stack,
     tag: 'GLOBAL',
   );
-
   String errorMessage = 'An unexpected error occurred';
-
-  // Provide more specific error messages for common errors
   if (error is SocketException) {
     errorMessage =
         'Network connection error. Please check your internet connection and try again.';
@@ -101,54 +71,35 @@ void _handleGlobalError(dynamic error, StackTrace stack) {
   } else if (error.toString().contains('semaphore timeout')) {
     errorMessage = 'Server connection timed out. Please try again later.';
   }
-
-  // Log the user-facing error message
   logger.warning('Error message for user: $errorMessage', tag: 'USER_ERROR');
-
   if (_crashlyticsEnabled) {
     FirebaseCrashlytics.instance
         .recordError(error, stack, reason: 'Global error', fatal: false);
   }
 }
-
 Future<void> setupCoreServices() async {
   logger.info('[Main] Starting app initialization.');
-
-  if (kDebugMode) {
-    BindingBase.debugZoneErrorsAreFatal = false;
-  }
-
   // Note: WidgetsFlutterBinding.ensureInitialized() now called in main()
-  // before setupCoreServices() to ensure single zone initialization
   logger.info('[Main] Setting up core services...');
-
   await AppConfig.initialize();
   AppConfig().logConfig();
   logger.info('[Main] AppConfig initialized with environment variables.');
-
   await FeatureFlags.init();
   FeatureFlags.debugPrintFlags();
   logger.info('[Main] FeatureFlags initialized with SharedPreferences.');
-
   await RemoteConfigService().preloadCachedOverrides();
   logger.info('[Main] Applied cached remote-config overrides.');
-
   final firebaseApp = await ensureFirebaseInitialized();
   if (firebaseApp != null) {
     logger.info(
         '[Main] Firebase initialized successfully via ensureFirebaseInitialized(): ${firebaseApp.name}');
-
     await _configureCrashlytics();
-
     // NOTE: RemoteConfigService().initialize() moved to background init
-    // to avoid blocking startup with network calls. Cached overrides from
-    // preloadCachedOverrides() above provide immediate defaults.
     logger.info('[Main] Remote config network fetch deferred to background.');
   } else {
     logger.warning(
         '[Main] Could not initialize Firebase via ensureFirebaseInitialized(), some features may be limited');
   }
-
   try {
     Firebase.app();
     FirebaseMessaging.onBackgroundMessage(
@@ -158,7 +109,6 @@ Future<void> setupCoreServices() async {
     logger.warning(
         '[Main] Firebase not available for background messaging handler registration or error: $e');
   }
-
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     final stack = details.stack ?? StackTrace.current;
@@ -167,7 +117,6 @@ Future<void> setupCoreServices() async {
       FirebaseCrashlytics.instance.recordFlutterFatalError(details);
     }
   };
-
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
     _handleGlobalError(error, stack);
     if (_crashlyticsEnabled) {
@@ -176,17 +125,9 @@ Future<void> setupCoreServices() async {
     }
     return false;
   };
-
-  if (kDebugMode) {
-    Bloc.observer = SimpleBlocObserver();
-    debugPrint('[main.dart] Set up Bloc observer for debugging.');
-    logger.debug('[Main] Set up Bloc observer for debugging.');
-  }
-
   final useNewVoicePipeline = FeatureFlags.useNewVoicePipeline;
   logger.info(
       '[Main] Feature flag useRefactoredVoicePipeline = $useNewVoicePipeline');
-
   try {
     await setupServiceLocator(
       useRefactoredVoicePipeline: useNewVoicePipeline,
@@ -196,7 +137,6 @@ Future<void> setupCoreServices() async {
   } catch (e) {
     logger.error('[Main] ERROR during service locator setup', error: e);
   }
-
   logger.info('[Main] Initializing app database connection...');
   try {
     final appDatabase = DependencyContainer().appDatabaseConcrete;
@@ -206,24 +146,18 @@ Future<void> setupCoreServices() async {
     logger.error('[Main] ERROR initializing database connection', error: e);
   }
 }
-
 Future<void> _startBackgroundInitialization() async {
   DependencyContainer.resetReady();
   final bgStopwatch = Stopwatch()..start();
   try {
-    // Deferred RemoteConfig network fetch (moved from critical startup path)
     try {
       await RemoteConfigService().initialize();
       logger.info('[Main] Remote config fetched and applied in background.');
     } catch (e) {
       logger.warning('[Main] Remote config background fetch failed: $e');
-      // Non-fatal - app continues with cached values
     }
-
     await _initializeFirebaseServices();
     await _initializeConfigAndApi();
-
-    // Pre-warm audio player to avoid cold-start latency on first TTS
     try {
       if (serviceLocator.isRegistered<AudioPlayerManager>()) {
         final audioPlayer = serviceLocator<AudioPlayerManager>();
@@ -232,7 +166,6 @@ Future<void> _startBackgroundInitialization() async {
     } catch (e) {
       logger.warning('[Main] Audio player prewarm failed (non-fatal): $e');
     }
-
     bgStopwatch.stop();
     logger.info('[Startup] Background init pipeline finished in '
         '${bgStopwatch.elapsedMilliseconds}ms');
@@ -244,25 +177,18 @@ Future<void> _startBackgroundInitialization() async {
     rethrow;
   }
 }
-
 Future<void> main() async {
   runZonedGuarded(() async {
-    // CRASH-SAFE: Initialize bindings inside the zone to avoid zone mismatch
     WidgetsFlutterBinding.ensureInitialized();
-
     AppLogger.initialize();
     await PathManager.instance.init();
-
     _initializeLogging();
-
     final coreStopwatch = Stopwatch()..start();
     await setupCoreServices();
     coreStopwatch.stop();
     logger.info(
         '[Startup] Core services ready in ${coreStopwatch.elapsedMilliseconds}ms');
-
     final backgroundInitFuture = _startBackgroundInitialization();
-
     runApp(AiTherapistApp(
       initialBackgroundInit: backgroundInitFuture,
       backgroundInitBuilder: _startBackgroundInitialization,
@@ -275,43 +201,17 @@ Future<void> main() async {
           .recordError(error, stack, fatal: true, reason: 'Zone error');
     }
   });
-
-  if (kDebugMode) {
-    debugPrint('[Main] App initialization complete. Running app...');
-  }
 }
-
-// Initialize the logging service
 void _initializeLogging() {
-  // Use the new logging config to set the appropriate log levels
   loggingConfig.init(
-    // Set to true to enable more verbose logs in production for troubleshooting
-    // Set to false by default to reduce logging overhead in production
     enableVerboseLogsInRelease: false,
-
-    // Set to true to enable verbose debugging with stack traces in debug builds
-    // Set to false by default to reduce log noise during normal development
     enableVerboseDebug: false,
   );
-
-  // Log the configuration (only visible in appropriate log levels)
   logger
       .info('Logging initialized with level: ${loggingConfig.currentLogLevel}');
   logger.debug(
       'Debug logging is ${loggingConfig.isDebugEnabled ? 'enabled' : 'disabled'}');
-
-  if (kDebugMode) {
-    debugPrint('=== LoggingService initialized ===');
-    debugPrint(
-        '- Log level: ${loggingConfig.currentLogLevel.toString().split('.').last.toUpperCase()}');
-    debugPrint(
-        '- Debug logs: ${loggingConfig.isDebugEnabled ? 'ENABLED' : 'DISABLED'}');
-    debugPrint('- Analytics logging: ${kDebugMode ? 'ENABLED' : 'DISABLED'}');
-    debugPrint('- Crashlytics: ${kReleaseMode ? 'ENABLED' : 'DISABLED (debug build)'}');
-    debugPrint('==============================');
-  }
 }
-
 Future<void> _configureCrashlytics() async {
   final shouldEnable = kReleaseMode;
   try {
@@ -319,28 +219,17 @@ Future<void> _configureCrashlytics() async {
         .setCrashlyticsCollectionEnabled(shouldEnable);
     _crashlyticsEnabled = shouldEnable;
     logger.setCrashlyticsEnabled(shouldEnable);
-    if (kDebugMode) {
-      debugPrint('[Main] Crashlytics collection set to $shouldEnable');
-    }
   } catch (e) {
     _crashlyticsEnabled = false;
     logger.warning('Failed to configure Crashlytics: $e',
         tag: 'CRASHLYTICS_INIT');
   }
 }
-
-// Request notification permissions
 Future<void> _requestNotificationPermissions() async {
-  // First check if we're running on a platform that supports notifications
-  // This is not strictly necessary but helps avoid unnecessary API calls
   try {
-
-    // Skip if FirebaseService isn't registered
     if (!serviceLocator.isRegistered<FirebaseService>()) {
       return;
     }
-
-    // Use safeOperation with increased timeout
     await safeOperation(
       () async {
         final firebaseService = serviceLocator<FirebaseService>();
@@ -349,33 +238,25 @@ Future<void> _requestNotificationPermissions() async {
       timeoutSeconds: 12, // Increased from 8
       operationName: 'Notification permissions setup',
     );
-  } catch (e) {
-    // Just log and continue - notifications are not critical for app functionality
-  }
+  } catch (e) {}
 }
-
-// Main app widget
 class AiTherapistApp extends StatefulWidget {
   final Future<void> initialBackgroundInit;
   final Future<void> Function() backgroundInitBuilder;
-
   const AiTherapistApp({
     super.key,
     required this.initialBackgroundInit,
     required this.backgroundInitBuilder,
   });
-
   @override
   State<AiTherapistApp> createState() => _AiTherapistAppState();
 }
-
 class _AiTherapistAppState extends State<AiTherapistApp> {
   late ThemeService _themeService;
   late Future<void> _backgroundInit;
   bool _postInitScheduled = false;
   bool _showMainApp = false;
   Timer? _completionDelayTimer;
-
   @override
   void initState() {
     super.initState();
@@ -392,16 +273,12 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       _themeService = ThemeService();
     }
   }
-
   Future<void> _initTheme() async {
     try {
       await _themeService.init();
       if (mounted) setState(() {});
-    } catch (_) {
-      // Non-fatal: theme init failure uses defaults
-    }
+    } catch (_) {}
   }
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<void>(
@@ -424,12 +301,10 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
             ),
           );
         }
-
         if (isDone && !_showMainApp) {
           _schedulePostInit();
           _scheduleCompletionReveal();
         }
-
         final bool showSplash = !isDone || !_showMainApp;
         final Widget target = showSplash
             ? HybridStartupSplash(
@@ -437,7 +312,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
                 isFinishing: isDone,
               )
             : _buildMainAppWithKey();
-
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 450),
           switchInCurve: Curves.easeInOut,
@@ -447,25 +321,18 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       },
     );
   }
-
   @override
   void dispose() {
     _completionDelayTimer?.cancel();
     _cleanupResources();
     super.dispose();
   }
-
-  // Cleanup app resources
   Future<void> _cleanupResources() async {
     try {
-      // Close database connection
       if (serviceLocator.isRegistered<AppDatabase>()) {
         final appDatabase = DependencyContainer().appDatabaseConcrete;
         await appDatabase.close();
       }
-
-      // Close any BLoCs that were registered in the service locator
-      // This is a more reliable approach than using context which might not be available
       if (serviceLocator.isRegistered<AuthBloc>()) {
         try {
           final authBloc = serviceLocator<AuthBloc>();
@@ -475,13 +342,8 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
           logger.debug('[AiTherapistApp] Could not close AuthBloc: $e');
         }
       }
-
-      // Additional cleanup can be added here
-    } catch (_) {
-      // Non-fatal: cleanup failure
-    }
+    } catch (_) {}
   }
-
   void _schedulePostInit() {
     if (_postInitScheduled) return;
     _postInitScheduled = true;
@@ -489,7 +351,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       await initializeHeavyServices();
     });
   }
-
   void _scheduleCompletionReveal() {
     _completionDelayTimer?.cancel();
     _completionDelayTimer = Timer(const Duration(milliseconds: 100), () {
@@ -499,7 +360,6 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       });
     });
   }
-
   void _restartBackgroundInit() {
     DependencyContainer.resetReady();
     _completionDelayTimer?.cancel();
@@ -509,14 +369,12 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
       _backgroundInit = widget.backgroundInitBuilder();
     });
   }
-
   Widget _buildMainAppWithKey() {
     return KeyedSubtree(
       key: const ValueKey('main-app'),
       child: _buildMainApp(),
     );
   }
-
   Widget _buildMainApp() {
     return ErrorBoundary(
       child: ChangeNotifierProvider.value(
@@ -591,39 +449,29 @@ class _AiTherapistAppState extends State<AiTherapistApp> {
     );
   }
 }
-
-// Error boundary widget to catch and display errors in the widget tree
 class ErrorBoundary extends StatefulWidget {
   final Widget child;
-
   const ErrorBoundary({super.key, required this.child});
-
   @override
   _ErrorBoundaryState createState() => _ErrorBoundaryState();
 }
-
 class _ErrorBoundaryState extends State<ErrorBoundary> {
   bool _hasError = false;
   dynamic _error;
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Reset error state on rebuild
     _hasError = false;
     _error = null;
   }
-
   @override
   Widget build(BuildContext context) {
     if (_hasError) {
-      // Create a self-contained error UI with proper localization
       final errorTheme = ThemeData(
         primaryColor: Colors.red,
         primarySwatch: Colors.red,
         colorScheme: const ColorScheme.light(primary: Colors.red),
       );
-
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: errorTheme,
@@ -679,50 +527,31 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
         ),
       );
     }
-
-    // If no error, show the normal content
-    // Set up the error handler first
     ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
-      // Log the error
-      if (kDebugMode) {
-        debugPrint('Error caught by ErrorBoundary:');
-        debugPrint(errorDetails.exception.toString());
-        debugPrint(errorDetails.stack?.toString());
-      }
-
-      // Update state to show error UI
       WidgetsBinding.instance.addPostFrameCallback((_) {
         setState(() {
           _hasError = true;
           _error = errorDetails.exception;
         });
       });
-
-      // Return an empty container for the error widget
       return Container();
     };
-
-    // Return the child widget
     return widget.child;
   }
 }
-
 class HybridStartupSplash extends StatefulWidget {
   final Object? error;
   final VoidCallback? onRetry;
   final bool isFinishing;
-
   const HybridStartupSplash({
     super.key,
     this.error,
     this.onRetry,
     this.isFinishing = false,
   });
-
   @override
   State<HybridStartupSplash> createState() => _HybridStartupSplashState();
 }
-
 class _HybridStartupSplashState extends State<HybridStartupSplash>
     with SingleTickerProviderStateMixin {
   static const _logoAsset = 'assets/icons/app_icon.png';
@@ -735,7 +564,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
   late final Animation<double> _breathScale;
   Timer? _animationGateTimer;
   Timer? _retryEnableTimer;
-
   @override
   void initState() {
     super.initState();
@@ -753,11 +581,9 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       });
       _restartAnimationIfNeeded();
     });
-
     if (widget.error != null) {
       _scheduleRetryEnable();
     }
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
@@ -765,7 +591,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       });
     });
   }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -776,7 +601,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
     _updateReduceMotion();
     _restartAnimationIfNeeded();
   }
-
   @override
   void didUpdateWidget(HybridStartupSplash oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -788,7 +612,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       _retryEnabled = false;
     }
   }
-
   @override
   void dispose() {
     _breathController.dispose();
@@ -796,12 +619,10 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
     _retryEnableTimer?.cancel();
     super.dispose();
   }
-
   void _updateReduceMotion() {
     final mediaQuery = MediaQuery.maybeOf(context);
     _reduceMotion = mediaQuery?.disableAnimations ?? false;
   }
-
   void _restartAnimationIfNeeded() {
     if (!mounted) return;
     if (_animationReady && !_reduceMotion) {
@@ -812,7 +633,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       _breathController.stop();
     }
   }
-
   void _scheduleRetryEnable() {
     _retryEnabled = false;
     _retryEnableTimer?.cancel();
@@ -823,7 +643,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       });
     });
   }
-
   void _handleRetryPressed() {
     if (!_retryEnabled || widget.onRetry == null) {
       return;
@@ -832,18 +651,14 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
     widget.onRetry!.call();
     _scheduleRetryEnable();
   }
-
   Color _softenAccent(Color color, bool isDark) {
     return Color.lerp(color, isDark ? Colors.white : Colors.black, isDark ? 0.3 : 0.2) ?? color;
   }
-
   Color _withAlpha(Color color, double alpha) => color.withValues(alpha: alpha);
-
   @override
   Widget build(BuildContext context) {
     final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
     final themeMode = brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light;
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
@@ -860,7 +675,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       ),
     );
   }
-
   Widget _buildContent(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -875,14 +689,12 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
     final String semanticsLabel = hasError
         ? 'Startup error. Please try again.'
         : 'Preparing Maya for you';
-
     final Color accent = _softenAccent(colorScheme.primary, isDark);
     final Color gradientStart = Color.alphaBlend(
       _withAlpha(accent, isDark ? 0.16 : 0.12),
       colorScheme.surface,
     );
     final Color gradientEnd = colorScheme.surface;
-
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Semantics(
@@ -952,7 +764,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       ),
     );
   }
-
   Widget _buildLogo(ThemeData theme, Color accent, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(24),
@@ -980,7 +791,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       ),
     );
   }
-
   Widget _buildLoader(Color accent, bool isDark) {
     final base = Container(
       width: 56,
@@ -1008,12 +818,10 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
         ),
       ),
     );
-
     final bool canAnimate = _animationReady && !_reduceMotion;
     if (!canAnimate) {
       return base;
     }
-
     return AnimatedBuilder(
       animation: _breathController,
       builder: (context, child) {
@@ -1025,7 +833,6 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
       child: base,
     );
   }
-
   Widget _buildRetryButton(ThemeData theme) {
     return SizedBox(
       width: double.infinity,
@@ -1040,56 +847,31 @@ class _HybridStartupSplashState extends State<HybridStartupSplash>
     );
   }
 }
-
-// Add helper method for Firebase services initialization
 Future<void> _initializeFirebaseServices() async {
   try {
-    // Log entry
     logger.debug(
         'Initializing FirebaseService with existing Firebase instance...');
-
     final firebaseService = serviceLocator<FirebaseService>();
-
-    // Add explicit log that we're disabling App Check
     logger.info(
         '[Main] IMPORTANT: App Check is DISABLED in this build to avoid authentication issues');
-
     await firebaseService.init();
-
     logger.info('[Main] FirebaseService initialized successfully');
   } catch (e) {
     logger.error('[Main] Error initializing FirebaseService', error: e);
   }
 }
-
-// Helper method for initializing ConfigService and ApiClient
 Future<void> _initializeConfigAndApi() async {
   try {
     logger.debug('[Main] Initializing ConfigService...');
-
     _configService = ConfigService();
     await _configService!.init();
-
     logger.debug('ConfigService initialized successfully');
-
-    // Create and initialize ApiClient with correct parameters
     logger.debug('[Main] Creating ApiClient with ConfigService');
-
     _apiClient = ApiClient(configService: _configService!);
-
-    // Register dependencies that require ConfigService and ApiClient
     await registerApiDependentServices(_configService!, _apiClient!);
-
-    // PERFORMANCE: Database health check moved to initializeHeavyServices()
-    // This runs after first frame paint, avoiding startup blocking
     logger.debug('[Main] Database health check deferred to background initialization');
-
-    // Initialize all the refactored components in the right order
     logger.debug(
         '[Main] Initializing refactored service components sequentially...');
-
-    // Initialize services in a specific order to avoid conflicts
-    // 1. First initialize services that don't depend on the database
     try {
       logger.debug('[Main] Initializing VoiceService...');
       final voiceService = serviceLocator<
@@ -1099,36 +881,12 @@ Future<void> _initializeConfigAndApi() async {
     } catch (e) {
       logger.error('[Main] Error initializing VoiceService', error: e);
     }
-
-    // AudioGenerator initialization commented out to prevent order-of-registration issues
-    // It will be initialized lazily when first needed, after ApiClient is available
-    // try {
-    //   logger.debug('[Main] Initializing AudioGenerator...');
-    //   final container = DependencyContainer();
-    //   final audioGenerator = container.audioGenerator;
-    //   await audioGenerator.initialize();
-    //   logger.debug('[Main] AudioGenerator initialized ✓');
-
-    //   // Small delay between service initializations
-    //   await Future.delayed(const Duration(milliseconds: 100));
-    // } catch (e) {
-    //   logger.error('[Main] Error initializing AudioGenerator', error: e);
-    // }
-
-    // 2. Database-dependent services now use lazy initialization
-    // REMOVED: Eager initialization of MemoryService, MemoryManager, and ConversationFlowManager
-    // These services will initialize on first access via their `initializeIfNeeded()` methods
-    // This significantly reduces startup time (eliminated ~200-400ms of blocking operations)
     logger.debug('[Main] Database-dependent services will initialize lazily on first use');
-
-    // Initialize the TherapyService last (depends on most other services)
     if (serviceLocator.isRegistered<TherapyService>()) {
       final therapyService = serviceLocator<TherapyService>();
       await therapyService.init();
       logger.debug('[Main] TherapyService initialized successfully');
     }
-
-    // Initialize UserProfileService to load profile from SharedPreferences
     try {
       logger.debug('[Main] Initializing UserProfileService...');
       final userProfileService = serviceLocator<UserProfileService>();
@@ -1137,8 +895,6 @@ Future<void> _initializeConfigAndApi() async {
     } catch (e) {
       logger.error('[Main] Error initializing UserProfileService', error: e);
     }
-
-    // Validate that all dependencies are registered
     final allDepsValid = validateDependencies();
     logger.info(
         '[Main] All required dependencies validated successfully ${allDepsValid ? '✅' : '❌'}');
@@ -1147,14 +903,10 @@ Future<void> _initializeConfigAndApi() async {
         error: e, stackTrace: StackTrace.current);
   }
 }
-
-// New: Heavy service initializations and notification permissions
 Future<void> initializeHeavyServices() async {
   logger.info('[Main] Initializing heavy services in background...');
   try {
     await DependencyContainer.whenReady();
-
-    // Table checks and health/repair
     try {
       final appDatabase = DependencyContainer().appDatabaseConcrete;
       if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
@@ -1170,7 +922,6 @@ Future<void> initializeHeavyServices() async {
               .warning('[Main] Database health check failed, attempted repair');
         }
       }
-      // Table existence checks
       logger.debug('[Main] Verifying database tables...');
       final databaseProvider = serviceLocator<DatabaseProvider>();
       final requiredTables = [
@@ -1196,7 +947,6 @@ Future<void> initializeHeavyServices() async {
         logger.warning(
             '[Main] Will attempt to create missing tables during service initialization');
       }
-      // Schedule database optimization for later (after app is visible)
       if (serviceLocator.isRegistered<DatabaseOperationManager>()) {
         Future.delayed(const Duration(seconds: 3), () {
           final dbManager =
@@ -1209,22 +959,17 @@ Future<void> initializeHeavyServices() async {
     } catch (e) {
       logger.error('[Main] ERROR in deferred database checks', error: e);
     }
-
-    // Initialize heavy services sequentially (as before)
     try {
       await _initializeFirebaseServices();
     } catch (e) {
       logger.error('[Main] ERROR initializing Firebase services', error: e);
     }
-
-    // Request notification permissions (deferred)
     try {
       await _requestNotificationPermissions();
     } catch (e) {
       logger.error('[Main] ERROR requesting notification permissions',
           error: e);
     }
-
     logger.info('[Main] Heavy services initialized in background.');
   } catch (e) {
     logger.error('[Main] ERROR in initializeHeavyServices', error: e);

@@ -1,6 +1,5 @@
 import 'package:uuid/uuid.dart';
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
 class MoodEntryRecord {
   MoodEntryRecord({
     required this.id,
@@ -15,7 +14,6 @@ class MoodEntryRecord {
     this.lastSyncedAt,
     this.syncError,
   });
-
   final String id;
   final String userId;
   final String clientEntryId;
@@ -27,9 +25,7 @@ class MoodEntryRecord {
   final bool isPending;
   final DateTime? lastSyncedAt;
   final String? syncError;
-
   static const _uuid = Uuid();
-
   factory MoodEntryRecord.newLocal({
     required String userId,
     required int mood,
@@ -48,7 +44,6 @@ class MoodEntryRecord {
       isPending: true,
     );
   }
-
   MoodEntryRecord copyWith({
     String? id,
     String? userId,
@@ -76,7 +71,6 @@ class MoodEntryRecord {
       syncError: syncError ?? this.syncError,
     );
   }
-
   Map<String, Object?> toMap() {
     return {
       'id': id,
@@ -92,7 +86,6 @@ class MoodEntryRecord {
       'sync_error': syncError,
     };
   }
-
   factory MoodEntryRecord.fromMap(Map<String, Object?> map) {
     DateTime parseDate(Object? value) {
       if (value == null) {
@@ -103,13 +96,11 @@ class MoodEntryRecord {
       }
       return parseBackendDateTime(value.toString()).toUtc();
     }
-
     DateTime? parseNullableDate(Object? value) {
       if (value == null) return null;
       if (value is DateTime) return value.toUtc();
       return parseBackendDateTime(value.toString()).toUtc();
     }
-
     return MoodEntryRecord(
       id: map['id'] as String,
       userId: map['user_id'] as String,

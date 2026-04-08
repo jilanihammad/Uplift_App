@@ -10,14 +10,11 @@ import 'package:ai_therapist_app/services/audio_generator.dart';
 import 'package:ai_therapist_app/data/datasources/remote/api_client.dart';
 import 'dart:async';
 import 'package:ai_therapist_app/config/app_config.dart';
-
-/// A screen for diagnostic testing of critical app components like LLM and TTS
 class DiagnosticScreen extends StatefulWidget {
   final ITherapyService? therapyService;
   final ApiClient? apiClient;
   final VoiceService? voiceService;
   final AudioGenerator? audioGenerator;
-
   const DiagnosticScreen({
     super.key,
     this.therapyService,
@@ -25,11 +22,9 @@ class DiagnosticScreen extends StatefulWidget {
     this.voiceService,
     this.audioGenerator,
   });
-
   @override
   State<DiagnosticScreen> createState() => _DiagnosticScreenState();
 }
-
 class _DiagnosticScreenState extends State<DiagnosticScreen> {
   late final ITherapyService _therapyService;
   late final VoiceService _voiceService;
@@ -37,48 +32,37 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
   Map<String, dynamic>? _serviceStatus;
   bool _isLoading = false;
   String? _error;
-
-  // Test results
   String _llmTestResult = '';
   String _ttsTestResult = '';
   bool _isTestingLLM = false;
   bool _isTestingTTS = false;
-
   final TextEditingController _testMessageController = TextEditingController(
     text: "Hello, I'm feeling a bit anxious today. Can you help me?",
   );
-
   @override
   void initState() {
     super.initState();
-    // Use dependency injection with fallback to DependencyContainer
     _therapyService = widget.therapyService ?? DependencyContainer().therapy;
     _voiceService = widget.voiceService ?? serviceLocator<VoiceService>();
     _audioGenerator =
         widget.audioGenerator ?? DependencyContainer().audioGenerator;
     _checkServiceStatus();
   }
-
   @override
   void dispose() {
     _testMessageController.dispose();
     super.dispose();
   }
-
   Future<void> _checkServiceStatus() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
-
     try {
-      // For diagnostic purposes, we need access to the concrete implementation
-      // Try to use the injected service if it has the method, otherwise fallback to DependencyContainer
       Map<String, dynamic> status;
       if (_therapyService is TherapyService) {
         status = await (_therapyService as TherapyService).checkServiceStatus();
       } else {
-        // Fallback to DependencyContainer for diagnostic functionality
         final concreteService = DependencyContainer().get<TherapyService>();
         status = await concreteService.checkServiceStatus();
       }
@@ -93,19 +77,14 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       });
     }
   }
-
-  // Test the LLM service
   Future<void> _testLLMService() async {
     setState(() {
       _isTestingLLM = true;
       _llmTestResult = 'Testing LLM service...';
     });
-
     try {
-      // Get a response from the therapy service
       final response =
           await _therapyService.processUserMessage(_testMessageController.text);
-
       setState(() {
         _isTestingLLM = false;
         _llmTestResult = 'LLM Response:\n$response';
@@ -117,8 +96,6 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       });
     }
   }
-
-  // Test the TTS service
   Future<void> _testTTSService() async {
     if (_llmTestResult.isEmpty || !_llmTestResult.contains('LLM Response:')) {
       setState(() {
@@ -126,28 +103,19 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       });
       return;
     }
-
     setState(() {
       _isTestingTTS = true;
       _ttsTestResult = 'Testing TTS service...';
     });
-
     try {
-      // Extract the LLM response text
       final response = _llmTestResult.replaceFirst('LLM Response:\n', '');
-
-      // Generate audio from the LLM response using AudioGenerator
       final audioPath = await _audioGenerator.generateAudio(response);
-
       setState(() {
         _ttsTestResult = 'Audio generated successfully: $audioPath';
       });
-
-      // Play the audio
       if (audioPath != null) {
         await _voiceService.playAudio(audioPath);
       }
-
       setState(() {
         _isTestingTTS = false;
         _ttsTestResult += '\nAudio playback complete.';
@@ -159,37 +127,22 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       });
     }
   }
-
-  // Test the status endpoint directly
   Future<void> _testStatusEndpoint() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
-
     try {
-      debugPrint(
-          '[DEBUG] Testing status endpoint directly with raw HTTP request');
-
-      // Make a direct HTTP request to verify API accessibility
       try {
         final backendUrl = AppConfig().backendUrl;
         final uri = Uri.parse('$backendUrl/llm/status');
-
-        debugPrint('[DEBUG] Sending request to: $uri');
         final response = await http.get(uri);
-
         if (response.statusCode == 200) {
-          debugPrint(
-              '[DEBUG] Status endpoint accessible: ${response.statusCode}');
-
-          // Parse the response
           final jsonResponse = jsonDecode(response.body);
           setState(() {
             _serviceStatus = jsonResponse;
             _isLoading = false;
           });
-
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Status endpoint is accessible 👍'),
@@ -197,8 +150,6 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
             ),
           );
         } else {
-          debugPrint(
-              '[DEBUG] Status endpoint error: ${response.statusCode} - ${response.body}');
           setState(() {
             _isLoading = false;
             _error =
@@ -206,21 +157,18 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
           });
         }
       } catch (e) {
-        debugPrint('[DEBUG] Direct HTTP request failed: $e');
         setState(() {
           _isLoading = false;
           _error = 'Direct HTTP request failed: $e';
         });
       }
     } catch (e) {
-      debugPrint('[DEBUG] Error testing status endpoint: $e');
       setState(() {
         _isLoading = false;
         _error = 'Error: $e';
       });
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -248,14 +196,12 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       ),
     );
   }
-
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(),
       );
     }
-
     if (_error != null) {
       return Center(
         child: Column(
@@ -278,14 +224,11 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
         ),
       );
     }
-
     if (_serviceStatus == null) {
       return const Center(
         child: Text('No service status information available'),
       );
     }
-
-    // Check if we got an error response
     if (_serviceStatus!.containsKey('error')) {
       return Center(
         child: Column(
@@ -311,8 +254,6 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
         ),
       );
     }
-
-    // Display the full service status and manual testing UI
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -454,14 +395,11 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       ),
     );
   }
-
   Widget _buildServiceStatusSection() {
     if (!_serviceStatus!.containsKey('services')) {
       return const Text('No service information available');
     }
-
     final services = _serviceStatus!['services'] as Map<String, dynamic>;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -485,14 +423,11 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       ],
     );
   }
-
   Widget _buildApiKeysSection() {
     if (!_serviceStatus!.containsKey('api_keys')) {
       return const Text('No API key information available');
     }
-
     final apiKeys = _serviceStatus!['api_keys'] as Map<String, dynamic>;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -510,7 +445,6 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       ],
     );
   }
-
   Widget _buildServiceItem(String name, bool available, String details) {
     return Row(
       children: [
@@ -540,7 +474,6 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
       ],
     );
   }
-
   Widget _buildApiKeyItem(String name, bool available, String? preview) {
     return Row(
       children: [

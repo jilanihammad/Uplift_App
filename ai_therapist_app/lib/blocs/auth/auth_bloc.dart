@@ -1,17 +1,12 @@
-/// AuthBloc manages the authentication state of the app including login, registration, logout, and OAuth flows.
-/// It acts as the gatekeeper for the app, determining user access and coordinating with AuthService for all auth operations.
 library;
-
 import 'package:ai_therapist_app/blocs/auth/auth_events.dart';
 import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/i_auth_service.dart';
 import 'package:bloc/bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide PhoneCodeSent;
-
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final IAuthService _authService;
-
   AuthBloc({
     IAuthService? authService,
   })  : _authService = authService ?? DependencyContainer().authService,
@@ -28,7 +23,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<PhoneCodeAutoRetrievalEvent>(_onPhoneCodeAutoRetrieval);
     on<PhoneCodeTimeoutEvent>(_onPhoneCodeTimeout);
   }
-
   Future<void> _checkAuthStatus(
       CheckAuthStatusEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
@@ -45,7 +39,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   Future<void> _login(LoginEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
@@ -61,7 +54,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   Future<void> _register(RegisterEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
@@ -81,7 +73,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   Future<void> _logout(LogoutEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
@@ -91,7 +82,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   Future<void> _googleSignIn(
       GoogleSignInEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
@@ -108,7 +98,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   Future<void> _verifyPhone(
       PhoneVerificationEvent event, Emitter<AuthState> emit) async {
     emit(PhoneVerificationInProgress());
@@ -135,7 +124,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   Future<void> _submitPhoneCode(
       PhoneCodeSubmitEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
@@ -155,19 +143,16 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   void _onPhoneCodeSent(PhoneCodeSentEvent event, Emitter<AuthState> emit) {
     emit(PhoneCodeSent(
       verificationId: event.verificationId,
       resendToken: event.resendToken,
     ));
   }
-
   void _onPhoneVerificationFailed(
       PhoneVerificationFailedEvent event, Emitter<AuthState> emit) {
     emit(AuthError(message: event.message));
   }
-
   Future<void> _onPhoneCodeAutoRetrieval(
       PhoneCodeAutoRetrievalEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
@@ -184,7 +169,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthError(message: e.toString()));
     }
   }
-
   void _onPhoneCodeTimeout(
       PhoneCodeTimeoutEvent event, Emitter<AuthState> emit) {
     emit(PhoneCodeSent(
@@ -192,8 +176,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       resendToken: null,
     ));
   }
-
-  // Helper method to convert dynamic map to string map
   Map<String, String> _convertToStringMap(Map<String, dynamic> dynamicMap) {
     Map<String, String> stringMap = {};
     dynamicMap.forEach((key, value) {
@@ -201,12 +183,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     });
     return stringMap;
   }
-
   @override
   Future<void> close() {
-    // Clean up any resources, subscriptions, or streams here
-    // For example, if we added any StreamSubscriptions in the future:
-    // _subscription?.cancel();
     return super.close();
   }
 }

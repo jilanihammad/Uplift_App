@@ -1,6 +1,5 @@
 // lib/domain/entities/message.dart
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
 class Message {
   final String id;
   final String sessionId;
@@ -8,7 +7,6 @@ class Message {
   final bool isUser;
   final DateTime timestamp;
   final bool isSynced;
-
   Message({
     required this.id,
     required this.sessionId,
@@ -17,7 +15,6 @@ class Message {
     required this.timestamp,
     this.isSynced = true,
   });
-
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
       id: json['id'],
@@ -27,7 +24,6 @@ class Message {
       timestamp: parseBackendDateTime(json['timestamp'] as String),
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,

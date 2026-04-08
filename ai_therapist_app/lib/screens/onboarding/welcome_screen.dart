@@ -1,20 +1,15 @@
 import 'package:flutter/material.dart';
-
 import 'package:ai_therapist_app/config/theme.dart';
-
 import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../widgets/welcome_feature_card.dart';
-
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     final onboardingService = DependencyContainer().get<OnboardingService>();
     final theme = Theme.of(context);
     final palette = theme.extension<AppPalette>();
-
     return Scaffold(
       backgroundColor: palette?.surface ?? theme.colorScheme.surface,
       body: SafeArea(
@@ -25,7 +20,6 @@ class WelcomeScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
-                // High-quality colorful logo
                 Center(
                   child: Image.asset(
                     'assets/images/uplift_logo.png', // Replace with your new logo
@@ -34,7 +28,6 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 40),
-                // Title with Google-inspired simplicity
                 Text(
                   'Welcome to Uplift',
                   style: theme.textTheme.headlineSmall?.copyWith(
@@ -44,7 +37,6 @@ class WelcomeScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                // Supportive description
                 Text(
                   'Your companion for thoughtful conversations and personal growth, always here when you need it.',
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -54,10 +46,8 @@ class WelcomeScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 40),
-                // Feature list with white cards
                 ..._buildFeatureItems(context),
                 const SizedBox(height: 40),
-                // Encouraging message
                 Text(
                   "You're taking a positive step towards self-improvement. We're here to support you.",
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -68,7 +58,6 @@ class WelcomeScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                // Vibrant button with white text
                 ElevatedButton(
                   onPressed: () {
                     onboardingService.goToNextStep();
@@ -104,7 +93,6 @@ class WelcomeScreen extends StatelessWidget {
       ),
     );
   }
-
   List<Widget> _buildFeatureItems(BuildContext context) {
     final features = [
       {
@@ -124,7 +112,6 @@ class WelcomeScreen extends StatelessWidget {
         'description': 'See your progress and celebrate milestones.',
       },
     ];
-
     return features.map((feature) {
       return WelcomeFeatureCard(
         icon: feature['icon'] as IconData,

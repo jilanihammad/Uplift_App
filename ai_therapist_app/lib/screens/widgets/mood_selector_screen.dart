@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
-
 class MoodSelectorScreen extends StatelessWidget {
   final Mood? selectedMood;
   final void Function(Mood) onMoodSelected;
-
   const MoodSelectorScreen({
     super.key,
     this.selectedMood,
     required this.onMoodSelected,
   });
-
   @override
   Widget build(BuildContext context) {
     return Container(

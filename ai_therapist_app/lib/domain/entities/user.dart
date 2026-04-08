@@ -1,6 +1,5 @@
 import 'package:equatable/equatable.dart';
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
 class User extends Equatable {
   final String id;
   final String name;
@@ -10,7 +9,6 @@ class User extends Equatable {
   final String? phoneNumber;
   final DateTime createdAt;
   final Map<String, dynamic>? preferences;
-
   const User({
     required this.id,
     required this.name,
@@ -21,8 +19,6 @@ class User extends Equatable {
     required this.createdAt,
     this.preferences,
   });
-
-  // Create a copy of this User with updated fields
   User copyWith({
     String? id,
     String? name,
@@ -44,8 +40,6 @@ class User extends Equatable {
       preferences: preferences ?? this.preferences,
     );
   }
-
-  // Factory constructor from JSON
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id'],
@@ -58,8 +52,6 @@ class User extends Equatable {
       preferences: json['preferences'],
     );
   }
-
-  // Convert to JSON
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -72,7 +64,6 @@ class User extends Equatable {
       'preferences': preferences,
     };
   }
-
   @override
   List<Object?> get props => [
         id,

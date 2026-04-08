@@ -2,7 +2,6 @@
 // Phase 3.1: interim struct bundling the legacy concrete services used by the
 // upcoming VoicePipelineController. This keeps the controller constructor tidy
 // while we gradually replace the internals with real interfaces.
-
 import '../voice_service.dart';
 import '../auto_listening_snapshot_source.dart';
 import '../voice_session_coordinator.dart';
@@ -12,7 +11,6 @@ import 'audio_capture.dart';
 import 'audio_playback.dart';
 import 'ai_gateway.dart';
 import 'mic_auto_mode_controller.dart';
-
 class VoicePipelineDependencies {
   final VoiceService voiceService;
   final AutoListeningSnapshotSource autoListening;
@@ -23,7 +21,6 @@ class VoicePipelineDependencies {
   final AudioPlayback? audioPlayback;
   final AiGateway? aiGateway;
   final MicAutoModeController? micController;
-
   const VoicePipelineDependencies({
     required this.voiceService,
     required this.autoListening,

@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
-
 class SessionSummaryCard extends StatelessWidget {
   final String summary;
-
   const SessionSummaryCard({super.key, required this.summary});
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(

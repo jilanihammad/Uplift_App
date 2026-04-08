@@ -1,20 +1,14 @@
 // lib/utils/feature_flags.dart
-
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-
-/// Feature flags management for controlled rollout of new features
 class FeatureFlags {
-  // Feature flag keys
   static const String useRefactoredVoicePipeline = 'useRefactoredVoicePipeline';
   static const String memoryPersistenceEnabled = 'memoryPersistenceEnabled';
   static const String moodPersistenceEnabled = 'moodPersistenceEnabled';
   static const String voiceFacadeEnabled = 'voiceFacadeEnabled';
   static const String coordinatorVoiceGuardEnabled =
       'coordinatorVoiceGuardEnabled';
-
-  // Default values
   static const Map<String, bool> _defaults = {
     useRefactoredVoicePipeline:
         true, // Enable new pipeline to test Maya self-detection fix
@@ -24,122 +18,66 @@ class FeatureFlags {
     voiceFacadeEnabled: true,
     coordinatorVoiceGuardEnabled: true,
   };
-
   static SharedPreferences? _prefs;
   static bool _initialized = false;
   static Future<void>? _initFuture;
   static final Map<String, bool> _deferredWrites = {};
-
-  /// Initialize feature flags with SharedPreferences
   static Future<void> init() async {
     if (_initialized) {
       return;
     }
-
     _initFuture ??= _initializePrefs();
     await _initFuture;
   }
-
   static Future<void> _initializePrefs() async {
     _prefs = await SharedPreferences.getInstance();
-    if (kDebugMode) {
-      debugPrint('[FeatureFlags] Initialized with SharedPreferences');
-    }
-
-    // Seed defaults for any unset flags so rollouts behave deterministically
     for (final entry in _defaults.entries) {
       _prefs!.setBool(entry.key, _prefs!.getBool(entry.key) ?? entry.value);
     }
-
-    // Force-enable mood persistence for existing installs even if a stale
-    // preference cached "false" before the rollout flipped on.
     await _prefs!.setBool(moodPersistenceEnabled, true);
-
     if (_deferredWrites.isNotEmpty) {
       for (final entry in _deferredWrites.entries) {
         await _prefs!.setBool(entry.key, entry.value);
       }
       _deferredWrites.clear();
     }
-
     _initialized = true;
     _initFuture = null;
   }
-
-  /// Get the value of a feature flag
   static bool isEnabled(String flagKey) {
     if (_prefs == null) {
-      if (kDebugMode) {
-        debugPrint(
-            '[FeatureFlags] WARNING: Not initialized, returning default for $flagKey');
-      }
       return _defaults[flagKey] ?? false;
     }
-
     final value = _prefs!.getBool(flagKey) ?? _defaults[flagKey] ?? false;
     return value;
   }
-
-  /// Set the value of a feature flag
   static Future<void> setEnabled(String flagKey, bool value) async {
     if (_prefs == null) {
-      if (kDebugMode) {
-        debugPrint(
-            '[FeatureFlags] WARNING: Not initialized, queueing $flagKey override');
-      }
       _deferredWrites[flagKey] = value;
       return;
     }
-
     await _prefs!.setBool(flagKey, value);
-    if (kDebugMode) {
-      debugPrint('[FeatureFlags] Set $flagKey = $value');
-    }
   }
-
   static bool get isInitialized => _initialized;
-
-  /// Check if refactored voice pipeline should be used
   static bool get useNewVoicePipeline => isEnabled(useRefactoredVoicePipeline);
-
-  /// Check if personalization persistence sync is enabled
   static bool get isMemoryPersistenceEnabled =>
       isEnabled(memoryPersistenceEnabled);
-
-  /// Check if mood persistence sync is enabled
   static bool get isMoodPersistenceEnabled => isEnabled(moodPersistenceEnabled);
-
-  /// Check if the new voice facade orchestration should be used
   static bool get isVoiceFacadeEnabled => isEnabled(voiceFacadeEnabled);
-
   static bool get isCoordinatorVoiceGuardEnabled =>
       isEnabled(coordinatorVoiceGuardEnabled);
-
-
-  /// Toggle the refactored voice pipeline flag
   static Future<void> toggleRefactoredVoicePipeline() async {
     final current = useNewVoicePipeline;
     await setEnabled(useRefactoredVoicePipeline, !current);
   }
-
-  /// Reset all flags to defaults
   static Future<void> resetToDefaults() async {
     if (_prefs == null) {
-      if (kDebugMode) {
-        debugPrint('[FeatureFlags] ERROR: Not initialized');
-      }
       return;
     }
-
     for (final entry in _defaults.entries) {
       await _prefs!.setBool(entry.key, entry.value);
     }
-    if (kDebugMode) {
-      debugPrint('[FeatureFlags] Reset all flags to defaults');
-    }
   }
-
-  /// Get all current flag values for debugging
   static Map<String, bool> getAllFlags() {
     final flags = <String, bool>{};
     for (final key in _defaults.keys) {
@@ -147,16 +85,11 @@ class FeatureFlags {
     }
     return flags;
   }
-
-  /// Debug print all flags
   static void debugPrintFlags() {
     if (!kDebugMode) {
       return;
     }
-
-    debugPrint('[FeatureFlags] Current flag values:');
     getAllFlags().forEach((key, value) {
-      debugPrint('  $key: $value');
     });
   }
 }

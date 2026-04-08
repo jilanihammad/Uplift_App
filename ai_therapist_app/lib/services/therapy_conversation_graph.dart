@@ -1,9 +1,6 @@
 // lib/services/therapy_conversation_graph.dart
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'therapy_graph_service.dart';
-
-/// Enum for therapeutic approaches
 enum TherapeuticApproach {
   cbt, // Cognitive Behavioral Therapy
   act, // Acceptance and Commitment Therapy
@@ -11,21 +8,16 @@ enum TherapeuticApproach {
   psychodynamic, // Psychodynamic Therapy
   dbt, // Dialectical Behavior Therapy
 }
-
-/// Represents the current state of the therapy session
 class TherapyState {
   final String id;
   final String name;
   final Map<String, dynamic> metadata;
-
   TherapyState({
     required this.id,
     required this.name,
     this.metadata = const {},
   });
 }
-
-/// Represents a node in the therapy conversation graph with additional therapy-specific metadata
 class TherapyConversationNode {
   final String id;
   final String name;
@@ -34,7 +26,6 @@ class TherapyConversationNode {
   final List<String> tools;
   final String promptTemplate;
   final Map<String, dynamic> metadata;
-
   TherapyConversationNode({
     required this.id,
     required this.name,
@@ -44,8 +35,6 @@ class TherapyConversationNode {
     this.promptTemplate = '',
     this.metadata = const {},
   });
-
-  // Convert to TherapyNode for use with TherapyGraphService
   TherapyNode toTherapyNode() {
     return TherapyNode(
       id: id,
@@ -60,32 +49,18 @@ class TherapyConversationNode {
     );
   }
 }
-
-/// Manages a therapy conversation using a graph-based approach, bridging between
-/// the TherapyService and TherapyGraphService
 class TherapyConversationGraph {
-  // The underlying graph service
   final TherapyGraphService _graphService = TherapyGraphService();
-
-  // Current therapeutic approach
   TherapeuticApproach _approach = TherapeuticApproach.supportive;
   set approach(TherapeuticApproach approach) => _approach = approach;
   TherapeuticApproach get approach => _approach;
-
-  // Current conversation node
   late TherapyConversationNode _currentNode;
   TherapyConversationNode get currentNode => _currentNode;
-
-  // Current state
   TherapyState? _currentState;
   TherapyState? get currentState => _currentState;
-
-  // Constructor
   TherapyConversationGraph() {
     _initializeGraph();
   }
-
-  /// Initialize the conversation graph
   void _initializeGraph() {
     _currentNode = _getIntakeNode();
     _currentState = TherapyState(
@@ -93,24 +68,16 @@ class TherapyConversationGraph {
       name: 'Initial Assessment',
     );
   }
-
-  /// Alias for processUserInput to maintain backward compatibility
-  /// This method analyzes the user message and returns guidance for response
   Future<Map<String, dynamic>> analyzeMessage(String userMessage) async {
     return processUserInput(userMessage);
   }
-
-  /// Process user input through the graph and return appropriate response guidance
   Future<Map<String, dynamic>> processUserInput(String userInput) async {
     try {
-      // Update state with user input
       _graphService.updateState({
         'last_user_input': userInput,
         'input_length': userInput.length,
         'timestamp': DateTime.now().toIso8601String(),
       });
-
-      // Analyze user input (sentiment, topics, etc)
       final analysis = await _analyzeUserInput(userInput);
       _graphService.updateState({
         'analysis': analysis,
@@ -119,10 +86,7 @@ class TherapyConversationGraph {
         'topics': analysis['topics'],
         'distress_level': analysis['distressLevel'],
       });
-
-      // Check if we need to handle any safety concerns
       if (_shouldTriggerSafety(analysis)) {
-        // Override normal flow for safety concerns
         return {
           'prompt': _getSafetyPrompt(analysis),
           'state': 'safety',
@@ -130,14 +94,9 @@ class TherapyConversationGraph {
           'node': 'crisis_support',
         };
       }
-
-      // Move to next appropriate node based on current state and analysis
       final TherapyNode? nextNode = _graphService.moveToNextNode();
-
       if (nextNode != null) {
-        // Update current node and state
         _updateCurrentNode(nextNode);
-
         return {
           'prompt': _graphService.getTherapyPrompt(),
           'state': _currentState!.id,
@@ -147,7 +106,6 @@ class TherapyConversationGraph {
           'approach': _graphService.getTherapeuticApproach(),
         };
       } else {
-        // Fallback if no valid node transition
         return {
           'prompt': "Let's explore how you're feeling right now.",
           'state': 'exploration',
@@ -155,7 +113,6 @@ class TherapyConversationGraph {
         };
       }
     } catch (e) {
-      debugPrint('Error processing user input through graph: $e');
       return {
         'prompt': "I'm here to listen and support you.",
         'state': 'supportive',
@@ -163,19 +120,10 @@ class TherapyConversationGraph {
       };
     }
   }
-
-  /// Analyze user input for emotion, topics, and other relevant factors
   Future<Map<String, dynamic>> _analyzeUserInput(String userInput) async {
-    // This would normally call an API or ML model
-    // For now, we'll use a simple heuristic approach
-
     final String lowercaseInput = userInput.toLowerCase();
-
-    // Emotion detection (very simplified)
     String emotion = 'neutral';
     double emotionIntensity = 5.0;
-
-    // Simple keyword matching for emotions
     if (lowercaseInput.contains('sad') ||
         lowercaseInput.contains('depress') ||
         lowercaseInput.contains('unhappy')) {
@@ -197,10 +145,7 @@ class TherapyConversationGraph {
       emotion = 'angry';
       emotionIntensity = 7.8;
     }
-
-    // Topic detection (very simplified)
     List<String> topics = [];
-
     if (lowercaseInput.contains('work') || lowercaseInput.contains('job')) {
       topics.add('work');
     }
@@ -221,8 +166,6 @@ class TherapyConversationGraph {
     if (lowercaseInput.contains('money') || lowercaseInput.contains('financ')) {
       topics.add('finances');
     }
-
-    // Distress detection
     double distressLevel = 3.0;
     if (lowercaseInput.contains('suicid') ||
         lowercaseInput.contains('kill myself') ||
@@ -235,13 +178,10 @@ class TherapyConversationGraph {
     } else if (emotion == 'sad' || emotion == 'anxious' || emotion == 'angry') {
       distressLevel = emotionIntensity * 0.8;
     }
-
-    // Cognitive distortions detection
     bool hasCognitiveDistortions = lowercaseInput.contains('always') ||
         lowercaseInput.contains('never') ||
         lowercaseInput.contains('everyone') ||
         lowercaseInput.contains('nobody');
-
     return {
       'emotion': emotion,
       'emotionIntensity': emotionIntensity,
@@ -250,31 +190,22 @@ class TherapyConversationGraph {
       'hasCognitiveDistortions': hasCognitiveDistortions,
     };
   }
-
-  /// Check if safety concerns should override normal flow
   bool _shouldTriggerSafety(Map<String, dynamic> analysis) {
     return analysis['distressLevel'] >= 8.5;
   }
-
-  /// Get a prompt focused on safety concerns
   String _getSafetyPrompt(Map<String, dynamic> analysis) {
     return """
 I notice that you may be experiencing significant distress right now. Your safety is my top priority.
-
 - Acknowledge the person's pain without minimizing it
 - Express genuine concern for their wellbeing
 - Ask directly about thoughts of self-harm if indicated
 - Provide immediate coping strategies for the crisis moment
 - Connect with immediate resources (crisis lines, emergency services) if needed
 - Use a warm, calm tone throughout
-
 If there are any indications of immediate danger, guide the person to emergency resources or suggest they contact a trusted person who can be with them right now.
 """;
   }
-
-  /// Update the current node based on the TherapyNode from the graph service
   void _updateCurrentNode(TherapyNode node) {
-    // Convert node to TherapyConversationNode
     _currentNode = TherapyConversationNode(
       id: node.id,
       name: node.name,
@@ -287,16 +218,12 @@ If there are any indications of immediate danger, guide the person to emergency 
         ..remove('tools')
         ..remove('prompt_template'),
     );
-
-    // Update current state
     _currentState = TherapyState(
       id: node.id,
       name: node.name,
       metadata: node.metadata,
     );
   }
-
-  /// Get the intake assessment node for starting a conversation
   TherapyConversationNode _getIntakeNode() {
     return TherapyConversationNode(
       id: 'intake',
@@ -308,15 +235,11 @@ If there are any indications of immediate danger, guide the person to emergency 
           'Welcome to our conversation. What brings you here today?',
     );
   }
-
-  /// Create a CBT-focused therapy graph
   static TherapyConversationGraph createCbtGraph() {
     final graph = TherapyConversationGraph();
     graph._approach = TherapeuticApproach.cbt;
     return graph;
   }
-
-  /// Create an ACT-focused therapy graph
   static TherapyConversationGraph createActGraph() {
     final graph = TherapyConversationGraph();
     graph._approach = TherapeuticApproach.act;

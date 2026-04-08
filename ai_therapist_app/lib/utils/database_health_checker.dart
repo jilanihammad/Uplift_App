@@ -1,12 +1,8 @@
 import '../data/datasources/local/database_provider.dart';
-import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-
 class DatabaseHealthChecker {
   final DatabaseProvider dbProvider;
   DatabaseHealthChecker(this.dbProvider);
-
-  // List of required tables and their creation SQL
   static final Map<String, String> requiredTables = {
     'sessions': '''
       CREATE TABLE IF NOT EXISTS sessions (
@@ -156,35 +152,22 @@ class DatabaseHealthChecker {
       )
     ''',
   };
-
   Future<void> runHealthCheck() async {
     try {
       for (final entry in requiredTables.entries) {
         try {
           final exists = await dbProvider.tableExists(entry.key);
           if (!exists) {
-            debugPrint('[DB Health] Table missing: ${entry.key}, creating...');
             await dbProvider.rawExecute(entry.value);
-            debugPrint('[DB Health] Table created: ${entry.key}');
           } else {
-            debugPrint('[DB Health] Table exists: ${entry.key}');
           }
         } catch (e) {
-          // Detect corruption or unrecoverable errors
           if (e is DatabaseException && e.toString().contains('malformed')) {
-            debugPrint(
-                '[DB Health] Database corruption detected while checking table: ${entry.key}');
-            debugPrint('[DB Health] Error: $e');
             return;
           } else {
-            debugPrint(
-                '[DB Health] Error checking/creating table ${entry.key}: $e');
           }
         }
       }
-      debugPrint('[DB Health] All required tables checked.');
-    } catch (e, st) {
-      debugPrint('[DB Health] Error during health check: $e\n$st');
-    }
+    } catch (e, st) {}
   }
 }

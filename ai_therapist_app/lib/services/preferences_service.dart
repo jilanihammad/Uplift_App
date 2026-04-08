@@ -6,61 +6,34 @@ import '../models/therapist_style.dart';
 import '../di/interfaces/i_preferences_service.dart';
 import '../data/datasources/local/prefs_manager.dart';
 import '../config/llm_config.dart';
-
-// Implementation of user preferences service with persistent storage
 class PreferencesService implements IPreferencesService {
   static const String _preferencesKey = 'user_preferences';
-
   final PrefsManager _prefsManager;
   UserPreferences? _preferences;
-
-  // Constructor with dependency injection
   PreferencesService({PrefsManager? prefsManager})
       : _prefsManager = prefsManager ?? PrefsManager();
-
-  // Get current preferences
   @override
   UserPreferences? get preferences => _preferences;
-
-  // Method to initialize the preferences service
   @override
   Future<void> init() async {
-    // Skip if already initialized
     if (_preferences != null) {
       return;
     }
-
     try {
-      // Initialize the preferences manager
       await _prefsManager.init();
-
-      // Try to load existing preferences from persistent storage
       final Map<String, dynamic>? savedPrefs =
           _prefsManager.getJson(_preferencesKey);
-
       if (savedPrefs != null) {
-        // Load existing preferences
         _preferences = UserPreferences.fromJson(savedPrefs);
-
         if (_preferences?.therapistStyleId != 'cbt') {
           _preferences = _preferences!.copyWith(therapistStyleId: 'cbt');
           await _savePreferences();
-          if (kDebugMode) {
-            debugPrint(
-                'Legacy therapist style detected. Resetting to CBT for consistency');
-          }
         }
-
         if (_preferences?.aiVoiceId != null &&
             _preferences!.aiVoiceId!.isNotEmpty) {
           LLMConfig.setPreferredTtsVoice(_preferences!.aiVoiceId!);
         }
-
-        if (kDebugMode) {
-          debugPrint('Preferences loaded from storage');
-        }
       } else {
-        // Create default preferences if none exist
         _preferences = const UserPreferences(
           userId: 'default-user',
           therapistStyleId: 'cbt', // Default to CBT style
@@ -73,61 +46,31 @@ class PreferencesService implements IPreferencesService {
           aiVoiceId: 'sage',
           useVoiceByDefault: false,
         );
-
-        // Save default preferences to storage
         await _savePreferences();
-
         LLMConfig.setPreferredTtsVoice('sage');
-
-        if (kDebugMode) {
-          debugPrint('Default preferences created and saved');
-        }
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error initializing preferences: $e');
-      }
-      // Fallback to default preferences
       _preferences = const UserPreferences();
       if (_preferences?.aiVoiceId != null) {
         LLMConfig.setPreferredTtsVoice(_preferences!.aiVoiceId!);
       }
     }
   }
-
-  // Helper method to save preferences to storage
   Future<void> _savePreferences() async {
     if (_preferences != null) {
       try {
         await _prefsManager.setJson(_preferencesKey, _preferences!.toJson());
-        if (kDebugMode) {
-          debugPrint('Preferences saved to storage');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('Error saving preferences: $e');
-        }
-      }
+      } catch (e) {}
     }
   }
-
-  // Update preferences
   @override
   Future<void> updatePreferences(UserPreferences newPreferences) async {
     _preferences = newPreferences.copyWith(
       therapistStyleId: 'cbt',
       lastUpdated: DateTime.now(),
     );
-
-    // Save to persistent storage
     await _savePreferences();
-
-    if (kDebugMode) {
-      debugPrint('Preferences updated: ${newPreferences.therapistStyleId}');
-    }
   }
-
-  // Update a single preference
   @override
   Future<void> updateSinglePreference({
     String? therapistStyleId,
@@ -144,9 +87,7 @@ class PreferencesService implements IPreferencesService {
     if (_preferences == null) {
       await init();
     }
-
     const enforcedStyleId = 'cbt';
-
     _preferences = _preferences!.copyWith(
       therapistStyleId: enforcedStyleId,
       reminderEnabled: reminderEnabled,
@@ -160,69 +101,34 @@ class PreferencesService implements IPreferencesService {
       dailyCheckInTime: dailyCheckInTime,
       lastUpdated: DateTime.now(),
     );
-
     if (aiVoiceId != null && aiVoiceId.isNotEmpty) {
       LLMConfig.setPreferredTtsVoice(aiVoiceId);
     }
-
-    // Save to persistent storage
     await _savePreferences();
-
-    if (kDebugMode) {
-      debugPrint('Single preference updated and saved');
-    }
   }
-
-  // Get available therapist styles
   @override
   List<TherapistStyle> getAvailableTherapistStyles() {
     return TherapistStyle.availableStyles;
   }
-
-  // Get current therapist style
   @override
   TherapistStyle getCurrentTherapistStyle() {
     final styleId = _preferences?.therapistStyleId ?? 'cbt';
     return TherapistStyle.getById(styleId);
   }
-
-  // Set the therapist style
   @override
   Future<void> setTherapistStyle(String styleId) async {
     await updateSinglePreference(therapistStyleId: 'cbt');
-
-    if (kDebugMode) {
-      debugPrint('Therapist style forcibly set to CBT (requested: $styleId)');
-    }
   }
-
-  // Set voice by default option
   @override
   Future<void> setUseVoiceByDefault(bool enabled) async {
     await updateSinglePreference(useVoiceByDefault: enabled);
-
-    if (kDebugMode) {
-      debugPrint('Use voice by default set to: $enabled');
-    }
   }
-
   @override
   Future<void> setPreferredVoice(String voiceId) async {
     await updateSinglePreference(aiVoiceId: voiceId);
-
-    if (kDebugMode) {
-      debugPrint('Preferred AI voice set to: $voiceId');
-    }
   }
-
-  // Set daily check-in time
   @override
   Future<void> setDailyCheckInTime(TimeOfDay? time) async {
     await updateSinglePreference(dailyCheckInTime: time);
-
-    if (kDebugMode) {
-      debugPrint(
-          'Daily check-in time set to: ${time != null ? '${time.hour}:${time.minute}' : 'null'}');
-    }
   }
 }

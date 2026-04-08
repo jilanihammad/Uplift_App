@@ -1,41 +1,29 @@
-// lib/widgets/debug_drawer.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/feature_flags.dart';
-
-/// Debug drawer for development and testing features
-/// Only shown in debug builds or with special access in release builds
 class DebugDrawer extends StatefulWidget {
   const DebugDrawer({super.key});
-
   @override
   State<DebugDrawer> createState() => _DebugDrawerState();
 }
-
 class _DebugDrawerState extends State<DebugDrawer> {
   Map<String, bool> _flags = {};
   bool _loading = true;
-
   @override
   void initState() {
     super.initState();
     _loadFlags();
   }
-
   void _loadFlags() {
     setState(() {
       _flags = FeatureFlags.getAllFlags();
       _loading = false;
     });
   }
-
   Future<void> _toggleFlag(String flagKey) async {
     final currentValue = _flags[flagKey] ?? false;
     await FeatureFlags.setEnabled(flagKey, !currentValue);
     _loadFlags();
-
-    // Show confirmation
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -49,11 +37,9 @@ class _DebugDrawerState extends State<DebugDrawer> {
       );
     }
   }
-
   Future<void> _resetAllFlags() async {
     await FeatureFlags.resetToDefaults();
     _loadFlags();
-
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -65,14 +51,12 @@ class _DebugDrawerState extends State<DebugDrawer> {
       );
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Drawer(
       child: SafeArea(
         child: Column(
           children: [
-            // Header
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
@@ -98,8 +82,6 @@ class _DebugDrawerState extends State<DebugDrawer> {
                 ],
               ),
             ),
-
-            // Feature Flags Section
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -114,8 +96,6 @@ class _DebugDrawerState extends State<DebugDrawer> {
                           ),
                         ),
                         const SizedBox(height: 8),
-
-                        // Voice Pipeline Flag
                         Card(
                           child: ListTile(
                             title: const Text('Refactored Voice Pipeline'),
@@ -136,7 +116,6 @@ class _DebugDrawerState extends State<DebugDrawer> {
                                 FeatureFlags.useRefactoredVoicePipeline),
                           ),
                         ),
-
                         Card(
                           child: ListTile(
                             title: const Text('Coordinator Voice Guard'),
@@ -159,10 +138,7 @@ class _DebugDrawerState extends State<DebugDrawer> {
                                 FeatureFlags.coordinatorVoiceGuardEnabled),
                           ),
                         ),
-
                         const SizedBox(height: 16),
-
-                        // Reset Button
                         ElevatedButton.icon(
                           onPressed: _resetAllFlags,
                           icon: const Icon(Icons.refresh),
@@ -172,9 +148,7 @@ class _DebugDrawerState extends State<DebugDrawer> {
                             foregroundColor: Colors.white,
                           ),
                         ),
-
                         const SizedBox(height: 16),
-
                         // Warning
                         Container(
                           padding: const EdgeInsets.all(12),
@@ -202,7 +176,6 @@ class _DebugDrawerState extends State<DebugDrawer> {
                             ],
                           ),
                         ),
-
                         if (kDebugMode) ...[
                           const SizedBox(height: 16),
                           const Divider(),

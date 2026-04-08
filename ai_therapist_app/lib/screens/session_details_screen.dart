@@ -1,5 +1,4 @@
 // Screen for viewing detailed session information including messages and summary from history screen
-
 import 'package:flutter/material.dart';
 import '../domain/entities/session.dart';
 import '../di/dependency_container.dart';
@@ -10,23 +9,19 @@ import '../utils/date_time_utils.dart';
 import '../services/tasks_service.dart';
 import 'widgets/action_items_card.dart';
 import 'dart:convert';
-
 class SessionDetailsScreen extends StatefulWidget {
   final String sessionId;
   final ISessionRepository? sessionRepository;
   final IDatabase? database;
-
   const SessionDetailsScreen({
     super.key,
     required this.sessionId,
     this.sessionRepository,
     this.database,
   });
-
   @override
   State<SessionDetailsScreen> createState() => _SessionDetailsScreenState();
 }
-
 class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   bool _isLoading = true;
   bool _isDisposed = false;
@@ -36,7 +31,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   late ISessionRepository _sessionRepository;
   late IDatabase _database;
   late TasksService _tasksService;
-
   @override
   void initState() {
     super.initState();
@@ -47,7 +41,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     _tasksService.init();
     _loadSession();
   }
-
   void _addToTasks(String actionItem) async {
     try {
       await _tasksService.addTask(actionItem, widget.sessionId);
@@ -72,7 +65,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       }
     }
   }
-
   void _removeFromTasks(String actionItem) async {
     try {
       await _tasksService.removeTaskByActionItem(widget.sessionId, actionItem);
@@ -97,45 +89,31 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       }
     }
   }
-
   Future<void> _loadSession() async {
     if (_isDisposed) return;
-
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-
     try {
-      // Load session details
       final session = await _sessionRepository.getSession(widget.sessionId);
-
-      // Load session messages
       final messages = await _loadSessionMessages(widget.sessionId);
-
       if (!mounted || _isDisposed) return;
-
       setState(() {
         _session = session;
         _messages = messages;
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('Error loading session details: $e');
-
       if (!mounted || _isDisposed) return;
-
       setState(() {
         _errorMessage = 'Could not load session details.';
         _isLoading = false;
       });
     }
   }
-
   Future<List<TherapyMessage>> _loadSessionMessages(String sessionId) async {
     try {
-      // This would typically be done through a MessageRepository
-      // For now, we'll get them from the local database
       final results = await _database.query(
         'messages',
         where: 'session_id = ?',
@@ -143,7 +121,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         orderBy:
             'timestamp ASC', // Consider ordering by sequence ASC as well/instead
       );
-
       return results
           .map((data) => TherapyMessage(
                 id: data['id'] as String,
@@ -156,11 +133,9 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
               ))
           .toList();
     } catch (e) {
-      debugPrint('Error loading session messages: $e');
       return [];
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -206,13 +181,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                     ),
     );
   }
-
   Widget _buildSessionHeader() {
     final session = _session;
     if (session == null) {
       return const SizedBox.shrink();
     }
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -253,13 +226,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       ),
     );
   }
-
   Widget _buildSummarySection() {
     final session = _session;
     if (session == null) {
       return const SizedBox.shrink();
     }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -280,7 +251,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       ],
     );
   }
-
   Widget _buildConversationSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,12 +267,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       ],
     );
   }
-
   Widget _buildActionItems() {
-    // Try to extract action items from the summary
-    // The action items might be embedded in the summary text as JSON
     List<String> actionItems = _extractActionItems();
-
     return ActionItemsCard(
       actionItems: actionItems,
       sessionId: widget.sessionId,
@@ -312,37 +278,20 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
           _tasksService.isActionItemAlreadyAdded(widget.sessionId, actionItem),
     );
   }
-
   List<String> _extractActionItems() {
     final session = _session;
     if (session == null) {
-      debugPrint('Session is null, returning empty action items');
       return [];
     }
-
-    // First priority: Use stored action items from database
     if (session.actionItems.isNotEmpty) {
-      debugPrint(
-          'Using stored action items from database: ${session.actionItems.length} items');
-      debugPrint('Stored action items: ${session.actionItems.join(", ")}');
       return session.actionItems;
     }
-
-    debugPrint(
-        'No stored action items found for session ${session.id}, falling back to summary extraction');
-
-    // Fallback: Extract from summary text (for legacy sessions)
     if (session.summary.isEmpty) {
       return [];
     }
-
-    debugPrint(
-        'No stored action items found, attempting to extract from summary text (legacy mode)');
     final summary = session.summary;
     List<String> actionItems = [];
-
     try {
-      // First attempt: Try to parse the summary as JSON with enhanced format detection
       if (_isValidJsonFormat(summary)) {
         try {
           final summaryJson = jsonDecode(summary);
@@ -350,38 +299,22 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
             final items = summaryJson['action_items'];
             if (items is List) {
               actionItems = items.map((item) => item.toString()).toList();
-              debugPrint(
-                  'Successfully extracted ${actionItems.length} action items from JSON summary');
             }
           }
         } on FormatException catch (e) {
-          debugPrint('FormatException parsing summary as JSON: ${e.message}');
-          // Continue to text-based extraction
-        } catch (e) {
-          debugPrint('Unexpected error parsing summary as JSON: $e');
-          // Continue to text-based extraction
-        }
+        } catch (e) {}
       } else {
-        debugPrint(
-            'Summary format detected as plain text, using text-based action item extraction');
       }
-
-      // Second attempt: Look for action items in the text
       if (actionItems.isEmpty) {
-        // Look for patterns like "Action items:" or "Recommended actions:"
         final actionItemRegex = RegExp(
             r'(action items:|recommended actions:|action steps:)(.+?)(?=\n\n|\n[A-Z]|$)',
             caseSensitive: false,
             dotAll: true);
-
         final match = actionItemRegex.firstMatch(summary);
         if (match != null && match.groupCount >= 2) {
           final actionItemsText = match.group(2)?.trim() ?? '';
-
-          // Split by bullets or numbers
           final bulletItems = actionItemsText.split(RegExp(r'\n\s*[-•*]\s*'));
           final numberItems = actionItemsText.split(RegExp(r'\n\s*\d+\.\s*'));
-
           if (bulletItems.length > 1) {
             actionItems = bulletItems
                 .skip(1)
@@ -397,8 +330,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
           }
         }
       }
-
-      // Third attempt: Use default action items if none found
       if (actionItems.isEmpty) {
         actionItems = [
           'Practice mindfulness regularly',
@@ -408,8 +339,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         ];
       }
     } catch (e) {
-      debugPrint('Error extracting action items: $e');
-      // Fallback action items
       actionItems = [
         'Practice mindfulness regularly',
         'Reflect on the insights from your session',
@@ -417,46 +346,29 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         'Focus on your self-care routine'
       ];
     }
-
     return actionItems;
   }
-
-  /// Enhanced JSON format validation to reduce false positives
   bool _isValidJsonFormat(String text) {
     final trimmed = text.trim();
-
-    // Basic structure check - must start with { and end with }
     if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
       return false;
     }
-
-    // Must contain at least one colon (key-value pairs)
     if (!trimmed.contains(':')) {
       return false;
     }
-
-    // Should have matching braces
     int braceCount = 0;
     for (int i = 0; i < trimmed.length; i++) {
       if (trimmed[i] == '{') braceCount++;
       if (trimmed[i] == '}') braceCount--;
       if (braceCount < 0) return false; // More closing than opening braces
     }
-
-    // Final brace count should be zero
     if (braceCount != 0) return false;
-
-    // Quick validation for common JSON patterns
     if (trimmed.contains('"') &&
         (trimmed.contains('":') || trimmed.contains('" :'))) {
       return true;
     }
-
-    // If it looks like JSON but doesn't have quotes, it might be malformed
-    // In this case, we'll let jsonDecode handle it and catch the FormatException
     return true;
   }
-
   @override
   void dispose() {
     _isDisposed = true;

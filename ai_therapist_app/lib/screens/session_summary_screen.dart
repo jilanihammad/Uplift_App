@@ -1,5 +1,4 @@
 // Screen for displaying the summary of a therapy session immediately after it ends
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
@@ -12,14 +11,12 @@ import '../utils/feature_flags.dart';
 import '../di/dependency_container.dart';
 import 'widgets/session_summary_card.dart';
 import 'widgets/action_items_card.dart';
-
 class SessionSummaryScreen extends StatefulWidget {
   final String sessionId;
   final String summary;
   final List<String> actionItems;
   final List<TherapyMessage> messages;
   final Mood? initialMood;
-
   const SessionSummaryScreen({
     super.key,
     required this.sessionId,
@@ -28,48 +25,35 @@ class SessionSummaryScreen extends StatefulWidget {
     required this.messages,
     this.initialMood,
   });
-
   @override
   State<SessionSummaryScreen> createState() => _SessionSummaryScreenState();
 }
-
 class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
   late TasksService _tasksService;
   List<UserAnchor> _savedAnchors = const [];
-
   @override
   void initState() {
     super.initState();
     _tasksService = TasksService();
     _tasksService.init();
-
-    // Sync session data when summary screen is shown
     _syncProgressData();
-
     if (FeatureFlags.isMemoryPersistenceEnabled) {
       _loadSavedAnchors();
     }
   }
-
   Future<void> _syncProgressData() async {
     try {
       final progressService = DependencyContainer().progress;
       await progressService.syncSessionData();
-
-      // Also log this session with duration
       final now = DateTime.now();
       final sessionDuration = widget.messages.isNotEmpty
           ? now.difference(widget.messages.first.timestamp).inMinutes
           : 0;
-
       if (sessionDuration > 0) {
         await progressService.logSession(sessionDuration);
       }
-    } catch (e) {
-      debugPrint('Error syncing progress data: $e');
-    }
+    } catch (e) {}
   }
-
   void _addToTasks(String actionItem) async {
     try {
       await _tasksService.addTask(actionItem, widget.sessionId);
@@ -94,7 +78,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       }
     }
   }
-
   void _removeFromTasks(String actionItem) async {
     try {
       await _tasksService.removeTaskByActionItem(widget.sessionId, actionItem);
@@ -119,7 +102,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       }
     }
   }
-
   Future<void> _loadSavedAnchors() async {
     try {
       final memoryService = DependencyContainer().get<MemoryService>();
@@ -129,21 +111,16 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       setState(() {
         _savedAnchors = anchors;
       });
-    } catch (e) {
-      debugPrint('Failed to load saved anchors: $e');
-    }
+    } catch (e) {}
   }
-
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final sessionDuration = widget.messages.isNotEmpty
         ? now.difference(widget.messages.first.timestamp)
         : Duration.zero;
-
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
@@ -162,7 +139,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Success indicator
             Center(
               child: Container(
                 padding: const EdgeInsets.all(16),
@@ -177,9 +153,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 16),
-
             Center(
               child: Column(
                 children: [
@@ -201,15 +175,9 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 32),
-
-            // Session summary
             SessionSummaryCard(summary: widget.summary),
-
             const SizedBox(height: 32),
-
-            // Action items
             ActionItemsCard(
               actionItems: widget.actionItems,
               sessionId: widget.sessionId,
@@ -218,13 +186,10 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
               isItemAlreadyAdded: (actionItem) => _tasksService
                   .isActionItemAlreadyAdded(widget.sessionId, actionItem),
             ),
-
             const SizedBox(height: 40),
-
             if (FeatureFlags.isMemoryPersistenceEnabled &&
                 _savedAnchors.isNotEmpty)
               _buildSavedDetailsCard(context),
-
             if (FeatureFlags.isMemoryPersistenceEnabled &&
                 _savedAnchors.isEmpty)
               Padding(
@@ -236,8 +201,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                   ),
                 ),
               ),
-
-            // Action buttons
             Column(
               children: [
                 SizedBox(
@@ -283,10 +246,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                 ),
               ],
             ),
-
             const SizedBox(height: 24),
-
-            // Additional insights or feedback section (if needed)
             if (widget.actionItems.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(16),
@@ -314,14 +274,12 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                   ],
                 ),
               ),
-
             const SizedBox(height: 32),
           ],
         ),
       ),
     );
   }
-
   Widget _buildDetailRow(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -338,14 +296,11 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       ),
     );
   }
-
-  // Keep this method in case it's used elsewhere
   Widget _buildFeedbackButton(String emoji, String label) {
     return Column(
       children: [
         TextButton(
           onPressed: () {
-            // Record feedback
           },
           style: TextButton.styleFrom(
             shape: const CircleBorder(),
@@ -360,7 +315,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       ],
     );
   }
-
   String _formatDuration(Duration duration) {
     int minutes = duration.inMinutes;
     if (minutes < 1) {
@@ -379,18 +333,10 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       }
     }
   }
-
-  String _formatMood(Mood mood) {
-    final moodString = mood.toString().split('.').last;
-    return moodString.substring(0, 1).toUpperCase() + moodString.substring(1);
-  }
-
-  // Add this new method for scheduling dialog
   void _showScheduleDialog(BuildContext context) {
     DateTime selectedDate = DateTime.now().add(const Duration(days: 7));
     TimeOfDay selectedTime = const TimeOfDay(hour: 10, minute: 0);
     bool setReminder = true;
-
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -466,18 +412,13 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
               ),
               ElevatedButton(
                 onPressed: () {
-                  // Save session and set reminder if needed
                   Navigator.pop(context);
-
-                  // Show confirmation
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
                           'Session scheduled for ${DateFormat.yMMMEd().add_jm().format(selectedDate)}${setReminder ? ' with reminder' : ''}'),
                     ),
                   );
-
-                  // Navigate to home screen
                   context.go('/home');
                 },
                 child: const Text('Schedule'),
@@ -488,11 +429,9 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       ),
     );
   }
-
   Widget _buildSavedDetailsCard(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 24),

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-
 class ActionItemsCard extends StatelessWidget {
   final List<String> actionItems;
   final String? sessionId;
   final Function(String actionItem)? onAddToTasks;
   final Function(String actionItem)? onRemoveFromTasks;
   final bool Function(String actionItem)? isItemAlreadyAdded;
-
   const ActionItemsCard({
     super.key,
     required this.actionItems,
@@ -15,16 +13,13 @@ class ActionItemsCard extends StatelessWidget {
     this.onRemoveFromTasks,
     this.isItemAlreadyAdded,
   });
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     if (actionItems.isEmpty) {
       return _buildEmptyState(context);
     }
-
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -99,11 +94,9 @@ class ActionItemsCard extends StatelessWidget {
       ),
     );
   }
-
   Widget _buildActionItem(BuildContext context, String item, int index) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -191,11 +184,9 @@ class ActionItemsCard extends StatelessWidget {
       ),
     );
   }
-
   Widget _buildEmptyState(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -232,12 +223,10 @@ class ActionItemsCard extends StatelessWidget {
       ),
     );
   }
-
   Widget _buildAddToTasksButton(BuildContext context, String item) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isAlreadyAdded = isItemAlreadyAdded?.call(item) ?? false;
-
     return Column(
       children: [
         IconButton(

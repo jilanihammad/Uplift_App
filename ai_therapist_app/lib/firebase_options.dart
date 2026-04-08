@@ -5,11 +5,6 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/utils/logging_service.dart';
-
-/// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// This is configured for Android only as the app is targeting the Google Play Store.
-/// For other platforms, mock options are provided for development/testing.
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -17,7 +12,6 @@ class DefaultFirebaseOptions {
         'DefaultFirebaseOptions have not been configured for platform Web',
       );
     }
-
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
@@ -30,7 +24,6 @@ class DefaultFirebaseOptions {
           'DefaultFirebaseOptions have not been configured for platform macOS',
         );
       case TargetPlatform.windows:
-        // Return mock options for Windows development
         return _getDevFirebaseOptions();
       case TargetPlatform.linux:
         throw UnsupportedError(
@@ -42,11 +35,8 @@ class DefaultFirebaseOptions {
         );
     }
   }
-
-  // Get options from ConfigService if available, otherwise use defaults
   static FirebaseOptions get android {
     try {
-      // Try to get values from ConfigService
       final configService = DependencyContainer().configService;
       return FirebaseOptions(
         apiKey: configService.firebaseApiKey,
@@ -56,7 +46,6 @@ class DefaultFirebaseOptions {
         storageBucket: configService.firebaseStorageBucket,
       );
     } catch (e) {
-      // Fall back to hardcoded values if ConfigService isn't available
       logger.warning('Using default Firebase options',
           error: e, tag: 'Firebase');
       return const FirebaseOptions(
@@ -68,11 +57,8 @@ class DefaultFirebaseOptions {
       );
     }
   }
-
-  // Provide mock options for development on non-mobile platforms
   static FirebaseOptions _getDevFirebaseOptions() {
     try {
-      // Try to get values from ConfigService
       final configService = DependencyContainer().configService;
       return FirebaseOptions(
         apiKey: configService.firebaseApiKey,
@@ -82,7 +68,6 @@ class DefaultFirebaseOptions {
         storageBucket: configService.firebaseStorageBucket,
       );
     } catch (e) {
-      // Fall back to hardcoded values if ConfigService isn't available
       logger.warning('Using default dev Firebase options',
           error: e, tag: 'Firebase');
       return const FirebaseOptions(

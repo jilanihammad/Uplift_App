@@ -10,28 +10,20 @@ import 'profile_goals_screen.dart';
 import 'profile_experience_screen.dart';
 import '../../services/memory_manager.dart';
 import '../../services/audio_generator.dart';
-
 class OnboardingWrapper extends StatefulWidget {
   const OnboardingWrapper({super.key});
-
   @override
   State<OnboardingWrapper> createState() => _OnboardingWrapperState();
 }
-
 class _OnboardingWrapperState extends State<OnboardingWrapper> {
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _authService = DependencyContainer().get<AuthService>();
   late ValueNotifier<OnboardingStep> _stepNotifier;
-
   @override
   void initState() {
     super.initState();
     _stepNotifier = _onboardingService.stepChanged;
-
-    // Listen for step changes to detect completion
     _stepNotifier.addListener(_onStepChanged);
-
-    // Defer heavy initializations to after navigation
     Future.microtask(() async {
       if (DependencyContainer().isRegistered<MemoryManager>()) {
         final memoryManager = DependencyContainer().get<MemoryManager>();
@@ -41,38 +33,26 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
         final audioGenerator = DependencyContainer().get<AudioGenerator>();
         await audioGenerator.initializeOnlyIfNeeded();
       }
-      // Add any other heavy service initializations here
     });
   }
-
   @override
   void dispose() {
     _stepNotifier.removeListener(_onStepChanged);
     super.dispose();
   }
-
   void _onStepChanged() {
     if (_stepNotifier.value == OnboardingStep.complete) {
-      // Mark the user as having completed signup when onboarding is done
-      debugPrint('OnboardingWrapper: Marking user as having completed signup');
       _authService.completeSignup();
-
-      // Navigate to home screen
       if (mounted) {
-        debugPrint('OnboardingWrapper: Detected complete step, navigating to home');
         context.go(AppRouter.home);
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<OnboardingStep>(
       valueListenable: _onboardingService.stepChanged,
       builder: (context, step, child) {
-        debugPrint(
-            'OnboardingWrapper: ValueListenableBuilder triggered with step: $step');
-
         return Scaffold(
           body: SafeArea(
             child: _getScreen(),
@@ -81,20 +61,6 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
       },
     );
   }
-
-  void _goToNextStep() {
-    _onboardingService.goToNextStep();
-  }
-
-  void _goToPreviousStep() {
-    // Implement previous step navigation
-    final currentIndex = _onboardingService.currentStep.index;
-    if (currentIndex > 0) {
-      final previousStep = OnboardingStep.values[currentIndex - 1];
-      _onboardingService.goToStep(previousStep);
-    }
-  }
-
   Widget _getScreen() {
     switch (_onboardingService.currentStep) {
       case OnboardingStep.welcome:
@@ -106,7 +72,6 @@ class _OnboardingWrapperState extends State<OnboardingWrapper> {
       case OnboardingStep.profileExperience:
         return const ProfileExperienceScreen();
       case OnboardingStep.moodSetup:
-        debugPrint('Skipping mood setup for now...');
         _onboardingService.goToNextStep();
         return Container(); // This screen is effectively skipped
       case OnboardingStep.complete:

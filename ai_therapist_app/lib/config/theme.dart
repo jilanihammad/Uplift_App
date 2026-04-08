@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 @immutable
 class AppPalette extends ThemeExtension<AppPalette> {
   final Color surfaceLow;
@@ -8,7 +7,6 @@ class AppPalette extends ThemeExtension<AppPalette> {
   final Color surfaceHigh;
   final Color accentPrimary;
   final Color accentSecondary;
-
   const AppPalette({
     required this.surfaceLow,
     required this.surface,
@@ -16,7 +14,6 @@ class AppPalette extends ThemeExtension<AppPalette> {
     required this.accentPrimary,
     required this.accentSecondary,
   });
-
   @override
   AppPalette copyWith({
     Color? surfaceLow,
@@ -33,7 +30,6 @@ class AppPalette extends ThemeExtension<AppPalette> {
       accentSecondary: accentSecondary ?? this.accentSecondary,
     );
   }
-
   @override
   AppPalette lerp(
     covariant ThemeExtension<AppPalette>? other,
@@ -42,7 +38,6 @@ class AppPalette extends ThemeExtension<AppPalette> {
     if (other is! AppPalette) {
       return this;
     }
-
     return AppPalette(
       surfaceLow: Color.lerp(surfaceLow, other.surfaceLow, t) ?? surfaceLow,
       surface: Color.lerp(surface, other.surface, t) ?? surface,
@@ -56,55 +51,37 @@ class AppPalette extends ThemeExtension<AppPalette> {
     );
   }
 }
-
-// App theme configuration
 class AppTheme {
-  // Primary colors - Twitter blue (used for navigation active items)
   static const Color primaryColor = Color(0xFF1DA1F2); // Twitter blue
   static const Color primaryLightColor =
       Color(0xFF60C4FF); // Lighter Twitter blue
   static const Color primaryDarkColor =
       Color(0xFF0C7BBF); // Darker Twitter blue
-
-  // CalDiet colors
   static const Color caldietPrimaryColor = Colors.black;
   static const Color caldietAccentBlue = Color(0xFF4285F4);
   static const Color caldietBackgroundGray = Color(0xFFF8F8F8);
   static const Color caldietTextPrimary = Color(0xFF333333);
   static const Color caldietTextSecondary = Color(0xFF757575);
-
-  // Button colors - brighter blue similar to Twitter blue in dark mode
   static const Color buttonColor = Color(0xFF38B6FF);
   static const Color buttonLightColor = Color(0xFF7DCFFF);
   static const Color buttonDarkColor = Color(0xFF1C92DB);
-
-  // Secondary colors
   static const Color secondaryColor = Color(0xFF11CDEF); // Cyan
   static const Color secondaryLightColor = Color(0xFF4FE3FF);
   static const Color secondaryDarkColor = Color(0xFF0097BD);
-
-  // Accent colors
   static const Color accentColor = Color(0xFFFB6340); // Orange
   static const Color accentLightColor = Color(0xFFFF8F73);
   static const Color accentDarkColor = Color(0xFFC33A1B);
-
-  // Background colors
   static const Color backgroundColor = Color(0xFFF8F9FE);
   static const Color cardColor = Colors.white;
   static const Color surfaceColor = Colors.white;
-
-  // Dark mode colors
   static const Color darkBackgroundColor = Color(0xFF121212);
   static const Color darkCardColor = Color(0xFF1E1E1E);
   static const Color darkSurfaceColor = Color(0xFF1E1E1E);
-
-  // Text colors
   static const Color textPrimaryColor = Color(0xFF525F7F);
   static const Color textSecondaryColor = Color(0xFF8898AA);
   static const Color textLightColor = Color(0xFFADB5BD);
   static const Color darkTextPrimaryColor = Color(0xFFEAEAEA);
   static const Color darkTextSecondaryColor = Color(0xFFBBBBBB);
-
   static const AppPalette lightPalette = AppPalette(
     surfaceLow: Color(0xFFF3F5F8),
     surface: Color(0xFFFAFBFD),
@@ -112,7 +89,6 @@ class AppTheme {
     accentPrimary: Color(0xFF4B6CB7),
     accentSecondary: Color(0xFF86A6FF),
   );
-
   static const AppPalette darkPalette = AppPalette(
     surfaceLow: Color(0xFF1A1C1E),
     surface: darkSurfaceColor,
@@ -120,14 +96,10 @@ class AppTheme {
     accentPrimary: buttonColor,
     accentSecondary: Color(0xFF70C8FF),
   );
-
-  // Status colors
   static const Color successColor = Color(0xFF2DCE89);
   static const Color errorColor = Color(0xFFF5365C);
   static const Color warningColor = Color(0xFFFFB236);
   static const Color infoColor = Color(0xFF11CDEF);
-
-  // Get the light theme data
   static ThemeData get lightTheme {
     final baseTextTheme = GoogleFonts.interTextTheme();
     final appliedTextTheme = baseTextTheme.apply(
@@ -160,7 +132,6 @@ class AppTheme {
       labelSmall:
           appliedTextTheme.labelSmall?.copyWith(color: caldietTextSecondary),
     );
-
     return ThemeData(
       useMaterial3: true,
       colorScheme: const ColorScheme.light().copyWith(
@@ -280,8 +251,6 @@ class AppTheme {
       ),
     );
   }
-
-  // Get the dark theme data
   static ThemeData get darkTheme {
     final baseTextTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
     final appliedTextTheme = baseTextTheme.apply(
@@ -314,7 +283,6 @@ class AppTheme {
       labelSmall:
           appliedTextTheme.labelSmall?.copyWith(color: darkTextSecondaryColor),
     );
-
     return ThemeData(
       useMaterial3: true,
       colorScheme: const ColorScheme.dark().copyWith(

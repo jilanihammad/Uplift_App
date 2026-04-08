@@ -9,36 +9,30 @@ import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/models/user_profile.dart';
 import 'package:ai_therapist_app/config/llm_config.dart';
 import 'package:go_router/go_router.dart';
-
 class ProfileScreen extends StatefulWidget {
   final IUserProfileService? userProfileService;
   final IThemeService? themeService;
   final IPreferencesService? preferencesService;
-
   const ProfileScreen({
     super.key,
     this.userProfileService,
     this.themeService,
     this.preferencesService,
   });
-
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
-
 class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
   bool _isLoading = true;
   bool _darkModeEnabled = false;
-
   late IUserProfileService _userProfileService;
   late IThemeService _themeService;
   late IPreferencesService _preferencesService;
   UserProfile? _userProfile;
   late String _selectedVoiceId;
-
   @override
   void initState() {
     super.initState();
@@ -49,8 +43,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         widget.preferencesService ?? DependencyContainer().preferences;
     _loadUserProfile();
     _darkModeEnabled = _themeService.isDarkMode;
-
-    // Initialize voice selection
     _selectedVoiceId = _preferencesService.preferences?.aiVoiceId ??
         LLMConfig.activeTTSVoice;
     if (!LLMConfig.voiceDisplayNames.containsKey(_selectedVoiceId)) {
@@ -61,44 +53,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
-
   Future<void> _loadUserProfile() async {
     setState(() {
       _isLoading = true;
     });
-
-    // Get the user profile from the service
     _userProfile = _userProfileService.profile;
-
     if (_userProfile != null) {
       _nameController.text = _userProfile!.name;
     }
-
     if (mounted) {
       setState(() {
         _isLoading = false;
       });
     }
   }
-
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
   }
-
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() {
       _isLoading = true;
     });
-
     try {
       await _userProfileService.updateProfile(
         name: _nameController.text.trim(),
       );
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully')),
@@ -119,7 +101,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -128,11 +109,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         body: const Center(child: CircularProgressIndicator()),
       );
     }
-
     return BlocListener<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthUnauthenticated) {
-          // Navigate to login screen when user is logged out
           context.go('/login');
         }
       },
@@ -234,7 +213,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                 ),
                 const Divider(),
-                // Voice Selection
                 ListTile(
                   leading: Icon(
                     Icons.record_voice_over,
@@ -249,7 +227,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const Divider(),
                 const SizedBox(height: 16),
-                // Settings Button
                 OutlinedButton.icon(
                   onPressed: () {
                     context.push('/settings');
@@ -280,7 +257,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
-
   Widget _buildProfileInfoCard(String title, String content, IconData icon) {
     return Card(
       elevation: 2,
@@ -309,10 +285,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
-
   void _showVoiceSelectionSheet() {
     final voiceEntries = LLMConfig.voiceDisplayNames.entries.toList();
-
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -353,18 +327,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
     );
   }
-
   Future<void> _handleVoiceSelection(String voiceId) async {
     Navigator.of(context).pop();
-
     try {
       await _preferencesService.setPreferredVoice(voiceId);
       if (!mounted) return;
-
       setState(() {
         _selectedVoiceId = voiceId;
       });
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content:

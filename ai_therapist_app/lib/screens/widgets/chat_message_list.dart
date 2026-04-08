@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
 import '../../models/therapy_message.dart';
 import 'chat_bubble.dart';
-
 class ChatMessageList extends StatelessWidget {
   final List<TherapyMessage> messages;
   final ScrollController scrollController;
   final void Function(int newMessageCount)? onNewMessage;
-
   const ChatMessageList({
     super.key,
     required this.messages,
     required this.scrollController,
     this.onNewMessage,
   });
-
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {

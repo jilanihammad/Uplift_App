@@ -1,24 +1,19 @@
 import 'package:flutter/material.dart';
-
 import 'package:ai_therapist_app/config/theme.dart';
-
 class WelcomeFeatureCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String description;
-
   const WelcomeFeatureCard({
     super.key,
     required this.icon,
     required this.title,
     required this.description,
   });
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final palette = theme.extension<AppPalette>();
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Container(

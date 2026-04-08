@@ -1,9 +1,7 @@
 // lib/screens/resources_screen.dart
 import 'package:flutter/material.dart';
-
 class ResourcesScreen extends StatelessWidget {
   const ResourcesScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -76,36 +74,30 @@ class ResourcesScreen extends StatelessWidget {
     );
   }
 }
-
 enum ResourceType {
   article,
   video,
   exercise,
   hotline,
 }
-
 class Resource {
   final String title;
   final String description;
   final ResourceType type;
-
   const Resource({
     required this.title,
     required this.description,
     required this.type,
   });
 }
-
 class ResourceCategory extends StatelessWidget {
   final String title;
   final List<Resource> resources;
-
   const ResourceCategory({
     super.key,
     required this.title,
     required this.resources,
   });
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -124,15 +116,12 @@ class ResourceCategory extends StatelessWidget {
     );
   }
 }
-
 class ResourceTile extends StatelessWidget {
   final Resource resource;
-
   const ResourceTile({
     super.key,
     required this.resource,
   });
-
   IconData _getIcon() {
     switch (resource.type) {
       case ResourceType.article:
@@ -145,7 +134,6 @@ class ResourceTile extends StatelessWidget {
         return Icons.phone_outlined;
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -156,7 +144,6 @@ class ResourceTile extends StatelessWidget {
         subtitle: Text(resource.description),
         trailing: const Icon(Icons.arrow_forward_ios),
         onTap: () {
-          // Open resource
         },
       ),
     );

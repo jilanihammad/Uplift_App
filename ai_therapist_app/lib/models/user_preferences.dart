@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
 // User preferences model for storing app settings
 class UserPreferences {
   final String? userId;
@@ -17,8 +16,6 @@ class UserPreferences {
   final String? focusArea;
   final bool useVoiceByDefault;
   final TimeOfDay? dailyCheckInTime;
-
-  // Constructor with default values
   const UserPreferences({
     this.userId,
     this.therapistStyleId = 'cbt',
@@ -35,8 +32,6 @@ class UserPreferences {
     this.useVoiceByDefault = false,
     this.dailyCheckInTime,
   });
-
-  // Create a copy with modified fields
   UserPreferences copyWith({
     String? userId,
     String? therapistStyleId,
@@ -70,8 +65,6 @@ class UserPreferences {
       dailyCheckInTime: dailyCheckInTime ?? this.dailyCheckInTime,
     );
   }
-
-  // Serialize to JSON
   Map<String, dynamic> toJson() {
     return {
       'userId': userId,
@@ -92,8 +85,6 @@ class UserPreferences {
       'dailyCheckInTimeMinute': dailyCheckInTime?.minute,
     };
   }
-
-  // Deserialize from JSON
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
     return UserPreferences(
       userId: json['userId'],

@@ -3,23 +3,17 @@ import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../models/user_profile.dart';
-
 class ProfileExperienceScreen extends StatefulWidget {
   const ProfileExperienceScreen({super.key});
-
   @override
   State<ProfileExperienceScreen> createState() =>
       _ProfileExperienceScreenState();
 }
-
 class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _userProfileService = DependencyContainer().get<UserProfileService>();
-
   TherapyExperience? _selectedExperience;
   bool _isLoading = false;
-
-  // Therapy experience options with descriptions
   final List<Map<String, dynamic>> _experienceOptions = [
     {
       'value': TherapyExperience.none,
@@ -47,16 +41,13 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       'description': 'I\'d rather not share my experience',
     },
   ];
-
   @override
   void initState() {
     super.initState();
-    // Pre-fill with existing data if available
     if (_userProfileService.profile != null) {
       _selectedExperience = _userProfileService.profile!.therapyExperience;
     }
   }
-
   Future<void> _saveAndContinue() async {
     if (_selectedExperience == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -64,11 +55,9 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       );
       return;
     }
-
     setState(() {
       _isLoading = true;
     });
-
     try {
       await _userProfileService.updateProfile(
         therapyExperience: _selectedExperience,
@@ -86,7 +75,6 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -118,13 +106,8 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: 32),
-
-              // Experience options
               ..._buildExperienceOptions(),
-
               const SizedBox(height: 48),
-
-              // Continue Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -152,11 +135,9 @@ class _ProfileExperienceScreenState extends State<ProfileExperienceScreen> {
       ),
     );
   }
-
   List<Widget> _buildExperienceOptions() {
     return _experienceOptions.map((option) {
       final isSelected = _selectedExperience == option['value'];
-
       return Padding(
         padding: const EdgeInsets.only(bottom: 16.0),
         child: InkWell(

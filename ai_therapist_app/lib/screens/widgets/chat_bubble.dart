@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
 import 'package:ai_therapist_app/config/theme.dart';
-
 import '../../models/therapy_message.dart';
-
 class ChatBubble extends StatelessWidget {
   final TherapyMessage message;
   final bool isUser;
   final bool isDarkMode;
   final VoidCallback? onPlayAudio;
-
   const ChatBubble({
     super.key,
     required this.message,
@@ -18,7 +14,6 @@ class ChatBubble extends StatelessWidget {
     required this.isDarkMode,
     this.onPlayAudio,
   });
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -35,7 +30,6 @@ class ChatBubble extends StatelessWidget {
             : Colors.black;
     final aiTextColor = theme.colorScheme.onSurface
         .withValues(alpha: isDark ? 0.9 : 1.0);
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(

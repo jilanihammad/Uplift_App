@@ -9,13 +9,11 @@ import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/services/remote_config_service.dart';
 import 'package:ai_therapist_app/utils/feature_flags.dart';
-
 class SettingsScreen extends StatefulWidget {
   final IPreferencesService? preferencesService;
   final NotificationService? notificationService;
   final IThemeService? themeService;
   final IUserProfileService? userProfileService;
-
   const SettingsScreen({
     super.key,
     this.preferencesService,
@@ -23,17 +21,14 @@ class SettingsScreen extends StatefulWidget {
     this.themeService,
     this.userProfileService,
   });
-
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
-
 class _CrisisResource {
   final String region;
   final String description;
   final String contact;
   final bool isLink;
-
   const _CrisisResource({
     required this.region,
     required this.description,
@@ -41,7 +36,6 @@ class _CrisisResource {
     this.isLink = false,
   });
 }
-
 class _SettingsScreenState extends State<SettingsScreen> {
   late IPreferencesService _preferencesService;
   late NotificationService _notificationService;
@@ -56,7 +50,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _selectedVoiceId;
   TimeOfDay? _dailyCheckInTime;
   bool _dailyCheckInEnabled = false;
-
   @override
   void initState() {
     super.initState();
@@ -67,50 +60,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _themeService = widget.themeService ?? DependencyContainer().theme;
     _userProfileService =
         widget.userProfileService ?? DependencyContainer().userProfile;
-
-    // Load preferences
     _useVoiceByDefault =
         _preferencesService.preferences?.useVoiceByDefault ?? false;
     _dailyCheckInTime = _preferencesService.preferences?.dailyCheckInTime;
     _dailyCheckInEnabled = _dailyCheckInTime != null;
     _darkModeEnabled = _themeService.isDarkMode;
-
-    // Voice initialization with diagnostic logging
-    if (kDebugMode) {
-      print('🔍 [SettingsScreen] Voice config diagnostics:');
-      print('   - LLMConfig.voiceDisplayNames: ${LLMConfig.voiceDisplayNames}');
-      print('   - LLMConfig.availableVoiceIds: ${LLMConfig.availableVoiceIds}');
-      print('   - LLMConfig.activeTTSVoice: ${LLMConfig.activeTTSVoice}');
-    }
-
     _selectedVoiceId =
         _preferencesService.preferences?.aiVoiceId ?? LLMConfig.activeTTSVoice;
-
-    if (kDebugMode) {
-      print('   - Initial _selectedVoiceId: $_selectedVoiceId');
-    }
-
-    // Safety check: Ensure voice is valid
     if (!LLMConfig.voiceDisplayNames.containsKey(_selectedVoiceId)) {
       if (LLMConfig.availableVoiceIds.isNotEmpty) {
         _selectedVoiceId = LLMConfig.availableVoiceIds.first;
-        if (kDebugMode) {
-          print('   - Updated _selectedVoiceId to first available: $_selectedVoiceId');
-        }
       } else {
-        // Fallback if no voices available - use default
         _selectedVoiceId = 'sage'; // fallback to default
-        if (kDebugMode) {
-          print('   - ⚠️ WARNING: No available voice IDs! Using fallback: $_selectedVoiceId');
-        }
       }
     }
-
-    if (kDebugMode) {
-      print('   - Final _selectedVoiceId: $_selectedVoiceId');
-    }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -119,9 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
-          // User Profile Section
           _buildUserProfileSection(),
-
           _buildSection(
             title: 'Therapy Experience',
             children: [
@@ -152,11 +114,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {
                     _dailyCheckInEnabled = value;
                     if (value && _dailyCheckInTime == null) {
-                      // Default to 9:00 AM if not set
                       _dailyCheckInTime = const TimeOfDay(hour: 9, minute: 0);
                     }
                   });
-
                   if (value) {
                     _preferencesService.setDailyCheckInTime(_dailyCheckInTime);
                     _scheduleDailyCheckIn();
@@ -206,12 +166,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text('Medium'),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
-                  // Show text size options
                 },
               ),
             ],
           ),
-          // Notifications section intentionally hidden until backend wiring is ready.
           _buildSection(
             title: 'Privacy & Security',
             children: [
@@ -249,28 +207,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          // Help & Support section will be added in a future release when backend support is ready.
-          if (kDebugMode)
-            _buildSection(
-              title: 'Debug Tools',
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.cloud_sync_outlined),
-                  title: const Text('Refresh Remote Config'),
-                  subtitle:
-                      const Text('Fetch latest feature flags from Firebase'),
-                  trailing: const Icon(Icons.refresh),
-                  onTap: _refreshRemoteConfig,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.flag_outlined),
-                  title: const Text('Show Feature Flags'),
-                  subtitle: const Text('View current feature flag values'),
-                  trailing: const Icon(Icons.info_outline),
-                  onTap: _showFeatureFlags,
-                ),
-              ],
-            ),
           _buildSection(
             title: 'About',
             children: [
@@ -298,10 +234,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
   void _showVoiceSelectionSheet() {
     final voiceEntries = LLMConfig.voiceDisplayNames.entries.toList();
-
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -342,20 +276,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
   Future<void> _handleVoiceSelection(String voiceId) async {
     Navigator.of(context).pop();
-
     try {
       await _preferencesService.setPreferredVoice(voiceId);
       if (!mounted) {
         return;
       }
-
       setState(() {
         _selectedVoiceId = voiceId;
       });
-
       _showSnack(
         '${LLMConfig.displayNameForVoice(voiceId)} voice selected',
       );
@@ -366,12 +296,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _showSnack('Unable to update voice. Please try again.', isError: true);
     }
   }
-
   Widget _buildUserProfileSection() {
     final userProfile = _userProfileService.profile;
     final userName = userProfile?.displayName ?? 'User';
     final userEmail = userProfile?.email;
-
     return _buildSection(
       title: 'Profile',
       children: [
@@ -402,26 +330,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
-
   Widget _buildVoiceSection() {
     final usableVoices = LLMConfig.voiceDisplayNames;
-
-    if (kDebugMode) {
-      print('🎤 [_buildVoiceSection] Building voice section:');
-      print('   - usableVoices.length: ${usableVoices.length}');
-      print('   - usableVoices: $usableVoices');
-      print('   - _selectedVoiceId: $_selectedVoiceId');
-      print('   - displayNameForVoice: ${LLMConfig.displayNameForVoice(_selectedVoiceId)}');
-    }
-
-    // Safety check: If no voices available, don't render the section
     if (usableVoices.isEmpty) {
-      if (kDebugMode) {
-        print('   - ⚠️ WARNING: No voices available, skipping voice section');
-      }
       return const SizedBox.shrink();
     }
-
     return _buildSection(
       title: 'AI Voice',
       children: [
@@ -446,7 +359,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
-
   Widget _buildSection({
     required String title,
     required List<Widget> children,
@@ -471,7 +383,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
-
   Future<bool> _launchExternalUri(Uri uri,
       {LaunchMode mode = LaunchMode.externalApplication}) async {
     try {
@@ -487,7 +398,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return false;
     }
   }
-
   void _showAiDisclosureDialog() {
     showDialog<void>(
       context: context,
@@ -506,7 +416,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
   void _showCrisisSupportSheet() {
     final resources = [
       const _CrisisResource(
@@ -531,7 +440,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         isLink: true,
       ),
     ];
-
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -577,7 +485,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
   Future<void> _confirmAccountDeletion() async {
     final shouldProceed = await showDialog<bool>(
       context: context,
@@ -599,7 +506,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-
     if (shouldProceed == true) {
       final launched = await _launchExternalUri(
         Uri.parse(_appConfig.accountDeletionUrl),
@@ -609,7 +515,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
   }
-
   void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -633,7 +538,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
   void _showLanguageDialog() {
     showDialog(
       context: context,
@@ -662,7 +566,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
   Widget _buildLanguageOption(String language) {
     return RadioListTile<String>(
       title: Text(language),
@@ -678,23 +581,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
   Future<void> _selectCheckInTime() async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _dailyCheckInTime ?? const TimeOfDay(hour: 9, minute: 0),
     );
-
     if (picked != null && picked != _dailyCheckInTime) {
       setState(() {
         _dailyCheckInTime = picked;
       });
-
       _preferencesService.setDailyCheckInTime(picked);
       _scheduleDailyCheckIn();
     }
   }
-
   void _scheduleDailyCheckIn() {
     if (_dailyCheckInTime != null) {
       _notificationService.scheduleDailyNotification(
@@ -706,22 +605,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
   }
-
   void _cancelDailyCheckIn() {
     _notificationService.cancelNotification(1);
   }
-
   String _formatTimeOfDay(TimeOfDay timeOfDay) {
     return timeOfDay.format(context);
   }
-
   Future<void> _showEditNameDialog() async {
     final currentFirstName = _userProfileService.profile?.firstName ??
         _userProfileService.profile?.displayName ??
         '';
-
     final controller = TextEditingController(text: currentFirstName);
-
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -760,13 +654,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-
     if (result != null && result.isNotEmpty) {
       try {
-        // Update firstName in the service
         await _userProfileService.updateProfile(firstName: result);
-
-        // Show success message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -774,7 +664,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               backgroundColor: Theme.of(context).colorScheme.primary,
             ),
           );
-          // Refresh the UI
           setState(() {});
         }
       } catch (e) {
@@ -788,67 +677,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
     }
-
     controller.dispose();
-  }
-
-  /// Manually refresh Firebase Remote Config (debug mode only)
-  Future<void> _refreshRemoteConfig() async {
-    try {
-      _showSnack('Fetching latest remote config...');
-      await RemoteConfigService().refresh();
-      if (mounted) {
-        _showSnack(
-            'Remote config refreshed! Memory persistence: ${FeatureFlags.isMemoryPersistenceEnabled}');
-      }
-    } catch (e) {
-      if (mounted) {
-        _showSnack('Failed to refresh remote config: $e', isError: true);
-      }
-    }
-  }
-
-  /// Show current feature flag values (debug mode only)
-  void _showFeatureFlags() {
-    final flags = FeatureFlags.getAllFlags();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Feature Flags'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final entry in flags.entries)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        entry.key,
-                        style: const TextStyle(fontFamily: 'monospace'),
-                      ),
-                    ),
-                    Icon(
-                      entry.value ? Icons.check_circle : Icons.cancel,
-                      color: entry.value ? Colors.green : Colors.grey,
-                      size: 20,
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
   }
 }

@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-
 // Enum for different mood states
 enum Mood { happy, neutral, sad, anxious, angry, stressed }
-
-// Extension to get emoji for each mood
 extension MoodExtension on Mood {
   String get emoji {
     switch (this) {
@@ -21,7 +18,6 @@ extension MoodExtension on Mood {
         return '😫';
     }
   }
-
   String get label {
     switch (this) {
       case Mood.happy:
@@ -38,7 +34,6 @@ extension MoodExtension on Mood {
         return 'Stressed';
     }
   }
-
   Color get color {
     switch (this) {
       case Mood.happy:
@@ -56,18 +51,14 @@ extension MoodExtension on Mood {
     }
   }
 }
-
 class MoodSelector extends StatelessWidget {
   final Function(Mood) onMoodSelected;
-
   const MoodSelector({super.key, required this.onMoodSelected});
-
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // First row of moods
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -77,7 +68,6 @@ class MoodSelector extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        // Second row of moods
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -89,7 +79,6 @@ class MoodSelector extends StatelessWidget {
       ],
     );
   }
-
   Widget _buildMoodButton(Mood mood, BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0),

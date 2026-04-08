@@ -4,48 +4,25 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../../di/interfaces/i_app_database.dart';
-
-/// App database class using singleton pattern for SQLite database access
-///
-/// This class manages the local SQLite database with proper migration paths
-/// when database schema changes are needed.
 class AppDatabase implements IAppDatabase {
-  // Singleton pattern implementation
   static final AppDatabase _instance = AppDatabase._internal();
   factory AppDatabase() => _instance;
   AppDatabase._internal();
-
-  // Database instance
   static Database? _database;
-
-  // Current database version - increment when schema changes
   static const int _databaseVersion = 9;
-
-  // Database file name
   static const String _databaseName = 'app_database.db';
-
-  // Flag to prevent concurrent initialization
   bool _isInitializing = false;
-
-  // Error handling callback
   final _onError = (e, stackTrace) {
   };
-
-  /// Get the database instance
   @override
   Future<Database> get database async {
     if (_database != null) return _database!;
-
     // CRITICAL: Wait for up to 500ms to see if database becomes available
-    // This should help avoid database locked errors
     for (int i = 0; i < 5; i++) {
       if (_database != null) return _database!;
       await Future.delayed(const Duration(milliseconds: 100));
     }
-
-    // Prevent concurrent initialization with better timeout handling
     if (_isInitializing) {
-      // Wait until initialization is complete or timeout
       int attempts = 0;
       while (_database == null && attempts < 20) {
         await Future.delayed(const Duration(milliseconds: 100));
@@ -53,16 +30,11 @@ class AppDatabase implements IAppDatabase {
         if (attempts % 5 == 0) {
         }
       }
-
       if (_database != null) {
         return _database!;
       }
-
-      // Don't throw an exception - instead create a new instance
       _isInitializing = false;
     }
-
-    // Initialize database
     _isInitializing = true;
     try {
       _database = await _initDatabase();
@@ -75,22 +47,14 @@ class AppDatabase implements IAppDatabase {
       _isInitializing = false;
     }
   }
-
-  /// Initialize the database
   Future<Database> _initDatabase() async {
     try {
-      // Initialize the appropriate database factory based on platform
       if (Platform.isWindows || Platform.isLinux) {
         sqfliteFfiInit();
         databaseFactory = databaseFactoryFfi;
       }
-
-      // Get the database path
       final databasesPath = await getDatabasesPath();
       final path = join(databasesPath, _databaseName);
-
-
-      // Open database with versioning and migrations
       return await openDatabase(
         path,
         version: _databaseVersion,
@@ -108,14 +72,9 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
-  /// Create initial database schema (version 1)
   Future<void> _createDatabase(Database db, int version) async {
-
     try {
-      // Start a transaction for atomicity
       await db.transaction((txn) async {
-        // Create sessions table
         await txn.execute('''
           CREATE TABLE sessions (
             id TEXT PRIMARY KEY,
@@ -130,8 +89,6 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
-
-        // Create messages table
         await txn.execute('''
           CREATE TABLE messages (
             id TEXT PRIMARY KEY,
@@ -146,8 +103,6 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id)');
-
-        // Create user progress table
         await txn.execute('''
           CREATE TABLE user_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,8 +116,6 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_user_progress_user_id ON user_progress(user_id)');
-
-        // Create mood logs table (legacy)
         await txn.execute('''
           CREATE TABLE mood_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,8 +127,6 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_mood_logs_user_id ON mood_logs(user_id)');
-
-        // Create mood entries table for persistence + sync
         await txn.execute('''
           CREATE TABLE mood_entries (
             id TEXT PRIMARY KEY,
@@ -198,8 +149,6 @@ class AppDatabase implements IAppDatabase {
         await txn.execute(
           'CREATE INDEX IF NOT EXISTS idx_mood_entries_pending ON mood_entries (is_pending)',
         );
-
-        // Create conversations table (previously in DatabaseHelper)
         await txn.execute('''
           CREATE TABLE conversations (
             id TEXT PRIMARY KEY,
@@ -212,8 +161,6 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)');
-
-        // Create insights table (previously in DatabaseHelper)
         await txn.execute('''
           CREATE TABLE insights (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,8 +172,6 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_insights_user_id ON insights(user_id)');
-
-        // Create emotional_states table (previously in DatabaseHelper)
         await txn.execute('''
           CREATE TABLE emotional_states (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -239,16 +184,12 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_emotional_states_user_id ON emotional_states(user_id)');
-
-        // Create user_preferences table (previously in DatabaseHelper)
         await txn.execute('''
           CREATE TABLE user_preferences (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
           )
         ''');
-
-        // Create user_anchors table for key personal anchors
         await txn.execute('''
           CREATE TABLE user_anchors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -273,8 +214,6 @@ class AppDatabase implements IAppDatabase {
         ''');
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_user_anchors_user_id ON user_anchors(user_id)');
-
-        // Create logs table for diagnostics
         await txn.execute('''
           CREATE TABLE logs (
             id TEXT PRIMARY KEY,
@@ -289,93 +228,58 @@ class AppDatabase implements IAppDatabase {
         await txn.execute(
             'CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id)');
       });
-
     } catch (e, stackTrace) {
       _onError(e, stackTrace);
       rethrow;
     }
   }
-
-  /// Upgrade database schema when version changes
   Future<void> _upgradeDatabase(
       Database db, int oldVersion, int newVersion) async {
-
     try {
-      // Run migrations in a transaction for atomicity
       await db.transaction((txn) async {
-        // Apply migrations sequentially
         if (oldVersion < 2) {
-          // Migration to version 2
           await _migrateToV2(txn);
         }
-
-        // Migration to version 3
         if (oldVersion < 3) {
           await _migrateToV3(txn);
         }
-
-        // Migration to version 4
         if (oldVersion < 4) {
           await _migrateToV4(txn);
         }
-
-        // Migration to version 5: Add action_items column to sessions table
         if (oldVersion < 5) {
           await _migrateToV5(txn);
         }
-
-        // Migration to version 6: Add user_anchors table
         if (oldVersion < 6) {
           await _migrateToV6(txn);
         }
-
-        // Migration to version 7: Extend user_anchors for backend sync metadata
         if (oldVersion < 7) {
           await _migrateToV7(txn);
         }
-
-        // Migration to version 8: Create mood_entries table for sync persistence
         if (oldVersion < 8) {
           await _migrateToV8(txn);
         }
-
-        // Migration to version 9: Add user_id columns and reset local data
         if (oldVersion < 9) {
           await _migrateToV9(txn);
         }
       });
-
     } catch (e, stackTrace) {
       _onError(e, stackTrace);
       rethrow;
     }
   }
-
-  /// Migration to version 2: Add audio_duration field to messages table
   Future<void> _migrateToV2(Transaction txn) async {
-
-    // Add audio_duration column to messages table
     await txn.execute('''
       ALTER TABLE messages ADD COLUMN audio_duration INTEGER DEFAULT 0
     ''');
-
-    // Add is_archived column to sessions table with a default value of 0 (false)
     await txn.execute('''
       ALTER TABLE sessions ADD COLUMN is_archived INTEGER DEFAULT 0
     ''');
-
   }
-
-  /// Migration to version 3: Add conversation_memories, therapy_insights tables for MemoryService
   Future<void> _migrateToV3(Transaction txn) async {
-
-    // Check if conversation_memories table already exists
     final convMemExists = await txn.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
       ['conversation_memories'],
     );
-
-    // Create conversation_memories table if it doesn't exist
     if (convMemExists.isEmpty) {
       await txn.execute('''
         CREATE TABLE conversation_memories (
@@ -386,13 +290,10 @@ class AppDatabase implements IAppDatabase {
           timestamp TEXT NOT NULL
         )
       ''');
-
-      // Copy data from conversations to conversation_memories (if conversations exists)
       final convExists = await txn.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
         ['conversations'],
       );
-
       if (convExists.isNotEmpty) {
         await txn.execute('''
           INSERT INTO conversation_memories (id, user_message, ai_response, metadata, timestamp)
@@ -400,14 +301,10 @@ class AppDatabase implements IAppDatabase {
         ''');
       }
     }
-
-    // Check if therapy_insights table already exists
     final insightsExists = await txn.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
       ['therapy_insights'],
     );
-
-    // Create therapy_insights table if it doesn't exist
     if (insightsExists.isEmpty) {
       await txn.execute('''
         CREATE TABLE therapy_insights (
@@ -417,13 +314,10 @@ class AppDatabase implements IAppDatabase {
           timestamp TEXT NOT NULL
         )
       ''');
-
-      // Copy data from insights to therapy_insights (if insights exists)
       final oldInsightsExists = await txn.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
         ['insights'],
       );
-
       if (oldInsightsExists.isNotEmpty) {
         await txn.execute('''
           INSERT INTO therapy_insights (id, insight, source, timestamp)
@@ -431,13 +325,10 @@ class AppDatabase implements IAppDatabase {
         ''');
       }
     }
-
-    // Ensure emotional_states table exists
     final emotionalStatesExists = await txn.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
       ['emotional_states'],
     );
-
     if (emotionalStatesExists.isEmpty) {
       await txn.execute('''
         CREATE TABLE emotional_states (
@@ -449,25 +340,16 @@ class AppDatabase implements IAppDatabase {
         )
       ''');
     }
-
   }
-
-  /// Migration to version 4: Fix column names in conversation_memories table
   Future<void> _migrateToV4(Transaction txn) async {
-
     try {
-      // Check if conversation_memories table exists
       final convMemExists = await txn.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
         ['conversation_memories'],
       );
-
       if (convMemExists.isNotEmpty) {
-        // Rename the existing table
         await txn.execute(
             'ALTER TABLE conversation_memories RENAME TO conversation_memories_old');
-
-        // Create the new table with correct column names
         await txn.execute('''
           CREATE TABLE conversation_memories (
             id TEXT PRIMARY KEY,
@@ -477,19 +359,13 @@ class AppDatabase implements IAppDatabase {
             timestamp TEXT NOT NULL
           )
         ''');
-
-        // Copy data from old table to new table
         await txn.execute('''
           INSERT INTO conversation_memories 
             SELECT id, user_message, ai_response, metadata, timestamp 
             FROM conversation_memories_old
         ''');
-
-        // Drop the old table
         await txn.execute('DROP TABLE conversation_memories_old');
-
       } else {
-        // Create the table with correct column names if it doesn't exist
         await txn.execute('''
           CREATE TABLE conversation_memories (
             id TEXT PRIMARY KEY,
@@ -500,19 +376,13 @@ class AppDatabase implements IAppDatabase {
           )
         ''');
       }
-
-      // Similarly for the conversations table (legacy table)
       final convExists = await txn.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
         ['conversations'],
       );
-
       if (convExists.isNotEmpty) {
-        // Check column names in conversations table
         final columns = await txn.rawQuery('PRAGMA table_info(conversations)');
         bool needsMigration = true;
-
-        // Check if user_message and ai_response columns already exist
         for (var column in columns) {
           if (column['name'] == 'user_message' ||
               column['name'] == 'ai_response') {
@@ -520,13 +390,9 @@ class AppDatabase implements IAppDatabase {
             break;
           }
         }
-
         if (needsMigration) {
-          // Rename the existing table
           await txn
               .execute('ALTER TABLE conversations RENAME TO conversations_old');
-
-          // Create the new table with correct column names
           await txn.execute('''
             CREATE TABLE conversations (
               id TEXT PRIMARY KEY,
@@ -536,48 +402,33 @@ class AppDatabase implements IAppDatabase {
               timestamp TEXT NOT NULL
             )
           ''');
-
-          // Copy data from old table to new table
           await txn.execute('''
             INSERT INTO conversations 
               SELECT id, user_message, ai_response, metadata, timestamp 
               FROM conversations_old
           ''');
-
-          // Drop the old table
           await txn.execute('DROP TABLE conversations_old');
-
         }
       }
     } catch (e) {
       rethrow;
     }
-
   }
-
-  /// Migration to version 5: Add action_items column to sessions table
   Future<void> _migrateToV5(Transaction txn) async {
-
     try {
-      // Add action_items column to sessions table
       await txn.execute('''
         ALTER TABLE sessions ADD COLUMN action_items TEXT
       ''');
     } catch (e) {
       rethrow;
     }
-
   }
-
-  /// Migration to version 6: Create user_anchors table if missing
   Future<void> _migrateToV6(Transaction txn) async {
-
     try {
       final anchorsExists = await txn.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
         ['user_anchors'],
       );
-
       if (anchorsExists.isEmpty) {
         await txn.execute('''
           CREATE TABLE user_anchors (
@@ -604,20 +455,13 @@ class AppDatabase implements IAppDatabase {
     } catch (e) {
       rethrow;
     }
-
   }
-
-  /// Migration to version 7: Extend user_anchors with sync metadata columns
   Future<void> _migrateToV7(Transaction txn) async {
-
     Future<void> safeAlter(String statement) async {
       try {
         await txn.execute(statement);
-      } catch (_) {
-        // Column may already exist from previous migration
-      }
+      } catch (_) {}
     }
-
     try {
       await safeAlter('ALTER TABLE user_anchors ADD COLUMN server_id TEXT');
       await safeAlter(
@@ -625,7 +469,6 @@ class AppDatabase implements IAppDatabase {
       await safeAlter('ALTER TABLE user_anchors ADD COLUMN updated_at TEXT');
       await safeAlter(
           'ALTER TABLE user_anchors ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0');
-
       await txn.execute('''
         UPDATE user_anchors
         SET client_anchor_id = CASE
@@ -637,18 +480,14 @@ class AppDatabase implements IAppDatabase {
               ELSE updated_at
             END
       ''');
-
       await txn.execute(
           'CREATE UNIQUE INDEX IF NOT EXISTS idx_user_anchors_client_id ON user_anchors(client_anchor_id)');
       await txn.execute(
           'CREATE UNIQUE INDEX IF NOT EXISTS idx_user_anchors_normalized ON user_anchors(normalized_text)');
-
     } catch (e) {
       rethrow;
     }
   }
-
-  /// Check if a table exists in the database
   @override
   Future<bool> tableExists(String tableName) async {
     try {
@@ -662,8 +501,6 @@ class AppDatabase implements IAppDatabase {
       return false; // Safer to return false than throw
     }
   }
-
-  /// Close the database connection
   @override
   Future<void> close() async {
     if (_database != null) {
@@ -671,10 +508,6 @@ class AppDatabase implements IAppDatabase {
       _database = null;
     }
   }
-
-  // CRUD operations
-
-  /// Insert a row into a table
   @override
   Future<int> insert(String table, Map<String, dynamic> data) async {
     try {
@@ -689,8 +522,6 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
-  /// Query rows from a table
   @override
   Future<List<Map<String, dynamic>>> query(
     String table, {
@@ -715,8 +546,6 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
-  /// Update a row in a table
   @override
   Future<int> update(
     String table,
@@ -737,8 +566,6 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
-  /// Delete a row from a table
   @override
   Future<int> delete(
     String table, {
@@ -757,8 +584,6 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
-  /// Execute a raw SQL query
   @override
   Future<List<Map<String, dynamic>>> rawQuery(
     String sql, [
@@ -772,8 +597,6 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
-  /// Execute a raw SQL command
   @override
   Future<int> rawExecute(
     String sql, [
@@ -787,29 +610,22 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
-  /// Execute multiple operations in a transaction
   @override
   Future<T> transaction<T>(Future<T> Function(Transaction txn) action) async {
     try {
       final db = await database;
-
-      // Add retry logic for transactions to handle database locks
       int retries = 0;
       const maxRetries = 3;
       const retryDelay = Duration(milliseconds: 500);
-
       while (true) {
         try {
           return await db.transaction(action);
         } catch (e) {
-          // If this is a database locked error and we haven't exceeded max retries
           if (e.toString().contains('database is locked') &&
               retries < maxRetries) {
             retries++;
             await Future.delayed(retryDelay);
           } else {
-            // If it's not a lock error or we've exceeded retries, rethrow
             rethrow;
           }
         }
@@ -819,62 +635,42 @@ class AppDatabase implements IAppDatabase {
       rethrow;
     }
   }
-
   Future<void> _onConfigureDatabase(Database db) async {
     try {
       await db.execute('PRAGMA foreign_keys = ON;');
-
-      // Try setting busy_timeout using rawQuery, and catch potential errors
       try {
         await db.rawQuery(
             'PRAGMA busy_timeout = 10000;'); // Note: rawQuery usually expects a result
       } catch (e) {
-        // Fallback to execute if rawQuery fails for a set-only PRAGMA (less likely to work if rawQuery failed)
         try {
           await db.execute('PRAGMA busy_timeout = 10000;');
-        } catch (_) {
-          // Non-fatal: busy_timeout fallback also failed
-        }
+        } catch (_) {}
       }
-
-      // PRAGMA journal_mode = WAL
       try {
         final List<Map<String, dynamic>> journalModeResult =
             await db.rawQuery('PRAGMA journal_mode');
         if (journalModeResult.isNotEmpty &&
             journalModeResult.first.values.first.toString().toLowerCase() ==
                 'wal') {
-          // WAL mode already active
         } else {
           await db.rawQuery('PRAGMA journal_mode = WAL;');
         }
-      } catch (_) {
-        // Non-fatal: WAL mode configuration failure
-      }
-
+      } catch (_) {}
       await db.execute('PRAGMA synchronous = NORMAL;');
-
       await db.execute('PRAGMA cache_size = 10000;');
-
       await db.execute('PRAGMA temp_store = MEMORY;');
     } catch (e, stackTrace) {
       debugPrintStack(
           label: 'Stack trace for _onConfigureDatabase error',
           stackTrace: stackTrace);
-      // It's important to rethrow if configuration fails fundamentally,
-      // otherwise the app might proceed with a misconfigured database.
       rethrow;
     }
   }
-
-  /// Migration to version 8: Create mood_entries table for persistent mood tracking
   Future<void> _migrateToV8(Transaction txn) async {
-
     final tableExists = await txn.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
       ['mood_entries'],
     );
-
     if (tableExists.isEmpty) {
       await txn.execute('''
         CREATE TABLE mood_entries (
@@ -899,13 +695,8 @@ class AppDatabase implements IAppDatabase {
         'CREATE INDEX IF NOT EXISTS idx_mood_entries_pending ON mood_entries (is_pending)',
       );
     }
-    // else: table already exists, no migration needed
-
   }
-
-  /// Migration to version 9: add user_id scoping and reset local caches
   Future<void> _migrateToV9(Transaction txn) async {
-
     const tableDefinitions = <String, String>{
       'sessions': '''
         CREATE TABLE sessions (
@@ -1049,16 +840,12 @@ class AppDatabase implements IAppDatabase {
         )
       ''',
     };
-
     for (final tableName in tableDefinitions.keys) {
       await txn.execute('DROP TABLE IF EXISTS $tableName');
     }
-
     for (final entry in tableDefinitions.entries) {
       await txn.execute(entry.value);
     }
-
-    // Recreate indexes for user-scoped lookups
     await txn.execute(
         'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
     await txn.execute(
@@ -1085,6 +872,5 @@ class AppDatabase implements IAppDatabase {
         'CREATE INDEX IF NOT EXISTS idx_user_anchors_user_id ON user_anchors(user_id)');
     await txn.execute(
         'CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id)');
-
   }
 }

@@ -1,5 +1,4 @@
 // lib/screens/widgets/voice_controls_panel.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lottie/lottie.dart';
@@ -9,42 +8,30 @@ import '../../blocs/voice_session_state.dart';
 import '../../blocs/voice_session_event.dart';
 import '../../widgets/audio_visualizer.dart';
 import '../../services/accessibility_service.dart';
-
-/// Callback types for voice control actions
 typedef VoiceControlCallback = void Function();
-
-/// Comprehensive voice controls panel widget that includes voice visualization,
-/// status text, and all voice interaction controls
 class VoiceControlsPanel extends StatefulWidget {
   final VoiceControlCallback onSwitchMode;
-
   const VoiceControlsPanel({
     super.key,
     required this.onSwitchMode,
   });
-
   @override
   State<VoiceControlsPanel> createState() => _VoiceControlsPanelState();
 }
-
 class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
   AccessibilitySettings _accessibilitySettings = const AccessibilitySettings(
     motionSensitive: false,
     reducedAnimations: false,
     highContrast: false,
   );
-
-  /// Debounce tracking for mic/speaker toggles to prevent rapid tap crashes
   DateTime? _lastMicToggleTime;
   DateTime? _lastSpeakerToggleTime;
   static const _toggleDebounce = Duration(milliseconds: 500);
-
   @override
   void initState() {
     super.initState();
     _loadAccessibilitySettings();
   }
-
   Future<void> _loadAccessibilitySettings() async {
     final settings = await AccessibilityService.getSettings();
     if (mounted) {
@@ -53,12 +40,10 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       });
     }
   }
-
   @override
   void dispose() {
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return BlocListener<VoiceSessionBloc, VoiceSessionState>(
@@ -72,12 +57,10 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       child: SafeArea(
         child: Column(
           children: [
-            // Voice Visualization Area
             Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Voice visualization container with real-time amplitude visualization
                 BlocSelector<
                     VoiceSessionBloc,
                     VoiceSessionState,
@@ -98,7 +81,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                     voiceMode: blocState.isVoiceMode,
                   ),
                   builder: (context, data) {
-                    // Determine visualization state based on current activity
                     VisualizationState visualState;
                     if (data.processing) {
                       visualState = VisualizationState.processing;
@@ -109,10 +91,7 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                     } else {
                       visualState = VisualizationState.idle;
                     }
-
-                    // Show appropriate visualization based on state and mode
                     if (data.voiceMode) {
-                      // In voice mode: use Lottie for listening, AudioVisualizer for others
                       if (data.rec || data.listening) {
                         return Lottie.asset(
                           'assets/animations/Microphone Animation.json',
@@ -133,7 +112,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                         );
                       }
                     } else {
-                      // Fallback to Lottie animations in text mode
                       return SizedBox(
                         width: 120,
                         height: 120,
@@ -155,7 +133,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                   },
                 ),
                 const SizedBox(height: 32),
-                // Status text that changes based on interaction state
                 BlocSelector<
                     VoiceSessionBloc,
                     VoiceSessionState,
@@ -188,7 +165,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                     } else {
                       statusText = "Chat mode active";
                     }
-
                     return Text(
                       statusText,
                       style: const TextStyle(
@@ -202,14 +178,12 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
               ],
             ),
           ),
-          // Voice Controls Section
           _buildVoiceControls(),
         ],
       ),
       ),
     );
   }
-
   Widget _buildVoiceControls() {
     return BlocSelector<
         VoiceSessionBloc,
@@ -238,43 +212,34 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Mic mute and Speaker buttons row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // Mic Mute Toggle Button (replaces Talk)
                 _buildMicMuteButton(
                   isMicEnabled: data.micEnabled,
                   isToggleEnabled: data.toggleEnabled,
                   onTap: data.toggleEnabled
                       ? () {
-                          // Debounce rapid taps to prevent state machine crashes
                           final now = DateTime.now();
                           if (_lastMicToggleTime != null &&
                               now.difference(_lastMicToggleTime!) < _toggleDebounce) {
-                            debugPrint('[MicToggle] Debounced - ignoring rapid tap');
                             return;
                           }
                           _lastMicToggleTime = now;
-
                           final bloc = context.read<VoiceSessionBloc>();
                           bloc.add(const ToggleMicMute());
                         }
                       : null,
                 ),
-                // Speaker Toggle Button
                 _buildSpeakerButton(
                   isMuted: data.muted,
                   onTap: () {
-                    // Debounce rapid taps to prevent state machine crashes
                     final now = DateTime.now();
                     if (_lastSpeakerToggleTime != null &&
                         now.difference(_lastSpeakerToggleTime!) < _toggleDebounce) {
-                      debugPrint('[SpeakerToggle] Debounced - ignoring rapid tap');
                       return;
                     }
                     _lastSpeakerToggleTime = now;
-
                     final bloc = context.read<VoiceSessionBloc>();
                     final newMuted = !data.muted;
                     bloc.add(SetSpeakerMuted(newMuted));
@@ -283,7 +248,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
               ],
             ),
             const SizedBox(height: 16),
-            // Switch to Chat Mode button
             InkWell(
               onTap: widget.onSwitchMode,
               borderRadius: BorderRadius.circular(20),
@@ -316,7 +280,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
                 ),
               ),
             ),
-            // Processing indicator
             if (data.proc) ...[
               const SizedBox(height: 12),
               const LinearProgressIndicator(),
@@ -326,7 +289,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       ),
     );
   }
-
   Widget _buildMicMuteButton({
     required bool isMicEnabled,
     required bool isToggleEnabled,
@@ -341,7 +303,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     final iconBrightness = ThemeData.estimateBrightnessForColor(baseColor);
     final iconColor =
         iconBrightness == Brightness.dark ? Colors.white : Colors.black87;
-
     return Container(
       width: 50,
       height: 50,
@@ -376,7 +337,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
       ),
     );
   }
-
   Widget _buildSpeakerButton({
     required bool isMuted,
     required VoidCallback onTap,
@@ -390,7 +350,6 @@ class _VoiceControlsPanelState extends State<VoiceControlsPanel> {
     final iconBrightness = ThemeData.estimateBrightnessForColor(activeColor);
     final iconColor =
         iconBrightness == Brightness.dark ? Colors.white : Colors.black87;
-
     return Container(
       width: 50,
       height: 50,

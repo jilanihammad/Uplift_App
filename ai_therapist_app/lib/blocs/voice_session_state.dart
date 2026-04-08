@@ -1,14 +1,9 @@
-/// VoiceSessionState holds all the current state data for an active therapy session including
-/// UI states (mood/duration selectors), audio states (recording, playing), and session data (messages, timer).
-/// This immutable state class ensures predictable state management across the entire chat interface.
 library;
-
 import 'package:equatable/equatable.dart';
 import '../models/therapy_message.dart';
 import '../models/therapist_style.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import '../services/pipeline/voice_pipeline_controller.dart';
-
 enum VoiceSessionStatus {
   initial,
   loading,
@@ -24,8 +19,6 @@ enum VoiceSessionStatus {
   voiceModeActive,
   textModeActive,
 }
-
-/// Unified TTS status enum - single source of truth for TTS state across all components
 enum TtsStatus {
   idle, // No TTS activity
   preparing, // Getting AI response, preparing for TTS (optional UI feedback)
@@ -33,7 +26,6 @@ enum TtsStatus {
   playing, // Audio is actively playing through speakers
   cancelled, // TTS operation was cancelled
 }
-
 class VoiceSessionState extends Equatable {
   final VoiceSessionStatus status;
   final List<TherapyMessage> messages;
@@ -72,14 +64,11 @@ class VoiceSessionState extends Equatable {
   final int currentMessageSequence; // Added for message sequencing
   final bool speakerMuted; // Track speaker mute state
   final double amplitude; // Real-time audio amplitude [0-1] for visualization
-  // Session timer remaining seconds (counts down from selected duration)
   final int timerRemainingSeconds;
-  // Flag indicating time limit reached and auto end flow should trigger
   final bool autoEndTriggered;
   final VoicePipelinePhase? pipelinePhase;
   final bool? pipelineMicMuted;
   final bool? pipelineAutoModeEnabled;
-
   const VoiceSessionState({
     required this.status,
     required this.messages,
@@ -120,7 +109,6 @@ class VoiceSessionState extends Equatable {
     this.pipelineMicMuted,
     this.pipelineAutoModeEnabled,
   });
-
   factory VoiceSessionState.initial({
     String? sessionId,
     String? systemPrompt,
@@ -165,7 +153,6 @@ class VoiceSessionState extends Equatable {
       pipelineAutoModeEnabled: null,
     );
   }
-
   VoiceSessionState copyWith({
     VoiceSessionStatus? status,
     List<TherapyMessage>? messages,
@@ -261,7 +248,6 @@ class VoiceSessionState extends Equatable {
           pipelineAutoModeEnabled ?? this.pipelineAutoModeEnabled,
     );
   }
-
   @override
   List<Object?> get props => [
         status,
@@ -303,19 +289,13 @@ class VoiceSessionState extends Equatable {
         pipelineMicMuted,
         pipelineAutoModeEnabled,
       ];
-
   bool get canSend {
-    // In chat mode: allow sending when not processing audio
     if (!isVoiceMode) {
       return !isProcessingAudio;
     }
-    // In voice mode: only disable Send button when TTS is active
-    // (per engineer feedback: smart disable logic)
     return !isProcessingAudio &&
         (ttsStatus == TtsStatus.idle || ttsStatus == TtsStatus.cancelled);
   }
-
-  // Add missing getters for UI compatibility
   bool get isInitializing => status == VoiceSessionStatus.loading;
   int get sessionDurationMinutes => selectedDuration?.inMinutes ?? 0;
   int get sessionTimerSeconds => timerRemainingSeconds;
@@ -323,7 +303,6 @@ class VoiceSessionState extends Equatable {
   bool get isProcessing => isProcessingAudio;
   bool get isSpeakerMuted => speakerMuted;
   bool get isVADActive => isAutoListeningEnabled;
-  // Returns true when VAD is active, not recording, not processing, and not AI speaking
   bool get isListeningForVoice =>
       isVADActive && !isRecording && !isProcessing && !isAiSpeaking;
 }

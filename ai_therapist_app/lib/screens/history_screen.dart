@@ -6,31 +6,24 @@ import '../di/dependency_container.dart';
 import '../di/interfaces/interfaces.dart';
 import '../domain/entities/session.dart';
 import '../utils/date_formatter.dart';
-
 class HistoryScreen extends StatefulWidget {
   final ISessionRepository? sessionRepository;
-
   const HistoryScreen({
     super.key,
     this.sessionRepository,
   });
-
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
-
 class _HistoryScreenState extends State<HistoryScreen> {
   bool _isLoading = true;
   List<Session> _sessions = [];
   late ISessionRepository _sessionRepository;
   String? _errorMessage;
   bool _isDisposed = false;
-
-  // Calendar state
   late DateTime _selectedDate;
   late List<DateTime> _weekDates;
   List<Session> _filteredSessions = [];
-
   @override
   void initState() {
     super.initState();
@@ -40,76 +33,54 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _generateWeekDates(_selectedDate);
     _loadSessions();
   }
-
   void _generateWeekDates([DateTime? anchorDate]) {
     final base = anchorDate ?? _selectedDate;
     final normalized = DateTime(base.year, base.month, base.day);
-
-    // Treat Sunday as the first day of the week
     final startOfWeek = normalized.subtract(
       Duration(days: normalized.weekday % 7),
     );
-
     _weekDates = List.generate(7, (index) {
       final date = startOfWeek.add(Duration(days: index));
       return DateTime(date.year, date.month, date.day);
     });
   }
-
   void _filterSessionsByDate() {
-    // Filter sessions for the selected date
     final startOfDay =
         DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
-
     _filteredSessions = _sessions.where((session) {
       return session.createdAt.isAfter(startOfDay) &&
           session.createdAt.isBefore(endOfDay);
     }).toList();
   }
-
   @override
   void dispose() {
-    // Cancel any pending operations
     _isDisposed = true;
     super.dispose();
   }
-
   Future<void> _loadSessions() async {
     if (_isDisposed) return; // Don't load if already disposed
-
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-
     try {
-      // Load real sessions from repository
       final loadedSessions = await _sessionRepository.getSessions();
-
       if (!mounted || _isDisposed) return; // Check mounted state
-
       setState(() {
-        // Sort sessions with newest first (by createdAt date)
         _sessions = loadedSessions
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
         _isLoading = false;
-
-        // Filter sessions for selected date
         _filterSessionsByDate();
       });
     } catch (e) {
-      debugPrint('Error loading sessions: $e');
-
       if (!mounted || _isDisposed) return; // Check mounted state
-
       setState(() {
         _errorMessage = 'Failed to load sessions: $e';
         _isLoading = false;
       });
     }
   }
-
   void _selectDate(DateTime date) {
     setState(() {
       _selectedDate = date;
@@ -117,29 +88,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
       _filterSessionsByDate();
     });
   }
-
-  // Calendar day widget
   Widget _buildDayWidget(DateTime date) {
     final isSelected = date.year == _selectedDate.year &&
         date.month == _selectedDate.month &&
         date.day == _selectedDate.day;
-
     final isToday = date.year == DateTime.now().year &&
         date.month == DateTime.now().month &&
         date.day == DateTime.now().day;
-
-    // Get the day name and day number
     final dayName =
         DateFormat('EEE').format(date).substring(0, 3); // Sun, Mon, Tue, etc.
     final dayNumber = date.day.toString();
-
-    // Check if the day has any sessions
     final hasSessionsOnDay = _sessions.any((session) {
       return session.createdAt.year == date.year &&
           session.createdAt.month == date.month &&
           session.createdAt.day == date.day;
     });
-
     return GestureDetector(
       onTap: () => _selectDate(date),
       child: Container(
@@ -194,8 +157,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
     );
   }
-
-  // Calendar widget
   Widget _buildCalendar() {
     return Container(
       width: double.infinity,
@@ -233,7 +194,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -249,9 +209,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
       body: Column(
         children: [
-          // Calendar widget
           _buildCalendar(),
-
           if (_errorMessage != null)
             Container(
               color: Colors.amber.shade100,
@@ -263,8 +221,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 textAlign: TextAlign.center,
               ),
             ),
-
-          // Sessions heading
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -286,7 +242,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ],
             ),
           ),
-
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -339,7 +294,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
     );
   }
-
   Future<void> _renameSession(Session session, String newTitle) async {
     try {
       await _sessionRepository.updateSession(session.id, title: newTitle);
@@ -350,7 +304,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       );
     }
   }
-
   Future<void> _deleteSession(Session session) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -383,23 +336,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 }
-
 class SessionHistoryTile extends StatelessWidget {
   final Session session;
   final Future<void> Function(String newTitle)? onRename;
   final Future<void> Function()? onDelete;
-
   const SessionHistoryTile({
     super.key,
     required this.session,
     this.onRename,
     this.onDelete,
   });
-
   String _formatDate(DateTime date) {
     return DateFormatter.formatTime(date);
   }
-
   void _showRenameDialog(BuildContext context) async {
     final controller = TextEditingController(text: session.title);
     final result = await showDialog<String>(
@@ -427,7 +376,6 @@ class SessionHistoryTile extends StatelessWidget {
       await onRename?.call(result);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -469,7 +417,6 @@ class SessionHistoryTile extends StatelessWidget {
           ],
         ),
         onTap: () {
-          // Navigate to session details using GoRouter
           context.push('/sessions/${session.id}');
         },
       ),

@@ -1,5 +1,4 @@
 import 'package:ai_therapist_app/utils/date_time_utils.dart';
-
 class UserTask {
   final String id;
   final String text;
@@ -7,7 +6,6 @@ class UserTask {
   final DateTime dateAdded;
   final bool isCompleted;
   final DateTime? completedDate;
-
   UserTask({
     required this.id,
     required this.text,
@@ -16,7 +14,6 @@ class UserTask {
     this.isCompleted = false,
     this.completedDate,
   });
-
   UserTask copyWith({
     String? id,
     String? text,
@@ -34,7 +31,6 @@ class UserTask {
       completedDate: completedDate ?? this.completedDate,
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -45,7 +41,6 @@ class UserTask {
       'completedDate': completedDate?.toIso8601String(),
     };
   }
-
   factory UserTask.fromJson(Map<String, dynamic> json) {
     return UserTask(
       id: json['id'],

@@ -3,17 +3,13 @@ import 'package:get_it/get_it.dart';
 import '../blocs/voice_session_bloc.dart';
 import '../blocs/voice_session_event.dart';
 import '../services/voice_service.dart';
-
-/// Listens for app lifecycle changes and pauses voice capture/tts when backgrounded.
 class ForegroundAudioGuard with WidgetsBindingObserver {
   ForegroundAudioGuard() {
     WidgetsBinding.instance.addObserver(this);
   }
-
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
   }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
@@ -23,7 +19,6 @@ class ForegroundAudioGuard with WidgetsBindingObserver {
       _pauseVoiceFeatures();
     }
   }
-
   void _pauseVoiceFeatures() {
     final getIt = GetIt.instance;
     if (getIt.isRegistered<VoiceSessionBloc>()) {

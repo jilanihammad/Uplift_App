@@ -6,7 +6,6 @@ enum TherapyExperience {
   negativeExperience,
   preferNotToSay,
 }
-
 enum TypicalCopingStrategy {
   talkToOthers,
   hobbies,
@@ -16,7 +15,6 @@ enum TypicalCopingStrategy {
   unhealthyHabits,
   notSure,
 }
-
 enum SupportStyle {
   supportiveListener,
   structuredGuidance,
@@ -24,7 +22,6 @@ enum SupportStyle {
   proactiveCheckins,
   notSure,
 }
-
 enum CBTFamiliarity {
   veryFamiliar,
   somewhatFamiliar,
@@ -32,7 +29,6 @@ enum CBTFamiliarity {
   notFamiliar,
   useTechniques,
 }
-
 class UserProfile {
   final String name;
   final String? firstName;
@@ -49,7 +45,6 @@ class UserProfile {
   final CBTFamiliarity cbtFamiliarity;
   final DateTime createdAt;
   final DateTime updatedAt;
-
   UserProfile({
     required this.name,
     this.firstName,
@@ -68,9 +63,6 @@ class UserProfile {
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
-
-  /// Get the display name for greetings and UI
-  /// Priority: firstName -> first word of name -> 'there'
   String get displayName {
     if (firstName?.isNotEmpty == true) {
       return firstName!;
@@ -80,7 +72,6 @@ class UserProfile {
     }
     return 'there';
   }
-
   UserProfile copyWith({
     String? name,
     String? firstName,
@@ -117,7 +108,6 @@ class UserProfile {
       updatedAt: updatedAt ?? DateTime.now(),
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'name': name,
@@ -137,7 +127,6 @@ class UserProfile {
       'updatedAt': updatedAt.toIso8601String(),
     };
   }
-
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       name: json['name'] ?? '',

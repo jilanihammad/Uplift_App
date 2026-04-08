@@ -8,7 +8,6 @@ class TtsConfigDto {
   final bool? supportsStreaming;
   final String? mode;
   final String? mimeType;
-
   const TtsConfigDto({
     required this.provider,
     this.model,
@@ -20,7 +19,6 @@ class TtsConfigDto {
     this.mode,
     this.mimeType,
   });
-
   factory TtsConfigDto.fromJson(Map<String, dynamic> json) {
     return TtsConfigDto(
       provider: (json['provider'] as String?)?.trim() ?? '',
@@ -36,7 +34,6 @@ class TtsConfigDto {
       mimeType: (json['mime_type'] as String?)?.trim(),
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'provider': provider,

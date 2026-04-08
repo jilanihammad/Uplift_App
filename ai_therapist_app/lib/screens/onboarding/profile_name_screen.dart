@@ -2,61 +2,46 @@ import 'package:flutter/material.dart';
 import '../../di/dependency_container.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/user_profile_service.dart';
-
 class ProfileNameScreen extends StatefulWidget {
   const ProfileNameScreen({super.key});
-
   @override
   State<ProfileNameScreen> createState() => _ProfileNameScreenState();
 }
-
 class _ProfileNameScreenState extends State<ProfileNameScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-
   final _onboardingService = DependencyContainer().get<OnboardingService>();
   final _userProfileService = DependencyContainer().get<UserProfileService>();
-
   bool _isLoading = false;
-
   @override
   void initState() {
     super.initState();
-    // Pre-fill with existing data if available
     if (_userProfileService.profile != null) {
       _nameController.text = _userProfileService.profile!.name ?? '';
       _emailController.text = _userProfileService.profile!.email ?? '';
     }
   }
-
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     super.dispose();
   }
-
   Future<void> _saveAndContinue() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() {
       _isLoading = true;
     });
-
     try {
       final name = _nameController.text.trim();
       final email = _emailController.text.trim();
-
-      // Extract firstName from name for better display in settings
       final firstName = name.isNotEmpty ? name.split(' ').first : '';
-
       await _userProfileService.updateProfile(
         name: name,
         firstName: firstName,
         email: email,
       );
-
       await _onboardingService.goToNextStep();
     } catch (e) {
       if (mounted) {
@@ -72,7 +57,6 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -106,8 +90,6 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 40),
-
-                // Name Field
                 Text(
                   'What\'s your name?',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -133,8 +115,6 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   textCapitalization: TextCapitalization.words,
                 ),
                 const SizedBox(height: 32),
-
-                // Email Field (Optional)
                 Text(
                   'What\'s your email? (Optional)',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -155,7 +135,6 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
                     if (value != null && value.trim().isNotEmpty) {
-                      // Simple email validation
                       final emailRegex =
                           RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
                       if (!emailRegex.hasMatch(value)) {
@@ -166,8 +145,6 @@ class _ProfileNameScreenState extends State<ProfileNameScreen> {
                   },
                 ),
                 const SizedBox(height: 48),
-
-                // Continue Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(

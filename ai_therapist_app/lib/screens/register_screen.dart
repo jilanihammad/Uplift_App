@@ -8,19 +8,15 @@ import 'package:ai_therapist_app/blocs/auth/auth_state.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/config/routes.dart';
-
 class RegisterScreen extends StatefulWidget {
   final IAuthService? authService;
-
   const RegisterScreen({
     super.key,
     this.authService,
   });
-
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
-
 class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -28,14 +24,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   late IAuthService _authService;
-
   @override
   void initState() {
     super.initState();
-    // Use dependency injection with fallback to DependencyContainer
     _authService = widget.authService ?? DependencyContainer().authService;
   }
-
   @override
   void dispose() {
     _nameController.dispose();
@@ -43,15 +36,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordController.dispose();
     super.dispose();
   }
-
-  // Google sign in method
   Future<void> _signInWithGoogle() async {
     setState(() {
       _isLoading = true;
     });
-
     try {
-      // Use AuthBloc to handle Google sign-in
       context.read<AuthBloc>().add(GoogleSignInEvent());
     } catch (e) {
       if (mounted) {
@@ -64,7 +53,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
@@ -72,12 +60,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         setState(() {
           _isLoading = state is AuthLoading;
         });
-
         if (state is AuthAuthenticated) {
-          // Navigate to home screen when registration succeeds
           context.go(AppRouter.home);
         } else if (state is AuthError) {
-          // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(state.message)),
           );
