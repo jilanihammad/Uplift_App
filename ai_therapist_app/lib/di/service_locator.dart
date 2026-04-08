@@ -94,28 +94,21 @@ void _registerAudioInfra(GetIt locator, bool useRefactoredVoicePipeline) {
       final simpleTTSService = SimpleTTSService(
         audioPlayerManager: locator<AudioPlayerManager>(),
       );
-      Future.microtask(() {
-        try {
-          if (useRefactoredVoicePipeline) {
-            return;
-          }
-          if (locator.isRegistered<VoiceService>()) {
-            final voiceService = locator<VoiceService>();
-            simpleTTSService.setVoiceServiceUpdateCallback(
-                voiceService.updateTTSSpeakingState);
-            // Note: VoiceSessionBloc will be registered later, so we defer this wiring
-            Future.microtask(() {
-              try {
-                if (locator.isRegistered<VoiceSessionBloc>()) {
-                  final voiceSessionBloc = locator<VoiceSessionBloc>();
-                  simpleTTSService.setGetCurrentGenerationCallback(
-                      () => voiceSessionBloc.currentGeneration);
-                }
-              } catch (_) {}
-            });
-          }
-        } catch (_) {}
-      });
+      // Legacy voice pipeline wiring (refactored pipeline wires via VoiceModeFacade)
+      if (!useRefactoredVoicePipeline) {
+        Future.microtask(() {
+          try {
+            if (locator.isRegistered<VoiceService>()) {
+              simpleTTSService.setVoiceServiceUpdateCallback(
+                  locator<VoiceService>().updateTTSSpeakingState);
+            }
+            if (locator.isRegistered<VoiceSessionBloc>()) {
+              simpleTTSService.setGetCurrentGenerationCallback(
+                  () => locator<VoiceSessionBloc>().currentGeneration);
+            }
+          } catch (_) {}
+        });
+      }
       return simpleTTSService;
     });
   }
