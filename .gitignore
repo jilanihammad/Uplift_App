@@ -73,8 +73,13 @@ ios/Runner/GeneratedPluginRegistrant.*
 google-services.json
 GoogleService-Info.plist
 
-# Environment files
+# Environment files — NEVER commit secrets
 .env
+.env.*
+env.txt
+**/env.txt
+*.env
+**/*.env
 .env.local
 .env.development
 .env.test

@@ -53,6 +53,13 @@ logger.info(f"PORT: {os.environ.get('PORT', '8080')}")
 async def lifespan(app: FastAPI):
     """FastAPI lifespan handler for container warm-up and cleanup."""
     # --- Startup ---
+    # Validate secrets in production
+    if env_settings.is_production:
+        missing = [k for k in ("SECRET_KEY", "ENCRYPTION_KEY", "DATABASE_URL")
+                   if not os.environ.get(k)]
+        if missing:
+            raise RuntimeError(f"Production requires env vars: {', '.join(missing)}")
+
     logger.info("Starting container warm-up on application startup")
 
     # Check OpenAI SDK version

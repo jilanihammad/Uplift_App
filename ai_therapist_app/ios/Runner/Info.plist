@@ -41,6 +41,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Maya uses your microphone to listen and transcribe your voice during therapy conversations.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Maya uses speech recognition to understand what you say during voice therapy sessions.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
