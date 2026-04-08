@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:mutex/mutex.dart';
 import '../services/memory_service.dart';
 import '../utils/logging_service.dart';
@@ -16,7 +15,6 @@ class MemoryManager implements IMemoryManager {
   static const int _maxInitAttempts = 3;
   MemoryManager({required MemoryService memoryService})
       : _memoryService = memoryService;
-  @override
   Future<void> initialize() async {
     await init();
   }
@@ -55,7 +53,6 @@ class MemoryManager implements IMemoryManager {
       _initMutex.release();
     }
   }
-  @override
   bool get isInitialized => _isInitialized;
   String? get lastInitError => _lastInitError;
   Future<void> initializeIfNeeded() async {
@@ -74,6 +71,7 @@ class MemoryManager implements IMemoryManager {
   Future<void> initializeOnlyIfNeeded() async {
     return initializeIfNeeded();
   }
+  @override
   Future<String> getMemoryContext() async {
     try {
       await _safeInitialize();
@@ -83,6 +81,7 @@ class MemoryManager implements IMemoryManager {
       return ''; // Return empty context on error
     }
   }
+  @override
   Future<void> addInteraction(String userMessage, String aiResponse,
       Map<String, dynamic> metadata) async {
     try {
@@ -94,6 +93,7 @@ class MemoryManager implements IMemoryManager {
       logger.error('Error adding interaction to memory', error: e);
     }
   }
+  @override
   Future<void> addInsight(String insightText, String source) async {
     try {
       await _safeInitialize();
@@ -103,6 +103,7 @@ class MemoryManager implements IMemoryManager {
       logger.error('Error adding insight to memory', error: e);
     }
   }
+  @override
   Future<void> updateEmotionalState(
       String emotion, double intensity, String? trigger) async {
     try {
@@ -115,6 +116,7 @@ class MemoryManager implements IMemoryManager {
       logger.error('Error updating emotional state', error: e);
     }
   }
+  @override
   Future<void> updateUserPreference(String key, dynamic value) async {
     try {
       await _safeInitialize();
@@ -125,6 +127,7 @@ class MemoryManager implements IMemoryManager {
       logger.error('Error saving user preference', error: e);
     }
   }
+  @override
   Future<void> updateTherapeuticGoals(List<String> goals) async {
     try {
       await _safeInitialize();
@@ -135,6 +138,7 @@ class MemoryManager implements IMemoryManager {
       logger.error('Error saving therapeutic goals', error: e);
     }
   }
+  @override
   Future<void> processInsightsAndSaveMemory(String userMessage,
       Map<String, dynamic> response, Map<String, dynamic> graphResult) async {
     try {
@@ -480,6 +484,7 @@ class MemoryManager implements IMemoryManager {
     }
     return false;
   }
+  @override
   Future<String> getAnchorGuidance(
     String userMessage,
     Map<String, dynamic> graphResult,
@@ -562,150 +567,9 @@ class MemoryManager implements IMemoryManager {
       return '';
     }
   }
-  @override
-  Future<void> storeMemory(
-    String sessionId,
-    String content, {
-    Map<String, dynamic>? metadata,
-    List<String>? tags,
-  }) async {
-    try {
-      await _safeInitialize();
-      await _memoryService.addMemory(content, '', metadata: metadata ?? {});
-    } catch (e) {
-      logger.error('Error storing memory', error: e);
-    }
-  }
-  @override
-  Future<List<Map<String, dynamic>>> retrieveMemories(
-    String sessionId, {
-    String? query,
-    List<String>? tags,
-    int limit = 10,
-  }) async {
-    try {
-      await _safeInitialize();
-      return [];
-    } catch (e) {
-      logger.error('Error retrieving memories', error: e);
-      return [];
-    }
-  }
-  @override
-  Future<void> updateMemory(
-    String memoryId,
-    String content, {
-    Map<String, dynamic>? metadata,
-  }) async {
-    logger.debug('updateMemory not implemented: $memoryId');
-  }
-  @override
-  Future<void> deleteMemory(String memoryId) async {
-    logger.debug('deleteMemory not implemented: $memoryId');
-  }
-  @override
-  Future<void> clearSessionMemories(String sessionId) async {
-    logger.debug('clearSessionMemories not implemented: $sessionId');
-  }
-  @override
-  Future<void> updateContext(
-      String sessionId, Map<String, dynamic> context) async {
-    logger.debug('updateContext not implemented: $sessionId');
-  }
-  @override
-  Future<Map<String, dynamic>?> getContext(String sessionId) async {
-    try {
-      await _safeInitialize();
-      final context = await getMemoryContext();
-      return {'context': context};
-    } catch (e) {
-      logger.error('Error getting context', error: e);
-      return null;
-    }
-  }
-  @override
-  Future<void> clearContext(String sessionId) async {
-    logger.debug('clearContext not implemented: $sessionId');
-  }
-  @override
-  Future<void> addToHistory(
-    String sessionId,
-    String role,
-    String content, {
-    Map<String, dynamic>? metadata,
-  }) async {
-    try {
-      await _safeInitialize();
-      if (role == 'user') {
-        await _memoryService.addMemory(content, '', metadata: metadata ?? {});
-      } else {
-        await _memoryService.addMemory('', content, metadata: metadata ?? {});
-      }
-    } catch (e) {
-      logger.error('Error adding to history', error: e);
-    }
-  }
-  @override
-  Future<List<Map<String, dynamic>>> getHistory(
-    String sessionId, {
-    int limit = 50,
-    String? fromTimestamp,
-  }) async {
-    try {
-      await _safeInitialize();
-      return [];
-    } catch (e) {
-      logger.error('Error getting history', error: e);
-      return [];
-    }
-  }
-  @override
-  Future<void> summarizeHistory(String sessionId) async {
-    logger.debug('summarizeHistory not implemented: $sessionId');
-  }
-  @override
-  Future<Map<String, dynamic>> getMemoryStats(String sessionId) async {
-    return {
-      'total_memories': 0,
-      'session_id': sessionId,
-      'last_updated': DateTime.now().toIso8601String(),
-    };
-  }
-  @override
-  Future<List<String>> extractKeyTopics(String sessionId) async {
-    return [];
-  }
-  @override
-  Future<Map<String, double>> getSentimentAnalysis(String sessionId) async {
-    return {
-      'positive': 0.0,
-      'negative': 0.0,
-      'neutral': 1.0,
-    };
-  }
-  @override
-  Future<List<Map<String, dynamic>>> searchMemories(
-    String query, {
-    String? sessionId,
-    List<String>? tags,
-    double threshold = 0.7,
-  }) async {
-    return [];
-  }
-  @override
-  Future<List<Map<String, dynamic>>> getRelatedMemories(
-    String memoryId, {
-    int limit = 5,
-    double threshold = 0.8,
-  }) async {
-    return [];
-  }
-  @override
   void dispose() {
     _isInitialized = false;
   }
-  @override
-  int get memoryCount => 0;
 }
 class _AnchorCandidate {
   final String anchorText;

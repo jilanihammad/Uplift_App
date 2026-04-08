@@ -1,57 +1,17 @@
 // lib/di/interfaces/i_memory_manager.dart
 import 'dart:async';
 abstract class IMemoryManager {
-  Future<void> storeMemory(
-    String sessionId,
-    String content, {
-    Map<String, dynamic>? metadata,
-    List<String>? tags,
-  });
-  Future<List<Map<String, dynamic>>> retrieveMemories(
-    String sessionId, {
-    String? query,
-    List<String>? tags,
-    int limit = 10,
-  });
-  Future<void> updateMemory(
-    String memoryId,
-    String content, {
-    Map<String, dynamic>? metadata,
-  });
-  Future<void> deleteMemory(String memoryId);
-  Future<void> clearSessionMemories(String sessionId);
-  Future<void> updateContext(String sessionId, Map<String, dynamic> context);
-  Future<Map<String, dynamic>?> getContext(String sessionId);
-  Future<void> clearContext(String sessionId);
-  Future<void> addToHistory(
-    String sessionId,
-    String role,
-    String content, {
-    Map<String, dynamic>? metadata,
-  });
-  Future<List<Map<String, dynamic>>> getHistory(
-    String sessionId, {
-    int limit = 50,
-    String? fromTimestamp,
-  });
-  Future<void> summarizeHistory(String sessionId);
-  Future<Map<String, dynamic>> getMemoryStats(String sessionId);
-  Future<List<String>> extractKeyTopics(String sessionId);
-  Future<Map<String, double>> getSentimentAnalysis(String sessionId);
-  Future<List<Map<String, dynamic>>> searchMemories(
-    String query, {
-    String? sessionId,
-    List<String>? tags,
-    double threshold = 0.7,
-  });
-  Future<List<Map<String, dynamic>>> getRelatedMemories(
-    String memoryId, {
-    int limit = 5,
-    double threshold = 0.8,
-  });
-  Future<void> initialize();
   Future<void> initializeOnlyIfNeeded();
-  void dispose();
-  bool get isInitialized;
-  int get memoryCount;
+  Future<String> getMemoryContext();
+  Future<void> addInteraction(
+      String userMessage, String aiResponse, Map<String, dynamic> metadata);
+  Future<void> addInsight(String insightText, String source);
+  Future<void> updateEmotionalState(
+      String emotion, double intensity, String? trigger);
+  Future<void> updateUserPreference(String key, dynamic value);
+  Future<void> updateTherapeuticGoals(List<String> goals);
+  Future<void> processInsightsAndSaveMemory(String userMessage,
+      Map<String, dynamic> response, Map<String, dynamic> graphResult);
+  Future<String> getAnchorGuidance(
+      String userMessage, Map<String, dynamic> graphResult);
 }
