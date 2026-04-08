@@ -6,7 +6,6 @@ import 'package:ai_therapist_app/models/user_task.dart';
 import 'package:ai_therapist_app/services/tasks_service.dart';
 import 'package:ai_therapist_app/widgets/mood_selector.dart';
 import 'package:intl/intl.dart';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 class ProgressScreen extends StatefulWidget {
   final IProgressService? progressService;
@@ -26,9 +25,6 @@ class _ProgressScreenState extends State<ProgressScreen>
   late UserProgress _progress;
   late TasksService _tasksService;
   List<UserTask> _tasks = [];
-  int _realSessionCount = 0;
-  int _currentStreak = 0;
-  int _longestStreak = 0;
   @override
   void initState() {
     super.initState();
@@ -42,66 +38,11 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
   Future<void> _initServices() async {
     await _tasksService.init();
-    await _loadRealSessionCount();
     if (mounted) {
       setState(() {
         _tasks = _tasksService.tasks;
       });
     }
-  }
-  Future<void> _loadRealSessionCount() async {
-    try {
-      final sessionRepository = DependencyContainer().sessionRepository;
-      final sessions = await sessionRepository.getSessions();
-      _calculateStreaks(sessions);
-      if (mounted) {
-        setState(() {
-          _realSessionCount = sessions.length;
-        });
-      }
-    } catch (e) {}
-  }
-  void _calculateStreaks(List<dynamic> sessions) {
-    if (sessions.isEmpty) {
-      _currentStreak = 0;
-      _longestStreak = 0;
-      return;
-    }
-    final sessionDays = sessions
-        .map((session) {
-          try {
-            final date = session.createdAt ?? DateTime.now();
-            return DateTime(date.year, date.month, date.day);
-          } catch (e) {
-            return DateTime.now();
-          }
-        })
-        .toSet()
-        .toList()
-      ..sort();
-    _currentStreak = 0;
-    final today = DateTime.now();
-    final todayDay = DateTime(today.year, today.month, today.day);
-    for (int i = sessionDays.length - 1; i >= 0; i--) {
-      final daysDiff = todayDay.difference(sessionDays[i]).inDays;
-      if (daysDiff == _currentStreak ||
-          (daysDiff == _currentStreak + 1 && _currentStreak == 0)) {
-        _currentStreak++;
-      } else {
-        break;
-      }
-    }
-    _longestStreak = 0;
-    int tempStreak = 1;
-    for (int i = 1; i < sessionDays.length; i++) {
-      if (sessionDays[i].difference(sessionDays[i - 1]).inDays == 1) {
-        tempStreak++;
-      } else {
-        _longestStreak = math.max(_longestStreak, tempStreak);
-        tempStreak = 1;
-      }
-    }
-    _longestStreak = math.max(_longestStreak, tempStreak);
   }
   void _onProgressChanged() {
     if (mounted) {
@@ -190,13 +131,13 @@ class _ProgressScreenState extends State<ProgressScreen>
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildStreakItem(
-                  _currentStreak,
+                  _progress.currentStreak,
                   'Current',
                   Icons.local_fire_department,
                   Colors.orange,
                 ),
                 _buildStreakItem(
-                  _longestStreak,
+                  _progress.longestStreak,
                   'Longest',
                   Icons.emoji_events,
                   Colors.amber,
@@ -263,7 +204,7 @@ class _ProgressScreenState extends State<ProgressScreen>
               ),
             ),
             const SizedBox(height: 16),
-            _buildStatRow('Total Sessions', _realSessionCount.toString(),
+            _buildStatRow('Total Sessions', _progress.sessionHistory.length.toString(),
                 Icons.psychology),
             const Divider(),
             _buildStatRow('Mood Entries',
