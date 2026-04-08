@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSo
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
+from collections import OrderedDict
 import logging
+import time
 import traceback
 import json
 from datetime import datetime
@@ -31,8 +33,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory session store: {session_id: {"history": [...], "created_at": ...}}
-session_store = {}
+# LRU session store with activity-based TTL
+_SESSION_TTL = 3600  # 1 hour of inactivity
+_SESSION_MAX = 100
+
+session_store: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+
+
+def _touch_session(session_id: str) -> None:
+    """Move session to end (most recent) and update last_activity."""
+    if session_id in session_store:
+        session_store.move_to_end(session_id)
+        session_store[session_id]["last_activity"] = time.monotonic()
+
+
+def _evict_stale_sessions() -> None:
+    """Remove sessions idle longer than TTL, then enforce max size via LRU."""
+    now = time.monotonic()
+    stale = [sid for sid, s in session_store.items()
+             if now - s.get("last_activity", 0) > _SESSION_TTL]
+    for sid in stale:
+        del session_store[sid]
+    while len(session_store) > _SESSION_MAX:
+        session_store.popitem(last=False)  # evict oldest (LRU)
 
 @router.post("/generate", response_class=JSONResponse)
 async def generate_response(body: GenerateRequest):
@@ -154,15 +177,16 @@ async def websocket_chat(websocket: WebSocket):
             user_info = payload.get("user_info")
             
             # Session management
+            _evict_stale_sessions()
             if incoming_session_id and incoming_session_id in session_store:
                 session_id = incoming_session_id
                 session = session_store[session_id]
+                _touch_session(session_id)
                 if history is None:
                     history = session["history"]
             else:
-                # Generate new session_id and session
                 session_id = str(uuid.uuid4())
-                session = {"history": [], "created_at": utcnow_isoformat()}
+                session = {"history": [], "created_at": utcnow_isoformat(), "last_activity": time.monotonic()}
                 session_store[session_id] = session
                 new_session = True
                 if history is None:
@@ -207,7 +231,9 @@ async def websocket_chat(websocket: WebSocket):
                 }))
                 
     except WebSocketDisconnect:
-        logger.info("WebSocket chat disconnected")
+        if session_id and session_id in session_store:
+            del session_store[session_id]
+        logger.info("WebSocket chat disconnected (session %s cleaned up)", session_id)
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
         try:
