@@ -6,7 +6,6 @@ policy when services are rewired (Uplift_App-4xc).
 """
 from __future__ import annotations
 
-import logging
 from typing import Optional, Protocol
 from uuid import uuid4
 
@@ -14,8 +13,6 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.models.user import User
-
-logger = logging.getLogger(__name__)
 
 
 class IUserRepository(Protocol):
