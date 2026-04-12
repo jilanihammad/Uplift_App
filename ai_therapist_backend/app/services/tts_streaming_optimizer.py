@@ -1,25 +1,14 @@
-"""
-Phase 3: Streaming TTS with Token-1 Optimization
+"""Streaming TTS synthesizer (the INNER layer of TTS optimization).
 
-This module implements Phase 3 optimizations for dramatic TTS speed improvements:
-1. Streaming TTS with chunked audio delivery (150-300ms TTFB target)
-2. Token-1 optimization - start audio playback immediately
-3. Smart buffering and progressive audio synthesis
-4. Fast-path routing for minimal latency
-5. Advanced audio chunk management
+This module performs the actual streaming synthesis: chunked audio
+delivery, token-1 optimization, adaptive chunk sizing, and HTTP/2
+connection reuse against the upstream provider.
 
-Target Performance:
-- TTFB: 150-500ms (vs current 1800-9500ms = 4-19x improvement)
-- First audio chunk: <300ms
-- Progressive streaming: Audio starts playing before synthesis complete
-- Buffer optimization: Minimal memory usage with maximum speed
+It is called from ``app/services/tts_optimizer.py`` (the OUTER layer,
+which handles routing, caching, priority classification, and provider
+warming). The two are layered, not redundant — keep both.
 
-Key Optimizations:
-- Concurrent synthesis and streaming
-- Adaptive chunk sizing based on text length
-- Provider-specific optimizations
-- Audio format optimization (prefer fastest codecs)
-- Connection reuse and HTTP/2 streaming
+Targets: 150-500ms TTFB; first audio chunk <300ms.
 """
 
 import asyncio

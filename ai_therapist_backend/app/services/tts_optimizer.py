@@ -1,19 +1,20 @@
-"""
-Phase 3: TTS Fast-Path Routing
+"""TTS request routing & response cache.
 
-This module implements fast-path routing for TTS requests to achieve minimal latency:
-1. Request classification and routing optimization
-2. Fast-path bypass for simple TTS requests
-3. Connection pre-warming for TTS providers
-4. Smart caching and request deduplication
-5. Latency-optimized request pipeline
+This module is the OUTER layer of the TTS optimization stack. It owns:
+- Request classification by priority + text length
+- An in-memory response cache (5-minute TTL, max 100 entries)
+- Connection pre-warming for TTS providers
+- Latency / SLA metrics
 
-Key Features:
-- Fast-path detection: Simple requests bypass complex processing
-- Connection pool warming: Pre-established connections to TTS providers  
-- Request deduplication: Cache identical requests for instant response
-- Priority routing: Route urgent requests through fastest paths
-- Latency budgeting: Enforce strict timing constraints
+For the actual streaming synthesis it delegates to
+``app/services/tts_streaming_optimizer.py`` (the INNER layer):
+``StreamingTTSProcessor`` + ``synthesize_text_streaming``. The two files
+are layered, not redundant — do not merge.
+
+Originally there was a "BYPASS" strategy that returned synthetic audio
+bytes for URGENT-priority short text. It was unreachable (no caller
+sets URGENT) and was returning fake bytes (``b'ultrafast_tts_' + ...``)
+rather than real audio — that path has been removed.
 """
 
 import asyncio
@@ -38,7 +39,6 @@ logger = logging.getLogger(__name__)
 
 class RequestPriority(Enum):
     """Request priority levels for fast-path routing."""
-    URGENT = "urgent"           # <200ms target, bypass all non-essential processing
     HIGH = "high"              # <300ms target, minimal processing
     NORMAL = "normal"          # <500ms target, balanced processing
     LOW = "low"                # <1000ms target, full processing
@@ -46,7 +46,6 @@ class RequestPriority(Enum):
 
 class FastPathStrategy(Enum):
     """Fast-path strategies for different request types."""
-    BYPASS = "bypass"          # Skip complex processing entirely
     OPTIMIZED = "optimized"    # Use optimized processing pipeline
     CACHED = "cached"          # Serve from cache if available
     STREAMING = "streaming"    # Use streaming for fastest TTFB
@@ -134,15 +133,9 @@ class TTSFastPathRouter:
                 return FastPathStrategy.CACHED, TTSOptimizationLevel.MINIMAL_LATENCY
         
         text_length = len(request.text)
-        
+
         # Priority-based routing
-        if request.priority == RequestPriority.URGENT:
-            if text_length < 20:
-                return FastPathStrategy.BYPASS, TTSOptimizationLevel.MINIMAL_LATENCY
-            else:
-                return FastPathStrategy.STREAMING, TTSOptimizationLevel.MINIMAL_LATENCY
-        
-        elif request.priority == RequestPriority.HIGH:
+        if request.priority == RequestPriority.HIGH:
             if text_length < 50:
                 return FastPathStrategy.OPTIMIZED, TTSOptimizationLevel.MINIMAL_LATENCY
             else:
@@ -212,45 +205,6 @@ class TTSFastPathRouter:
         
         return cached_data, cached_metadata
     
-    async def _process_bypass(self, request: TTSRequest) -> Tuple[bytes, Dict[str, Any]]:
-        """Process request using bypass strategy (minimal processing)."""
-        start_time = time.time()
-        
-        # For very short text, use ultra-fast processing
-        if len(request.text) < 10:
-            # Simulate ultra-fast TTS (50-100ms)
-            processing_time = 0.05 + len(request.text) * 0.005
-            await asyncio.sleep(processing_time)
-            
-            # Generate minimal audio response  
-            audio_data = b'ultrafast_tts_' + request.text.encode() * 10
-            
-        else:
-            # Use optimized fast processing (100-200ms)
-            processing_time = 0.1 + len(request.text) * 0.003
-            await asyncio.sleep(processing_time)
-            
-            audio_data = b'fast_tts_' + request.text.encode() * 20
-        
-        processing_time_ms = (time.time() - start_time) * 1000
-        
-        metadata = {
-            "fast_path_strategy": "bypass",
-            "processing_time_ms": processing_time_ms,
-            "provider_used": "fast_bypass",
-            "optimization_level": "minimal_latency",
-            "text_length": len(request.text)
-        }
-        
-        record_latency(
-            "tts_fastpath",
-            "bypass_processing_time",
-            processing_time_ms,
-            labels={"text_length_bucket": self._get_text_length_bucket(len(request.text))}
-        )
-        
-        return audio_data, metadata
-    
     async def _process_optimized(self, request: TTSRequest, optimization_level: TTSOptimizationLevel) -> Tuple[bytes, Dict[str, Any]]:
         """Process request using optimized strategy."""
         start_time = time.time()
@@ -316,7 +270,7 @@ class TTSFastPathRouter:
         # Update strategy-specific metrics
         if strategy == FastPathStrategy.CACHED:
             self.metrics.cache_avg_latency_ms = processing_time_ms
-        elif strategy in [FastPathStrategy.BYPASS, FastPathStrategy.OPTIMIZED]:
+        elif strategy == FastPathStrategy.OPTIMIZED:
             self.metrics.fast_path_hits += 1
             fast_path_samples = [t for i, t in enumerate(self.latency_samples) 
                                if i % 2 == 0]  # Approximate fast path samples
@@ -356,9 +310,6 @@ class TTSFastPathRouter:
         if strategy == FastPathStrategy.CACHED:
             cache_key = request.get_cache_key()
             audio_data, metadata = await self._serve_from_cache(cache_key)
-            
-        elif strategy == FastPathStrategy.BYPASS:
-            audio_data, metadata = await self._process_bypass(request)
             
         elif strategy == FastPathStrategy.OPTIMIZED:
             audio_data, metadata = await self._process_optimized(request, optimization_level)
