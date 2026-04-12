@@ -8,7 +8,7 @@ import 'package:ai_therapist_app/di/dependency_container.dart';
 import 'package:ai_therapist_app/di/interfaces/interfaces.dart';
 import 'package:ai_therapist_app/services/notification_service.dart';
 import 'package:ai_therapist_app/services/remote_config_service.dart';
-import 'package:ai_therapist_app/utils/feature_flags.dart';
+import 'package:ai_therapist_app/widgets/settings/settings_section.dart';
 class SettingsScreen extends StatefulWidget {
   final IPreferencesService? preferencesService;
   final NotificationService? notificationService;
@@ -84,7 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         children: [
           _buildUserProfileSection(),
-          _buildSection(
+          SettingsSection(
             title: 'Therapy Experience',
             children: [
               SwitchListTile(
@@ -102,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           _buildVoiceSection(),
-          _buildSection(
+          SettingsSection(
             title: 'Daily Check-in',
             children: [
               SwitchListTile(
@@ -137,7 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          _buildSection(
+          SettingsSection(
             title: 'Appearance',
             children: [
               SwitchListTile(
@@ -170,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          _buildSection(
+          SettingsSection(
             title: 'Privacy & Security',
             children: [
               ListTile(
@@ -207,7 +207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          _buildSection(
+          SettingsSection(
             title: 'About',
             children: [
               const ListTile(
@@ -300,7 +300,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final userProfile = _userProfileService.profile;
     final userName = userProfile?.displayName ?? 'User';
     final userEmail = userProfile?.email;
-    return _buildSection(
+    return SettingsSection(
       title: 'Profile',
       children: [
         ListTile(
@@ -335,7 +335,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (usableVoices.isEmpty) {
       return const SizedBox.shrink();
     }
-    return _buildSection(
+    return SettingsSection(
       title: 'AI Voice',
       children: [
         ListTile(
@@ -356,30 +356,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           onTap: usableVoices.length > 1 ? _showVoiceSelectionSheet : null,
         ),
-      ],
-    );
-  }
-  Widget _buildSection({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding:
-              const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        ),
-        ...children,
-        const Divider(),
       ],
     );
   }
