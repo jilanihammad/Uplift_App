@@ -18,7 +18,7 @@ from app.services.llm_manager import LLMManager
 from app.core.llm_config import LLMConfig, ModelType
 from app.utils.text_processor import SmartTextProcessor, TextChunk, BoundaryType
 
-from . import format_strategy, voice_policy
+from . import format_strategy, sender_periodic, voice_policy
 from .connection_registry import ConnectionRegistry
 from .models import (
     PipelineState,
@@ -1132,99 +1132,56 @@ class EnhancedAsyncPipeline:
         return sent_count
 
     async def _send_checkpoint_frame(self, sequence_counter: int, chunks_sent: int) -> None:
-        """Send checkpoint frame for sequence validation"""
-        checkpoint_frame = {
-            "type": "checkpoint",
-            "sequence_checkpoint": sequence_counter,
-            "chunks_sent": chunks_sent,
-            "timestamp": datetime.now().isoformat(),
-            "flow_control_state": self.flow_state.value,
-            "performance_snapshot": {
-                "avg_latency_ms": round(self.metrics.avg_end_to_end_ms, 2),
-                "queue_sizes": {
-                    "llm": self.llm_queue.qsize(),
-                    "tts": self.tts_queue.qsize(),
-                    "client": self.client_queue.qsize()
-                }
-            }
-        }
-        await self._send_to_active_clients(checkpoint_frame, f"checkpoint-{sequence_counter}", None)
-
-    async def _log_performance_metrics(self, chunks_sent: int, sequence_counter: int) -> None:
-        """Log performance metrics with timing data and send to production monitoring"""
-        self.logger.info(
-            f"Client sender performance: "
-            f"chunks_sent={chunks_sent}, "
-            f"sequence={sequence_counter}, "
-            f"avg_latency={self.metrics.avg_end_to_end_ms:.1f}ms, "
-            f"ttfa={self.metrics.time_to_first_audio_ms:.1f}ms, "
-            f"active_clients={len(self.connections)}, "
-            f"flow_state={self.flow_state.value}"
+        await sender_periodic.send_checkpoint_frame(
+            connections=self.connections,
+            flow_state=self.flow_state,
+            metrics=self.metrics,
+            llm_queue_size=self.llm_queue.qsize(),
+            tts_queue_size=self.tts_queue.qsize(),
+            client_queue_size=self.client_queue.qsize(),
+            sequence_counter=sequence_counter,
+            chunks_sent=chunks_sent,
         )
 
-        if production_metrics.is_metrics_enabled() and production_metrics.should_report_metrics():
-            try:
-                self.metrics.llm_queue_size = self.llm_queue.qsize()
-                self.metrics.tts_queue_size = self.tts_queue.qsize()
-                self.metrics.client_queue_size = self.client_queue.qsize()
+    async def _log_performance_metrics(self, chunks_sent: int, sequence_counter: int) -> None:
+        await sender_periodic.log_performance_metrics(
+            logger=self.logger,
+            metrics=self.metrics,
+            connections=self.connections,
+            flow_state=self.flow_state,
+            pipeline_id=self.pipeline_id,
+            llm_queue=self.llm_queue,
+            tts_queue=self.tts_queue,
+            client_queue=self.client_queue,
+            sequence_counter=sequence_counter,
+            chunks_sent=chunks_sent,
+        )
 
-                production_metrics.send_performance_metrics(self.metrics, self.pipeline_id)
-
-                if self.metrics.time_to_first_audio_ms > self.metrics.target_ttfa_ms:
-                    production_metrics.send_critical_metric(
-                        "ttfa_target_exceeded",
-                        self.metrics.time_to_first_audio_ms,
-                        {
-                            "target": str(self.metrics.target_ttfa_ms),
-                            "pipeline_id": self.pipeline_id,
-                            "active_clients": str(len(self.connections))
-                        }
-                    )
-
-                if self.metrics.avg_end_to_end_ms > self.metrics.target_latency_ms:
-                    production_metrics.send_critical_metric(
-                        "latency_target_exceeded",
-                        self.metrics.avg_end_to_end_ms,
-                        {
-                            "target": str(self.metrics.target_latency_ms),
-                            "pipeline_id": self.pipeline_id,
-                            "flow_state": self.flow_state.value
-                        }
-                    )
-
-            except Exception as e:
-                self.logger.error(f"Failed to send production metrics: {str(e)}")
-
-    async def _handle_periodic_tasks(self, last_checkpoint: float, last_performance: float,
-                                     checkpoint_interval: float, performance_interval: float,
-                                     sequence_counter: int, chunks_sent: int) -> None:
-        """Handle periodic checkpoint and performance logging tasks"""
-        current_time = time.time()
-        if current_time - last_checkpoint >= checkpoint_interval:
-            await self._send_checkpoint_frame(sequence_counter, chunks_sent)
-        if current_time - last_performance >= performance_interval:
-            await self._log_performance_metrics(chunks_sent, sequence_counter)
+    async def _handle_periodic_tasks(
+        self,
+        last_checkpoint: float,
+        last_performance: float,
+        checkpoint_interval: float,
+        performance_interval: float,
+        sequence_counter: int,
+        chunks_sent: int,
+    ) -> None:
+        await sender_periodic.handle_periodic_tasks(
+            last_checkpoint=last_checkpoint,
+            last_performance=last_performance,
+            checkpoint_interval=checkpoint_interval,
+            performance_interval=performance_interval,
+            on_checkpoint=lambda: self._send_checkpoint_frame(sequence_counter, chunks_sent),
+            on_performance=lambda: self._log_performance_metrics(chunks_sent, sequence_counter),
+        )
 
     async def _handle_clean_disconnection(self, sequence_counter: int, chunks_sent: int) -> None:
-        """Handle clean WebSocket disconnection with final summary"""
-        completion_frame = {
-            "type": "complete",
-            "final_sequence": sequence_counter,
-            "total_chunks_sent": chunks_sent,
-            "session_summary": {
-                "total_audio_chunks": chunks_sent,
-                "avg_latency_ms": round(self.metrics.avg_end_to_end_ms, 2),
-                "time_to_first_audio_ms": round(self.metrics.time_to_first_audio_ms, 2),
-                "backpressure_events": self.metrics.backpressure_events,
-                "stale_chunks_dropped": self.metrics.stale_chunks_dropped
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        await self._send_to_active_clients(completion_frame, "completion", None)
-        self.logger.info(
-            f"Session completed: chunks_sent={chunks_sent}, "
-            f"final_sequence={sequence_counter}, "
-            f"avg_latency={self.metrics.avg_end_to_end_ms:.1f}ms"
+        await sender_periodic.handle_clean_disconnection(
+            logger=self.logger,
+            connections=self.connections,
+            metrics=self.metrics,
+            sequence_counter=sequence_counter,
+            chunks_sent=chunks_sent,
         )
 
     # ------------------------------------------------------------------
