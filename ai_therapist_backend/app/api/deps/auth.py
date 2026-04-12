@@ -13,8 +13,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.crud import user as crud_user
-from app.crud import user_identity as crud_user_identity
+from app.repositories import UserIdentityRepository, UserRepository
 from app.db.session import get_db
 from app.models.user import User
 
@@ -187,7 +186,9 @@ def _get_or_create_user(
     email: Optional[str],
     name: Optional[str],
 ) -> User:
-    identity = crud_user_identity.get_by_provider_uid(db, provider=provider, uid=uid)
+    identity_repo = UserIdentityRepository(db)
+    user_repo = UserRepository(db)
+    identity = identity_repo.get_by_provider_uid(provider=provider, uid=uid)
     if identity:
         user = identity.user
         if email and identity.email != email:
@@ -197,13 +198,11 @@ def _get_or_create_user(
 
     normalized_email = _normalize_email(provider, uid, email)
 
-    user = crud_user.create(
-        db,
+    user = user_repo.create(
         email=normalized_email,
         name=name,
     )
-    identity = crud_user_identity.create(
-        db,
+    identity = identity_repo.create(
         user_id=user.id,
         provider=provider,
         uid=uid,

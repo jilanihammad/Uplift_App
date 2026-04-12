@@ -697,8 +697,7 @@ async def transcribe_file(file: UploadFile = File(...)):
 # Session CRUD
 # ---------------------------------------------------------------------------
 
-from app.crud import session as crud_session
-from app.crud import reminder as crud_reminder
+from app.repositories import ReminderRepository, SessionRepository
 
 class SessionUpdateRequest(BaseModel):
     title: Optional[str] = None
@@ -745,14 +744,14 @@ async def get_sessions(
         logger.info(f"Getting sessions for user {effective_user_id}")
 
         try:
-            sessions = crud_session.get_sessions_by_user(db, effective_user_id)
+            sessions = SessionRepository(db).get_sessions_by_user(effective_user_id)
             if not sessions:
                 logger.info(f"No sessions found for user {effective_user_id}, creating defaults")
                 try:
-                    s1 = crud_session.create_session(db, user_id=effective_user_id, title="Your First Session")
-                    s2 = crud_session.create_session(db, user_id=effective_user_id, title="Your Follow-up Session")
-                    crud_session.update_session(db, s1.id, {"summary": "Welcome to your therapy journey. This is where your completed sessions will appear."})
-                    crud_session.update_session(db, s2.id, {"summary": "Regular sessions help build progress. Complete another session to see it here."})
+                    s1 = SessionRepository(db).create_session(user_id=effective_user_id, title="Your First Session")
+                    s2 = SessionRepository(db).create_session(user_id=effective_user_id, title="Your Follow-up Session")
+                    SessionRepository(db).update_session(s1.id, {"summary": "Welcome to your therapy journey. This is where your completed sessions will appear."})
+                    SessionRepository(db).update_session(s2.id, {"summary": "Regular sessions help build progress. Complete another session to see it here."})
                     sessions = [s1, s2]
                 except Exception as create_error:
                     logger.error(f"Error creating default sessions: {str(create_error)}")
@@ -797,7 +796,7 @@ async def create_session(
         if not request:
             request = SessionUpdateRequest()
         user_id = current_user.user.id
-        session = crud_session.create_session(db, user_id=user_id, title=request.title)
+        session = SessionRepository(db).create_session(user_id=user_id, title=request.title)
         return {
             "id": str(session.id),
             "title": request.title or f"Session {session.id}",
@@ -819,7 +818,7 @@ async def get_session(
 ):
     """Get a specific session"""
     try:
-        session = crud_session.get_session(db, session_id)
+        session = SessionRepository(db).get_session(session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         return {
@@ -853,16 +852,16 @@ async def update_session(
         if request.summary is not None:
             update_data["summary"] = request.summary
 
-        existing_session = crud_session.get_session(db, session_id)
+        existing_session = SessionRepository(db).get_session(session_id)
         if existing_session and existing_session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
         session = None
         if existing_session:
-            session = crud_session.update_session(db, session_id, update_data)
+            session = SessionRepository(db).update_session(session_id, update_data)
 
         if not session:
-            session = crud_session.create_session(db, user_id=current_user.user.id, title=request.title, summary=request.summary)
+            session = SessionRepository(db).create_session(user_id=current_user.user.id, title=request.title, summary=request.summary)
 
         return {
             "id": str(session.id),
@@ -893,10 +892,10 @@ async def delete_session(
 ):
     """Delete a session"""
     try:
-        session = crud_session.get_session(db, session_id)
+        session = SessionRepository(db).get_session(session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        success = crud_session.delete_session(db, session_id)
+        success = SessionRepository(db).delete_session(session_id)
         if not success:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         return {"status": "success", "message": f"Session {session_id} deleted"}
@@ -918,7 +917,7 @@ async def get_session_reminder(
 ):
     """Fetch the next scheduled therapy session reminder."""
     try:
-        reminder = crud_reminder.get_next_session_reminder(db, current_user.user.id)
+        reminder = ReminderRepository(db).get_next_session_reminder(current_user.user.id)
         if not reminder:
             return SessionReminderResponse()
         return SessionReminderResponse(
@@ -939,8 +938,8 @@ async def upsert_session_reminder(
 ):
     """Create or update the user's next session reminder."""
     try:
-        reminder = crud_reminder.upsert_session_reminder(
-            db, user_id=current_user.user.id,
+        reminder = ReminderRepository(db).upsert_session_reminder(
+            user_id=current_user.user.id,
             scheduled_time=request.scheduled_time,
             title=request.title, description=request.description,
         )
@@ -967,11 +966,11 @@ async def add_session_message(
 ):
     """Add a message to a session"""
     try:
-        session = crud_session.get_session(db, session_id)
+        session = SessionRepository(db).get_session(session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        msg = crud_session.add_message_to_session(
-            db, session_id=session_id, content=message.content,
+        msg = SessionRepository(db).add_message_to_session(
+            session_id=session_id, content=message.content,
             is_user_message=message.is_user_message,
             audio_url=message.audio_url, sequence=message.sequence
         )
@@ -992,14 +991,14 @@ async def add_session_messages_batch(
 ):
     """Add multiple messages to a session in a single batch"""
     try:
-        session = crud_session.get_session(db, session_id)
+        session = SessionRepository(db).get_session(session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         message_dicts = [
             {"content": m.content, "is_user_message": m.is_user_message, "audio_url": m.audio_url, "sequence": m.sequence}
             for m in messages
         ]
-        saved = crud_session.add_messages_batch(db, session_id, message_dicts)
+        saved = SessionRepository(db).add_messages_batch(session_id, message_dicts)
         return {"status": "success", "message_count": len(saved), "message_ids": [str(m.id) for m in saved]}
     except HTTPException:
         raise
@@ -1097,7 +1096,7 @@ async def stream_chat_from_llm(
         import time
         from app.core.observability import record_latency, record_counter
 
-        session = crud_session.get_session(db, session_id)
+        session = SessionRepository(db).get_session(session_id)
         if not session or session.user_id != current_user.user.id:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
@@ -1150,8 +1149,8 @@ async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, An
     try:
         user_id = request.user_id or 1
         session_title = request.session_title or f"Therapy Session {datetime.now().strftime('%b %d, %Y')}"
-        session = crud_session.create_session(
-            db=db, user_id=user_id, title=session_title,
+        session = SessionRepository(db).create_session(
+            user_id=user_id, title=session_title,
             action_items=summary_data.get("action_items", []),
             summary=summary_data.get("summary", "")
         )
@@ -1159,8 +1158,8 @@ async def _create_session_with_summary(db: DBSession, summary_data: Dict[str, An
     except Exception as e:
         logger.error(f"Error creating session record: {str(e)}")
         try:
-            fallback = crud_session.create_session(
-                db=db, user_id=1, title="Therapy Session",
+            fallback = SessionRepository(db).create_session(
+                user_id=1, title="Therapy Session",
                 action_items=summary_data.get("action_items", []),
                 summary=summary_data.get("summary", "")
             )
