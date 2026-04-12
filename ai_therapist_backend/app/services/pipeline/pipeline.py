@@ -6,9 +6,8 @@ Flow control monitoring, metrics collection, and data models live in sibling mod
 """
 
 import asyncio
-import json
 import base64
-import hashlib
+import json
 import time
 import logging
 from datetime import datetime
@@ -19,6 +18,8 @@ from app.services.llm_manager import LLMManager
 from app.core.llm_config import LLMConfig, ModelType
 from app.utils.text_processor import SmartTextProcessor, TextChunk, BoundaryType
 
+from . import format_strategy, voice_policy
+from .connection_registry import ConnectionRegistry
 from .models import (
     PipelineState,
     StreamingMessage,
@@ -85,7 +86,7 @@ class EnhancedAsyncPipeline:
         self.last_activity_time = time.time()
 
         # Client connections
-        self.active_clients: Dict[str, Any] = {}  # client_id -> websocket
+        self.connections = ConnectionRegistry(self.logger)
 
         # Flow control monitor (owns flow_state, backpressure timing, stale chunks)
         self._fc_monitor = FlowControlMonitor(
@@ -307,15 +308,12 @@ class EnhancedAsyncPipeline:
 
     async def register_client(self, client_id: str, websocket) -> Dict[str, Any]:
         """Register a new client connection."""
-        self.active_clients[client_id] = websocket
-        self.logger.info(f"Client registered: {client_id}")
+        self.connections.register(client_id, websocket)
         return await self.get_init_frame(client_id)
 
     async def unregister_client(self, client_id: str) -> None:
         """Unregister a client connection."""
-        if client_id in self.active_clients:
-            del self.active_clients[client_id]
-            self.logger.info(f"Client unregistered: {client_id}")
+        await self.connections.unregister(client_id)
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get comprehensive pipeline metrics for monitoring and optimization"""
@@ -359,7 +357,7 @@ class EnhancedAsyncPipeline:
                 "target_ttfa_ms": self.metrics.target_ttfa_ms,
                 "target_latency_ms": self.metrics.target_latency_ms
             },
-            "active_clients": len(self.active_clients)
+            "active_clients": len(self.connections)
         }
 
     # ------------------------------------------------------------------
@@ -367,114 +365,17 @@ class EnhancedAsyncPipeline:
     # ------------------------------------------------------------------
 
     def assess_network_quality(self, client_metrics: Dict[str, Any]) -> str:
-        """Assess network quality based on client metrics for adaptive format selection"""
-        rtt_ms = client_metrics.get("rtt_ms", 0)
-        packet_loss = client_metrics.get("packet_loss_percent", 0)
-        bandwidth_kbps = client_metrics.get("bandwidth_kbps", 0)
-        jitter_ms = client_metrics.get("jitter_ms", 0)
+        return format_strategy.assess_network_quality(client_metrics, self.config)
 
-        quality_score = 100
-
-        if rtt_ms > self.config.poor_network_threshold_ms:
-            quality_score -= 40
-        elif rtt_ms > self.config.good_network_threshold_ms:
-            quality_score -= 20
-
-        if packet_loss > 5:
-            quality_score -= 30
-        elif packet_loss > 1:
-            quality_score -= 15
-
-        if bandwidth_kbps < 128:
-            quality_score -= 25
-        elif bandwidth_kbps < 256:
-            quality_score -= 10
-
-        if jitter_ms > 100:
-            quality_score -= 15
-        elif jitter_ms > 50:
-            quality_score -= 8
-
-        if quality_score >= 80:
-            return "excellent"
-        elif quality_score >= 60:
-            return "good"
-        elif quality_score >= 40:
-            return "fair"
-        else:
-            return "poor"
-
-    def select_optimal_format(self, network_quality: str, client_capabilities: Dict[str, Any]) -> str:
-        """Select optimal audio format based on network quality and client capabilities"""
-        supported_formats = client_capabilities.get("supported_formats", ["wav"])
-        if "native" in supported_formats:
-            return "native"
-
-        if network_quality == "poor":
-            if "opus" in supported_formats:
-                return "opus"
-            elif "aac" in supported_formats:
-                return "aac"
-            else:
-                return "wav"
-        elif network_quality == "fair":
-            if "aac" in supported_formats:
-                return "aac"
-            elif "opus" in supported_formats:
-                return "opus"
-            else:
-                return "wav"
-        elif network_quality in ["good", "excellent"]:
-            if "wav" in supported_formats:
-                return "wav"
-            elif "aac" in supported_formats:
-                return "aac"
-            else:
-                return "opus"
-
-        return self.config.default_format
+    def select_optimal_format(
+        self, network_quality: str, client_capabilities: Dict[str, Any]
+    ) -> str:
+        return format_strategy.select_optimal_format(
+            network_quality, client_capabilities, self.config
+        )
 
     def get_format_parameters(self, audio_format: str) -> Dict[str, Any]:
-        """Get optimized parameters for specific audio format"""
-        if audio_format == "native":
-            tts_config = LLMConfig.get_tts_config()
-            return {
-                "response_format": "native",
-                "mime_type": tts_config.get("mime_type", "audio/ogg; codecs=opus"),
-                "sample_rate": tts_config.get("sample_rate_hz", 24000),
-                "channels": 1,
-                "latency_category": "lowest"
-            }
-
-        format_configs = {
-            "wav": {
-                "response_format": "wav",
-                "sample_rate": 16000,
-                "channels": 1,
-                "bit_depth": 16,
-                "estimated_bitrate_kbps": 256,
-                "latency_category": "lowest"
-            },
-            "opus": {
-                "response_format": "ogg_opus",
-                "mime_type": "audio/ogg; codecs=opus",
-                "sample_rate": 24000,
-                "channels": 1,
-                "bitrate": "24k",
-                "estimated_bitrate_kbps": 24,
-                "latency_category": "low"
-            },
-            "aac": {
-                "response_format": "aac",
-                "sample_rate": 48000,
-                "channels": 1,
-                "bitrate": "64k",
-                "estimated_bitrate_kbps": 64,
-                "latency_category": "medium"
-            }
-        }
-
-        return format_configs.get(audio_format, format_configs["wav"])
+        return format_strategy.get_format_parameters(audio_format)
 
     # ------------------------------------------------------------------
     # Interrupt handling
@@ -541,9 +442,9 @@ class EnhancedAsyncPipeline:
             }
         }
 
-        if client_id in self.active_clients:
+        websocket = self.connections.get(client_id)
+        if websocket is not None:
             try:
-                websocket = self.active_clients[client_id]
                 await websocket.send(json.dumps(interrupt_ack))
                 self.logger.info(f"Interrupt acknowledgment sent to {client_id} (drain time: {drain_time_ms:.1f}ms)")
             except Exception as e:
@@ -819,9 +720,7 @@ class EnhancedAsyncPipeline:
             return ""
 
     def _get_voice_seed(self, conversation_id: str) -> str:
-        """Generate consistent voice seed for conversation."""
-        seed_input = f"{conversation_id}_voice_consistency"
-        return hashlib.md5(seed_input.encode()).hexdigest()[:8]
+        return voice_policy.voice_seed(conversation_id)
 
     # ------------------------------------------------------------------
     # TTS queue helpers
@@ -1052,98 +951,18 @@ class EnhancedAsyncPipeline:
             raise
 
     # ------------------------------------------------------------------
-    # Voice selection helpers
+    # Voice & format helpers (delegate to focused modules)
     # ------------------------------------------------------------------
 
-    def _get_consistent_voice(self, conversation_id: str, voice_seed: str, conversation_voices: Dict[str, str]) -> str:
-        """Get consistent voice for conversation using deterministic selection."""
-        try:
-            if conversation_id in conversation_voices:
-                return conversation_voices[conversation_id]
-
-            default_voice = 'nova'
-            available_voices = []
-
-            if hasattr(self, 'llm_manager') and self.llm_manager and self.llm_manager.tts_config:
-                config_voice = self.llm_manager.tts_config.default_params.get('voice', 'nova')
-                default_voice = config_voice
-
-                if self.llm_manager.tts_config.provider.value in ['openai', 'groq']:
-                    config_voices = getattr(self.llm_manager.tts_config, 'available_voices', None)
-                    if config_voices:
-                        available_voices = config_voices
-                    else:
-                        available_voices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
-                else:
-                    available_voices = getattr(self.llm_manager.tts_config, 'available_voices', [default_voice])
-            else:
-                available_voices = [default_voice]
-
-            if voice_seed:
-                seed_hash = hashlib.md5(voice_seed.encode()).hexdigest()
-                voice_index = int(seed_hash[:2], 16) % len(available_voices)
-                selected_voice = available_voices[voice_index]
-            else:
-                selected_voice = default_voice
-
-            conversation_voices[conversation_id] = selected_voice
-            self.logger.debug(f"Selected voice '{selected_voice}' for conversation {conversation_id}")
-            return selected_voice
-
-        except Exception as e:
-            self.logger.warning(f"Error selecting voice: {e}")
-            try:
-                if hasattr(self, 'llm_manager') and self.llm_manager and self.llm_manager.tts_config:
-                    fallback_voice = self.llm_manager.tts_config.default_params.get('voice', 'nova')
-                else:
-                    fallback_voice = "nova"
-            except Exception:
-                fallback_voice = "nova"
-
-            conversation_voices[conversation_id] = fallback_voice
-            return fallback_voice
-
-    def _select_voice(self, client_voice: Optional[str] = None, conversation_id: Optional[str] = None) -> str:
-        """SIMPLIFIED voice selection - let LLMManager handle validation"""
-        try:
-            if self.llm_manager and hasattr(self.llm_manager, 'tts_config') and self.llm_manager.tts_config:
-                default_voice = self.llm_manager.tts_config.default_params.get('voice', 'nova')
-            else:
-                default_voice = 'nova'
-            voice = client_voice if client_voice else default_voice
-            self.logger.debug(f"Selected voice: {voice} (LLMManager will validate)")
-            return voice
-        except Exception as e:
-            self.logger.warning(f"Error in voice selection: {str(e)}, using fallback")
-            return 'nova'
+    def _select_voice(
+        self,
+        client_voice: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+    ) -> str:
+        return voice_policy.select_voice(client_voice, conversation_id, self.llm_manager)
 
     def _get_validated_format(self, requested_format: str) -> str:
-        """SIMPLIFIED format validation - let LLMManager handle it"""
-        try:
-            if self.llm_manager and hasattr(self.llm_manager, 'tts_config') and self.llm_manager.tts_config:
-                default_format = self.llm_manager.tts_config.default_params.get('response_format', 'wav')
-            else:
-                default_format = 'wav'
-            format_to_use = requested_format if requested_format else default_format
-            self.logger.debug(f"Using format: {format_to_use} (LLMManager will validate)")
-            return format_to_use
-        except Exception as e:
-            self.logger.warning(f"Error in format selection: {str(e)}, using wav")
-            return 'wav'
-
-    def _get_conversation_consistent_voice(self, conversation_id: str, available_voices: list, default_voice: str) -> str:
-        """Get consistent voice for conversation using deterministic selection."""
-        if not available_voices:
-            return default_voice
-        try:
-            hash_value = int(hashlib.md5(conversation_id.encode()).hexdigest()[:8], 16)
-            voice_index = hash_value % len(available_voices)
-            selected_voice = available_voices[voice_index]
-            self.logger.debug(f"Conversation {conversation_id} assigned voice: {selected_voice}")
-            return selected_voice
-        except Exception as e:
-            self.logger.warning(f"Error in conversation voice selection: {e}")
-            return default_voice
+        return format_strategy.validated_format(requested_format, self.llm_manager)
 
     # ------------------------------------------------------------------
     # Client queue helpers & sender
@@ -1257,34 +1076,7 @@ class EnhancedAsyncPipeline:
         self.logger.info("Client sender stopped")
 
     def _get_dynamic_audio_format(self, chunk_metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Get dynamic audio format information based on chunk metadata."""
-        audio_format = chunk_metadata.get("audio_format", self.config.default_format)
-        format_params = self.get_format_parameters(audio_format)
-
-        if audio_format == "opus":
-            return {
-                "encoding": "opus",
-                "mime_type": format_params.get("mime_type", "audio/ogg; codecs=opus"),
-                "sample_rate": format_params.get("sample_rate", 24000),
-                "channels": format_params.get("channels", 1),
-                "bitrate": format_params.get("bitrate", "24k"),
-                "container": "ogg"
-            }
-        elif audio_format == "wav":
-            return {
-                "encoding": "wav",
-                "mime_type": "audio/wav",
-                "sample_rate": format_params.get("sample_rate", 16000),
-                "channels": format_params.get("channels", 1),
-                "bit_depth": format_params.get("bit_depth", 16)
-            }
-        else:
-            return {
-                "encoding": audio_format,
-                "mime_type": format_params.get("mime_type", f"audio/{audio_format}"),
-                "sample_rate": format_params.get("sample_rate", 16000),
-                "channels": format_params.get("channels", 1)
-            }
+        return format_strategy.dynamic_audio_format(chunk_metadata, self.config)
 
     def _prepare_audio_frame(self, audio_chunk: AudioChunk, sequence_counter: int, use_binary: bool = False) -> Tuple[Dict[str, Any], bytes]:
         """Prepare audio frame with complete jitter buffer metadata."""
@@ -1326,41 +1118,17 @@ class EnhancedAsyncPipeline:
             metadata["frame_format"] = "json"
             return metadata, None
 
-    async def _send_to_active_clients(self, audio_frame: Dict[str, Any], chunk_id: str, binary_data: Optional[bytes] = None) -> int:
-        """Send audio frame to all active clients with clean error handling."""
-        if not self.active_clients:
-            return 0
-
-        sent_count = 0
-        disconnected_clients = []
-
-        for client_id, websocket in self.active_clients.items():
-            try:
-                frame_json = json.dumps(audio_frame)
-                if binary_data:
-                    if hasattr(websocket, 'send_text') and hasattr(websocket, 'send_bytes'):
-                        await websocket.send_text(frame_json)
-                        await websocket.send_bytes(binary_data)
-                    elif hasattr(websocket, 'send'):
-                        await websocket.send(frame_json)
-                    else:
-                        await websocket.send(frame_json)
-                else:
-                    if hasattr(websocket, 'send_text'):
-                        await websocket.send_text(frame_json)
-                    elif hasattr(websocket, 'send'):
-                        await websocket.send(frame_json)
-                    else:
-                        await websocket(frame_json)
-                sent_count += 1
-            except Exception as e:
-                self.logger.warning(f"Failed to send chunk {chunk_id} to client {client_id}: {e}")
-                disconnected_clients.append(client_id)
-                self.metrics.client_errors += 1
-
-        for client_id in disconnected_clients:
-            await self.unregister_client(client_id)
-
+    async def _send_to_active_clients(
+        self,
+        audio_frame: Dict[str, Any],
+        chunk_id: str,
+        binary_data: Optional[bytes] = None,
+    ) -> int:
+        sent_count, failed_count = await self.connections.send_to_all(
+            audio_frame, chunk_id, binary_data
+        )
+        if failed_count:
+            self.metrics.client_errors += failed_count
         return sent_count
 
     async def _send_checkpoint_frame(self, sequence_counter: int, chunks_sent: int) -> None:
@@ -1390,7 +1158,7 @@ class EnhancedAsyncPipeline:
             f"sequence={sequence_counter}, "
             f"avg_latency={self.metrics.avg_end_to_end_ms:.1f}ms, "
             f"ttfa={self.metrics.time_to_first_audio_ms:.1f}ms, "
-            f"active_clients={len(self.active_clients)}, "
+            f"active_clients={len(self.connections)}, "
             f"flow_state={self.flow_state.value}"
         )
 
@@ -1409,7 +1177,7 @@ class EnhancedAsyncPipeline:
                         {
                             "target": str(self.metrics.target_ttfa_ms),
                             "pipeline_id": self.pipeline_id,
-                            "active_clients": str(len(self.active_clients))
+                            "active_clients": str(len(self.connections))
                         }
                     )
 
