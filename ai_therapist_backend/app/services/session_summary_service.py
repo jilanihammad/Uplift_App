@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.session_summary import SessionSummary
+from app.repositories import SessionSummaryRepository
 
 
 def _ensure_datetime(value: Optional[datetime]) -> Optional[datetime]:
@@ -28,11 +29,8 @@ def upsert_session_summary(
     summary_json: dict,
     client_updated_at: Optional[datetime],
 ) -> Tuple[SessionSummary, bool]:
-    summary = (
-        db.query(SessionSummary)
-        .filter(SessionSummary.user_id == user_id, SessionSummary.session_id == session_id)
-        .one_or_none()
-    )
+    repo = SessionSummaryRepository(db)
+    summary = repo.get_by_user_and_session(user_id, session_id)
 
     client_updated_at = _ensure_datetime(client_updated_at)
 
@@ -42,7 +40,7 @@ def upsert_session_summary(
 
         summary.summary_json = summary_json
         summary.updated_at = _utcnow()
-        db.add(summary)
+        repo.add(summary)
         db.commit()
         db.refresh(summary)
         return summary, True
@@ -53,7 +51,7 @@ def upsert_session_summary(
         summary_json=summary_json,
         updated_at=_utcnow(),
     )
-    db.add(summary)
+    repo.add(summary)
     db.commit()
     db.refresh(summary)
     return summary, True

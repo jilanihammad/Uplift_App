@@ -6,6 +6,7 @@ from typing import Iterable, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.session_anchor import SessionAnchor
+from app.repositories import SessionAnchorRepository
 
 
 def _ensure_datetime(value: Optional[datetime]) -> Optional[datetime]:
@@ -32,11 +33,8 @@ def upsert_anchor(
     client_updated_at: Optional[datetime],
 ) -> Tuple[SessionAnchor, bool]:
     """Upsert anchor. Returns (anchor, changed?)."""
-    anchor = (
-        db.query(SessionAnchor)
-        .filter(SessionAnchor.user_id == user_id, SessionAnchor.client_anchor_id == client_anchor_id)
-        .one_or_none()
-    )
+    repo = SessionAnchorRepository(db)
+    anchor = repo.get_by_user_and_client_id(user_id, client_anchor_id)
 
     client_updated_at = _ensure_datetime(client_updated_at)
 
@@ -51,7 +49,7 @@ def upsert_anchor(
         anchor.last_seen_session_index = last_seen_session_index
         anchor.is_deleted = False
         anchor.updated_at = _utcnow()
-        db.add(anchor)
+        repo.add(anchor)
         db.commit()
         db.refresh(anchor)
         return anchor, True
@@ -65,7 +63,7 @@ def upsert_anchor(
         last_seen_session_index=last_seen_session_index,
         updated_at=_utcnow(),
     )
-    db.add(anchor)
+    repo.add(anchor)
     db.commit()
     db.refresh(anchor)
     return anchor, True
@@ -78,11 +76,8 @@ def delete_anchor(
     client_anchor_id: str,
     client_updated_at: Optional[datetime],
 ) -> Tuple[SessionAnchor, bool]:
-    anchor = (
-        db.query(SessionAnchor)
-        .filter(SessionAnchor.user_id == user_id, SessionAnchor.client_anchor_id == client_anchor_id)
-        .one_or_none()
-    )
+    repo = SessionAnchorRepository(db)
+    anchor = repo.get_by_user_and_client_id(user_id, client_anchor_id)
 
     client_updated_at = _ensure_datetime(client_updated_at)
 
@@ -96,7 +91,7 @@ def delete_anchor(
             is_deleted=True,
             updated_at=_utcnow(),
         )
-        db.add(anchor)
+        repo.add(anchor)
         db.commit()
         db.refresh(anchor)
         return anchor, True
@@ -106,7 +101,7 @@ def delete_anchor(
 
     anchor.is_deleted = True
     anchor.updated_at = _utcnow()
-    db.add(anchor)
+    repo.add(anchor)
     db.commit()
     db.refresh(anchor)
     return anchor, True
@@ -119,14 +114,6 @@ def list_anchors_since(
     since: Optional[datetime],
     limit: int = 100,
 ) -> Iterable[SessionAnchor]:
-    query = db.query(SessionAnchor).filter(SessionAnchor.user_id == user_id)
-
-    if since is not None:
-        since = _ensure_datetime(since)
-        query = query.filter(SessionAnchor.updated_at > since)
-
-    return (
-        query.order_by(SessionAnchor.updated_at.asc())
-        .limit(limit)
-        .all()
+    return SessionAnchorRepository(db).list_for_user_since(
+        user_id, since=_ensure_datetime(since), limit=limit
     )

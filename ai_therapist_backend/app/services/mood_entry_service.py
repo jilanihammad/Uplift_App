@@ -6,11 +6,11 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 
-from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.mood_entry import MoodEntry
+from app.repositories import MoodEntryRepository
 
 MAX_BATCH_SIZE = 20
 LOOKBACK_WINDOW = timedelta(days=60)
@@ -68,6 +68,7 @@ def batch_upsert_mood_entries(
         )
 
     now = datetime.now(timezone.utc)
+    repo = MoodEntryRepository(db)
     results: List[MoodEntryResult] = []
 
     def _process() -> List[MoodEntryResult]:
@@ -78,14 +79,7 @@ def batch_upsert_mood_entries(
 
             truncated_notes = _truncate_notes(notes)
 
-            entry = (
-                db.query(MoodEntry)
-                .filter(
-                    MoodEntry.user_id == user_id,
-                    MoodEntry.client_entry_id == client_entry_id,
-                )
-                .one_or_none()
-            )
+            entry = repo.get_by_user_and_client_id(user_id, client_entry_id)
 
             if entry:
                 entry.mood = mood
@@ -103,7 +97,7 @@ def batch_upsert_mood_entries(
                     created_at=now,
                     updated_at=now,
                 )
-                db.add(entry)
+                repo.add(entry)
                 created = True
 
             local_results.append(MoodEntryResult(entry=entry, created=created))
@@ -155,30 +149,24 @@ def fetch_mood_entries(
     now = datetime.now(timezone.utc)
     cutoff = now - LOOKBACK_WINDOW
 
-    query = db.query(MoodEntry).filter(MoodEntry.user_id == user_id, MoodEntry.logged_at >= cutoff)
-
+    normalized_since: Optional[datetime] = None
     if since:
         normalized_since = _ensure_utc(since, "since")
         if normalized_since < cutoff:
             normalized_since = cutoff
-        query = query.filter(MoodEntry.logged_at >= normalized_since)
 
+    before_logged_at: Optional[datetime] = None
+    before_id: Optional[UUID] = None
     if before:
-        logged_at_before, entry_id_before = _decode_pagination_token(before)
-        query = query.filter(
-            or_(
-                MoodEntry.logged_at < logged_at_before,
-                and_(
-                    MoodEntry.logged_at == logged_at_before,
-                    MoodEntry.id < entry_id_before,
-                ),
-            )
-        )
+        before_logged_at, before_id = _decode_pagination_token(before)
 
-    entries = (
-        query.order_by(MoodEntry.logged_at.desc(), MoodEntry.id.desc())
-        .limit(limit + 1)
-        .all()
+    entries = MoodEntryRepository(db).list_for_user(
+        user_id,
+        cutoff=cutoff,
+        since=normalized_since,
+        before_logged_at=before_logged_at,
+        before_id=before_id,
+        limit=limit,
     )
 
     has_more = len(entries) > limit

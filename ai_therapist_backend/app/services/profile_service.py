@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.user_profile import UserProfile
+from app.repositories import UserProfileRepository
 
 
 class ProfileConflictError(Exception):
@@ -18,7 +19,7 @@ def _utcnow() -> datetime:
 
 def get_profile(db: Session, *, user_id: int) -> Optional[UserProfile]:
     """Fetch the profile for a user."""
-    return db.query(UserProfile).filter(UserProfile.user_id == user_id).one_or_none()
+    return UserProfileRepository(db).get_by_user_id(user_id)
 
 
 def upsert_profile(
@@ -31,7 +32,8 @@ def upsert_profile(
     expected_version: Optional[int],
 ) -> UserProfile:
     """Create or update the user's profile with optimistic concurrency."""
-    profile = get_profile(db, user_id=user_id)
+    repo = UserProfileRepository(db)
+    profile = repo.get_by_user_id(user_id)
 
     if profile is None:
         profile = UserProfile(
@@ -42,7 +44,7 @@ def upsert_profile(
             version=1,
             updated_at=_utcnow(),
         )
-        db.add(profile)
+        repo.add(profile)
         db.commit()
         db.refresh(profile)
         return profile
@@ -56,7 +58,7 @@ def upsert_profile(
     profile.version = (profile.version or 0) + 1
     profile.updated_at = _utcnow()
 
-    db.add(profile)
+    repo.add(profile)
     db.commit()
     db.refresh(profile)
     return profile
