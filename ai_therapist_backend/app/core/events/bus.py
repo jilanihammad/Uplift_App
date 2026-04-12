@@ -98,7 +98,7 @@ class AsyncEventBus:
             return_exceptions=True,
         )
 
-        first_error: Optional[BaseException] = None  # type: ignore[name-defined]  # noqa: F821
+        first_error: BaseException | None = None
         for result in results:
             if isinstance(result, BaseException):
                 self.handler_error_count += 1
