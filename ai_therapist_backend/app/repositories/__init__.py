@@ -18,12 +18,19 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 
+from .anchor_repository import ISessionAnchorRepository, SessionAnchorRepository
+from .mood_entry_repository import IMoodEntryRepository, MoodEntryRepository
+from .profile_repository import IUserProfileRepository, UserProfileRepository
 from .reminder_repository import (
     IReminderRepository,
     ReminderRepository,
     SESSION_REMINDER_TITLE,
 )
 from .session_repository import ISessionRepository, SessionRepository
+from .session_summary_repository import (
+    ISessionSummaryRepository,
+    SessionSummaryRepository,
+)
 from .user_identity_repository import (
     IUserIdentityRepository,
     UserIdentityRepository,
@@ -31,6 +38,7 @@ from .user_identity_repository import (
 from .user_repository import IUserRepository, UserRepository
 
 __all__ = [
+    # Legacy (migrated from crud/, commit-on-write preserved)
     "IReminderRepository",
     "ReminderRepository",
     "SESSION_REMINDER_TITLE",
@@ -44,6 +52,19 @@ __all__ = [
     "get_user_identity_repository",
     "get_session_repository",
     "get_reminder_repository",
+    # New (no-commit, services own UoW)
+    "IMoodEntryRepository",
+    "MoodEntryRepository",
+    "ISessionAnchorRepository",
+    "SessionAnchorRepository",
+    "IUserProfileRepository",
+    "UserProfileRepository",
+    "ISessionSummaryRepository",
+    "SessionSummaryRepository",
+    "get_mood_entry_repository",
+    "get_session_anchor_repository",
+    "get_user_profile_repository",
+    "get_session_summary_repository",
 ]
 
 
@@ -61,3 +82,25 @@ def get_session_repository(db: Session = Depends(get_db)) -> ISessionRepository:
 
 def get_reminder_repository(db: Session = Depends(get_db)) -> IReminderRepository:
     return ReminderRepository(db)
+
+
+def get_mood_entry_repository(db: Session = Depends(get_db)) -> IMoodEntryRepository:
+    return MoodEntryRepository(db)
+
+
+def get_session_anchor_repository(
+    db: Session = Depends(get_db),
+) -> ISessionAnchorRepository:
+    return SessionAnchorRepository(db)
+
+
+def get_user_profile_repository(
+    db: Session = Depends(get_db),
+) -> IUserProfileRepository:
+    return UserProfileRepository(db)
+
+
+def get_session_summary_repository(
+    db: Session = Depends(get_db),
+) -> ISessionSummaryRepository:
+    return SessionSummaryRepository(db)
