@@ -17,7 +17,6 @@ sets URGENT) and was returning fake bytes (``b'ultrafast_tts_' + ...``)
 rather than real audio — that path has been removed.
 """
 
-import asyncio
 import logging
 import time
 import hashlib
