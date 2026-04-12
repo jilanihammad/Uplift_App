@@ -93,6 +93,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Container warm-up failed, continuing startup: {str(e)}")
 
+    # Wire event bus handlers
+    try:
+        from app.core.events import event_bus
+        from app.core.events.handlers import register_default_handlers
+
+        register_default_handlers(event_bus)
+        if not env_settings.is_production:
+            event_bus.set_strict_mode(True)
+        logger.info("Event bus handlers registered")
+    except Exception as e:
+        logger.warning(f"Failed to register event bus handlers: {str(e)}")
+
     yield
 
     # --- Shutdown ---

@@ -5,6 +5,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.events import ProfileUpdatedEvent, event_bus
 from app.models.user_profile import UserProfile
 from app.repositories import UserProfileRepository
 
@@ -47,6 +48,9 @@ def upsert_profile(
         repo.add(profile)
         db.commit()
         db.refresh(profile)
+        event_bus.emit_nowait(
+            ProfileUpdatedEvent(user_id=user_id, version=profile.version)
+        )
         return profile
 
     if expected_version is not None and profile.version != expected_version:
@@ -61,4 +65,7 @@ def upsert_profile(
     repo.add(profile)
     db.commit()
     db.refresh(profile)
+    event_bus.emit_nowait(
+        ProfileUpdatedEvent(user_id=user_id, version=profile.version)
+    )
     return profile

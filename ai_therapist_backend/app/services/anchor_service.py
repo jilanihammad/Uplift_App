@@ -5,6 +5,7 @@ from typing import Iterable, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.core.events import AnchorUpsertedEvent, event_bus
 from app.models.session_anchor import SessionAnchor
 from app.repositories import SessionAnchorRepository
 
@@ -52,6 +53,14 @@ def upsert_anchor(
         repo.add(anchor)
         db.commit()
         db.refresh(anchor)
+        event_bus.emit_nowait(
+            AnchorUpsertedEvent(
+                user_id=user_id,
+                client_anchor_id=client_anchor_id,
+                anchor_type=anchor_type,
+                changed=True,
+            )
+        )
         return anchor, True
 
     anchor = SessionAnchor(
@@ -66,6 +75,14 @@ def upsert_anchor(
     repo.add(anchor)
     db.commit()
     db.refresh(anchor)
+    event_bus.emit_nowait(
+        AnchorUpsertedEvent(
+            user_id=user_id,
+            client_anchor_id=client_anchor_id,
+            anchor_type=anchor_type,
+            changed=True,
+        )
+    )
     return anchor, True
 
 

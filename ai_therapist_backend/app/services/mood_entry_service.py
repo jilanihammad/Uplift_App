@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.events import MoodLoggedEvent, event_bus
 from app.models.mood_entry import MoodEntry
 from app.repositories import MoodEntryRepository
 
@@ -114,6 +115,16 @@ def batch_upsert_mood_entries(
 
     for result in results:
         db.refresh(result.entry)
+
+    for result in results:
+        event_bus.emit_nowait(
+            MoodLoggedEvent(
+                user_id=user_id,
+                mood_value=result.entry.mood,
+                has_notes=bool(result.entry.notes),
+                is_new=result.created,
+            )
+        )
 
     return results
 
