@@ -8,8 +8,6 @@ from __future__ import annotations
 from typing import Optional, Protocol
 from uuid import UUID
 
-from sqlalchemy.orm import Session
-
 from app.models.session_summary import SessionSummary
 
 from .base import BaseRepository

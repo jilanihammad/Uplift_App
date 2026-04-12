@@ -11,7 +11,6 @@ from typing import List, Optional, Protocol
 from uuid import UUID
 
 from sqlalchemy import and_, or_
-from sqlalchemy.orm import Session
 
 from app.models.mood_entry import MoodEntry
 
